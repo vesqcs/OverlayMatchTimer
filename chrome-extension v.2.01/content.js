@@ -26,15 +26,15 @@
     const isLocalVideo = false; // Extension always targets a live/DVR stream
 
     // Kickoff markers (persisted in localStorage)
-    let kickoff1  = localStorage.getItem('matchTimerKickoff1')  !== null ? parseFloat(localStorage.getItem('matchTimerKickoff1'))  : null;
-    let kickoff2  = localStorage.getItem('matchTimerKickoff2')  !== null ? parseFloat(localStorage.getItem('matchTimerKickoff2'))  : null;
+    let kickoff1 = localStorage.getItem('matchTimerKickoff1') !== null ? parseFloat(localStorage.getItem('matchTimerKickoff1')) : null;
+    let kickoff2 = localStorage.getItem('matchTimerKickoff2') !== null ? parseFloat(localStorage.getItem('matchTimerKickoff2')) : null;
     let kickoffC1 = localStorage.getItem('matchTimerKickoffC1') !== null ? parseFloat(localStorage.getItem('matchTimerKickoffC1')) : null;
     let kickoffC2 = localStorage.getItem('matchTimerKickoffC2') !== null ? parseFloat(localStorage.getItem('matchTimerKickoffC2')) : null;
     let previousHalf = localStorage.getItem('matchTimerHalf') || '1';
 
     // Anti-live-snap: track where the user *intended* to be
     let userIntendedTime = null;
-    let seekLockUntil   = 0; // epoch ms until which we protect the seek position
+    let seekLockUntil = 0; // epoch ms until which we protect the seek position
 
     // Volume
     let ultimoVolume = 1;
@@ -99,8 +99,8 @@
                     // Access tech without triggering deprecation warning
                     const tech = player.tech_ || (player.tech && player.tech({ IWillNotUseThisInPlugins: true }));
                     if (!tech) continue;
-                    if (tech.vhs)  return tech.vhs;        // Video.js VHS
-                    if (tech.hls)  return tech.hls;        // older videojs-contrib-hls
+                    if (tech.vhs) return tech.vhs;        // Video.js VHS
+                    if (tech.hls) return tech.hls;        // older videojs-contrib-hls
                     if (tech.hlsProvider && tech.hlsProvider.hls) return tech.hlsProvider.hls;
                     if (tech.hls_) return tech.hls_;
                 }
@@ -108,7 +108,7 @@
         }
         // ---- Fallback: hls.js attached directly to the element ----
         if (vid._hls) return vid._hls;
-        if (vid.hls)  return vid.hls;
+        if (vid.hls) return vid.hls;
         return null;
     }
 
@@ -118,7 +118,7 @@
             // hls.js config object
             if (hlsInstance.config) {
                 hlsInstance.config.liveMaxLatencyDuration = 86400;
-                hlsInstance.config.liveSyncDuration       = 5;
+                hlsInstance.config.liveSyncDuration = 5;
                 console.log('[OMT] HLS DVR patch applied.');
             }
             // VHS: update playlist controller if available
@@ -157,8 +157,8 @@
     function injectUI() {
         // Find the best container to anchor inside
         const anchor = vid.closest('.video-js') ||
-                       vid.closest('.vjs-player') ||
-                       vid.parentElement;
+            vid.closest('.vjs-player') ||
+            vid.parentElement;
 
         if (!anchor) { console.error('[OMT] Could not find anchor element.'); return; }
 
@@ -277,7 +277,7 @@
                     <span class="live-dot"></span> LIVE
                 </button>
                 <button class="handle-btn" id="omt-volume-icon-btn" title="Mute/Unmute" style="font-size:12px;padding:0 2px;">🔊</button>
-                <input type="range" id="omt-volume-range" min="0" max="1" step="0.05" value="1">
+                <input type="range" id="omt-volume-range" min="0" max="1" step="0.05" value="1" style="-webkit-appearance: none; appearance: none; width: 60px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.2); outline: none; cursor: pointer;">
             </div>
             <button class="handle-btn" id="omt-btn-fullscreen" title="Fullscreen">⛶</button>
         </div>
@@ -328,18 +328,18 @@
     function q(id) { return omtRoot.querySelector('#' + id); }
 
     function cacheUIRefs() {
-        timerUI        = q('match-timer');
-        osd            = q('osd-message');
-        setupPanel     = q('setup-panel');
-        controlsPanel  = q('controls-panel');
+        timerUI = q('match-timer');
+        osd = q('osd-message');
+        setupPanel = q('setup-panel');
+        controlsPanel = q('controls-panel');
         timelineSlider = q('omt-timeline-slider');
-        vTimeCurrent   = q('omt-v-time-current');
-        vTimeDuration  = q('omt-v-time-duration');
-        liveBtn        = q('omt-live-btn');
-        btnMainPlay    = q('omt-btn-play');
-        speedSelect    = q('omt-speed-select');
-        volumeRange    = q('omt-volume-range');
-        volumeIconBtn  = q('omt-volume-icon-btn');
+        vTimeCurrent = q('omt-v-time-current');
+        vTimeDuration = q('omt-v-time-duration');
+        liveBtn = q('omt-live-btn');
+        btnMainPlay = q('omt-btn-play');
+        speedSelect = q('omt-speed-select');
+        volumeRange = q('omt-volume-range');
+        volumeIconBtn = q('omt-volume-icon-btn');
     }
 
     /* =========================================================
@@ -356,7 +356,7 @@
         // --- Half selector memory ---
         q('omt-half-select').addEventListener('change', function () {
             const newHalf = this.value;
-            const hrVal  = q('omt-sync-hr').value;
+            const hrVal = q('omt-sync-hr').value;
             const minVal = q('omt-sync-min').value;
             const secVal = q('omt-sync-sec').value;
             if (hrVal !== '' || minVal !== '' || secVal !== '') {
@@ -365,7 +365,7 @@
             const saved = localStorage.getItem('matchTimerWhistle_' + newHalf);
             if (saved) {
                 const t = JSON.parse(saved);
-                q('omt-sync-hr').value  = t.h;
+                q('omt-sync-hr').value = t.h;
                 q('omt-sync-min').value = t.m;
                 q('omt-sync-sec').value = t.s;
             } else {
@@ -388,19 +388,19 @@
         });
 
         // --- Playback controls ---
-        q('omt-m120').addEventListener('click',     () => saltarVideo(-120));
-        q('omt-m10').addEventListener('click',      () => saltarVideo(-10));
-        q('omt-m2').addEventListener('click',       () => saltarVideo(-2));
-        q('omt-p2').addEventListener('click',       () => saltarVideo(2));
-        q('omt-p10').addEventListener('click',      () => saltarVideo(10));
-        q('omt-p120').addEventListener('click',     () => saltarVideo(120));
+        q('omt-m120').addEventListener('click', () => saltarVideo(-120));
+        q('omt-m10').addEventListener('click', () => saltarVideo(-10));
+        q('omt-m2').addEventListener('click', () => saltarVideo(-2));
+        q('omt-p2').addEventListener('click', () => saltarVideo(2));
+        q('omt-p10').addEventListener('click', () => saltarVideo(10));
+        q('omt-p120').addEventListener('click', () => saltarVideo(120));
         q('omt-btn-play').addEventListener('click', togglePlay);
         q('omt-prev-frame').addEventListener('click', retrocederFrame);
         q('omt-next-frame').addEventListener('click', avancarFrame);
 
         // --- Kickoff jump buttons ---
-        q('omt-jump-k1').addEventListener('click',  () => jumpToKickoff('1'));
-        q('omt-jump-k2').addEventListener('click',  () => jumpToKickoff('2'));
+        q('omt-jump-k1').addEventListener('click', () => jumpToKickoff('1'));
+        q('omt-jump-k2').addEventListener('click', () => jumpToKickoff('2'));
         q('omt-jump-kc1').addEventListener('click', () => jumpToKickoff('custom1'));
         q('omt-jump-kc2').addEventListener('click', () => jumpToKickoff('custom2'));
 
@@ -439,7 +439,7 @@
 
         // --- Video element events ---
         vid.addEventListener('loadedmetadata', inicializarMetadadosTimeline);
-        vid.addEventListener('durationchange',  inicializarMetadadosTimeline);
+        vid.addEventListener('durationchange', inicializarMetadadosTimeline);
 
         vid.addEventListener('timeupdate', () => {
             // Anti-live-snap: if HLS pushed us forward unexpectedly, pull back
@@ -476,7 +476,7 @@
         });
 
         // --- Drag system for both panels ---
-        fazerArrastavel(setupPanel,   q('setup-handle'));
+        fazerArrastavel(setupPanel, q('setup-handle'));
         fazerArrastavel(controlsPanel, q('controls-handle'));
 
         // --- Keyboard shortcuts (capture phase, highest priority) ---
@@ -499,8 +499,8 @@
        ========================================================= */
     function seekTo(time) {
         userIntendedTime = time;
-        seekLockUntil    = Date.now() + 4000; // 4-second protection window
-        vid.currentTime  = time;
+        seekLockUntil = Date.now() + 4000; // 4-second protection window
+        vid.currentTime = time;
     }
 
     function antiLiveSnap() {
@@ -531,9 +531,9 @@
             if (hlsInstance.levels && hlsInstance.currentLevel !== undefined && hlsInstance.currentLevel !== -1) {
                 const details = hlsInstance.levels[hlsInstance.currentLevel]?.details;
                 if (details && details.fragments && details.fragments.length) {
-                    const ct   = vid.currentTime;
+                    const ct = vid.currentTime;
                     const frag = details.fragments.find(f => ct >= f.start && ct <= (f.start + f.duration))
-                              || details.fragments[0];
+                        || details.fragments[0];
                     if (frag && frag.programDateTime) {
                         const pdtMs = (frag.programDateTime instanceof Date)
                             ? frag.programDateTime.getTime()
@@ -543,7 +543,7 @@
                     }
                 }
             }
-        } catch (_) {}
+        } catch (_) { }
 
         // --- Video.js VHS segments API ---
         try {
@@ -552,15 +552,15 @@
                     ? hlsInstance.playlists.media()
                     : null;
                 if (media && media.segments && media.segments.length) {
-                    const ct  = vid.currentTime;
+                    const ct = vid.currentTime;
                     const seg = media.segments.find(s => ct >= s.start && ct <= (s.start + s.duration))
-                             || media.segments[0];
+                        || media.segments[0];
                     if (seg && seg.dateTimeObject) {
                         return seg.dateTimeObject.getTime() + (ct - seg.start) * 1000;
                     }
                 }
             }
-        } catch (_) {}
+        } catch (_) { }
 
         return null;
     }
@@ -628,7 +628,7 @@
             hInput = Math.floor(ct / 3600).toString();
             mInput = Math.floor((ct % 3600) / 60).toString();
             sInput = Math.floor(ct % 60).toString();
-            q('omt-sync-hr').value  = hInput;
+            q('omt-sync-hr').value = hInput;
             q('omt-sync-min').value = mInput;
             q('omt-sync-sec').value = sInput;
             mostrarOSD('🎯 Captured: ' + formatarTempoVideo(ct));
@@ -639,10 +639,10 @@
         const s = parseInt(sInput) || 0;
         const parte = q('omt-half-select').value;
 
-        if      (parte === '2')       { tempoBase = 45 * 60; }
+        if (parte === '2') { tempoBase = 45 * 60; }
         else if (parte === 'custom1') { tempoBase = (parseInt(q('omt-custom-minute-c1').value) || 0) * 60; }
         else if (parte === 'custom2') { tempoBase = (parseInt(q('omt-custom-minute-c2').value) || 0) * 60; }
-        else                          { tempoBase = 0; }
+        else { tempoBase = 0; }
 
         const rawOffset = (h * 3600) + (m * 60) + s;
 
@@ -657,20 +657,20 @@
         previousHalf = parte;
 
         // Persist
-        localStorage.setItem('matchTimerAtivo',      'true');
-        localStorage.setItem('matchTimerOffset',     offsetEmSegundos);
-        localStorage.setItem('matchTimerTempoBase',  tempoBase);
-        localStorage.setItem('matchTimerSyncHr',     h);
-        localStorage.setItem('matchTimerSyncMin',    m);
-        localStorage.setItem('matchTimerSyncSec',    s);
-        localStorage.setItem('matchTimerHalf',       parte);
+        localStorage.setItem('matchTimerAtivo', 'true');
+        localStorage.setItem('matchTimerOffset', offsetEmSegundos);
+        localStorage.setItem('matchTimerTempoBase', tempoBase);
+        localStorage.setItem('matchTimerSyncHr', h);
+        localStorage.setItem('matchTimerSyncMin', m);
+        localStorage.setItem('matchTimerSyncSec', s);
+        localStorage.setItem('matchTimerHalf', parte);
         localStorage.setItem('matchTimerWhistle_' + parte, JSON.stringify({ h, m, s }));
         if (parte === 'custom1') localStorage.setItem('matchTimerCustomMinC1', q('omt-custom-minute-c1').value);
         if (parte === 'custom2') localStorage.setItem('matchTimerCustomMinC2', q('omt-custom-minute-c2').value);
 
         // Save kickoff marker
-        if      (parte === '1')       { kickoff1  = offsetEmSegundos; localStorage.setItem('matchTimerKickoff1',  kickoff1); }
-        else if (parte === '2')       { kickoff2  = offsetEmSegundos; localStorage.setItem('matchTimerKickoff2',  kickoff2); }
+        if (parte === '1') { kickoff1 = offsetEmSegundos; localStorage.setItem('matchTimerKickoff1', kickoff1); }
+        else if (parte === '2') { kickoff2 = offsetEmSegundos; localStorage.setItem('matchTimerKickoff2', kickoff2); }
         else if (parte === 'custom1') { kickoffC1 = offsetEmSegundos; localStorage.setItem('matchTimerKickoffC1', kickoffC1); }
         else if (parte === 'custom2') { kickoffC2 = offsetEmSegundos; localStorage.setItem('matchTimerKickoffC2', kickoffC2); }
 
@@ -688,16 +688,16 @@
         tempoBase = 0;
         previousHalf = '1';
 
-        ['matchTimerAtivo','matchTimerOffset','matchTimerTempoBase','matchTimerSyncHr',
-         'matchTimerSyncMin','matchTimerSyncSec','matchTimerHalf','matchTimerCustomMinC1',
-         'matchTimerCustomMinC2','matchTimerWhistle_1','matchTimerWhistle_2',
-         'matchTimerWhistle_custom1','matchTimerWhistle_custom2',
-         'matchTimerKickoff1','matchTimerKickoff2','matchTimerKickoffC1','matchTimerKickoffC2'
+        ['matchTimerAtivo', 'matchTimerOffset', 'matchTimerTempoBase', 'matchTimerSyncHr',
+            'matchTimerSyncMin', 'matchTimerSyncSec', 'matchTimerHalf', 'matchTimerCustomMinC1',
+            'matchTimerCustomMinC2', 'matchTimerWhistle_1', 'matchTimerWhistle_2',
+            'matchTimerWhistle_custom1', 'matchTimerWhistle_custom2',
+            'matchTimerKickoff1', 'matchTimerKickoff2', 'matchTimerKickoffC1', 'matchTimerKickoffC2'
         ].forEach(k => localStorage.removeItem(k));
 
         kickoff1 = kickoff2 = kickoffC1 = kickoffC2 = null;
 
-        q('omt-sync-hr').value  = '';
+        q('omt-sync-hr').value = '';
         q('omt-sync-min').value = '';
         q('omt-sync-sec').value = '';
         q('omt-half-select').value = '1';
@@ -716,8 +716,8 @@
 
         const tAtual = vid.currentTime;
 
-        const k1  = getVideoTimeForPdt(kickoff1);
-        const k2  = getVideoTimeForPdt(kickoff2);
+        const k1 = getVideoTimeForPdt(kickoff1);
+        const k2 = getVideoTimeForPdt(kickoff2);
         const kC1 = getVideoTimeForPdt(kickoffC1);
         const kC2 = getVideoTimeForPdt(kickoffC2);
 
@@ -731,10 +731,10 @@
         let kickoffUsar = resolvedOffset;
         let baseUsar = tempoBase;
 
-        if      (kC2 !== null && tAtual >= kC2) { kickoffUsar = kC2; baseUsar = (parseInt(localStorage.getItem('matchTimerCustomMinC2')) || 105) * 60; }
+        if (kC2 !== null && tAtual >= kC2) { kickoffUsar = kC2; baseUsar = (parseInt(localStorage.getItem('matchTimerCustomMinC2')) || 105) * 60; }
         else if (kC1 !== null && tAtual >= kC1) { kickoffUsar = kC1; baseUsar = (parseInt(localStorage.getItem('matchTimerCustomMinC1')) || 90) * 60; }
-        else if (k2  !== null && tAtual >= k2)  { kickoffUsar = k2;  baseUsar = 45 * 60; }
-        else if (k1  !== null)                  { kickoffUsar = k1;  baseUsar = 0; }
+        else if (k2 !== null && tAtual >= k2) { kickoffUsar = k2; baseUsar = 45 * 60; }
+        else if (k1 !== null) { kickoffUsar = k1; baseUsar = 0; }
 
         // Before first kickoff
         if (k1 !== null && tAtual < k1) {
@@ -753,8 +753,8 @@
        ========================================================= */
     function atualizarMarcadores() {
         const markerContainer = q('omt-timeline-markers');
-        const btnK1  = q('omt-jump-k1');
-        const btnK2  = q('omt-jump-k2');
+        const btnK1 = q('omt-jump-k1');
+        const btnK2 = q('omt-jump-k2');
         const btnKC1 = q('omt-jump-kc1');
         const btnKC2 = q('omt-jump-kc2');
 
@@ -763,25 +763,25 @@
 
         const duration = vid.duration;
         if (!duration || !isFinite(duration)) {
-            [btnK1, btnK2, btnKC1, btnKC2].forEach(b => { if(b) b.style.display = 'none'; });
+            [btnK1, btnK2, btnKC1, btnKC2].forEach(b => { if (b) b.style.display = 'none'; });
             return;
         }
 
-        const k1Val  = getVideoTimeForPdt(kickoff1);
-        const k2Val  = getVideoTimeForPdt(kickoff2);
+        const k1Val = getVideoTimeForPdt(kickoff1);
+        const k2Val = getVideoTimeForPdt(kickoff2);
         const kC1Val = getVideoTimeForPdt(kickoffC1);
         const kC2Val = getVideoTimeForPdt(kickoffC2);
 
         const markers = [
-            { val: k1Val,  btn: btnK1,  cls: 'k1',  label: '1st Half Kickoff' },
-            { val: k2Val,  btn: btnK2,  cls: 'k2',  label: '2nd Half Kickoff' },
+            { val: k1Val, btn: btnK1, cls: 'k1', label: '1st Half Kickoff' },
+            { val: k2Val, btn: btnK2, cls: 'k2', label: '2nd Half Kickoff' },
             { val: kC1Val, btn: btnKC1, cls: 'kc1', label: 'Custom 1 Kickoff' },
             { val: kC2Val, btn: btnKC2, cls: 'kc2', label: 'Custom 2 Kickoff' },
         ];
 
         const minVal = parseFloat(timelineSlider.min) || 0;
         const maxVal = parseFloat(timelineSlider.max) || duration;
-        const range  = maxVal - minVal;
+        const range = maxVal - minVal;
 
         markers.forEach(({ val, btn, cls, label }) => {
             if (!btn) return;
@@ -796,9 +796,9 @@
     }
 
     function jumpToKickoff(half) {
-        const map    = { '1': kickoff1, '2': kickoff2, 'custom1': kickoffC1, 'custom2': kickoffC2 };
+        const map = { '1': kickoff1, '2': kickoff2, 'custom1': kickoffC1, 'custom2': kickoffC2 };
         const labels = { '1': '1st Half', '2': '2nd Half', 'custom1': 'Custom 1', 'custom2': 'Custom 2' };
-        const raw    = map[half];
+        const raw = map[half];
         if (raw == null) return;
         const t = getVideoTimeForPdt(raw);
         if (t !== null && t >= 0) {
@@ -816,8 +816,8 @@
     }
 
     function togglePlay() {
-        if (vid.paused) { vid.play();  mostrarOSD('▶ Play'); }
-        else            { vid.pause(); mostrarOSD('⏸ Pause'); }
+        if (vid.paused) { vid.play(); mostrarOSD('▶ Play'); }
+        else { vid.pause(); mostrarOSD('⏸ Pause'); }
     }
 
     function avancarFrame() {
@@ -868,7 +868,7 @@
     function toggleFullScreen() {
         const container = vid.closest('.video-js') || vid.parentElement;
         if (!document.fullscreenElement) {
-            (container || vid).requestFullscreen().catch(() => vid.requestFullscreen().catch(() => {}));
+            (container || vid).requestFullscreen().catch(() => vid.requestFullscreen().catch(() => { }));
         } else {
             document.exitFullscreen();
         }
@@ -876,11 +876,11 @@
 
     function toggleMute() {
         if (vid.volume > 0) {
-            ultimoVolume  = vid.volume;
-            vid.volume    = 0;
+            ultimoVolume = vid.volume;
+            vid.volume = 0;
             volumeRange.value = 0;
         } else {
-            vid.volume        = ultimoVolume;
+            vid.volume = ultimoVolume;
             volumeRange.value = ultimoVolume;
         }
         atualizarIconeVolume(vid.volume);
@@ -923,18 +923,18 @@
 
         switch (key) {
             case 'arrowright':
-                if      (e.ctrlKey)  saltarVideo(120);
+                if (e.ctrlKey) saltarVideo(120);
                 else if (e.shiftKey) saltarVideo(10);
-                else                 saltarVideo(2);
+                else saltarVideo(2);
                 break;
             case 'arrowleft':
-                if      (e.ctrlKey)  saltarVideo(-120);
+                if (e.ctrlKey) saltarVideo(-120);
                 else if (e.shiftKey) saltarVideo(-10);
-                else                 saltarVideo(-2);
+                else saltarVideo(-2);
                 break;
-            case 'arrowup':   avancarFrame();    break;
-            case 'arrowdown': retrocederFrame();  break;
-            case ' ':         togglePlay();       break;
+            case 'arrowup': avancarFrame(); break;
+            case 'arrowdown': retrocederFrame(); break;
+            case ' ': togglePlay(); break;
             case 'z':
                 vid.playbackRate = Math.max(0.25, vid.playbackRate - 0.25);
                 syncSpeedSelect();
@@ -972,18 +972,18 @@
             e.preventDefault();
 
             // Anchor the panel at its current rendered position before clearing transforms
-            const rect      = panel.getBoundingClientRect();
-            const rootRect  = omtRoot.getBoundingClientRect();
-            panel.style.top       = (rect.top  - rootRect.top)  + 'px';
-            panel.style.left      = (rect.left - rootRect.left) + 'px';
+            const rect = panel.getBoundingClientRect();
+            const rootRect = omtRoot.getBoundingClientRect();
+            panel.style.top = (rect.top - rootRect.top) + 'px';
+            panel.style.left = (rect.left - rootRect.left) + 'px';
             panel.style.transform = 'none';
-            panel.style.bottom    = 'auto';
+            panel.style.bottom = 'auto';
 
             pos3 = e.clientX;
             pos4 = e.clientY;
 
             document.onmousemove = drag;
-            document.onmouseup   = stopDrag;
+            document.onmouseup = stopDrag;
         };
 
         function drag(e) {
@@ -993,18 +993,18 @@
             pos3 = e.clientX;
             pos4 = e.clientY;
 
-            let newTop  = panel.offsetTop  - pos2;
+            let newTop = panel.offsetTop - pos2;
             let newLeft = panel.offsetLeft - pos1;
 
-            newTop  = Math.max(0, Math.min(newTop,  window.innerHeight - panel.offsetHeight));
-            newLeft = Math.max(0, Math.min(newLeft, window.innerWidth  - panel.offsetWidth));
+            newTop = Math.max(0, Math.min(newTop, window.innerHeight - panel.offsetHeight));
+            newLeft = Math.max(0, Math.min(newLeft, window.innerWidth - panel.offsetWidth));
 
-            panel.style.top  = newTop  + 'px';
+            panel.style.top = newTop + 'px';
             panel.style.left = newLeft + 'px';
         }
 
         function stopDrag() {
-            document.onmouseup   = null;
+            document.onmouseup = null;
             document.onmousemove = null;
         }
     }
@@ -1013,7 +1013,7 @@
        16. SETUP PANEL VISIBILITY
        ========================================================= */
     function esconderSetup() { setupPanel.style.display = 'none'; }
-    function mostrarSetup()  { setupPanel.style.display = 'flex'; }
+    function mostrarSetup() { setupPanel.style.display = 'flex'; }
 
     /* =========================================================
        17. RESTORE PERSISTED STATE AFTER PAGE LOAD
@@ -1022,12 +1022,12 @@
         const timerAtivoGuardado = localStorage.getItem('matchTimerAtivo');
         if (timerAtivoGuardado !== 'true') return;
 
-        timerAtivo       = true;
-        offsetEmSegundos = parseFloat(localStorage.getItem('matchTimerOffset'))    || 0;
-        tempoBase        = parseFloat(localStorage.getItem('matchTimerTempoBase')) || 0;
+        timerAtivo = true;
+        offsetEmSegundos = parseFloat(localStorage.getItem('matchTimerOffset')) || 0;
+        tempoBase = parseFloat(localStorage.getItem('matchTimerTempoBase')) || 0;
         timerUI.style.display = 'block';
 
-        q('omt-sync-hr').value  = localStorage.getItem('matchTimerSyncHr')  || '';
+        q('omt-sync-hr').value = localStorage.getItem('matchTimerSyncHr') || '';
         q('omt-sync-min').value = localStorage.getItem('matchTimerSyncMin') || '';
         q('omt-sync-sec').value = localStorage.getItem('matchTimerSyncSec') || '';
 
