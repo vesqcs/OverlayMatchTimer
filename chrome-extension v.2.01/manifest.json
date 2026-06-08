@@ -1,0 +1,50 @@
+{
+
+  "manifest_version": 3,
+
+  "name": "Overlay MatchTimer",
+
+  "version": "1.0.0",
+
+  "description": "Injects the Overlay MatchTimer UI over InplayIP live streams for professional match analysis.",
+
+  "author": "Vasco Oliveira",
+
+
+
+  "permissions": [
+
+    "storage"
+
+  ],
+
+
+
+  "host_permissions": [
+
+    "*://*.inplayip.tv/*"
+
+  ],
+
+
+
+  "content_scripts": [
+
+    {
+
+      "matches": ["*://*.inplayip.tv/*"],
+
+      "js": ["content.js"],
+
+      "css": ["content.css"],
+
+      "run_at": "document_idle",
+
+      "world": "MAIN"
+
+    }
+
+  ]
+
+} 
+
