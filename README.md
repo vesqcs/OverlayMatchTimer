@@ -73,6 +73,7 @@ For continuous focus on the game, you can fully manipulate playback without ever
 | **Increase Replay Speed (+0.25x)** | `C` |
 | **Decrease Replay Speed (-0.25x)** | `Z` |
 | **Reset Speed to Normal (1.00x)** | `X` |
+| **Hide/Show Controls** | `H` |
 
 ---
 
