@@ -23,6 +23,7 @@
     let timerAtivo = false;
     let osdTimeout = null;
     let isDraggingTimeline = false;
+    let isManuallyHidden = false;
     const isLocalVideo = false; // Extension always targets a live/DVR stream
 
     // Kickoff markers (persisted in localStorage)
@@ -253,6 +254,7 @@
             <div class="shortcut-item"><span>Frame by Frame</span><span class="shortcut-key">↑ / ↓</span></div>
             <div class="shortcut-item"><span>Speed ±</span><span class="shortcut-key">Z / C</span></div>
             <div class="shortcut-item"><span>Speed 1.0x</span><span class="shortcut-key">X</span></div>
+            <div class="shortcut-item"><span>Hide/Show Controls</span><span class="shortcut-key">H</span></div>
         </div>
     </div>
 </div>
@@ -605,11 +607,21 @@
             vTimeDuration.innerText = formatarTempoVideo(vid.duration);
             timelineSlider.disabled = false;
             if (parseFloat(timelineSlider.value) < minVal) timelineSlider.value = minVal;
+
+            // --- SE FOR DVR (REVIEW): Mostra os controlos (caso não tenham sido escondidos pelo H) ---
+            if (controlsPanel && !isManuallyHidden) {
+                controlsPanel.style.display = ''; // Limpa o 'none' e usa o layout padrão do CSS
+            }
         } else {
             timelineSlider.min = 0;
             timelineSlider.max = 100;
             vTimeDuration.innerText = 'LIVE';
             timelineSlider.disabled = true;
+
+            // --- SE FOR LIVE PURO (HD): Esconde os controlos automaticamente ---
+            if (controlsPanel) {
+                controlsPanel.style.display = 'none';
+            }
         }
         atualizarMarcadores();
     }
@@ -913,7 +925,7 @@
         if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
 
         const key = e.key.toLowerCase();
-        const controlled = ['arrowright', 'arrowleft', 'arrowup', 'arrowdown', ' ', 'z', 'c', 'x'];
+        const controlled = ['arrowright', 'arrowleft', 'arrowup', 'arrowdown', ' ', 'z', 'c', 'x', 'h'];
         if (!controlled.includes(key)) return;
 
         // Stop the event before Video.js or the browser handles it
@@ -950,6 +962,20 @@
                 speedSelect.value = '1.0';
                 mostrarOSD('⚡ Speed: 1.00x');
                 break;
+            case 'h':
+                if (controlsPanel) {
+                    if (controlsPanel.style.display === 'none') {
+                        controlsPanel.style.display = ''; // Restaura o layout CSS original
+                        isManuallyHidden = false;
+                        mostrarOSD('🖥️ Controls Visible');
+                    } else {
+                        controlsPanel.style.display = 'none';
+                        isManuallyHidden = true; // Avisa o sistema para não reabrir sozinho
+                        mostrarOSD('🙈 Controls Hidden');
+                    }
+                }
+                break;
+
         }
     }
 

@@ -785,6 +785,7 @@
                     <div class="shortcut-item"><span>Frame by Frame</span><span class="shortcut-key">↑ / ↓</span></div>
                     <div class="shortcut-item"><span>Speed ±</span><span class="shortcut-key">Z / C</span></div>
                     <div class="shortcut-item"><span>Speed 1.0x</span><span class="shortcut-key">X</span></div>
+                    <div class="shortcut-item"><span>Hide/Show Controls</span><span class="shortcut-key">H</span></div>
                 </div>
             </div>
         </div>
@@ -1634,7 +1635,7 @@
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
 
             const key = e.key.toLowerCase();
-            const teclasControladas = ['arrowright', 'arrowleft', 'arrowup', 'arrowdown', 'z', 'c', 'x', ' '];
+            const teclasControladas = ['arrowright', 'arrowleft', 'arrowup', 'arrowdown', 'z', 'c', 'x', 'h', ' '];
 
             if (teclasControladas.includes(key)) {
                 e.preventDefault();
@@ -1684,6 +1685,29 @@
                 case ' ':
                     togglePlay();
                     break;
+                case 'h':
+                    // 1. Tenta agarrar o painel da extensão se ele existir na página
+                    let elementoParaEsconder = null;
+                    if (typeof controlsPanel !== 'undefined' && controlsPanel) {
+                        elementoParaEsconder = controlsPanel;
+                    } else {
+                        // 2. Se não existir (estamos no teu HTML principal), procura pela div cheatsheet
+                        elementoParaEsconder = document.querySelector('.cheatsheet');
+                    }
+
+                    if (elementoParaEsconder) {
+                        if (elementoParaEsconder.style.display === 'none') {
+                            elementoParaEsconder.style.display = ''; // Mostra o painel restaurando o layout original
+                            if (typeof isManuallyHidden !== 'undefined') isManuallyHidden = false;
+                            if (typeof mostrarOSD === 'function') mostrarOSD('🖥️ Controls Visible');
+                        } else {
+                            elementoParaEsconder.style.display = 'none'; // Esconde o painel
+                            if (typeof isManuallyHidden !== 'undefined') isManuallyHidden = true;
+                            if (typeof mostrarOSD === 'function') mostrarOSD('🙈 Controls Hidden');
+                        }
+                    }
+                    break;
+
             }
         }, true);
 
