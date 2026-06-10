@@ -1663,6 +1663,18 @@
             if (document.activeElement) document.activeElement.blur();
         }
 
+        function syncSpeedSelect() {
+            const currentRate = vid.playbackRate;
+            const allowedRates = [0.25, 0.5, 1.0, 1.5, 2.0];
+            const closestRate = allowedRates.reduce((prev, curr) => 
+                Math.abs(curr - currentRate) < Math.abs(prev - currentRate) ? curr : prev
+            );
+            const rateStrings = { 0.25: "0.25", 0.5: "0.5", 1.0: "1.0", 1.5: "1.5", 2.0: "2.0" };
+            if (speedSelect) {
+                speedSelect.value = rateStrings[closestRate] || closestRate.toString();
+            }
+        }
+
         window.addEventListener('keydown', function (e) {
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
 
@@ -1693,25 +1705,35 @@
                 case 'arrowdown':
                     retrocederFrame();
                     break;
-                case 'z':
-                    vid.playbackRate = Math.max(0.25, vid.playbackRate - 0.25);
-                    const rateZ = vid.playbackRate.toFixed(2);
-                    if ([...speedSelect.options].some(opt => opt.value === rateZ || opt.value === parseFloat(rateZ).toString())) {
-                        speedSelect.value = parseFloat(rateZ).toString();
-                    }
+                case 'z': {
+                    const allowedRates = [0.25, 0.5, 1.0, 1.5, 2.0];
+                    const currentRate = vid.playbackRate;
+                    const closestRate = allowedRates.reduce((prev, curr) => 
+                        Math.abs(curr - currentRate) < Math.abs(prev - currentRate) ? curr : prev
+                    );
+                    const currentIndex = allowedRates.indexOf(closestRate);
+                    const newIndex = Math.max(0, currentIndex - 1);
+                    vid.playbackRate = allowedRates[newIndex];
+                    syncSpeedSelect();
                     mostrarOSD("⚡ Speed: " + vid.playbackRate.toFixed(2) + "x");
                     break;
-                case 'c':
-                    vid.playbackRate = Math.min(2.0, vid.playbackRate + 0.25);
-                    const rateC = vid.playbackRate.toFixed(2);
-                    if ([...speedSelect.options].some(opt => opt.value === rateC || opt.value === parseFloat(rateC).toString())) {
-                        speedSelect.value = parseFloat(rateC).toString();
-                    }
+                }
+                case 'c': {
+                    const allowedRates = [0.25, 0.5, 1.0, 1.5, 2.0];
+                    const currentRate = vid.playbackRate;
+                    const closestRate = allowedRates.reduce((prev, curr) => 
+                        Math.abs(curr - currentRate) < Math.abs(prev - currentRate) ? curr : prev
+                    );
+                    const currentIndex = allowedRates.indexOf(closestRate);
+                    const newIndex = Math.min(allowedRates.length - 1, currentIndex + 1);
+                    vid.playbackRate = allowedRates[newIndex];
+                    syncSpeedSelect();
                     mostrarOSD("⚡ Speed: " + vid.playbackRate.toFixed(2) + "x");
                     break;
+                }
                 case 'x':
                     vid.playbackRate = 1.0;
-                    speedSelect.value = "1.0";
+                    syncSpeedSelect();
                     mostrarOSD("⚡ Speed: 1.00x");
                     break;
                 case ' ':

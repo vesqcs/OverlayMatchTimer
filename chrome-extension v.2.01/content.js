@@ -986,19 +986,35 @@
             case 'arrowup': avancarFrame(); break;
             case 'arrowdown': retrocederFrame(); break;
             case ' ': togglePlay(); break;
-            case 'z':
-                vid.playbackRate = Math.max(0.25, vid.playbackRate - 0.25);
+            case 'z': {
+                const allowedRates = [0.25, 0.5, 1.0, 1.5, 2.0];
+                const currentRate = vid.playbackRate;
+                const closestRate = allowedRates.reduce((prev, curr) => 
+                    Math.abs(curr - currentRate) < Math.abs(prev - currentRate) ? curr : prev
+                );
+                const currentIndex = allowedRates.indexOf(closestRate);
+                const newIndex = Math.max(0, currentIndex - 1);
+                vid.playbackRate = allowedRates[newIndex];
                 syncSpeedSelect();
                 mostrarOSD('⚡ Speed: ' + vid.playbackRate.toFixed(2) + 'x');
                 break;
-            case 'c':
-                vid.playbackRate = Math.min(2.0, vid.playbackRate + 0.25);
+            }
+            case 'c': {
+                const allowedRates = [0.25, 0.5, 1.0, 1.5, 2.0];
+                const currentRate = vid.playbackRate;
+                const closestRate = allowedRates.reduce((prev, curr) => 
+                    Math.abs(curr - currentRate) < Math.abs(prev - currentRate) ? curr : prev
+                );
+                const currentIndex = allowedRates.indexOf(closestRate);
+                const newIndex = Math.min(allowedRates.length - 1, currentIndex + 1);
+                vid.playbackRate = allowedRates[newIndex];
                 syncSpeedSelect();
                 mostrarOSD('⚡ Speed: ' + vid.playbackRate.toFixed(2) + 'x');
                 break;
+            }
             case 'x':
                 vid.playbackRate = 1.0;
-                speedSelect.value = '1.0';
+                syncSpeedSelect();
                 mostrarOSD('⚡ Speed: 1.00x');
                 break;
             case 'h':
@@ -1024,9 +1040,14 @@
     }
 
     function syncSpeedSelect() {
-        const r = vid.playbackRate.toFixed(2);
-        if ([...speedSelect.options].some(o => o.value === r || o.value === parseFloat(r).toString())) {
-            speedSelect.value = parseFloat(r).toString();
+        const currentRate = vid.playbackRate;
+        const allowedRates = [0.25, 0.5, 1.0, 1.5, 2.0];
+        const closestRate = allowedRates.reduce((prev, curr) => 
+            Math.abs(curr - currentRate) < Math.abs(prev - currentRate) ? curr : prev
+        );
+        const rateStrings = { 0.25: "0.25", 0.5: "0.5", 1.0: "1.0", 1.5: "1.5", 2.0: "2.0" };
+        if (speedSelect) {
+            speedSelect.value = rateStrings[closestRate] || closestRate.toString();
         }
     }
 
