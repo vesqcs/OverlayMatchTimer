@@ -7,8 +7,8 @@
 (function () {
     'use strict';
 
-    // Prevent double-injection on SPA navigation
-    if (document.getElementById('omt-root')) return;
+    // SPA monitor interval handle
+    let spaMonitorInterval = null;
 
     /* =========================================================
        MODULE STATE
@@ -49,6 +49,34 @@
     /* =========================================================
        1. BOOT — WAIT FOR VIDEO ELEMENT
        ========================================================= */
+    function teardown() {
+        // Stop the SPA monitor before re-init to avoid double-starts
+        if (spaMonitorInterval) {
+            clearInterval(spaMonitorInterval);
+            spaMonitorInterval = null;
+        }
+        // Stop any running timers
+        if (mouseMoveTimeout) {
+            clearTimeout(mouseMoveTimeout);
+            mouseMoveTimeout = null;
+        }
+        // Remove keydown listener
+        document.removeEventListener('keydown', handleKeydown, true);
+        // Remove the injected HUD from the DOM
+        const existingRoot = document.getElementById('omt-root');
+        if (existingRoot && existingRoot.parentNode) {
+            existingRoot.parentNode.removeChild(existingRoot);
+        }
+        // Clear references
+        omtRoot = null;
+        vid = null;
+        hlsInstance = null;
+        timerUI = null;
+        osd = null;
+        setupPanel = null;
+        controlsPanel = null;
+    }
+
     function boot() {
         const v = findVideo();
         if (v) { init(v); return; }
@@ -70,6 +98,33 @@
         return null;
     }
 
+    function startSPAMonitor() {
+        if (spaMonitorInterval) return; // Already running
+        spaMonitorInterval = setInterval(() => {
+            const currentVid = findVideo();
+            const currentRoot = document.getElementById('omt-root');
+
+            if (!currentVid && currentRoot) {
+                // Left the stream page — tear down cleanly
+                teardown();
+                return;
+            }
+
+            if (currentVid && !currentRoot) {
+                // New stream loaded but HUD is gone — reboot
+                teardown();
+                init(currentVid);
+                return;
+            }
+
+            if (currentVid && currentVid !== vid) {
+                // Different video element — stream switched
+                teardown();
+                init(currentVid);
+            }
+        }, 1500);
+    }
+
     function init(videoEl) {
         vid = videoEl;
         vid.preservesPitch = true;
@@ -83,6 +138,7 @@
             cacheUIRefs();
             wireEvents();
             restoreState();
+            startSPAMonitor();
             console.log('[OMT] Overlay MatchTimer extension active.');
         }, 1800);
     }
@@ -419,14 +475,30 @@
             vid.volume = parseFloat(volGuardado);
             volumeRange.value = volGuardado;
             atualizarIconeVolume(vid.volume);
+            if (vid.volume > 0) {
+                vid.muted = false;
+            }
         }
         volumeRange.addEventListener('input', function () {
             vid.volume = this.value;
+            if (vid.volume > 0) {
+                vid.muted = false;
+            }
             atualizarIconeVolume(vid.volume);
             localStorage.setItem('matchTimerVolume', vid.volume);
         });
         volumeRange.addEventListener('change', () => volumeRange.blur());
         volumeIconBtn.addEventListener('click', toggleMute);
+
+        vid.addEventListener('volumechange', () => {
+            if (vid.muted || vid.volume === 0) {
+                volumeRange.value = 0;
+                atualizarIconeVolume(0);
+            } else {
+                volumeRange.value = vid.volume;
+                atualizarIconeVolume(vid.volume);
+            }
+        });
 
         // --- Timeline slider ---
         timelineSlider.addEventListener('input', function () {
@@ -896,13 +968,15 @@
     }
 
     function toggleMute() {
-        if (vid.volume > 0) {
+        if (vid.volume > 0 && !vid.muted) {
             ultimoVolume = vid.volume;
             vid.volume = 0;
+            vid.muted = true;
             volumeRange.value = 0;
         } else {
-            vid.volume = ultimoVolume;
-            volumeRange.value = ultimoVolume;
+            vid.volume = ultimoVolume > 0 ? ultimoVolume : 1;
+            vid.muted = false;
+            volumeRange.value = vid.volume;
         }
         atualizarIconeVolume(vid.volume);
         localStorage.setItem('matchTimerVolume', vid.volume);
