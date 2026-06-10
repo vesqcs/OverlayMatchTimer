@@ -18,6 +18,7 @@ This tool eliminates the limitations of native web video players, providing vide
 * **Smart Timeline Markers & Kickoff Jumps:** Dynamically calculates timeline tick-marks for the 1st Half, 2nd Half, and Extra-time/Custom periods. Dedicated UI badges allow instant jumping to exactly when the ball rolled.
 * **Variable Playback Speed:** Quickly scale speed from `0.25x` up to `2.00x` using smooth drop-downs or keyboard hotkeys.
 * **Draggable Glassmorphism UI:** Both the *Setup Panel* and the *Controls Overlay* are built with an elegant glassmorphism styling and feature independent drag-and-drop handles so you can position them anywhere over your match display canvas.
+* **Smart Auto-Hide HUD:** The HUD controls smoothly fade out after 2.5 seconds of mouse inactivity to ensure an uncompromised, full-screen tactical view, instantly reappearing upon mouse movement.
 
 ---
 
