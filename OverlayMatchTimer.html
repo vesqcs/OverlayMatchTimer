@@ -1,0 +1,1905 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Overlay MatchTimer</title>
+
+    <link rel="icon" type="image/svg+xml"
+        href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Ccircle cx='20' cy='23' r='17' fill='%23151515' stroke='%2366b3ff' stroke-width='2.5'/%3E%3Crect x='16' y='2' width='8' height='4' rx='1' fill='%2366b3ff'/%3E%3Cpath d='M33 9 L36 6' stroke='%2366b3ff' stroke-width='2.5' stroke-linecap='round'/%3E%3Crect x='10' y='15' width='20' height='14' rx='1' stroke='%2300ff88' stroke-width='1.2' fill='none'/%3E%3Cline x1='20' y1='15' x2='20' y2='29' stroke='%2300ff88' stroke-width='1.2'/%3E%3Ccircle cx='20' cy='22' r='3' stroke='%2300ff88' stroke-width='1.2' fill='none'/%3E%3Cline x1='20' y1='22' x2='26' y2='15' stroke='%23ffffff' stroke-width='1.5' stroke-linecap='round'/%3E%3Ccircle cx='20' cy='22' r='2' fill='%23ffffff'/%3E%3C/svg%3E">
+
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+
+    <style>
+        body {
+            margin: 0;
+            background-color: #111;
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+        }
+
+        #video-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: black;
+        }
+
+        video {
+            width: 100%;
+            height: 100%;
+            max-height: 100vh;
+            outline: none;
+            object-fit: contain;
+        }
+
+        /* OSD - Timer e Mensagens */
+        #match-timer {
+            position: absolute;
+            top: 40px;
+            left: 40px;
+            background: rgba(0, 0, 0, 0.7);
+            border-left: 4px solid #00ff88;
+            padding: 10px 20px;
+            font-size: 32px;
+            font-weight: bold;
+            border-radius: 6px;
+            z-index: 9999;
+            pointer-events: none;
+            text-shadow: 1px 1px 3px black;
+            display: none;
+            backdrop-filter: blur(5px);
+        }
+
+        #osd-message {
+            position: absolute;
+            top: 40px;
+            left: 50%;
+            transform: translate(-50%, -10px) scale(0.9);
+            background: rgba(20, 20, 20, 0.85);
+            border: 1px solid rgba(0, 255, 136, 0.3);
+            color: #00ff88;
+            padding: 12px 28px;
+            font-size: 20px;
+            font-weight: bold;
+            border-radius: 30px;
+            z-index: 9999;
+            pointer-events: none;
+            opacity: 0;
+            box-shadow: 0 8px 32px rgba(0, 255, 136, 0.15), 0 0 15px rgba(0, 255, 136, 0.1);
+            transition: opacity 0.15s ease-out, transform 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            letter-spacing: 0.5px;
+        }
+
+        #osd-message.visible {
+            opacity: 1;
+            transform: translate(-50%, 0) scale(1);
+        }
+
+        /* Estilo Base dos Painéis (Glassmorphism) */
+        .glass-panel {
+            position: absolute;
+            background: rgba(20, 20, 20, 0.65);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+            z-index: 50;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            height: fit-content;
+            transition: border-color 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .glass-panel.playing-state {
+            border-color: rgba(0, 136, 255, 0.5);
+            box-shadow: 0 8px 32px rgba(0, 136, 255, 0.15), 0 0 12px rgba(0, 136, 255, 0.1);
+        }
+
+        /* Barra de Arrastar */
+        .drag-handle {
+            background: transparent;
+            padding: 4px 12px;
+            cursor: grab;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            height: 22px;
+        }
+
+        .drag-handle:active {
+            cursor: grabbing;
+        }
+
+        .drag-side-left {
+            flex: 1;
+            display: flex;
+            justify-content: flex-start;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .drag-center-grip {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 18px;
+            color: #555;
+            letter-spacing: 1px;
+            font-weight: bold;
+            user-select: none;
+        }
+
+        .drag-side-right {
+            flex: 1;
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+        }
+
+        .handle-btn {
+            background: none;
+            border: none;
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+            padding: 2px 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.2s;
+        }
+
+        .handle-btn:hover {
+            opacity: 0.7;
+        }
+
+        .top-select {
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #ddd;
+            font-size: 11px;
+            padding: 1px 4px;
+            border-radius: 4px;
+            outline: none;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .top-select option {
+            background: #1a1a1a;
+            color: white;
+        }
+
+        /* Painel 1: SETUP */
+        #setup-panel {
+            top: 80px;
+            left: 80px;
+            width: 320px;
+        }
+
+        .setup-content {
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .brand-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding-bottom: 5px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            margin-bottom: 5px;
+        }
+
+        .cheatsheet {
+            margin-top: 10px;
+            background: rgba(0, 0, 0, 0.25);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 6px;
+            padding: 10px;
+        }
+
+        .cheatsheet-title {
+            font-size: 10px;
+            color: #00ff88;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+            border-bottom: 1px solid rgba(0, 255, 136, 0.2);
+            padding-bottom: 4px;
+        }
+
+        .shortcut-item {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            line-height: 1.6;
+            color: #ccc;
+        }
+
+        .shortcut-key {
+            font-family: monospace;
+            color: #66b3ff;
+            font-weight: bold;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 0px 4px;
+            border-radius: 3px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        /* Painel 2: CONTROLOS */
+        #controls-panel {
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 560px;
+            display: flex;
+            flex-direction: column;
+            transition: opacity 0.3s ease;
+        }
+
+        /* Botão LIVE Dinâmico */
+        #live-btn {
+            background: transparent;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #888;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: bold;
+            padding: 3px 8px;
+            cursor: pointer;
+            margin-right: 5px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            display: none;
+            /* Controlado via JS */
+            align-items: center;
+            gap: 5px;
+            transition: all 0.3s ease;
+        }
+
+        #live-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #ccc;
+        }
+
+        #live-btn .live-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #888;
+            transition: all 0.3s ease;
+        }
+
+        /* Estado ativo (quando o utilizador está mesmo a ver ao vivo) */
+        #live-btn.is-live {
+            color: #fff;
+            border-color: rgba(255, 59, 48, 0.4);
+            cursor: default;
+        }
+
+        #live-btn.is-live .live-dot {
+            background: #ff3b30;
+            box-shadow: 0 0 6px rgba(255, 59, 48, 0.8);
+        }
+
+        #live-btn.is-live:hover {
+            background: transparent;
+        }
+
+        .timeline-container {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            padding: 8px 20px 2px 20px;
+            font-family: monospace;
+            font-size: 11px;
+            color: #aaa;
+        }
+
+        .timeline-slider-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+        }
+
+        .timeline-badges-row {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            min-height: 18px;
+        }
+
+        .timeline-slider {
+            flex: 1;
+            -webkit-appearance: none;
+            appearance: none;
+            background: rgba(255, 255, 255, 0.15);
+            height: 6px;
+            border-radius: 3px;
+            outline: none;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .timeline-slider:hover {
+            background: rgba(255, 255, 255, 0.25);
+        }
+
+        .timeline-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #00ff88;
+            box-shadow: 0 0 8px rgba(0, 255, 136, 0.6);
+            transition: transform 0.1s ease;
+        }
+
+        .timeline-slider::-webkit-slider-thumb:hover {
+            transform: scale(1.25);
+        }
+
+        .controls-content {
+            padding: 8px 20px 12px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .ctrl-group-left,
+        .ctrl-group-right {
+            display: flex;
+            gap: 8px;
+            flex: 1;
+        }
+
+        .ctrl-group-right {
+            justify-content: flex-end;
+        }
+
+        .ctrl-group-center {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            justify-content: center;
+            flex: initial;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        label {
+            font-size: 10px;
+            color: #aaa;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        input[type="file"],
+        .setup-content select {
+            width: 100%;
+            padding: 8px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid #444;
+            color: white;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+            outline: none;
+        }
+
+        input[type="text"] {
+            font-family: inherit;
+        }
+
+        .time-inputs {
+            display: flex;
+            gap: 5px;
+            align-items: center;
+        }
+
+        input[type="number"] {
+            width: 50px;
+            padding: 8px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid #444;
+            color: white;
+            border-radius: 4px;
+            text-align: center;
+            outline: none;
+        }
+
+        .btn-sync {
+            background: #00ff88;
+            color: black;
+            border: none;
+            padding: 10px;
+            font-weight: bold;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: 0.2s;
+            margin-top: 5px;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-sync:hover {
+            background: #00cc6a;
+            box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+        }
+
+        .ctrl-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #ddd;
+            padding: 8px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: bold;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 42px;
+        }
+
+        .ctrl-btn:hover {
+            background: rgba(255, 255, 255, 0.15);
+            color: white;
+            transform: translateY(-1px);
+        }
+
+        .ctrl-btn:active {
+            transform: translateY(1px);
+        }
+
+        .btn-play {
+            background: rgba(0, 136, 255, 0.1);
+            border-color: rgba(0, 136, 255, 0.3);
+            color: #66b3ff;
+            min-width: 65px;
+            transition: all 0.3s ease;
+        }
+
+        .btn-play:hover {
+            background: rgba(0, 136, 255, 0.3);
+            border-color: rgba(0, 136, 255, 0.6);
+        }
+
+        .btn-play.playing {
+            background: rgba(0, 255, 136, 0.15);
+            border-color: rgba(0, 255, 136, 0.5);
+            color: #00ff88;
+        }
+
+        .btn-play.playing:hover {
+            background: rgba(0, 255, 136, 0.3);
+            border-color: rgba(0, 255, 136, 0.7);
+        }
+
+        .btn-frame {
+            color: #ffcc00;
+            border-color: rgba(255, 204, 0, 0.3);
+        }
+
+        .separator {
+            width: 1px;
+            height: 24px;
+            background: rgba(255, 255, 255, 0.1);
+            margin: 0 4px;
+        }
+
+        #error-banner {
+            position: absolute;
+            top: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 420px;
+            z-index: 10000;
+            display: none;
+            flex-direction: column;
+            padding: 20px;
+            border-color: rgba(255, 68, 68, 0.5);
+            box-shadow: 0 8px 32px rgba(255, 68, 68, 0.15), 0 0 12px rgba(255, 68, 68, 0.1);
+        }
+
+        .error-banner-content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            text-align: center;
+        }
+
+        .error-banner-title {
+            font-weight: bold;
+            color: #ff4444;
+            font-size: 16px;
+            letter-spacing: 0.5px;
+        }
+
+        .error-banner-desc {
+            font-size: 13px;
+            color: #ccc;
+            line-height: 1.5;
+        }
+
+        .error-banner-btn {
+            background: rgba(255, 68, 68, 0.15);
+            border: 1px solid rgba(255, 68, 68, 0.3);
+            color: #ff6b6b;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.2s;
+            margin-top: 8px;
+        }
+
+        .error-banner-btn:hover {
+            background: rgba(255, 68, 68, 0.3);
+            border-color: rgba(255, 68, 68, 0.6);
+            color: white;
+        }
+
+        /* Marcadores de Kick-off */
+        .kickoff-badge {
+            background: rgba(0, 255, 136, 0.15);
+            border: 1px solid rgba(0, 255, 136, 0.3);
+            color: #00ff88;
+            font-size: 10px;
+            font-weight: bold;
+            padding: 2px 6px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 2px;
+            border-style: solid;
+        }
+
+        .kickoff-badge:hover {
+            background: rgba(0, 255, 136, 0.3);
+            color: white;
+            box-shadow: 0 0 8px rgba(0, 255, 136, 0.4);
+        }
+
+        /* Specific kickoff badge styles */
+        .kickoff-badge.k1 {
+            background: rgba(0, 255, 136, 0.15);
+            border-color: rgba(0, 255, 136, 0.3);
+            color: #00ff88;
+        }
+
+        .kickoff-badge.k1:hover {
+            background: rgba(0, 255, 136, 0.3);
+            color: white;
+            box-shadow: 0 0 8px rgba(0, 255, 136, 0.4);
+        }
+
+        .kickoff-badge.k2 {
+            background: rgba(255, 59, 48, 0.15);
+            border-color: rgba(255, 59, 48, 0.3);
+            color: #ff3b30;
+        }
+
+        .kickoff-badge.k2:hover {
+            background: rgba(255, 59, 48, 0.3);
+            color: white;
+            box-shadow: 0 0 8px rgba(255, 59, 48, 0.4);
+        }
+
+        .kickoff-badge.kc1 {
+            background: rgba(255, 149, 0, 0.15);
+            border-color: rgba(255, 149, 0, 0.3);
+            color: #ff9500;
+        }
+
+        .kickoff-badge.kc1:hover {
+            background: rgba(255, 149, 0, 0.3);
+            color: white;
+            box-shadow: 0 0 8px rgba(255, 149, 0, 0.4);
+        }
+
+        .kickoff-badge.kc2 {
+            background: rgba(191, 90, 242, 0.15);
+            border-color: rgba(191, 90, 242, 0.3);
+            color: #bf5af2;
+        }
+
+        .kickoff-badge.kc2:hover {
+            background: rgba(191, 90, 242, 0.3);
+            color: white;
+            box-shadow: 0 0 8px rgba(191, 90, 242, 0.4);
+        }
+
+        .timeline-marker-tick {
+            position: absolute;
+            width: 3px;
+            height: 12px;
+            background: #ffcc00;
+            border-radius: 1.5px;
+            transform: translate(-50%, -3px);
+            z-index: 10;
+            box-shadow: 0 0 6px rgba(255, 204, 0, 0.8);
+            pointer-events: none;
+        }
+
+        .timeline-marker-tick.k1 {
+            background: #00ff88;
+            box-shadow: 0 0 6px rgba(0, 255, 136, 0.8);
+        }
+
+        .timeline-marker-tick.k2 {
+            background: #ff3b30;
+            box-shadow: 0 0 6px rgba(255, 59, 48, 0.8);
+        }
+
+        .timeline-marker-tick.kc1 {
+            background: #ff9500;
+            box-shadow: 0 0 6px rgba(255, 149, 0, 0.8);
+        }
+
+        .timeline-marker-tick.kc2 {
+            background: #bf5af2;
+            box-shadow: 0 0 6px rgba(191, 90, 242, 0.8);
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="video-container">
+        <video id="vid"></video>
+        <div id="match-timer">00:00</div>
+        <div id="osd-message">Speed: 1.0x</div>
+
+        <div id="error-banner" class="glass-panel">
+            <div class="error-banner-content">
+                <span style="font-size: 24px;">⚠️</span>
+                <span class="error-banner-title">Stream URL Error</span>
+                <span class="error-banner-desc" id="error-banner-text">The stream URL might have expired. Please get a
+                    new DVR/Xeatre URL and paste it in the Settings.</span>
+                <button class="error-banner-btn" onclick="dismissErrorBanner()">Dismiss</button>
+            </div>
+        </div>
+
+        <div id="setup-panel" class="glass-panel">
+            <div class="drag-handle" id="setup-handle">
+                <div class="drag-side-left">
+                    <button class="handle-btn" style="cursor: default; opacity: 0.6;">⚙️</button>
+                </div>
+                <div class="drag-center-grip">≡</div>
+                <div class="drag-side-right">
+                    <button class="handle-btn" style="color: #ff4444; font-weight: bold;" onclick="esconderSetup()"
+                        title="Close">✕</button>
+                </div>
+            </div>
+            <div class="setup-content">
+
+                <div class="brand-container">
+                    <svg width="260" height="50" viewBox="0 0 260 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <g transform="translate(5, 4)">
+                            <circle cx="20" cy="23" r="17" fill="#151515" stroke="#66b3ff" stroke-width="2.5" />
+                            <rect x="16" y="2" width="8" height="4" rx="1" fill="#66b3ff" />
+                            <path d="M33 9 L36 6" stroke="#66b3ff" stroke-width="2.5" stroke-linecap="round" />
+                            <rect x="10" y="15" width="20" height="14" rx="1" stroke="#00ff88" stroke-width="1.2"
+                                fill="none" />
+                            <line x1="20" y1="15" x2="20" y2="29" stroke="#00ff88" stroke-width="1.2" />
+                            <circle cx="20" cy="22" r="3" stroke="#00ff88" stroke-width="1.2" fill="none" />
+                            <line x1="20" y1="22" x2="26" y2="15" stroke="#ffffff" stroke-width="1.5"
+                                stroke-linecap="round" />
+                            <circle cx="20" cy="22" r="2" fill="#ffffff" />
+                        </g>
+                        <text x="56" y="25" fill="#ffffff" font-family="'Segoe UI', sans-serif" font-size="16"
+                            font-weight="800" letter-spacing="1">OVERLAY</text>
+                        <text x="138" y="25" fill="#00ff88" font-family="'Segoe UI', sans-serif" font-size="16"
+                            font-weight="800" letter-spacing="1">MATCHTIMER</text>
+                        <text x="56" y="39" fill="#888" font-family="'Segoe UI', sans-serif" font-size="9"
+                            font-weight="600" letter-spacing="0.5">DEVELOPED BY VASCO OLIVEIRA</text>
+                    </svg>
+                </div>
+
+                <div class="control-group">
+                    <label>1a. Load Local Video</label>
+                    <input type="file" id="file-input" accept="video/*">
+                </div>
+
+                <div class="control-group" style="margin-top: -5px;">
+                    <label>1b. Load Stream URL ( DVR / Xeatre)</label>
+                    <div style="display: flex; gap: 5px;">
+                        <input type="text" id="url-input" placeholder="Paste the link .m3u8 or Xeatre URL here..."
+                            style="flex: 1; padding: 8px; background: rgba(0,0,0,0.3); border: 1px solid #444; color: white; border-radius: 4px; font-size: 12px; outline: none;">
+                        <button type="button" id="btn-load-url"
+                            style="background: #0088ff; color: white; border: none; padding: 0 12px; font-weight: bold; border-radius: 4px; cursor: pointer; font-size: 12px; transition: background 0.2s;">Load</button>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>2. Match Half</label>
+                    <select id="half-select">
+                        <option value="1">1st Half (Starts at 00:00)</option>
+                        <option value="2">2nd Half (Starts at 45:00)</option>
+                        <option value="custom1">Custom 1 &mdash; 1st Extra Time / Youth 2nd Half</option>
+                        <option value="custom2">Custom 2 &mdash; 2nd Extra Time</option>
+                    </select>
+                    <div id="custom-time-container-c1" style="display: none; margin-top: 5px;">
+                        <input type="number" id="custom-minute-c1" placeholder="Starting minute for Custom 1 (e.g. 90)"
+                            min="0"
+                            style="width: 100%; box-sizing: border-box; padding: 8px; background: rgba(0,0,0,0.3); border: 1px solid #444; color: white; border-radius: 4px; font-size: 12px; outline: none;">
+                    </div>
+                    <div id="custom-time-container-c2" style="display: none; margin-top: 5px;">
+                        <input type="number" id="custom-minute-c2" placeholder="Starting minute for Custom 2 (e.g. 105)"
+                            min="0"
+                            style="width: 100%; box-sizing: border-box; padding: 8px; background: rgba(0,0,0,0.3); border: 1px solid #444; color: white; border-radius: 4px; font-size: 12px; outline: none;">
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>3. Whistle Time (Hr : Min : Sec)</label>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <div class="time-inputs" style="flex: 1;">
+                            <input type="number" id="sync-hr" placeholder="0" min="0"> :
+                            <input type="number" id="sync-min" placeholder="0" min="0"> :
+                            <input type="number" id="sync-sec" placeholder="0" min="0" max="59">
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 5px;">
+                    <button class="btn-sync" onclick="iniciarTimer()" style="flex: 1;">SET KICK-OFF TIME</button>
+                    <button type="button" onclick="limparTimer()"
+                        style="background: rgba(255,68,68,0.15); color: #ff4444; border: 1px solid rgba(255,68,68,0.3); padding: 10px; font-weight: bold; border-radius: 4px; cursor: pointer; transition: 0.2s; margin-top: 5px; display: flex; align-items: center; justify-content: center;"
+                        title="Clear/Disable Timer">✕</button>
+                </div>
+
+                <div class="cheatsheet">
+                    <div class="cheatsheet-title">Shortcuts</div>
+                    <div class="shortcut-item"><span>Play / Pause</span><span class="shortcut-key">Space</span></div>
+                    <div class="shortcut-item"><span>Skip ±2s</span><span class="shortcut-key">← / →</span></div>
+                    <div class="shortcut-item"><span>Skip ±10s</span><span class="shortcut-key">Shift + →</span></div>
+                    <div class="shortcut-item"><span>Skip ±2m</span><span class="shortcut-key">Ctrl + →</span></div>
+                    <div class="shortcut-item"><span>Frame by Frame</span><span class="shortcut-key">↑ / ↓</span></div>
+                    <div class="shortcut-item"><span>Speed ±</span><span class="shortcut-key">Z / C</span></div>
+                    <div class="shortcut-item"><span>Speed 1.0x</span><span class="shortcut-key">X</span></div>
+                    <div class="shortcut-item"><span>Hide/Show Controls</span><span class="shortcut-key">H</span></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="controls-panel" class="glass-panel">
+            <div class="drag-handle" id="controls-handle">
+                <div class="drag-side-left">
+                    <button class="handle-btn" onclick="mostrarSetup()" title="Settings">⚙️</button>
+                    <select id="speed-select" class="top-select" onchange="selecionarVelocidade()">
+                        <option value="0.25">0.25x</option>
+                        <option value="0.5">0.50x</option>
+                        <option value="1.0" selected>1.00x</option>
+                        <option value="1.5">1.50x</option>
+                        <option value="2.0">2.00x</option>
+                    </select>
+                </div>
+                <div class="drag-center-grip">≡</div>
+                <div class="drag-side-right">
+                    <div style="display: flex; align-items: center; gap: 6px; margin-right: 10px;">
+
+                        <button id="live-btn" onclick="irParaLive()" title="Voltar ao Live">
+                            <span class="live-dot"></span> LIVE
+                        </button>
+
+                        <button class="handle-btn" id="volume-icon-btn" onclick="toggleMute()" title="Mute/Unmute"
+                            style="font-size: 12px; padding: 0 2px;">🔊</button>
+                        <input type="range" id="volume-range" min="0" max="1" step="0.05" value="1"
+                            style="-webkit-appearance: none; appearance: none; width: 60px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.2); outline: none; cursor: pointer;">
+                    </div>
+                    <button class="handle-btn" onclick="toggleFullScreen()" title="Fullscreen">⛶</button>
+                </div>
+            </div>
+
+            <div class="timeline-container">
+                <div class="timeline-badges-row" id="kickoff-quick-jumps">
+                    <button id="jump-k1" class="kickoff-badge k1" onclick="jumpToKickoff('1')" style="display: none;"
+                        title="Jump to 1st Half Kickoff">⚽ 1st</button>
+                    <button id="jump-k2" class="kickoff-badge k2" onclick="jumpToKickoff('2')" style="display: none;"
+                        title="Jump to 2nd Half Kickoff">⚽ 2nd</button>
+                    <button id="jump-kc1" class="kickoff-badge kc1" onclick="jumpToKickoff('custom1')"
+                        style="display: none;" title="Jump to Custom 1 Kickoff">⚽ C1</button>
+                    <button id="jump-kc2" class="kickoff-badge kc2" onclick="jumpToKickoff('custom2')"
+                        style="display: none;" title="Jump to Custom 2 Kickoff">⚽ C2</button>
+                </div>
+                <div class="timeline-slider-row">
+                    <span id="v-time-current">00:00:00</span>
+                    <div style="position: relative; flex: 1; display: flex; align-items: center;">
+                        <input type="range" id="timeline-slider" class="timeline-slider" min="0" max="100" value="0"
+                            step="0.01">
+                        <div id="timeline-markers-container"
+                            style="position: absolute; left: 6px; right: 6px; height: 6px; top: 50%; transform: translateY(-50%); pointer-events: none;">
+                        </div>
+                    </div>
+                    <span id="v-time-duration">00:00:00</span>
+                </div>
+            </div>
+
+            <div class="controls-content">
+                <div class="ctrl-group-left">
+                    <button class="ctrl-btn" onclick="saltarVideo(-120)">2m ⏪</button>
+                    <button class="ctrl-btn" onclick="saltarVideo(-10)">10s ⏪</button>
+                    <button class="ctrl-btn" onclick="saltarVideo(-2)">2s ◀</button>
+                </div>
+
+                <div class="ctrl-group-center">
+                    <div class="separator"></div>
+                    <button class="ctrl-btn btn-frame" onclick="retrocederFrame()" title="Previous Frame">|⏴</button>
+                    <button class="ctrl-btn btn-play" id="btn-main-play" onclick="togglePlay()">⏯ Play</button>
+                    <button class="ctrl-btn btn-frame" onclick="avancarFrame()" title="Next Frame">⏵|</button>
+                    <div class="separator"></div>
+                </div>
+
+                <div class="ctrl-group-right">
+                    <button class="ctrl-btn" onclick="saltarVideo(2)">2s ▶</button>
+                    <button class="ctrl-btn" onclick="saltarVideo(10)">10s ⏩</button>
+                    <button class="ctrl-btn" onclick="saltarVideo(120)">2m ⏩</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        const vid = document.getElementById('vid');
+        vid.preservesPitch = true;
+        vid.webkitPreservesPitch = true;
+        vid.mozPreservesPitch = true;
+
+        const timerUI = document.getElementById('match-timer');
+        const setupPanel = document.getElementById('setup-panel');
+        const controlsPanel = document.getElementById('controls-panel');
+        const container = document.getElementById('video-container');
+        const osd = document.getElementById('osd-message');
+        const speedSelect = document.getElementById('speed-select');
+        const btnMainPlay = document.getElementById('btn-main-play');
+        const urlInput = document.getElementById('url-input');
+
+        // Elementos da Nova Timeline
+        const timelineSlider = document.getElementById('timeline-slider');
+        const vTimeCurrent = document.getElementById('v-time-current');
+        const vTimeDuration = document.getElementById('v-time-duration');
+
+        // Elementos de Erro
+        const errorBanner = document.getElementById('error-banner');
+        const errorBannerText = document.getElementById('error-banner-text');
+
+        // Elemento Botão Live
+        const liveBtn = document.getElementById('live-btn');
+
+        let offsetEmSegundos = 0;
+        let tempoBase = 0;
+        let timerAtivo = false;
+        let osdTimeout;
+        let hlsInstance = null;
+        let isDraggingTimeline = false;
+        let isManuallyHidden = false;
+        let mouseMoveTimeout = null;
+
+        let isLocalVideo = false;
+
+        // Funções auxiliares para Program Date-Time (Sincronização Absoluta no Xeatre)
+        function isPdtTimestamp(val) {
+            return val !== null && val > 1000000;
+        }
+
+        function getProgramDateTime() {
+            if (isLocalVideo) return null;
+            if (hlsInstance) {
+                // Tenta usar playingLayer.getDateTime() se disponível (customizado/wrapper)
+                if (hlsInstance.playingLayer && typeof hlsInstance.playingLayer.getDateTime === 'function') {
+                    const dt = hlsInstance.playingLayer.getDateTime();
+                    if (dt) return (dt instanceof Date) ? dt.getTime() : Number(dt);
+                }
+
+                // Fallback para metadados de fragmento padrão do hls.js
+                if (hlsInstance.levels && hlsInstance.currentLevel !== -1) {
+                    const details = hlsInstance.levels[hlsInstance.currentLevel]?.details;
+                    if (details && details.fragments) {
+                        const ct = vid.currentTime;
+                        const frag = details.fragments.find(f => ct >= f.start && ct <= (f.start + f.duration)) || details.fragments[0];
+                        if (frag && frag.programDateTime) {
+                            const offset = ct - frag.start;
+                            const pdt = frag.programDateTime;
+                            const pdtMs = (pdt instanceof Date) ? pdt.getTime() : Number(pdt);
+                            return pdtMs + offset * 1000;
+                        }
+                    }
+                }
+            }
+            return null;
+        }
+
+        function getPdtForVideoTime(targetVideoTime) {
+            const currentPdt = getProgramDateTime();
+            if (currentPdt === null) return null;
+            return currentPdt + (targetVideoTime - vid.currentTime) * 1000;
+        }
+
+        function getVideoTimeForPdt(pdtVal) {
+            if (pdtVal === null || pdtVal === undefined) return null;
+            if (isLocalVideo) {
+                if (isPdtTimestamp(pdtVal)) return null; // Ignora se for timestamp de stream no modo local
+                return pdtVal;
+            }
+            if (!isPdtTimestamp(pdtVal)) {
+                return pdtVal; // Suporta valores antigos em segundos relativos
+            }
+            const currentPdt = getProgramDateTime();
+            if (currentPdt === null) return null;
+            return vid.currentTime + (pdtVal - currentPdt) / 1000;
+        }
+
+        // Marcadores de Kick-off
+        let kickoff1 = localStorage.getItem('matchTimerKickoff1') !== null ? parseFloat(localStorage.getItem('matchTimerKickoff1')) : null;
+        let kickoff2 = localStorage.getItem('matchTimerKickoff2') !== null ? parseFloat(localStorage.getItem('matchTimerKickoff2')) : null;
+        let kickoffC1 = localStorage.getItem('matchTimerKickoffC1') !== null ? parseFloat(localStorage.getItem('matchTimerKickoffC1')) : null;
+        let kickoffC2 = localStorage.getItem('matchTimerKickoffC2') !== null ? parseFloat(localStorage.getItem('matchTimerKickoffC2')) : null;
+
+        // Track which period was last active (for whistle-time memory)
+        let previousHalf = localStorage.getItem('matchTimerHalf') || '1';
+
+        document.getElementById('btn-load-url').onmouseover = function () { this.style.backgroundColor = '#0066cc'; };
+        document.getElementById('btn-load-url').onmouseout = function () { this.style.backgroundColor = '#0088ff'; };
+
+        // --- FOCUS MANAGEMENT & AUTO-BLUR TO PREVENT KEYBOARD SHORTCUT HIJACKING ---
+
+        // Auto-blur buttons and file inputs when clicked so keydown shortcuts are not hijacked
+        document.addEventListener('click', function (e) {
+            const el = e.target.closest('button, input[type="file"]');
+            if (el) {
+                if (el.tagName === 'INPUT' && el.type === 'file') {
+                    // Small delay to ensure browser opens dialog without blocking
+                    setTimeout(() => { el.blur(); }, 100);
+                } else {
+                    el.blur();
+                }
+            }
+        });
+
+        // Submit/set values and blur input on pressing Enter
+        urlInput.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                carregarUrlStream();
+                this.blur();
+            }
+        });
+
+        const syncInputs = ['sync-hr', 'sync-min', 'sync-sec', 'custom-minute-c1', 'custom-minute-c2'];
+        syncInputs.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.addEventListener('keydown', function (e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        iniciarTimer();
+                        this.blur();
+                    }
+                });
+            }
+        });
+
+        // MEMÓRIA DE WHISTLE TIME POR PERÍODO E CONTROLO DE CAMPOS CUSTOM
+        document.getElementById('half-select').addEventListener('change', function () {
+            const newHalf = this.value;
+
+            // 1. Save current whistle inputs for the period we are LEAVING
+            const hrVal = document.getElementById('sync-hr').value;
+            const minVal = document.getElementById('sync-min').value;
+            const secVal = document.getElementById('sync-sec').value;
+            if (hrVal !== '' || minVal !== '' || secVal !== '') {
+                localStorage.setItem('matchTimerWhistle_' + previousHalf, JSON.stringify({ h: hrVal, m: minVal, s: secVal }));
+            }
+
+            // 2. Restore saved whistle inputs for the period we are SWITCHING TO
+            const saved = localStorage.getItem('matchTimerWhistle_' + newHalf);
+            if (saved) {
+                const t = JSON.parse(saved);
+                document.getElementById('sync-hr').value = t.h;
+                document.getElementById('sync-min').value = t.m;
+                document.getElementById('sync-sec').value = t.s;
+            } else {
+                document.getElementById('sync-hr').value = '';
+                document.getElementById('sync-min').value = '';
+                document.getElementById('sync-sec').value = '';
+            }
+
+            // 3. Show / hide the correct custom minute input
+            document.getElementById('custom-time-container-c1').style.display = (newHalf === 'custom1') ? 'block' : 'none';
+            document.getElementById('custom-time-container-c2').style.display = (newHalf === 'custom2') ? 'block' : 'none';
+
+            previousHalf = newHalf;
+            this.blur();
+        });
+
+
+
+        // --- SISTEMA DE ARRASTAR PAINÉIS (DRAGGABLE) ---
+        function fazerArrastavel(elmnt, handle) {
+            let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+
+            handle.onmousedown = function (e) {
+                if (e.target.closest('.handle-btn') || e.target.closest('.top-select') || e.target.id === 'url-input' || e.target.id === 'btn-load-url' || e.target.id === 'timeline-slider' || e.target.id === 'volume-range' || e.target.id === 'live-btn') return;
+
+                e = e || window.event;
+                e.preventDefault();
+
+                // --- CÓDIGO NOVO (Para colocar no lugar do antigo) ---
+                // 1. Calcula a posição exata atual do painel em relação ao ecrã
+                const rect = elmnt.getBoundingClientRect();
+                const containerRect = container.getBoundingClientRect();
+
+                // 2. Fixa o painel nessa posição exata usando 'top' e 'left' antes de limpar o resto
+                elmnt.style.top = (rect.top - containerRect.top) + "px";
+                elmnt.style.left = (rect.left - containerRect.left) + "px";
+
+                // 3. Agora limpa-se o transform e o bottom sem correr o risco de ele saltar
+                elmnt.style.transform = 'none';
+                elmnt.style.bottom = 'auto';
+
+                pos3 = e.clientX;
+                pos4 = e.clientY;
+                document.onmouseup = pararArrastar;
+                document.onmousemove = arrastarElemento;
+            };
+
+            function arrastarElemento(e) {
+                e = e || window.event;
+                e.preventDefault();
+                pos1 = pos3 - e.clientX;
+                pos2 = pos4 - e.clientY;
+                pos3 = e.clientX;
+                pos4 = e.clientY;
+
+                let newTop = elmnt.offsetTop - pos2;
+                let newLeft = elmnt.offsetLeft - pos1;
+
+                newTop = Math.max(0, Math.min(newTop, window.innerHeight - elmnt.offsetHeight));
+                newLeft = Math.max(0, Math.min(newLeft, window.innerWidth - elmnt.offsetWidth));
+
+                elmnt.style.top = newTop + "px";
+                elmnt.style.left = newLeft + "px";
+            }
+
+            function pararArrastar() {
+                document.onmouseup = null;
+                document.onmousemove = null;
+            }
+        }
+
+        fazerArrastavel(setupPanel, document.getElementById('setup-handle'));
+        fazerArrastavel(controlsPanel, document.getElementById('controls-handle'));
+
+        function formatarTempoVideo(segundos) {
+            if (isNaN(segundos) || !isFinite(segundos)) return "00:00:00";
+            const h = Math.floor(segundos / 3600).toString().padStart(2, '0');
+            const m = Math.floor((segundos % 3600) / 60).toString().padStart(2, '0');
+            const s = Math.floor(segundos % 60).toString().padStart(2, '0');
+            return `${h}:${m}:${s}`;
+        }
+
+        function inicializarMetadadosTimeline() {
+            if (vid.duration && isFinite(vid.duration)) {
+                let minVal = 0;
+                // Para Streams Xeatre HLS, encolhe o slider para 15 minutos antes do kickoff1
+                if (!isLocalVideo && kickoff1 !== null) {
+                    const k1Time = getVideoTimeForPdt(kickoff1);
+                    if (k1Time !== null) {
+                        minVal = Math.max(0, k1Time - 900);
+                    }
+                }
+                timelineSlider.min = minVal;
+                timelineSlider.max = vid.duration;
+                vTimeDuration.innerText = formatarTempoVideo(vid.duration);
+                timelineSlider.disabled = false;
+
+                if (parseFloat(timelineSlider.value) < minVal) {
+                    timelineSlider.value = minVal;
+                }
+            } else {
+                timelineSlider.min = 0;
+                timelineSlider.max = 100;
+                vTimeDuration.innerText = "LIVE";
+                timelineSlider.disabled = true;
+            }
+            atualizarMarcadores();
+        }
+
+        vid.addEventListener('loadedmetadata', inicializarMetadadosTimeline);
+        vid.addEventListener('durationchange', inicializarMetadadosTimeline);
+
+        vid.addEventListener('timeupdate', function () {
+            if (!isDraggingTimeline) {
+                timelineSlider.value = vid.currentTime;
+                vTimeCurrent.innerText = formatarTempoVideo(vid.currentTime);
+            }
+            atualizarRelogio();
+            atualizarEstadoLive();
+
+            // Recalcula os limites do slider se o PDT do kickoff ficar disponível no stream
+            if (!isLocalVideo && kickoff1 !== null) {
+                const k1Time = getVideoTimeForPdt(kickoff1);
+                if (k1Time !== null) {
+                    const expectedMin = Math.max(0, k1Time - 900);
+                    if (parseFloat(timelineSlider.min) !== expectedMin) {
+                        inicializarMetadadosTimeline();
+                    }
+                }
+            }
+        });
+
+        timelineSlider.addEventListener('input', function () {
+            isDraggingTimeline = true;
+            vTimeCurrent.innerText = formatarTempoVideo(timelineSlider.value);
+        });
+
+        timelineSlider.addEventListener('change', function () {
+            vid.currentTime = timelineSlider.value;
+            isDraggingTimeline = false;
+            timelineSlider.blur();
+            resetControlsTimeout();
+        });
+
+        // --- LÓGICA DO VÍDEO E SETUP ---
+        document.getElementById('file-input').addEventListener('change', function (e) {
+            isLocalVideo = true;
+            dismissErrorBanner();
+            localStorage.setItem('matchTimerTipoMedia', 'local');
+
+
+            if (hlsInstance) {
+                hlsInstance.destroy();
+                hlsInstance = null;
+            }
+            const file = e.target.files[0];
+            if (file) {
+                const fileURL = URL.createObjectURL(file);
+                vid.src = fileURL;
+                vid.load();
+                vid.play().catch(err => console.log("Waiting for user click."));
+            }
+            verificarSeEStream();
+            this.blur();
+        });
+
+        document.getElementById('file-input').addEventListener('cancel', function () {
+            this.blur();
+        });
+
+        function carregarUrlStream() {
+            isLocalVideo = false;
+            dismissErrorBanner();
+
+            let rawUrl = urlInput.value.trim();
+            let inputUrl = rawUrl;
+            if (!inputUrl) return;
+
+            localStorage.setItem('matchTimerUrl', rawUrl);
+            localStorage.setItem('matchTimerTipoMedia', 'stream');
+
+            if (inputUrl.includes('?url=')) {
+                try {
+                    const extraido = inputUrl.split('?url=')[1].split('&')[0];
+                    inputUrl = decodeURIComponent(extraido);
+                } catch (err) {
+                    console.log("Erro ao processar URL codificada.");
+                }
+            }
+
+            if (hlsInstance) {
+                hlsInstance.destroy();
+                hlsInstance = null;
+            }
+            vid.removeAttribute('src');
+            vid.load();
+
+            if (Hls.isSupported()) {
+                hlsInstance = new Hls({
+                    liveSyncDuration: 5,
+                    liveMaxLatencyDuration: 86400,
+                    enableWorker: true
+                });
+                hlsInstance.loadSource(inputUrl);
+                hlsInstance.attachMedia(vid);
+
+                hlsInstance.on(Hls.Events.MANIFEST_PARSED, function () {
+                    vid.play().catch(err => console.log("Waiting for user click."));
+                });
+
+                hlsInstance.on(Hls.Events.ERROR, function (event, data) {
+                    if (data.fatal) {
+                        switch (data.type) {
+                            case Hls.ErrorTypes.NETWORK_ERROR:
+                                const statusCode = data.response ? data.response.code : 0;
+                                if (statusCode === 403 || statusCode === 404 || statusCode === 410) {
+                                    mostrarErro("The stream URL expired or was rejected (HTTP " + statusCode + "). Please copy a new DVR/Xeatre URL and load it.");
+                                } else {
+                                    hlsInstance.startLoad();
+                                    mostrarOSD("🔄 Reconnecting...");
+                                }
+                                break;
+                            case Hls.ErrorTypes.MEDIA_ERROR:
+                                console.log("Fatal HLS media error, attempting silent recovery...");
+                                hlsInstance.recoverMediaError();
+                                mostrarOSD("🔄 Recovering playback...");
+                                break;
+                            default:
+                                hlsInstance.destroy();
+                                mostrarErro("Fatal playback error. Please get a new DVR/Xeatre URL.");
+                                break;
+                        }
+                    } else {
+                        // Non-fatal network errors that might still indicate expiration
+                        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                            const statusCode = data.response ? data.response.code : 0;
+                            if (statusCode === 403 || statusCode === 404 || statusCode === 410) {
+                                mostrarErro("The stream URL expired (HTTP " + statusCode + "). Please get a new DVR/Xeatre URL.");
+                            }
+                        }
+                    }
+                });
+
+            } else if (vid.canPlayType('application/vnd.apple.mpegurl')) {
+                vid.src = inputUrl;
+                vid.load();
+                vid.play().catch(err => console.log("Waiting for user click."));
+            } else {
+                alert("O teu browser não suporta reprodução de fluxos de vídeo HLS.");
+            }
+
+            mostrarOSD("🌐 Stream Loaded");
+            verificarSeEStream();
+        }
+
+        document.getElementById('btn-load-url').addEventListener('click', carregarUrlStream);
+
+        vid.addEventListener('mouseup', function () { this.blur(); });
+
+        vid.addEventListener('play', function () {
+            if (document.activeElement === vid) this.blur();
+            btnMainPlay.innerHTML = "⏸ Pause";
+            btnMainPlay.classList.add('playing');
+            controlsPanel.classList.add('playing-state');
+            resetControlsTimeout();
+        });
+        vid.addEventListener('pause', function () {
+            if (document.activeElement === vid) this.blur();
+            btnMainPlay.innerHTML = "⏯ Play";
+            btnMainPlay.classList.remove('playing');
+            controlsPanel.classList.remove('playing-state');
+        });
+
+        function mostrarErro(mensagem) {
+            errorBannerText.innerText = mensagem;
+            errorBanner.style.display = 'flex';
+            mostrarSetup();
+            // Focus on URL input automatically so they can paste the new URL immediately
+            const urlInputEl = document.getElementById('url-input');
+            if (urlInputEl) {
+                urlInputEl.focus();
+                urlInputEl.select();
+            }
+        }
+
+        function dismissErrorBanner() {
+            errorBanner.style.display = 'none';
+        }
+
+        // Handle native HTML5 video player errors (e.g. for Safari, local files, or fallback playback)
+        vid.addEventListener('error', function () {
+            const err = vid.error;
+            if (err) {
+                let msg = "Error loading video.";
+                if (err.code === 2) {
+                    msg = "Network error while loading video. The URL might have expired.";
+                } else if (err.code === 4) {
+                    msg = "The stream URL expired or was not found (HTTP 404/403). Please copy a new DVR/Xeatre URL.";
+                }
+                mostrarErro(msg);
+            }
+        });
+
+        function esconderSetup() {
+            setupPanel.style.display = 'none';
+            if (document.activeElement) document.activeElement.blur();
+        }
+
+        function mostrarSetup() {
+            setupPanel.style.display = 'flex';
+        }
+
+        function iniciarTimer() {
+            let hInput = document.getElementById('sync-hr').value;
+            let mInput = document.getElementById('sync-min').value;
+            let sInput = document.getElementById('sync-sec').value;
+
+            // SE ESTIVER TUDO VAZIO: Sincroniza automaticamente com o frame onde o vídeo está parado (Auto-Capture)
+            if (hInput === '' && mInput === '' && sInput === '') {
+                const tempoAtual = vid.currentTime || 0;
+                const h = Math.floor(tempoAtual / 3600);
+                const m = Math.floor((tempoAtual % 3600) / 60);
+                const s = Math.floor(tempoAtual % 60);
+
+                document.getElementById('sync-hr').value = h;
+                document.getElementById('sync-min').value = m;
+                document.getElementById('sync-sec').value = s;
+
+                hInput = h.toString();
+                mInput = m.toString();
+                sInput = s.toString();
+                mostrarOSD('🎯 Captured: ' + formatarTempoVideo(tempoAtual));
+            }
+
+            const h = parseInt(hInput) || 0;
+            const m = parseInt(mInput) || 0;
+            const s = parseInt(sInput) || 0;
+            const parte = document.getElementById('half-select').value;
+
+            if (parte === '2') {
+                tempoBase = 45 * 60;
+            } else if (parte === 'custom1') {
+                const customMin = parseInt(document.getElementById('custom-minute-c1').value) || 0;
+                tempoBase = customMin * 60;
+            } else if (parte === 'custom2') {
+                const customMin = parseInt(document.getElementById('custom-minute-c2').value) || 0;
+                tempoBase = customMin * 60;
+            } else {
+                tempoBase = 0;
+            }
+
+            const rawOffset = (h * 3600) + (m * 60) + s;
+            let kickoffVal = rawOffset;
+            if (!isLocalVideo) {
+                const pdtVal = getPdtForVideoTime(rawOffset);
+                if (pdtVal !== null) {
+                    kickoffVal = pdtVal; // Guarda PDT absoluto para o Stream
+                }
+            }
+            offsetEmSegundos = kickoffVal;
+            timerAtivo = true;
+            timerUI.style.display = 'block';
+            previousHalf = parte;
+
+            // Guardar no LocalStorage para resistir a refreshes
+            localStorage.setItem('matchTimerAtivo', 'true');
+            localStorage.setItem('matchTimerOffset', offsetEmSegundos);
+            localStorage.setItem('matchTimerTempoBase', tempoBase);
+            localStorage.setItem('matchTimerSyncHr', h);
+            localStorage.setItem('matchTimerSyncMin', m);
+            localStorage.setItem('matchTimerSyncSec', s);
+            localStorage.setItem('matchTimerHalf', parte);
+            if (parte === 'custom1') localStorage.setItem('matchTimerCustomMinC1', document.getElementById('custom-minute-c1').value);
+            if (parte === 'custom2') localStorage.setItem('matchTimerCustomMinC2', document.getElementById('custom-minute-c2').value);
+
+            // Guardar whistle time para este período
+            localStorage.setItem('matchTimerWhistle_' + parte, JSON.stringify({ h, m, s }));
+
+            // Guardar marcadores de Kick-off
+            if (parte === '1') {
+                kickoff1 = offsetEmSegundos;
+                localStorage.setItem('matchTimerKickoff1', kickoff1);
+            } else if (parte === '2') {
+                kickoff2 = offsetEmSegundos;
+                localStorage.setItem('matchTimerKickoff2', kickoff2);
+            } else if (parte === 'custom1') {
+                kickoffC1 = offsetEmSegundos;
+                localStorage.setItem('matchTimerKickoffC1', kickoffC1);
+            } else if (parte === 'custom2') {
+                kickoffC2 = offsetEmSegundos;
+                localStorage.setItem('matchTimerKickoffC2', kickoffC2);
+            }
+
+            inicializarMetadadosTimeline();
+            atualizarMarcadores();
+            atualizarRelogio();
+            esconderSetup();
+            mostrarOSD('⏱ Timer Synced');
+        }
+
+        function limparTimer() {
+            timerAtivo = false;
+            timerUI.style.display = 'none';
+            offsetEmSegundos = 0;
+            tempoBase = 0;
+            previousHalf = '1';
+
+            localStorage.removeItem('matchTimerAtivo');
+            localStorage.removeItem('matchTimerOffset');
+            localStorage.removeItem('matchTimerTempoBase');
+            localStorage.removeItem('matchTimerSyncHr');
+            localStorage.removeItem('matchTimerSyncMin');
+            localStorage.removeItem('matchTimerSyncSec');
+            localStorage.removeItem('matchTimerHalf');
+            localStorage.removeItem('matchTimerCustomMinC1');
+            localStorage.removeItem('matchTimerCustomMinC2');
+
+            // Limpar whistle memories para todos os períodos
+            localStorage.removeItem('matchTimerWhistle_1');
+            localStorage.removeItem('matchTimerWhistle_2');
+            localStorage.removeItem('matchTimerWhistle_custom1');
+            localStorage.removeItem('matchTimerWhistle_custom2');
+
+            // Limpar marcadores de Kick-off
+            kickoff1 = null; kickoff2 = null;
+            kickoffC1 = null; kickoffC2 = null;
+            localStorage.removeItem('matchTimerKickoff1');
+            localStorage.removeItem('matchTimerKickoff2');
+            localStorage.removeItem('matchTimerKickoffC1');
+            localStorage.removeItem('matchTimerKickoffC2');
+
+            inicializarMetadadosTimeline();
+            atualizarMarcadores();
+
+            document.getElementById('sync-hr').value = '';
+            document.getElementById('sync-min').value = '';
+            document.getElementById('sync-sec').value = '';
+            document.getElementById('half-select').value = '1';
+            document.getElementById('custom-time-container-c1').style.display = 'none';
+            document.getElementById('custom-time-container-c2').style.display = 'none';
+            document.getElementById('custom-minute-c1').value = '';
+            document.getElementById('custom-minute-c2').value = '';
+
+            mostrarOSD('✕ Timer Cleared');
+        }
+
+        function toggleFullScreen() {
+            if (!document.fullscreenElement) { container.requestFullscreen().catch(err => { }); }
+            else { document.exitFullscreen(); }
+            if (document.activeElement) document.activeElement.blur();
+        }
+
+        vid.addEventListener('dblclick', toggleFullScreen);
+
+        function atualizarRelogio() {
+            if (!timerAtivo) return;
+
+            const tAtual = vid.currentTime;
+
+            // Resolve os kickoffs dinamicamente para segundos relativos do vídeo atual
+            const k1 = getVideoTimeForPdt(kickoff1);
+            const k2 = getVideoTimeForPdt(kickoff2);
+            const kC1 = getVideoTimeForPdt(kickoffC1);
+            const kC2 = getVideoTimeForPdt(kickoffC2);
+
+            let resolvedOffset = getVideoTimeForPdt(offsetEmSegundos);
+            if (resolvedOffset === null) {
+                if (!isLocalVideo && isPdtTimestamp(offsetEmSegundos)) {
+                    // Evita exibir relógio incorreto antes do PDT carregar no HLS
+                    return;
+                }
+                resolvedOffset = 0;
+            }
+
+            let kickoffUsar = resolvedOffset;
+            let baseUsar = tempoBase;
+
+            // Determinar dinamicamente o período com base na timeline
+            if (kC2 !== null && tAtual >= kC2) {
+                kickoffUsar = kC2;
+                const customMinC2 = parseInt(localStorage.getItem('matchTimerCustomMinC2')) || 105;
+                baseUsar = customMinC2 * 60;
+            } else if (kC1 !== null && tAtual >= kC1) {
+                kickoffUsar = kC1;
+                const customMinC1 = parseInt(localStorage.getItem('matchTimerCustomMinC1')) || 90;
+                baseUsar = customMinC1 * 60;
+            } else if (k2 !== null && tAtual >= k2) {
+                kickoffUsar = k2;
+                baseUsar = 45 * 60;
+            } else if (k1 !== null) {
+                kickoffUsar = k1;
+                baseUsar = 0;
+            }
+
+            const tempoDeJogoRelativo = tAtual - kickoffUsar;
+            const tempoDeJogoTotal = tempoDeJogoRelativo + baseUsar;
+
+            // Se ainda assim for antes do pontapé de saída do jogo (1º tempo)
+            if (k1 !== null && tAtual < k1) {
+                timerUI.innerText = "Pre-Match";
+                timerUI.style.color = "#ffcc00";
+                return;
+            }
+
+            timerUI.style.color = "white";
+            const minutos = Math.floor(tempoDeJogoTotal / 60).toString().padStart(2, '0');
+            const segundos = Math.floor(tempoDeJogoTotal % 60).toString().padStart(2, '0');
+            timerUI.innerText = `${minutos}:${segundos}`;
+        }
+
+        function atualizarMarcadores() {
+            const markerContainer = document.getElementById('timeline-markers-container');
+            const btnK1 = document.getElementById('jump-k1');
+            const btnK2 = document.getElementById('jump-k2');
+            const btnKC1 = document.getElementById('jump-kc1');
+            const btnKC2 = document.getElementById('jump-kc2');
+
+            if (!markerContainer) return;
+            markerContainer.innerHTML = '';
+
+            const duration = vid.duration;
+            if (!duration || !isFinite(duration)) {
+                btnK1.style.display = btnK2.style.display = btnKC1.style.display = btnKC2.style.display = 'none';
+                return;
+            }
+
+            const k1Val = getVideoTimeForPdt(kickoff1);
+            const k2Val = getVideoTimeForPdt(kickoff2);
+            const kC1Val = getVideoTimeForPdt(kickoffC1);
+            const kC2Val = getVideoTimeForPdt(kickoffC2);
+
+            const markers = [
+                { val: k1Val, btn: btnK1, cls: 'k1', label: '1st Half Kickoff' },
+                { val: k2Val, btn: btnK2, cls: 'k2', label: '2nd Half Kickoff' },
+                { val: kC1Val, btn: btnKC1, cls: 'kc1', label: 'Custom 1 Kickoff' },
+                { val: kC2Val, btn: btnKC2, cls: 'kc2', label: 'Custom 2 Kickoff' },
+            ];
+
+            const minVal = parseFloat(timelineSlider.min) || 0;
+            const maxVal = parseFloat(timelineSlider.max) || duration;
+            const range = maxVal - minVal;
+
+            markers.forEach(({ val, btn, cls, label }) => {
+                if (val !== null && val >= minVal && val <= maxVal && range > 0) {
+                    btn.style.display = 'inline-flex';
+                    const percent = ((val - minVal) / range) * 100;
+                    markerContainer.innerHTML += `<div class="timeline-marker-tick ${cls}" style="left: ${percent}%;" title="${label}"></div>`;
+                } else {
+                    btn.style.display = 'none';
+                }
+            });
+        }
+
+        function jumpToKickoff(half) {
+            const map = { '1': kickoff1, '2': kickoff2, 'custom1': kickoffC1, 'custom2': kickoffC2 };
+            const labels = { '1': '1st Half', '2': '2nd Half', 'custom1': 'Custom 1', 'custom2': 'Custom 2' };
+            const rawTarget = map[half];
+            if (rawTarget !== null && rawTarget !== undefined) {
+                const target = getVideoTimeForPdt(rawTarget);
+                if (target !== null && target >= 0 && target <= vid.duration) {
+                    vid.currentTime = target;
+                    mostrarOSD(`⚽ Jumped to ${labels[half]} Kickoff`);
+                }
+            }
+        }
+
+        function mostrarOSD(texto) {
+            osd.innerText = texto;
+            osd.classList.remove('visible');
+            void osd.offsetWidth;
+            osd.classList.add('visible');
+
+            clearTimeout(osdTimeout);
+            osdTimeout = setTimeout(() => { osd.classList.remove('visible'); }, 1500);
+        }
+
+        function resetControlsTimeout() {
+            if (mouseMoveTimeout) {
+                clearTimeout(mouseMoveTimeout);
+                mouseMoveTimeout = null;
+            }
+
+            if (isManuallyHidden) return;
+
+            if (vid && (!vid.duration || !isFinite(vid.duration))) return;
+
+            if (controlsPanel) {
+                controlsPanel.style.opacity = '1';
+                controlsPanel.style.pointerEvents = 'auto';
+            }
+
+            mouseMoveTimeout = setTimeout(() => {
+                if (isDraggingTimeline) {
+                    resetControlsTimeout();
+                    return;
+                }
+                if (controlsPanel) {
+                    controlsPanel.style.opacity = '0';
+                    controlsPanel.style.pointerEvents = 'none';
+                }
+            }, 2500);
+        }
+
+        function saltarVideo(segundos) {
+            vid.currentTime += segundos;
+            let icon = segundos > 0 ? "⏩" : "⏪";
+            mostrarOSD(`${icon} ${segundos > 0 ? '+' : ''}${segundos}s`);
+            if (document.activeElement) document.activeElement.blur();
+        }
+
+        function togglePlay() {
+            if (vid.paused) { vid.play(); mostrarOSD("▶ Play"); }
+            else { vid.pause(); mostrarOSD("⏸ Pause"); }
+            if (document.activeElement) document.activeElement.blur();
+        }
+
+        function avancarFrame() {
+            vid.pause();
+            vid.currentTime += 0.04;
+            mostrarOSD("🎞 +1 Frame");
+            if (document.activeElement) document.activeElement.blur();
+        }
+
+        function retrocederFrame() {
+            vid.pause();
+            vid.currentTime -= 0.04;
+            mostrarOSD("🎞 -1 Frame");
+            if (document.activeElement) document.activeElement.blur();
+        }
+
+        function selecionarVelocidade() {
+            const valor = parseFloat(speedSelect.value);
+            vid.playbackRate = valor;
+            mostrarOSD("⚡ Speed: " + valor.toFixed(2) + "x");
+            if (document.activeElement) document.activeElement.blur();
+        }
+
+        function syncSpeedSelect() {
+            const currentRate = vid.playbackRate;
+            const allowedRates = [0.25, 0.5, 1.0, 1.5, 2.0];
+            const closestRate = allowedRates.reduce((prev, curr) => 
+                Math.abs(curr - currentRate) < Math.abs(prev - currentRate) ? curr : prev
+            );
+            const rateStrings = { 0.25: "0.25", 0.5: "0.5", 1.0: "1.0", 1.5: "1.5", 2.0: "2.0" };
+            if (speedSelect) {
+                speedSelect.value = rateStrings[closestRate] || closestRate.toString();
+            }
+        }
+
+        window.addEventListener('keydown', function (e) {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+
+            const key = e.key.toLowerCase();
+            const teclasControladas = ['arrowright', 'arrowleft', 'arrowup', 'arrowdown', 'z', 'c', 'x', 'h', ' '];
+
+            if (teclasControladas.includes(key)) {
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                if (document.activeElement === vid) vid.blur();
+            }
+
+            switch (key) {
+                case 'arrowright':
+                    if (e.ctrlKey) { saltarVideo(120); }
+                    else if (e.shiftKey) { saltarVideo(10); }
+                    else { saltarVideo(2); }
+                    break;
+                case 'arrowleft':
+                    if (e.ctrlKey) { saltarVideo(-120); }
+                    else if (e.shiftKey) { saltarVideo(-10); }
+                    else { saltarVideo(-2); }
+                    break;
+                case 'arrowup':
+                    avancarFrame();
+                    break;
+                case 'arrowdown':
+                    retrocederFrame();
+                    break;
+                case 'z': {
+                    const allowedRates = [0.25, 0.5, 1.0, 1.5, 2.0];
+                    const currentRate = vid.playbackRate;
+                    const closestRate = allowedRates.reduce((prev, curr) => 
+                        Math.abs(curr - currentRate) < Math.abs(prev - currentRate) ? curr : prev
+                    );
+                    const currentIndex = allowedRates.indexOf(closestRate);
+                    const newIndex = Math.max(0, currentIndex - 1);
+                    vid.playbackRate = allowedRates[newIndex];
+                    syncSpeedSelect();
+                    mostrarOSD("⚡ Speed: " + vid.playbackRate.toFixed(2) + "x");
+                    break;
+                }
+                case 'c': {
+                    const allowedRates = [0.25, 0.5, 1.0, 1.5, 2.0];
+                    const currentRate = vid.playbackRate;
+                    const closestRate = allowedRates.reduce((prev, curr) => 
+                        Math.abs(curr - currentRate) < Math.abs(prev - currentRate) ? curr : prev
+                    );
+                    const currentIndex = allowedRates.indexOf(closestRate);
+                    const newIndex = Math.min(allowedRates.length - 1, currentIndex + 1);
+                    vid.playbackRate = allowedRates[newIndex];
+                    syncSpeedSelect();
+                    mostrarOSD("⚡ Speed: " + vid.playbackRate.toFixed(2) + "x");
+                    break;
+                }
+                case 'x':
+                    vid.playbackRate = 1.0;
+                    syncSpeedSelect();
+                    mostrarOSD("⚡ Speed: 1.00x");
+                    break;
+                case ' ':
+                    togglePlay();
+                    break;
+                case 'h':
+                    if (controlsPanel) {
+                        if (isManuallyHidden) {
+                            isManuallyHidden = false;
+                            resetControlsTimeout();
+                            mostrarOSD('🖥️ Controls Visible');
+                        } else {
+                            isManuallyHidden = true;
+                            if (mouseMoveTimeout) {
+                                clearTimeout(mouseMoveTimeout);
+                                mouseMoveTimeout = null;
+                            }
+                            controlsPanel.style.opacity = '0';
+                            controlsPanel.style.pointerEvents = 'none';
+                            mostrarOSD('🙈 Controls Hidden');
+                        }
+                    }
+                    break;
+
+            }
+        }, true);
+
+        const volumeRange = document.getElementById('volume-range');
+        const volumeIconBtn = document.getElementById('volume-icon-btn');
+        let ultimoVolume = 1;
+
+        const volumeGuardado = localStorage.getItem('matchTimerVolume');
+        if (volumeGuardado !== null) {
+            vid.volume = parseFloat(volumeGuardado);
+            volumeRange.value = volumeGuardado;
+            atualizarIconeVolume(vid.volume);
+        }
+
+        volumeRange.addEventListener('input', function () {
+            vid.volume = volumeRange.value;
+            atualizarIconeVolume(vid.volume);
+            localStorage.setItem('matchTimerVolume', vid.volume);
+        });
+
+        volumeRange.addEventListener('change', function () {
+            volumeRange.blur();
+        });
+
+        function toggleMute() {
+            if (vid.volume > 0) {
+                ultimoVolume = vid.volume;
+                vid.volume = 0;
+                volumeRange.value = 0;
+            } else {
+                vid.volume = ultimoVolume;
+                volumeRange.value = ultimoVolume;
+            }
+            atualizarIconeVolume(vid.volume);
+            localStorage.setItem('matchTimerVolume', vid.volume);
+            volumeIconBtn.blur();
+        }
+
+        function atualizarIconeVolume(vol) {
+            if (vol === 0) {
+                volumeIconBtn.innerText = "🔇";
+            } else if (vol < 0.5) {
+                volumeIconBtn.innerText = "🔉";
+            } else {
+                volumeIconBtn.innerText = "🔊";
+            }
+        }
+
+        // --- LÓGICA DO BOTÃO LIVE ---
+
+        function irParaLive() {
+            if (!vid) return;
+
+            if (hlsInstance && typeof hlsInstance.liveSyncPosition === 'number') {
+                vid.currentTime = hlsInstance.liveSyncPosition;
+            } else if (vid.seekable && vid.seekable.length > 0) {
+                vid.currentTime = vid.seekable.end(vid.seekable.length - 1) - 4.0;
+            } else if (vid.duration && vid.duration !== Infinity) {
+                vid.currentTime = vid.duration - 4.0;
+            }
+
+            liveBtn.blur();
+        }
+
+        function atualizarEstadoLive() {
+            if (isLocalVideo || liveBtn.style.display === 'none') return;
+
+            let liveEdge = 0;
+            if (vid.seekable && vid.seekable.length > 0) {
+                liveEdge = vid.seekable.end(vid.seekable.length - 1);
+            } else if (vid.duration && isFinite(vid.duration)) {
+                liveEdge = vid.duration;
+            }
+
+            const distParaFim = liveEdge - vid.currentTime;
+
+            // Allow up to 8 seconds of latency/buffer drift before disabling the "LIVE" status
+            if (liveEdge > 0 && distParaFim <= 8) {
+                liveBtn.classList.add('is-live');
+            } else {
+                liveBtn.classList.remove('is-live');
+            }
+        }
+
+        function verificarSeEStream() {
+            if (isLocalVideo) {
+                liveBtn.style.display = 'none';
+            } else if (urlInput.value.trim() !== '') {
+                liveBtn.style.display = 'flex';
+            } else {
+                liveBtn.style.display = 'none';
+            }
+        }
+
+        vid.addEventListener('loadstart', verificarSeEStream);
+        vid.addEventListener('loadedmetadata', function () {
+            verificarSeEStream();
+            atualizarMarcadores();
+            resetControlsTimeout();
+        });
+        vid.addEventListener('durationchange', function () {
+            atualizarMarcadores();
+        });
+
+        verificarSeEStream();
+
+        // --- INICIALIZAR VARIÁVEIS GUARDADAS (LOCAL STORAGE) ---
+        const urlGuardado = localStorage.getItem('matchTimerUrl');
+        const tipoMediaGuardado = localStorage.getItem('matchTimerTipoMedia');
+        if (tipoMediaGuardado === 'local') {
+            isLocalVideo = true;
+        }
+        if (urlGuardado) {
+            urlInput.value = urlGuardado;
+            if (tipoMediaGuardado === 'stream') {
+                carregarUrlStream();
+            }
+        }
+
+        // Recuperar o estado do Match Timer após Refresh
+        const timerAtivoGuardado = localStorage.getItem('matchTimerAtivo');
+        if (timerAtivoGuardado === 'true') {
+            timerAtivo = true;
+            offsetEmSegundos = parseFloat(localStorage.getItem('matchTimerOffset')) || 0;
+            tempoBase = parseFloat(localStorage.getItem('matchTimerTempoBase')) || 0;
+            timerUI.style.display = 'block';
+
+            document.getElementById('sync-hr').value = localStorage.getItem('matchTimerSyncHr') || '';
+            document.getElementById('sync-min').value = localStorage.getItem('matchTimerSyncMin') || '';
+            document.getElementById('sync-sec').value = localStorage.getItem('matchTimerSyncSec') || '';
+            if (localStorage.getItem('matchTimerHalf')) {
+                document.getElementById('half-select').value = localStorage.getItem('matchTimerHalf');
+            }
+
+            setupPanel.style.display = 'none';
+        }
+
+        // Auto-hide controls on mouse inactivity
+        vid.addEventListener('mousemove', resetControlsTimeout);
+        controlsPanel.addEventListener('mousemove', resetControlsTimeout);
+        resetControlsTimeout();
+    </script>
+</body>
+
+</html>
