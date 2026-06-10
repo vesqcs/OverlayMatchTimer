@@ -252,6 +252,7 @@
             width: 560px;
             display: flex;
             flex-direction: column;
+            transition: opacity 0.3s ease;
         }
 
         /* Botão LIVE Dinâmico */
@@ -901,6 +902,8 @@
         let osdTimeout;
         let hlsInstance = null;
         let isDraggingTimeline = false;
+        let isManuallyHidden = false;
+        let mouseMoveTimeout = null;
 
         let isLocalVideo = false;
 
@@ -1164,6 +1167,7 @@
             vid.currentTime = timelineSlider.value;
             isDraggingTimeline = false;
             timelineSlider.blur();
+            resetControlsTimeout();
         });
 
         // --- LÓGICA DO VÍDEO E SETUP ---
@@ -1286,6 +1290,7 @@
             btnMainPlay.innerHTML = "⏸ Pause";
             btnMainPlay.classList.add('playing');
             controlsPanel.classList.add('playing-state');
+            resetControlsTimeout();
         });
         vid.addEventListener('pause', function () {
             if (document.activeElement === vid) this.blur();
@@ -1597,6 +1602,33 @@
             osdTimeout = setTimeout(() => { osd.classList.remove('visible'); }, 1500);
         }
 
+        function resetControlsTimeout() {
+            if (mouseMoveTimeout) {
+                clearTimeout(mouseMoveTimeout);
+                mouseMoveTimeout = null;
+            }
+
+            if (isManuallyHidden) return;
+
+            if (vid && (!vid.duration || !isFinite(vid.duration))) return;
+
+            if (controlsPanel) {
+                controlsPanel.style.opacity = '1';
+                controlsPanel.style.pointerEvents = 'auto';
+            }
+
+            mouseMoveTimeout = setTimeout(() => {
+                if (isDraggingTimeline) {
+                    resetControlsTimeout();
+                    return;
+                }
+                if (controlsPanel) {
+                    controlsPanel.style.opacity = '0';
+                    controlsPanel.style.pointerEvents = 'none';
+                }
+            }, 2500);
+        }
+
         function saltarVideo(segundos) {
             vid.currentTime += segundos;
             let icon = segundos > 0 ? "⏩" : "⏪";
@@ -1686,24 +1718,20 @@
                     togglePlay();
                     break;
                 case 'h':
-                    // 1. Tenta agarrar o painel da extensão se ele existir na página
-                    let elementoParaEsconder = null;
-                    if (typeof controlsPanel !== 'undefined' && controlsPanel) {
-                        elementoParaEsconder = controlsPanel;
-                    } else {
-                        // 2. Se não existir (estamos no teu HTML principal), procura pela div cheatsheet
-                        elementoParaEsconder = document.querySelector('.cheatsheet');
-                    }
-
-                    if (elementoParaEsconder) {
-                        if (elementoParaEsconder.style.display === 'none') {
-                            elementoParaEsconder.style.display = ''; // Mostra o painel restaurando o layout original
-                            if (typeof isManuallyHidden !== 'undefined') isManuallyHidden = false;
-                            if (typeof mostrarOSD === 'function') mostrarOSD('🖥️ Controls Visible');
+                    if (controlsPanel) {
+                        if (isManuallyHidden) {
+                            isManuallyHidden = false;
+                            resetControlsTimeout();
+                            mostrarOSD('🖥️ Controls Visible');
                         } else {
-                            elementoParaEsconder.style.display = 'none'; // Esconde o painel
-                            if (typeof isManuallyHidden !== 'undefined') isManuallyHidden = true;
-                            if (typeof mostrarOSD === 'function') mostrarOSD('🙈 Controls Hidden');
+                            isManuallyHidden = true;
+                            if (mouseMoveTimeout) {
+                                clearTimeout(mouseMoveTimeout);
+                                mouseMoveTimeout = null;
+                            }
+                            controlsPanel.style.opacity = '0';
+                            controlsPanel.style.pointerEvents = 'none';
+                            mostrarOSD('🙈 Controls Hidden');
                         }
                     }
                     break;
@@ -1806,6 +1834,7 @@
         vid.addEventListener('loadedmetadata', function () {
             verificarSeEStream();
             atualizarMarcadores();
+            resetControlsTimeout();
         });
         vid.addEventListener('durationchange', function () {
             atualizarMarcadores();
@@ -1843,6 +1872,11 @@
 
             setupPanel.style.display = 'none';
         }
+
+        // Auto-hide controls on mouse inactivity
+        vid.addEventListener('mousemove', resetControlsTimeout);
+        controlsPanel.addEventListener('mousemove', resetControlsTimeout);
+        resetControlsTimeout();
     </script>
 </body>
 

@@ -24,6 +24,7 @@
     let osdTimeout = null;
     let isDraggingTimeline = false;
     let isManuallyHidden = false;
+    let mouseMoveTimeout = null;
     const isLocalVideo = false; // Extension always targets a live/DVR stream
 
     // Kickoff markers (persisted in localStorage)
@@ -437,6 +438,7 @@
             seekTo(t);
             isDraggingTimeline = false;
             this.blur();
+            resetControlsTimeout();
         });
 
         // --- Video element events ---
@@ -470,6 +472,7 @@
             btnMainPlay.innerHTML = '⏸ Pause';
             btnMainPlay.classList.add('playing');
             controlsPanel.classList.add('playing-state');
+            resetControlsTimeout();
         });
         vid.addEventListener('pause', () => {
             btnMainPlay.innerHTML = '⏯ Play';
@@ -480,6 +483,11 @@
         // --- Drag system for both panels ---
         fazerArrastavel(setupPanel, q('setup-handle'));
         fazerArrastavel(controlsPanel, q('controls-handle'));
+
+        // --- Auto-hide controls on mouse inactivity ---
+        vid.addEventListener('mousemove', resetControlsTimeout);
+        controlsPanel.addEventListener('mousemove', resetControlsTimeout);
+        resetControlsTimeout();
 
         // --- Keyboard shortcuts (capture phase, highest priority) ---
         document.addEventListener('keydown', handleKeydown, true);
@@ -611,6 +619,7 @@
             // --- SE FOR DVR (REVIEW): Mostra os controlos (caso não tenham sido escondidos pelo H) ---
             if (controlsPanel && !isManuallyHidden) {
                 controlsPanel.style.display = ''; // Limpa o 'none' e usa o layout padrão do CSS
+                resetControlsTimeout();
             }
         } else {
             timelineSlider.min = 0;
@@ -917,6 +926,36 @@
     }
 
     /* =========================================================
+       13B. AUTO-HIDE CONTROLS
+       ========================================================= */
+    function resetControlsTimeout() {
+        if (mouseMoveTimeout) {
+            clearTimeout(mouseMoveTimeout);
+            mouseMoveTimeout = null;
+        }
+
+        if (isManuallyHidden) return;
+
+        if (vid && (!vid.duration || !isFinite(vid.duration))) return;
+
+        if (controlsPanel) {
+            controlsPanel.style.opacity = '1';
+            controlsPanel.style.pointerEvents = 'auto';
+        }
+
+        mouseMoveTimeout = setTimeout(() => {
+            if (isDraggingTimeline) {
+                resetControlsTimeout();
+                return;
+            }
+            if (controlsPanel) {
+                controlsPanel.style.opacity = '0';
+                controlsPanel.style.pointerEvents = 'none';
+            }
+        }, 2500);
+    }
+
+    /* =========================================================
        14. KEYBOARD SHORTCUTS (capture phase — intercepts Video.js)
        ========================================================= */
     function handleKeydown(e) {
@@ -964,13 +1003,18 @@
                 break;
             case 'h':
                 if (controlsPanel) {
-                    if (controlsPanel.style.display === 'none') {
-                        controlsPanel.style.display = ''; // Restaura o layout CSS original
+                    if (isManuallyHidden) {
                         isManuallyHidden = false;
+                        resetControlsTimeout();
                         mostrarOSD('🖥️ Controls Visible');
                     } else {
-                        controlsPanel.style.display = 'none';
-                        isManuallyHidden = true; // Avisa o sistema para não reabrir sozinho
+                        isManuallyHidden = true;
+                        if (mouseMoveTimeout) {
+                            clearTimeout(mouseMoveTimeout);
+                            mouseMoveTimeout = null;
+                        }
+                        controlsPanel.style.opacity = '0';
+                        controlsPanel.style.pointerEvents = 'none';
                         mostrarOSD('🙈 Controls Hidden');
                     }
                 }
