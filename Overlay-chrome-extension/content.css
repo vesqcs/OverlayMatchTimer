@@ -46,10 +46,15 @@
     font-weight: bold;
     border-radius: 6px;
     z-index: 9999;
-    pointer-events: none;
+    pointer-events: auto;
+    cursor: pointer;
     text-shadow: 1px 1px 3px black;
     display: none;
     backdrop-filter: blur(5px);
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
 }
 
 /* ---- OSD NOTIFICATION PILL ---- */

@@ -25,6 +25,7 @@
     let isDraggingTimeline = false;
     let isManuallyHidden = false;
     let mouseMoveTimeout = null;
+    let isEditingTimer = false;
     const isLocalVideo = false; // Extension always targets a live/DVR stream
 
     // Kickoff markers (persisted in localStorage)
@@ -572,6 +573,9 @@
 
         // Show live button immediately (always a stream)
         liveBtn.style.display = 'flex';
+
+        // Click listener for interactive timer
+        timerUI.addEventListener('click', iniciarEdicaoTimer);
     }
 
     /* =========================================================
@@ -805,7 +809,7 @@
     }
 
     function atualizarRelogio() {
-        if (!timerAtivo) return;
+        if (!timerAtivo || isEditingTimer) return;
 
         const tAtual = vid.currentTime;
 
@@ -839,6 +843,221 @@
         const totalSeconds = (tAtual - kickoffUsar) + baseUsar;
         timerUI.style.color = 'white';
         timerUI.innerText = `${Math.floor(totalSeconds / 60).toString().padStart(2, '0')}:${Math.floor(totalSeconds % 60).toString().padStart(2, '0')}`;
+    }
+
+    function obterMinutoAtualJogo() {
+        if (!timerAtivo) return 0;
+        const tAtual = vid.currentTime;
+        const k1 = getVideoTimeForPdt(kickoff1);
+        const k2 = getVideoTimeForPdt(kickoff2);
+        const kC1 = getVideoTimeForPdt(kickoffC1);
+        const kC2 = getVideoTimeForPdt(kickoffC2);
+
+        let resolvedOffset = getVideoTimeForPdt(offsetEmSegundos);
+        if (resolvedOffset === null) resolvedOffset = 0;
+
+        let kickoffUsar = resolvedOffset;
+        let baseUsar = tempoBase;
+
+        if (kC2 !== null && tAtual >= kC2) {
+            kickoffUsar = kC2;
+            const customMinC2 = parseInt(localStorage.getItem('matchTimerCustomMinC2')) || 105;
+            baseUsar = customMinC2 * 60;
+        } else if (kC1 !== null && tAtual >= kC1) {
+            kickoffUsar = kC1;
+            const customMinC1 = parseInt(localStorage.getItem('matchTimerCustomMinC1')) || 90;
+            baseUsar = customMinC1 * 60;
+        } else if (k2 !== null && tAtual >= k2) {
+            kickoffUsar = k2;
+            baseUsar = 45 * 60;
+        } else if (k1 !== null) {
+            kickoffUsar = k1;
+            baseUsar = 0;
+        }
+
+        const tempoDeJogoRelativo = tAtual - kickoffUsar;
+        const tempoDeJogoTotal = tempoDeJogoRelativo + baseUsar;
+        if (k1 !== null && tAtual < k1) return 0;
+        return Math.floor(tempoDeJogoTotal / 60);
+    }
+
+    function navegarParaMinutoDeJogo(minutoAlvo) {
+        if (!vid) return;
+
+        const tAtual = vid.currentTime;
+        const k1 = getVideoTimeForPdt(kickoff1);
+        const k2 = getVideoTimeForPdt(kickoff2);
+        const kC1 = getVideoTimeForPdt(kickoffC1);
+        const kC2 = getVideoTimeForPdt(kickoffC2);
+
+        const c1Min = parseInt(localStorage.getItem('matchTimerCustomMinC1')) || 90;
+        const c2Min = parseInt(localStorage.getItem('matchTimerCustomMinC2')) || 105;
+
+        let activePeriod = '1';
+        if (kC2 !== null && tAtual >= kC2) activePeriod = 'custom2';
+        else if (kC1 !== null && tAtual >= kC1) activePeriod = 'custom1';
+        else if (k2 !== null && tAtual >= k2) activePeriod = '2';
+
+        let targetVideoTime = null;
+
+        // Determine the target period based on minutoAlvo, activePeriod, and the kickoffs
+        let targetPeriod = null;
+
+        // Exact match checks for nominal kickoff minutes
+        if (minutoAlvo === c2Min && kC2 !== null && activePeriod !== 'custom1') {
+            targetPeriod = 'custom2';
+        } else if (minutoAlvo === c1Min && kC1 !== null && activePeriod !== '2') {
+            targetPeriod = 'custom1';
+        } else if (minutoAlvo === 45 && k2 !== null) {
+            targetPeriod = '2';
+        } else {
+            // General logic based on the active period
+            if (activePeriod === '1') {
+                const baseOffset = k1 !== null ? k1 : (getVideoTimeForPdt(offsetEmSegundos) || 0);
+                const tentativeTime = baseOffset + minutoAlvo * 60;
+                
+                if (kC2 !== null && tentativeTime >= kC2) {
+                    targetPeriod = 'custom2';
+                } else if (kC1 !== null && tentativeTime >= kC1) {
+                    targetPeriod = 'custom1';
+                } else if (k2 !== null && tentativeTime >= k2) {
+                    targetPeriod = '2';
+                } else {
+                    targetPeriod = '1';
+                }
+            } else if (activePeriod === '2') {
+                if (minutoAlvo < 45) {
+                    targetPeriod = '1';
+                } else {
+                    const tentativeTime = k2 + (minutoAlvo - 45) * 60;
+                    
+                    if (kC2 !== null && tentativeTime >= kC2) {
+                        targetPeriod = 'custom2';
+                    } else if (kC1 !== null && tentativeTime >= kC1) {
+                        targetPeriod = 'custom1';
+                    } else {
+                        targetPeriod = '2';
+                    }
+                }
+            } else if (activePeriod === 'custom1') {
+                if (minutoAlvo < 45) {
+                    targetPeriod = '1';
+                } else if (minutoAlvo < c1Min) {
+                    targetPeriod = '2';
+                } else {
+                    const tentativeTime = kC1 + (minutoAlvo - c1Min) * 60;
+                    
+                    if (kC2 !== null && tentativeTime >= kC2) {
+                        targetPeriod = 'custom2';
+                    } else {
+                        targetPeriod = 'custom1';
+                    }
+                }
+            } else if (activePeriod === 'custom2') {
+                if (minutoAlvo < 45) {
+                    targetPeriod = '1';
+                } else if (minutoAlvo < c1Min) {
+                    targetPeriod = '2';
+                } else if (minutoAlvo < c2Min) {
+                    targetPeriod = 'custom1';
+                } else {
+                    targetPeriod = 'custom2';
+                }
+            }
+        }
+
+        // Calculate the target time based on the resolved target period
+        if (targetPeriod === 'custom2') {
+            targetVideoTime = kC2 + (minutoAlvo - c2Min) * 60;
+        } else if (targetPeriod === 'custom1') {
+            const tentativeTime = kC1 + (minutoAlvo - c1Min) * 60;
+            if (kC2 !== null && tentativeTime >= kC2) {
+                targetVideoTime = kC2 + (minutoAlvo - c2Min) * 60;
+            } else {
+                targetVideoTime = tentativeTime;
+            }
+        } else if (targetPeriod === '2') {
+            const tentativeTime = k2 + (minutoAlvo - 45) * 60;
+            if (kC2 !== null && tentativeTime >= kC2) {
+                targetVideoTime = kC2 + (minutoAlvo - c2Min) * 60;
+            } else if (kC1 !== null && tentativeTime >= kC1) {
+                targetVideoTime = kC1 + (minutoAlvo - c1Min) * 60;
+            } else {
+                targetVideoTime = tentativeTime;
+            }
+        } else {
+            const baseOffset = k1 !== null ? k1 : (getVideoTimeForPdt(offsetEmSegundos) || 0);
+            const tentativeTime = baseOffset + minutoAlvo * 60;
+            if (kC2 !== null && tentativeTime >= kC2) {
+                targetVideoTime = kC2 + (minutoAlvo - c2Min) * 60;
+            } else if (kC1 !== null && tentativeTime >= kC1) {
+                targetVideoTime = kC1 + (minutoAlvo - c1Min) * 60;
+            } else if (k2 !== null && tentativeTime >= k2) {
+                targetVideoTime = k2 + (minutoAlvo - 45) * 60;
+            } else {
+                targetVideoTime = tentativeTime;
+            }
+        }
+
+        if (targetVideoTime !== null && targetVideoTime >= 0) {
+            if (vid.duration && isFinite(vid.duration)) {
+                targetVideoTime = Math.min(targetVideoTime, vid.duration);
+            }
+            seekTo(targetVideoTime);
+            mostrarOSD(`↪️ Jumped to Min ${minutoAlvo}`);
+        }
+    }
+
+    function iniciarEdicaoTimer() {
+        if (isEditingTimer || !timerAtivo) return;
+
+        const minAtual = obterMinutoAtualJogo();
+        isEditingTimer = true;
+
+        timerUI.innerHTML = `<input type="text" id="timer-edit-input" value="${minAtual}" style="width: 70px; background: transparent; border: none; color: white; font-size: inherit; font-family: inherit; font-weight: inherit; text-align: center; outline: none; padding: 0; margin: 0; display: inline-block; vertical-align: middle;">`;
+
+        const input = omtRoot.querySelector('#timer-edit-input');
+        if (input) {
+            input.focus();
+            input.select();
+
+            let isCommitted = false;
+
+            function salvarEdicao() {
+                if (isCommitted) return;
+                isCommitted = true;
+                const val = input.value.trim();
+                if (val !== '') {
+                    const targetMin = parseFloat(val);
+                    if (!isNaN(targetMin) && targetMin >= 0) {
+                        navegarParaMinutoDeJogo(targetMin);
+                    }
+                }
+                isEditingTimer = false;
+                atualizarRelogio();
+            }
+
+            function cancelarEdicao() {
+                if (isCommitted) return;
+                isCommitted = true;
+                isEditingTimer = false;
+                atualizarRelogio();
+            }
+
+            input.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    salvarEdicao();
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    cancelarEdicao();
+                }
+            });
+
+            input.addEventListener('blur', function () {
+                setTimeout(salvarEdicao, 150);
+            });
+        }
     }
 
     /* =========================================================
