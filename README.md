@@ -20,6 +20,11 @@ This tool eliminates the limitations of native web video players, providing vide
 * **Draggable Glassmorphism UI:** Both the *Setup Panel* and the *Controls Overlay* are built with an elegant glassmorphism styling and feature independent drag-and-drop handles so you can position them anywhere over your match display canvas.
 * **Smart Auto-Hide HUD:** The HUD controls smoothly fade out after 2.5 seconds of mouse inactivity to ensure an uncompromised, full-screen tactical view, instantly reappearing upon mouse movement.
 
+### 3. Interactive/Editable Game Timer Navigation
+* **Jump to Game Minute:** Click directly on the HUD's match timer display to transform it into an input field. Type any target minute (e.g., `13` or `46.5`) and press `Enter` (or click away) to instantly seek the video player to that exact game moment. Press `Escape` to cancel and restore the running clock.
+* **Smart Context-Aware Navigation:** The seek target is calculated relative to the correct kickoff (1st Half, 2nd Half, or Custom periods).
+* **Injury Time Protection:** If you type a minute higher than 45 (or your custom period boundary) while in the 1st Half, the seek stays in the 1st Half as injury time, *unless* the playhead target crosses past the 2nd Half kickoff (`kickoff2`).
+
 ---
 
 ## 🛠️ Project Structure
