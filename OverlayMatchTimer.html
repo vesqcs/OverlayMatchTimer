@@ -673,6 +673,51 @@
             background: #bf5af2;
             box-shadow: 0 0 6px rgba(191, 90, 242, 0.8);
         }
+
+        /* ---- SHUTTLE TOGGLE SWITCH ---- */
+        .shuttle-switch {
+            position: relative;
+            display: inline-block;
+            width: 38px;
+            height: 20px;
+            flex-shrink: 0;
+        }
+        .shuttle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+            margin: 0;
+            position: absolute;
+        }
+        .shuttle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #555;
+            transition: background-color 0.3s ease;
+            border-radius: 999px;
+        }
+        .shuttle-slider:before {
+            position: absolute;
+            content: "";
+            height: 14px;
+            width: 14px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: transform 0.3s ease;
+            border-radius: 50%;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+        }
+        .shuttle-switch input:checked + .shuttle-slider {
+            background-color: #2ecc71;
+        }
+        .shuttle-switch input:checked + .shuttle-slider:before {
+            transform: translateX(18px);
+        }
     </style>
 </head>
 
@@ -780,6 +825,26 @@
                     <button type="button" onclick="limparTimer()"
                         style="background: rgba(255,68,68,0.15); color: #ff4444; border: 1px solid rgba(255,68,68,0.3); padding: 10px; font-weight: bold; border-radius: 4px; cursor: pointer; transition: 0.2s; margin-top: 5px; display: flex; align-items: center; justify-content: center;"
                         title="Clear/Disable Timer">✕</button>
+                </div>
+                <div class="control-group" id="shuttle-toggle-group" style="margin-top: 10px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 10px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+                        <span style="font-size: 11px; color: #ddd; user-select: none;">Enable ShuttleXpress</span>
+                        <label class="shuttle-switch" style="position: relative; display: inline-block; width: 38px; height: 20px; margin: 0;">
+                            <input type="checkbox" id="shuttle-enable-toggle" style="opacity: 0; width: 0; height: 0; margin: 0; position: absolute;">
+                            <span class="shuttle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="cheatsheet" id="shuttle-cheatsheet" style="display: none; margin-top: 10px;">
+                    <div class="cheatsheet-title" style="color: #00ff88; border-bottom-color: rgba(0, 255, 136, 0.15);">ShuttleXpress Controls</div>
+                    <div class="shortcut-item"><span>Button 1 (Far Left)</span><span class="shortcut-key">-2 min</span></div>
+                    <div class="shortcut-item"><span>Button 2</span><span class="shortcut-key">-10 sec</span></div>
+                    <div class="shortcut-item"><span>Button 3 (Center)</span><span class="shortcut-key">Play/Pause</span></div>
+                    <div class="shortcut-item"><span>Button 4</span><span class="shortcut-key">+10 sec</span></div>
+                    <div class="shortcut-item"><span>Button 5 (Far Right)</span><span class="shortcut-key">+2 min</span></div>
+                    <div class="shortcut-item"><span>Inner Wheel</span><span class="shortcut-key">Frame-by-frame</span></div>
+                    <div class="shortcut-item"><span>Outer Ring</span><span class="shortcut-key">Fast Fwd / Rewind</span></div>
                 </div>
 
                 <div class="cheatsheet">
@@ -2121,6 +2186,226 @@
         vid.addEventListener('mousemove', resetControlsTimeout);
         controlsPanel.addEventListener('mousemove', resetControlsTimeout);
         resetControlsTimeout();
+
+        // --- SHUTTLEXPRESS WEBHID MODULE ---
+        let shuttleDevice = null;
+        let lastJogValue = null;
+        let prevBytes3 = 0;
+        let prevBytes4 = 0;
+        let shuttleInterval = null;
+        let currentShuttleSpeed = 0;
+
+        const shuttleToggle = document.getElementById('shuttle-enable-toggle');
+        const shuttleCheatsheet = document.getElementById('shuttle-cheatsheet');
+
+        function getShuttleSpeedFactor(b0) {
+            if (b0 >= 1 && b0 <= 7) {
+                const factors = [0.2, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0];
+                return factors[b0 - 1];
+            } else if (b0 >= 249 && b0 <= 255) {
+                const factors = [-0.2, -0.5, -1.0, -2.0, -4.0, -8.0, -16.0];
+                const index = 255 - b0;
+                return factors[index];
+            }
+            return 0;
+        }
+
+        function showShuttleCheatsheet(visible) {
+            if (shuttleCheatsheet) {
+                shuttleCheatsheet.style.display = visible ? 'block' : 'none';
+            }
+        }
+
+        function updateToggleUI(checked) {
+            if (shuttleToggle) {
+                shuttleToggle.checked = checked;
+            }
+        }
+
+        function cleanupShuttle() {
+            if (shuttleInterval) {
+                clearInterval(shuttleInterval);
+                shuttleInterval = null;
+            }
+            currentShuttleSpeed = 0;
+
+            if (shuttleDevice) {
+                try {
+                    shuttleDevice.removeEventListener('inputreport', handleInputReport);
+                    if (shuttleDevice.opened) {
+                        shuttleDevice.close();
+                    }
+                } catch (e) {
+                    console.error('Error closing ShuttleXpress device:', e);
+                }
+                shuttleDevice = null;
+            }
+            lastJogValue = null;
+            prevBytes3 = 0;
+            prevBytes4 = 0;
+
+            updateToggleUI(false);
+            localStorage.setItem('shuttleXpressEnabled', 'false');
+            showShuttleCheatsheet(false);
+        }
+
+        function handleInputReport(event) {
+            const { data } = event;
+            const bytes = new Uint8Array(data.buffer);
+
+            // A) 5 Buttons edge detection
+            if (bytes[3] === 16 && prevBytes3 !== 16) {
+                vid.currentTime -= 120;
+                mostrarOSD('⏪ Skip -2m');
+            } else if (bytes[3] === 32 && prevBytes3 !== 32) {
+                vid.currentTime -= 10;
+                mostrarOSD('⏪ Skip -10s');
+            } else if (bytes[3] === 64 && prevBytes3 !== 64) {
+                if (vid.paused) {
+                    vid.play().catch(e => {});
+                    mostrarOSD('▶ Play');
+                } else {
+                    vid.pause();
+                    mostrarOSD('⏸ Pause');
+                }
+            } else if (bytes[3] === 128 && prevBytes3 !== 128) {
+                vid.currentTime += 10;
+                mostrarOSD('⏩ Skip +10s');
+            }
+
+            if (bytes[4] === 1 && prevBytes4 !== 1) {
+                vid.currentTime += 120;
+                mostrarOSD('⏩ Skip +2m');
+            }
+
+            prevBytes3 = bytes[3];
+            prevBytes4 = bytes[4];
+
+            // B) Inner Jog Wheel (Frame-by-frame)
+            const currentJog = bytes[1];
+            if (lastJogValue !== null && currentJog !== lastJogValue) {
+                if (!vid.paused) vid.pause();
+
+                let delta = currentJog - lastJogValue;
+                if (delta > 128) delta -= 256;
+                else if (delta < -128) delta += 256;
+
+                if (delta !== 0) {
+                    vid.currentTime += delta * 0.04;
+                    mostrarOSD(delta > 0 ? `🎞 +${delta} Frame${delta > 1 ? 's' : ''}` : `🎞 ${delta} Frame${delta < -1 ? 's' : ''}`);
+                }
+            }
+            lastJogValue = currentJog;
+
+            // C) Outer Shuttle Ring
+            const b0 = bytes[0];
+            if (b0 === 0) {
+                if (shuttleInterval) {
+                    clearInterval(shuttleInterval);
+                    shuttleInterval = null;
+                }
+                currentShuttleSpeed = 0;
+            } else {
+                currentShuttleSpeed = getShuttleSpeedFactor(b0);
+                if (currentShuttleSpeed !== 0 && !shuttleInterval) {
+                    vid.pause();
+                    shuttleInterval = setInterval(() => {
+                        let nextTime = vid.currentTime + currentShuttleSpeed * 0.05;
+                        if (nextTime < 0) nextTime = 0;
+                        if (nextTime > vid.duration) nextTime = vid.duration;
+                        vid.currentTime = nextTime;
+                        mostrarOSD(`Scrub: ${currentShuttleSpeed > 0 ? '+' : ''}${currentShuttleSpeed.toFixed(1)}x`);
+                    }, 50);
+                }
+            }
+        }
+
+        async function connectDevice(device) {
+            if (!device) return;
+            try {
+                if (!device.opened) {
+                    await device.open();
+                }
+                shuttleDevice = device;
+                shuttleDevice.addEventListener('inputreport', handleInputReport);
+                lastJogValue = null;
+                prevBytes3 = 0;
+                prevBytes4 = 0;
+
+                showShuttleCheatsheet(true);
+                updateToggleUI(true);
+                console.log('[OMT] ShuttleXpress connected:', device.productName);
+            } catch (err) {
+                console.error('[OMT] Failed to open ShuttleXpress:', err);
+                updateToggleUI(false);
+                showShuttleCheatsheet(false);
+            }
+        }
+
+        function handleHidDisconnect(event) {
+            if (shuttleDevice && event.device === shuttleDevice) {
+                cleanupShuttle();
+                console.log('[OMT] ShuttleXpress disconnected');
+            }
+        }
+
+        async function handleToggleChange() {
+            if (shuttleToggle.checked) {
+                localStorage.setItem('shuttleXpressEnabled', 'true');
+                try {
+                    const devices = await navigator.hid.getDevices();
+                    let device = devices.find(d => d.vendorId === 0x0b33);
+                    if (!device) {
+                        const requested = await navigator.hid.requestDevice({ filters: [{ vendorId: 0x0b33 }] });
+                        if (requested && requested.length > 0) {
+                            device = requested[0];
+                        }
+                    }
+                    if (device) {
+                        await connectDevice(device);
+                    } else {
+                        updateToggleUI(false);
+                        localStorage.setItem('shuttleXpressEnabled', 'false');
+                    }
+                } catch (err) {
+                    console.error('[OMT] Failed to request ShuttleXpress:', err);
+                    updateToggleUI(false);
+                    localStorage.setItem('shuttleXpressEnabled', 'false');
+                }
+            } else {
+                localStorage.setItem('shuttleXpressEnabled', 'false');
+                cleanupShuttle();
+            }
+        }
+
+        async function initShuttleXpress() {
+            if (!navigator.hid) {
+                console.warn('[OMT] WebHID is not supported in this browser.');
+                if (shuttleToggle) {
+                    shuttleToggle.disabled = true;
+                    shuttleToggle.parentElement.title = 'WebHID is not supported in this browser.';
+                }
+                return;
+            }
+
+            navigator.hid.addEventListener('disconnect', handleHidDisconnect);
+            shuttleToggle.addEventListener('change', handleToggleChange);
+            shuttleToggle.addEventListener('click', () => shuttleToggle.blur());
+
+            if (localStorage.getItem('shuttleXpressEnabled') === 'true') {
+                try {
+                    const devices = await navigator.hid.getDevices();
+                    const device = devices.find(d => d.vendorId === 0x0b33);
+                    if (device) {
+                        await connectDevice(device);
+                    }
+                } catch (err) {
+                    console.error('[OMT] Failed to auto-connect ShuttleXpress:', err);
+                }
+            }
+        }
+
+        initShuttleXpress();
     </script>
 </body>
 

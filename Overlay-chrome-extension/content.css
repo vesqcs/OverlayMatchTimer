@@ -631,3 +631,48 @@
     outline: none;
     cursor: pointer;
 }
+
+/* ---- SHUTTLE TOGGLE SWITCH ---- */
+#omt-root .omt-shuttle-switch {
+    position: relative;
+    display: inline-block;
+    width: 38px;
+    height: 20px;
+    flex-shrink: 0;
+}
+#omt-root .omt-shuttle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+    margin: 0;
+    position: absolute;
+}
+#omt-root .omt-shuttle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #555;
+    transition: background-color 0.3s ease;
+    border-radius: 999px;
+}
+#omt-root .omt-shuttle-slider:before {
+    position: absolute;
+    content: "";
+    height: 14px;
+    width: 14px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: transform 0.3s ease;
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+}
+#omt-root .omt-shuttle-switch input:checked + .omt-shuttle-slider {
+    background-color: #2ecc71;
+}
+#omt-root .omt-shuttle-switch input:checked + .omt-shuttle-slider:before {
+    transform: translateX(18px);
+}
