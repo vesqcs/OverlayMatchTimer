@@ -5,13 +5,12 @@
    ============================================================ */
 
 /* ---- HIDE NATIVE VIDEO.JS CONTROLS ---- */
-.vjs-control-bar,
-.vjs-big-play-button,
-.vjs-loading-spinner,
-.vjs-poster,
-.vjs-menu-button-popup .vjs-menu,
-.vjs-text-track-display,
-.video-js .vjs-control-bar {
+.video-js:has(#omt-root) .vjs-control-bar,
+.video-js:has(#omt-root) .vjs-big-play-button,
+.video-js:has(#omt-root) .vjs-loading-spinner,
+.video-js:has(#omt-root) .vjs-poster,
+.video-js:has(#omt-root) .vjs-menu-button-popup .vjs-menu,
+.video-js:has(#omt-root) .vjs-text-track-display {
     display: none !important;
     opacity: 0 !important;
     pointer-events: none !important;
@@ -35,7 +34,7 @@
 }
 
 /* ---- OSD MATCH TIMER ---- */
-#match-timer {
+#omt-root #match-timer {
     position: absolute;
     top: 40px;
     left: 40px;
@@ -58,7 +57,7 @@
 }
 
 /* ---- OSD NOTIFICATION PILL ---- */
-#osd-message {
+#omt-root #osd-message {
     position: absolute;
     top: 40px;
     left: 50%;
@@ -83,13 +82,13 @@
     letter-spacing: 0.5px;
 }
 
-#osd-message.visible {
+#omt-root #osd-message.visible {
     opacity: 1;
     transform: translate(-50%, 0) scale(1);
 }
 
 /* ---- GLASSMORPHISM BASE ---- */
-.glass-panel {
+#omt-root .glass-panel {
     position: absolute;
     background: rgba(20, 20, 20, 0.65);
     backdrop-filter: blur(12px);
@@ -105,13 +104,13 @@
     transition: border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
-.glass-panel.playing-state {
+#omt-root .glass-panel.playing-state {
     border-color: rgba(0, 136, 255, 0.5);
     box-shadow: 0 8px 32px rgba(0, 136, 255, 0.15), 0 0 12px rgba(0, 136, 255, 0.1);
 }
 
 /* ---- DRAG HANDLE ---- */
-.drag-handle {
+#omt-root .drag-handle {
     background: transparent;
     padding: 4px 12px;
     cursor: grab;
@@ -122,11 +121,11 @@
     height: 22px;
 }
 
-.drag-handle:active {
+#omt-root .drag-handle:active {
     cursor: grabbing;
 }
 
-.drag-side-left {
+#omt-root .drag-side-left {
     flex: 1;
     display: flex;
     justify-content: flex-start;
@@ -134,7 +133,7 @@
     gap: 8px;
 }
 
-.drag-center-grip {
+#omt-root .drag-center-grip {
     flex: 1;
     display: flex;
     justify-content: center;
@@ -146,14 +145,14 @@
     user-select: none;
 }
 
-.drag-side-right {
+#omt-root .drag-side-right {
     flex: 1;
     display: flex;
     justify-content: flex-end;
     align-items: center;
 }
 
-.handle-btn {
+#omt-root .handle-btn {
     background: none;
     border: none;
     color: white;
@@ -166,11 +165,11 @@
     transition: opacity 0.2s;
 }
 
-.handle-btn:hover {
+#omt-root .handle-btn:hover {
     opacity: 0.7;
 }
 
-.top-select {
+#omt-root .top-select {
     background: rgba(0, 0, 0, 0.5);
     border: 1px solid rgba(255, 255, 255, 0.2);
     color: #ddd;
@@ -182,26 +181,26 @@
     font-weight: bold;
 }
 
-.top-select option {
+#omt-root .top-select option {
     background: #1a1a1a;
     color: white;
 }
 
 /* ---- SETUP PANEL ---- */
-#setup-panel {
+#omt-root #setup-panel {
     top: 80px;
     left: 80px;
     width: 300px;
 }
 
-.setup-content {
+#omt-root .setup-content {
     padding: 20px;
     display: flex;
     flex-direction: column;
     gap: 15px;
 }
 
-.brand-container {
+#omt-root .brand-container {
     display: flex;
     justify-content: center;
     align-items: center;
@@ -210,7 +209,7 @@
     margin-bottom: 5px;
 }
 
-.cheatsheet {
+#omt-root .cheatsheet {
     margin-top: 10px;
     background: rgba(0, 0, 0, 0.25);
     border: 1px solid rgba(255, 255, 255, 0.08);
@@ -218,7 +217,7 @@
     padding: 10px;
 }
 
-.cheatsheet-title {
+#omt-root .cheatsheet-title {
     font-size: 10px;
     color: #00ff88;
     font-weight: bold;
@@ -229,7 +228,7 @@
     padding-bottom: 4px;
 }
 
-.shortcut-item {
+#omt-root .shortcut-item {
     display: flex;
     justify-content: space-between;
     font-size: 11px;
@@ -237,7 +236,7 @@
     color: #ccc;
 }
 
-.shortcut-key {
+#omt-root .shortcut-key {
     font-family: monospace;
     color: #66b3ff;
     font-weight: bold;
@@ -248,7 +247,7 @@
 }
 
 /* ---- CONTROLS PANEL ---- */
-#controls-panel {
+#omt-root #controls-panel {
     bottom: 40px;
     left: 50%;
     transform: translateX(-50%);
@@ -259,7 +258,7 @@
 }
 
 /* ---- LIVE BUTTON ---- */
-#live-btn {
+#omt-root #omt-live-btn {
     background: transparent;
     border: 1px solid rgba(255, 255, 255, 0.15);
     color: #888;
@@ -278,12 +277,12 @@
     transition: all 0.3s ease;
 }
 
-#live-btn:hover {
+#omt-root #omt-live-btn:hover {
     background: rgba(255, 255, 255, 0.1);
     color: #ccc;
 }
 
-#live-btn .live-dot {
+#omt-root #omt-live-btn .live-dot {
     width: 6px;
     height: 6px;
     border-radius: 50%;
@@ -291,23 +290,23 @@
     transition: all 0.3s ease;
 }
 
-#live-btn.is-live {
+#omt-root #omt-live-btn.is-live {
     color: #fff;
     border-color: rgba(255, 59, 48, 0.4);
     cursor: default;
 }
 
-#live-btn.is-live .live-dot {
+#omt-root #omt-live-btn.is-live .live-dot {
     background: #ff3b30;
     box-shadow: 0 0 6px rgba(255, 59, 48, 0.8);
 }
 
-#live-btn.is-live:hover {
+#omt-root #omt-live-btn.is-live:hover {
     background: transparent;
 }
 
 /* ---- TIMELINE ---- */
-.timeline-container {
+#omt-root .timeline-container {
     display: flex;
     flex-direction: column;
     gap: 2px;
@@ -317,21 +316,21 @@
     color: #aaa;
 }
 
-.timeline-slider-row {
+#omt-root .timeline-slider-row {
     display: flex;
     align-items: center;
     gap: 10px;
     width: 100%;
 }
 
-.timeline-badges-row {
+#omt-root .timeline-badges-row {
     display: flex;
     align-items: center;
     gap: 4px;
     min-height: 18px;
 }
 
-.timeline-slider {
+#omt-root .timeline-slider {
     flex: 1;
     -webkit-appearance: none;
     appearance: none;
@@ -343,11 +342,11 @@
     transition: background 0.2s;
 }
 
-.timeline-slider:hover {
+#omt-root .timeline-slider:hover {
     background: rgba(255, 255, 255, 0.25);
 }
 
-.timeline-slider::-webkit-slider-thumb {
+#omt-root .timeline-slider::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
     width: 12px;
@@ -358,30 +357,30 @@
     transition: transform 0.1s ease;
 }
 
-.timeline-slider::-webkit-slider-thumb:hover {
+#omt-root .timeline-slider::-webkit-slider-thumb:hover {
     transform: scale(1.25);
 }
 
 /* ---- CONTROLS CONTENT ---- */
-.controls-content {
+#omt-root .controls-content {
     padding: 8px 20px 12px 20px;
     display: flex;
     align-items: center;
     justify-content: space-between;
 }
 
-.ctrl-group-left,
-.ctrl-group-right {
+#omt-root .ctrl-group-left,
+#omt-root .ctrl-group-right {
     display: flex;
     gap: 8px;
     flex: 1;
 }
 
-.ctrl-group-right {
+#omt-root .ctrl-group-right {
     justify-content: flex-end;
 }
 
-.ctrl-group-center {
+#omt-root .ctrl-group-center {
     display: flex;
     gap: 6px;
     align-items: center;
@@ -389,7 +388,7 @@
     flex: initial;
 }
 
-.control-group {
+#omt-root .control-group {
     display: flex;
     flex-direction: column;
     gap: 5px;
@@ -403,7 +402,7 @@
     text-transform: uppercase;
 }
 
-.time-inputs {
+#omt-root .time-inputs {
     display: flex;
     gap: 5px;
     align-items: center;
@@ -433,7 +432,7 @@
     outline: none;
 }
 
-.btn-sync {
+#omt-root .btn-sync {
     background: #00ff88;
     color: black;
     border: none;
@@ -447,12 +446,12 @@
     font-family: inherit;
 }
 
-.btn-sync:hover {
+#omt-root .btn-sync:hover {
     background: #00cc6a;
     box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
 }
 
-.ctrl-btn {
+#omt-root .ctrl-btn {
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.1);
     color: #ddd;
@@ -469,17 +468,17 @@
     font-family: inherit;
 }
 
-.ctrl-btn:hover {
+#omt-root .ctrl-btn:hover {
     background: rgba(255, 255, 255, 0.15);
     color: white;
     transform: translateY(-1px);
 }
 
-.ctrl-btn:active {
+#omt-root .ctrl-btn:active {
     transform: translateY(1px);
 }
 
-.btn-play {
+#omt-root .btn-play {
     background: rgba(0, 136, 255, 0.1);
     border-color: rgba(0, 136, 255, 0.3);
     color: #66b3ff;
@@ -487,28 +486,28 @@
     transition: all 0.3s ease;
 }
 
-.btn-play:hover {
+#omt-root .btn-play:hover {
     background: rgba(0, 136, 255, 0.3);
     border-color: rgba(0, 136, 255, 0.6);
 }
 
-.btn-play.playing {
+#omt-root .btn-play.playing {
     background: rgba(0, 255, 136, 0.15);
     border-color: rgba(0, 255, 136, 0.5);
     color: #00ff88;
 }
 
-.btn-play.playing:hover {
+#omt-root .btn-play.playing:hover {
     background: rgba(0, 255, 136, 0.3);
     border-color: rgba(0, 255, 136, 0.7);
 }
 
-.btn-frame {
+#omt-root .btn-frame {
     color: #ffcc00;
     border-color: rgba(255, 204, 0, 0.3);
 }
 
-.separator {
+#omt-root .separator {
     width: 1px;
     height: 24px;
     background: rgba(255, 255, 255, 0.1);
@@ -516,7 +515,7 @@
 }
 
 /* ---- KICKOFF BADGES ---- */
-.kickoff-badge {
+#omt-root .kickoff-badge {
     background: rgba(0, 255, 136, 0.15);
     border: 1px solid rgba(0, 255, 136, 0.3);
     color: #00ff88;
@@ -533,62 +532,62 @@
     font-family: inherit;
 }
 
-.kickoff-badge:hover {
+#omt-root .kickoff-badge:hover {
     background: rgba(0, 255, 136, 0.3);
     color: white;
     box-shadow: 0 0 8px rgba(0, 255, 136, 0.4);
 }
 
-.kickoff-badge.k1 {
+#omt-root .kickoff-badge.k1 {
     background: rgba(0, 255, 136, 0.15);
     border-color: rgba(0, 255, 136, 0.3);
     color: #00ff88;
 }
 
-.kickoff-badge.k1:hover {
+#omt-root .kickoff-badge.k1:hover {
     background: rgba(0, 255, 136, 0.3);
     color: white;
     box-shadow: 0 0 8px rgba(0, 255, 136, 0.4);
 }
 
-.kickoff-badge.k2 {
+#omt-root .kickoff-badge.k2 {
     background: rgba(255, 59, 48, 0.15);
     border-color: rgba(255, 59, 48, 0.3);
     color: #ff3b30;
 }
 
-.kickoff-badge.k2:hover {
+#omt-root .kickoff-badge.k2:hover {
     background: rgba(255, 59, 48, 0.3);
     color: white;
     box-shadow: 0 0 8px rgba(255, 59, 48, 0.4);
 }
 
-.kickoff-badge.kc1 {
+#omt-root .kickoff-badge.kc1 {
     background: rgba(255, 149, 0, 0.15);
     border-color: rgba(255, 149, 0, 0.3);
     color: #ff9500;
 }
 
-.kickoff-badge.kc1:hover {
+#omt-root .kickoff-badge.kc1:hover {
     background: rgba(255, 149, 0, 0.3);
     color: white;
     box-shadow: 0 0 8px rgba(255, 149, 0, 0.4);
 }
 
-.kickoff-badge.kc2 {
+#omt-root .kickoff-badge.kc2 {
     background: rgba(191, 90, 242, 0.15);
     border-color: rgba(191, 90, 242, 0.3);
     color: #bf5af2;
 }
 
-.kickoff-badge.kc2:hover {
+#omt-root .kickoff-badge.kc2:hover {
     background: rgba(191, 90, 242, 0.3);
     color: white;
     box-shadow: 0 0 8px rgba(191, 90, 242, 0.4);
 }
 
 /* ---- TIMELINE MARKER TICKS ---- */
-.timeline-marker-tick {
+#omt-root .timeline-marker-tick {
     position: absolute;
     width: 3px;
     height: 12px;
@@ -600,28 +599,28 @@
     pointer-events: none;
 }
 
-.timeline-marker-tick.k1 {
+#omt-root .timeline-marker-tick.k1 {
     background: #00ff88;
     box-shadow: 0 0 6px rgba(0, 255, 136, 0.8);
 }
 
-.timeline-marker-tick.k2 {
+#omt-root .timeline-marker-tick.k2 {
     background: #ff3b30;
     box-shadow: 0 0 6px rgba(255, 59, 48, 0.8);
 }
 
-.timeline-marker-tick.kc1 {
+#omt-root .timeline-marker-tick.kc1 {
     background: #ff9500;
     box-shadow: 0 0 6px rgba(255, 149, 0, 0.8);
 }
 
-.timeline-marker-tick.kc2 {
+#omt-root .timeline-marker-tick.kc2 {
     background: #bf5af2;
     box-shadow: 0 0 6px rgba(191, 90, 242, 0.8);
 }
 
 /* ---- VOLUME RANGE ---- */
-#volume-range {
+#omt-root #omt-volume-range {
     -webkit-appearance: none;
     appearance: none;
     width: 60px;
@@ -675,4 +674,13 @@
 }
 #omt-root .omt-shuttle-switch input:checked + .omt-shuttle-slider:before {
     transform: translateX(18px);
+}
+
+/* ---- LOCAL VIDEO FULLSCREEN SCALING ---- */
+.omt-local-env:fullscreen video {
+    width: 100% !important;
+    height: 100% !important;
+    max-width: 100% !important;
+    max-height: 100% !important;
+    object-fit: contain !important;
 }

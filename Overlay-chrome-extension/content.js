@@ -26,7 +26,8 @@
     let isManuallyHidden = false;
     let mouseMoveTimeout = null;
     let isEditingTimer = false;
-    const isLocalVideo = false; // Extension always targets a live/DVR stream
+    let hasAutomatedDvr = false;
+    const isLocalVideo = window.location.protocol === 'file:';
 
     // Kickoff markers (persisted in localStorage)
     let kickoff1 = localStorage.getItem('matchTimerKickoff1') !== null ? parseFloat(localStorage.getItem('matchTimerKickoff1')) : null;
@@ -85,9 +86,13 @@
         controlsPanel = null;
         shuttleToggle = null;
         shuttleCheatsheet = null;
+        hasAutomatedDvr = false;
     }
 
     function boot() {
+        if (window.location.protocol === 'file:') {
+            document.documentElement.classList.add('omt-local-env');
+        }
         const v = findVideo();
         if (v) { init(v); return; }
 
@@ -148,8 +153,10 @@
             cacheUIRefs();
             wireEvents();
             restoreState();
+            inicializarMetadadosTimeline();
             startSPAMonitor();
             initShuttleXpress();
+            automateExaminoDvr();
             console.log('[OMT] Overlay MatchTimer extension active.');
         }, 1800);
     }
@@ -224,19 +231,32 @@
        4. INJECT UI INTO THE PAGE
        ========================================================= */
     function injectUI() {
-        // Find the best container to anchor inside
-        const anchor = vid.closest('.video-js') ||
-            vid.closest('.vjs-player') ||
-            vid.parentElement;
+        const isLocal = window.location.protocol === 'file:';
+        let anchor;
+
+        if (isLocal) {
+            anchor = document.body;
+        } else {
+            // Find the best container to anchor inside
+            anchor = vid.closest('.video-js') ||
+                vid.closest('.vjs-player') ||
+                vid.parentElement;
+        }
 
         if (!anchor) { console.error('[OMT] Could not find anchor element.'); return; }
 
-        // Ensure relative positioning so absolute children work
-        const cs = getComputedStyle(anchor);
-        if (cs.position === 'static') anchor.style.position = 'relative';
+        if (!isLocal) {
+            // Ensure relative positioning so absolute children work
+            const cs = getComputedStyle(anchor);
+            if (cs.position === 'static') anchor.style.position = 'relative';
+        }
 
         omtRoot = document.createElement('div');
         omtRoot.id = 'omt-root';
+        if (isLocal) {
+            omtRoot.style.position = 'fixed';
+            omtRoot.style.zIndex = '999999';
+        }
         omtRoot.innerHTML = buildHTML();
         anchor.appendChild(omtRoot);
     }
@@ -604,8 +624,8 @@
             if (el) setTimeout(() => el.blur(), 50);
         });
 
-        // Show live button immediately (always a stream)
-        liveBtn.style.display = 'flex';
+        // Show live button if it is a stream, hide if local file
+        liveBtn.style.display = isLocalVideo ? 'none' : 'flex';
 
         // Click listener for interactive timer
         timerUI.addEventListener('click', iniciarEdicaoTimer);
@@ -1217,7 +1237,8 @@
     }
 
     function toggleFullScreen() {
-        const container = vid.closest('.video-js') || vid.parentElement;
+        const isLocal = window.location.protocol === 'file:';
+        const container = isLocal ? document.documentElement : (vid.closest('.video-js') || vid.closest('.vjs-player') || vid.parentElement);
         if (!document.fullscreenElement) {
             (container || vid).requestFullscreen().catch(() => vid.requestFullscreen().catch(() => { }));
         } else {
@@ -1606,6 +1627,17 @@
                 const devices = await navigator.hid.getDevices();
                 let device = devices.find(d => d.vendorId === 0x0b33);
                 if (!device) {
+                    // Chrome blocks WebHID prompts in fullscreen. If in fullscreen, exit it first.
+                    if (document.fullscreenElement) {
+                        try {
+                            mostrarOSD('Exiting fullscreen to pair device...');
+                            await document.exitFullscreen();
+                            // Wait for the browser to transition out of fullscreen
+                            await new Promise(resolve => setTimeout(resolve, 300));
+                        } catch (fsErr) {
+                            console.error('[OMT] Failed to exit fullscreen for WebHID request:', fsErr);
+                        }
+                    }
                     const requested = await navigator.hid.requestDevice({ filters: [{ vendorId: 0x0b33 }] });
                     if (requested && requested.length > 0) {
                         device = requested[0];
@@ -1654,6 +1686,68 @@
     }
 
     /* =========================================================
+       16C. EXAMINO AUTOMATION MODULE
+       ========================================================= */
+    function automateExaminoDvr() {
+        if (!window.location.pathname.includes('/play/dvr/')) return;
+        if (hasAutomatedDvr) return;
+        hasAutomatedDvr = true;
+
+        console.log('[OMT] Examino: Running DVR source check...');
+
+        let attempts = 0;
+        const maxAttempts = 30; // 15 seconds total
+
+        const interval = setInterval(() => {
+            attempts++;
+            if (attempts > maxAttempts) {
+                clearInterval(interval);
+                console.log('[OMT] Examino: Settings gear not found, stopping automation.');
+                return;
+            }
+
+            const settingsGear = document.querySelector('button.op-controls__settings') || 
+                                 document.querySelector('.op-settings__btn') || 
+                                 document.querySelector('.op-settings') || 
+                                 document.querySelector('[class*="settings"]');
+
+            if (settingsGear) {
+                clearInterval(interval);
+
+                // Open the settings panel
+                settingsGear.click();
+
+                // Wait for settings menu elements to render in the DOM
+                setTimeout(() => {
+                    const dvrItem = document.querySelector('div.op-setting-item[op-panel-type="source"][op-data-value="1"]');
+                    const liveItem = document.querySelector('div.op-setting-item[op-panel-type="source"][op-data-value="0"]');
+
+                    if (dvrItem) {
+                        const isDvrActive = dvrItem.classList.contains('op-setting-item--active') || 
+                                            dvrItem.classList.contains('op-selected') || 
+                                            dvrItem.classList.contains('op-active') || 
+                                            dvrItem.getAttribute('aria-checked') === 'true' ||
+                                            (liveItem && !liveItem.classList.contains('op-setting-item--active') && !liveItem.classList.contains('op-selected') && !liveItem.classList.contains('op-active') && liveItem.getAttribute('aria-checked') !== 'true');
+
+                        if (!isDvrActive) {
+                            dvrItem.click();
+                            console.log('[OMT] Examino: Switched source from Live to DVR.');
+                        } else {
+                            // Already DVR, close the settings panel
+                            settingsGear.click();
+                            console.log('[OMT] Examino: DVR source already active.');
+                        }
+                    } else {
+                        // DVR source item not found, close the settings panel
+                        settingsGear.click();
+                        console.warn('[OMT] Examino: DVR source item not found in settings panel.');
+                    }
+                }, 250);
+            }
+        }, 500);
+    }
+
+    /* =========================================================
        17. RESTORE PERSISTED STATE AFTER PAGE LOAD
        ========================================================= */
     function restoreState() {
@@ -1689,9 +1783,13 @@
        ENTRY POINT
        ========================================================= */
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', boot);
+        document.addEventListener('DOMContentLoaded', () => {
+            boot();
+            automateExaminoDvr();
+        });
     } else {
         boot();
+        automateExaminoDvr();
     }
 
 })();

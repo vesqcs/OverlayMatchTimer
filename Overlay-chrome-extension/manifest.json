@@ -21,29 +21,25 @@
 
 
   "host_permissions": [
-
-    "*://*.inplayip.tv/*"
-
+    "*://*.inplayip.tv/*",
+    "file:///*",
+    "*://statsperform.media.xeatre.cloud/*",
+    "*://examino.statsperform.io/play/dvr/*"
   ],
 
-
-
   "content_scripts": [
-
     {
-
-      "matches": ["*://*.inplayip.tv/*"],
-
+      "matches": [
+        "*://*.inplayip.tv/*",
+        "file:///*",
+        "*://statsperform.media.xeatre.cloud/*",
+        "*://examino.statsperform.io/play/dvr/*"
+      ],
       "js": ["content.js"],
-
       "css": ["content.css"],
-
       "run_at": "document_idle",
-
       "world": "MAIN"
-
     }
-
   ]
 
 } 
