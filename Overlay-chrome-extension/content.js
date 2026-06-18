@@ -28,6 +28,7 @@
     let isEditingTimer = false;
     let hasAutomatedDvr = false;
     const isLocalVideo = window.location.protocol === 'file:';
+    const isExamino = window.location.hostname.includes('examino');
 
     // Kickoff markers (persisted in localStorage)
     let kickoff1 = localStorage.getItem('matchTimerKickoff1') !== null ? parseFloat(localStorage.getItem('matchTimerKickoff1')) : null;
@@ -234,23 +235,31 @@
            injected / re-injected dynamically by the host page.
            Runs a single persistent MutationObserver — no polling.
        ========================================================= */
-    const PLATFORM_SELECTORS = [
-        /* Xeatre */
+    /* Selectors always hidden on every platform (Xeatre control bars) */
+    const XEATRE_SELECTORS = [
         '#ControlBar.overlay-fullscreen',
-        '#ControlBar.overlay-normal',
-        /* Examino */
-        '.button-bar.fullscreen',
+        '#ControlBar.overlay-normal'
+    ];
+
+    /* Selectors hidden ONLY on examino.statsperform.io */
+    const EXAMINO_SELECTORS = [
         '.button-bar.svelte-1azck0y',
-        '.op-progressbar-container',
+        '.op-ui.op-clear',
+        '.op-progressbar-container.op-clear',
         '.op-button.op-setting-button'
     ];
 
     /**
      * Hides all currently present matching elements.
      * Skips <video> and #omt-root — guaranteed by the selectors above.
+     * Examino-specific selectors are only evaluated when isExamino is true.
      */
     function hidePlatformControls() {
-        PLATFORM_SELECTORS.forEach(selector => {
+        const selectors = isExamino
+            ? [...XEATRE_SELECTORS, ...EXAMINO_SELECTORS]
+            : XEATRE_SELECTORS;
+
+        selectors.forEach(selector => {
             try {
                 document.querySelectorAll(selector).forEach(el => {
                     if (el.style.display !== 'none') {
@@ -262,14 +271,39 @@
     }
 
     /**
+     * Injects a <style> block that permanently hides Examino native controls
+     * using !important so that Svelte/player CSS cannot override us.
+     * Only injected when running on examino.statsperform.io.
+     */
+    function injectExaminoHideCSS() {
+        if (!isExamino) return;
+        if (document.getElementById('omt-examino-hide-css')) return; // idempotent
+        const style = document.createElement('style');
+        style.id = 'omt-examino-hide-css';
+        style.textContent = [
+            '.button-bar.svelte-1azck0y    { display: none !important; }',
+            '.op-ui.op-clear               { display: none !important; }',
+            '.op-progressbar-container.op-clear { display: none !important; }',
+            '.op-button.op-setting-button  { display: none !important; }'
+        ].join('\n');
+        (document.head || document.documentElement).appendChild(style);
+        console.log('[OMT] Examino CSS hide rules injected.');
+    }
+
+    /**
      * Attaches a single MutationObserver on <body> (subtree) that calls
      * hidePlatformControls() whenever new nodes are added to the DOM.
      * Also runs immediately to cover any elements already present.
+     * The MutationObserver for Examino-specific controls only runs on Examino.
      */
     function suppressPlatformControls() {
-        // Immediate sweep — cover elements already in the DOM at init time
+        // Inject CSS !important rules for Examino (belt-and-suspenders)
+        injectExaminoHideCSS();
+
+        // Immediate DOM sweep — cover elements already present at init time
         hidePlatformControls();
 
+        // Global observer: covers Xeatre re-injection on all platforms
         const observer = new MutationObserver(mutations => {
             let hasAdditions = false;
             for (const mutation of mutations) {
@@ -287,7 +321,7 @@
             subtree: true
         });
 
-        console.log('[OMT] Platform control suppressor active (Xeatre + Examino).');
+        console.log('[OMT] Platform control suppressor active' + (isExamino ? ' (Xeatre + Examino).' : ' (Xeatre).'));
     }
 
     /* =========================================================
@@ -316,12 +350,22 @@
 
         omtRoot = document.createElement('div');
         omtRoot.id = 'omt-root';
+        // Allow clicks to pass through the transparent overlay root to the native video
+        // player underneath. Child elements (our panels/buttons) restore pointer-events.
+        omtRoot.style.pointerEvents = 'none';
         if (isLocal) {
             omtRoot.style.position = 'fixed';
             omtRoot.style.zIndex = '999999';
         }
         omtRoot.innerHTML = buildHTML();
         anchor.appendChild(omtRoot);
+
+        // Restore pointer interactivity for every direct child of #omt-root so our
+        // panels and controls remain fully clickable while the video stays clickable.
+        const omtPointerStyle = document.createElement('style');
+        omtPointerStyle.id = 'omt-pointer-events-css';
+        omtPointerStyle.textContent = '#omt-root > * { pointer-events: auto !important; }';
+        (document.head || document.documentElement).appendChild(omtPointerStyle);
     }
 
     function buildHTML() {
@@ -1749,66 +1793,50 @@
     }
 
     /* =========================================================
-       16C. EXAMINO AUTOMATION MODULE
+       16C. EXAMINO DVR AUTOMATION MODULE
+       Runs only on examino.statsperform.io.
+       Waits 2.5 s after page load, opens the player settings,
+       then clicks the DVR source button after 600 ms.
        ========================================================= */
-    function automateExaminoDvr() {
-        if (!window.location.pathname.includes('/play/dvr/')) return;
+    function forceDVR() {
+        // Guard: only run on Examino, and only once per page load.
+        if (!isExamino) return;
         if (hasAutomatedDvr) return;
         hasAutomatedDvr = true;
 
-        console.log('[OMT] Examino: Running DVR source check...');
+        console.log('[OMT] Examino: Scheduling DVR automation (2.5 s delay)...');
 
-        let attempts = 0;
-        const maxAttempts = 30; // 15 seconds total
-
-        const interval = setInterval(() => {
-            attempts++;
-            if (attempts > maxAttempts) {
-                clearInterval(interval);
-                console.log('[OMT] Examino: Settings gear not found, stopping automation.');
+        setTimeout(() => {
+            // Step A — locate and click the settings button
+            const settingsBtn = document.querySelector('.op-button.op-setting-button');
+            if (!settingsBtn) {
+                console.warn('[OMT] Examino: .op-setting-button not found — DVR automation skipped.');
                 return;
             }
 
-            const settingsGear = document.querySelector('button.op-controls__settings') || 
-                                 document.querySelector('.op-settings__btn') || 
-                                 document.querySelector('.op-settings') || 
-                                 document.querySelector('[class*="settings"]');
+            settingsBtn.click();
+            console.log('[OMT] Examino: Settings button clicked.');
 
-            if (settingsGear) {
-                clearInterval(interval);
+            // Step B — wait 600 ms for the settings menu to render
+            setTimeout(() => {
+                // Step C — target the DVR source button (op-data-value="1")
+                const dvrBtn = document.querySelector('div[op-data-value="1"]');
 
-                // Open the settings panel
-                settingsGear.click();
-
-                // Wait for settings menu elements to render in the DOM
-                setTimeout(() => {
-                    const dvrItem = document.querySelector('div.op-setting-item[op-panel-type="source"][op-data-value="1"]');
-                    const liveItem = document.querySelector('div.op-setting-item[op-panel-type="source"][op-data-value="0"]');
-
-                    if (dvrItem) {
-                        const isDvrActive = dvrItem.classList.contains('op-setting-item--active') || 
-                                            dvrItem.classList.contains('op-selected') || 
-                                            dvrItem.classList.contains('op-active') || 
-                                            dvrItem.getAttribute('aria-checked') === 'true' ||
-                                            (liveItem && !liveItem.classList.contains('op-setting-item--active') && !liveItem.classList.contains('op-selected') && !liveItem.classList.contains('op-active') && liveItem.getAttribute('aria-checked') !== 'true');
-
-                        if (!isDvrActive) {
-                            dvrItem.click();
-                            console.log('[OMT] Examino: Switched source from Live to DVR.');
-                        } else {
-                            // Already DVR, close the settings panel
-                            settingsGear.click();
-                            console.log('[OMT] Examino: DVR source already active.');
-                        }
-                    } else {
-                        // DVR source item not found, close the settings panel
-                        settingsGear.click();
-                        console.warn('[OMT] Examino: DVR source item not found in settings panel.');
-                    }
-                }, 250);
-            }
-        }, 500);
+                if (dvrBtn) {
+                    // Step D — click the DVR source button
+                    dvrBtn.click();
+                    console.log('[OMT] Examino: DVR source button clicked (op-data-value="1").');
+                } else {
+                    console.warn('[OMT] Examino: DVR button (div[op-data-value="1"]) not found — closing settings.');
+                    // Close the panel gracefully if DVR item is absent
+                    settingsBtn.click();
+                }
+            }, 600);
+        }, 2500);
     }
+
+    // Alias kept for the existing call-site inside init()
+    function automateExaminoDvr() { forceDVR(); }
 
     /* =========================================================
        17. RESTORE PERSISTED STATE AFTER PAGE LOAD
@@ -1846,13 +1874,9 @@
        ENTRY POINT
        ========================================================= */
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => {
-            boot();
-            automateExaminoDvr();
-        });
+        document.addEventListener('DOMContentLoaded', boot);
     } else {
         boot();
-        automateExaminoDvr();
     }
 
 })();
