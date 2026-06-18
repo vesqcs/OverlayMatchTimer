@@ -16,6 +16,29 @@
     pointer-events: none !important;
 }
 
+/* ---- PLATFORM CONTROL SUPPRESSION ---- */
+/*
+   Xeatre  — hides the native overlay control bar in both fullscreen and normal modes.
+   Examino — hides the button bar, progress bar, and settings gear.
+   NOTE:  These are intentionally global (not scoped to #omt-root) so they can
+          reach the host page's own DOM tree.
+          The <video> element and #omt-root are NOT targeted here.
+*/
+
+/* Xeatre */
+#ControlBar.overlay-fullscreen,
+#ControlBar.overlay-normal {
+    display: none !important;
+}
+
+/* Examino */
+.button-bar.fullscreen,
+.button-bar.svelte-1azck0y,
+.op-progressbar-container,
+.op-button.op-setting-button {
+    display: none !important;
+}
+
 /* Ensure the video container is position:relative so our panels anchor correctly */
 #omt-root {
     position: absolute;

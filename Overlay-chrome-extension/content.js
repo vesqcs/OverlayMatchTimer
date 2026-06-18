@@ -149,6 +149,7 @@
             hlsInstance = getHlsInstance();
             patchHlsForDvr();
             suppressNativeControls();
+            suppressPlatformControls();
             injectUI();
             cacheUIRefs();
             wireEvents();
@@ -225,6 +226,68 @@
         document.querySelectorAll('.video-js, .vjs-tech').forEach(el => {
             el.setAttribute('tabindex', '-1');
         });
+    }
+
+    /* =========================================================
+       3b. SUPPRESS PLATFORM-SPECIFIC NATIVE CONTROLS
+           Handles Xeatre and Examino control bars that are
+           injected / re-injected dynamically by the host page.
+           Runs a single persistent MutationObserver — no polling.
+       ========================================================= */
+    const PLATFORM_SELECTORS = [
+        /* Xeatre */
+        '#ControlBar.overlay-fullscreen',
+        '#ControlBar.overlay-normal',
+        /* Examino */
+        '.button-bar.fullscreen',
+        '.button-bar.svelte-1azck0y',
+        '.op-progressbar-container',
+        '.op-button.op-setting-button'
+    ];
+
+    /**
+     * Hides all currently present matching elements.
+     * Skips <video> and #omt-root — guaranteed by the selectors above.
+     */
+    function hidePlatformControls() {
+        PLATFORM_SELECTORS.forEach(selector => {
+            try {
+                document.querySelectorAll(selector).forEach(el => {
+                    if (el.style.display !== 'none') {
+                        el.style.display = 'none';
+                    }
+                });
+            } catch (e) { /* malformed selector guard */ }
+        });
+    }
+
+    /**
+     * Attaches a single MutationObserver on <body> (subtree) that calls
+     * hidePlatformControls() whenever new nodes are added to the DOM.
+     * Also runs immediately to cover any elements already present.
+     */
+    function suppressPlatformControls() {
+        // Immediate sweep — cover elements already in the DOM at init time
+        hidePlatformControls();
+
+        const observer = new MutationObserver(mutations => {
+            let hasAdditions = false;
+            for (const mutation of mutations) {
+                if (mutation.addedNodes.length > 0) {
+                    hasAdditions = true;
+                    break;
+                }
+            }
+            // Only act when new nodes actually appeared (skip attribute/text mutations)
+            if (hasAdditions) hidePlatformControls();
+        });
+
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+
+        console.log('[OMT] Platform control suppressor active (Xeatre + Examino).');
     }
 
     /* =========================================================
