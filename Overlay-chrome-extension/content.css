@@ -274,10 +274,48 @@
     bottom: 40px;
     left: 50%;
     transform: translateX(-50%);
-    width: 560px;
+    width: min(560px, 95vw);
     display: flex;
     flex-direction: column;
-    transition: opacity 0.3s ease;
+    transition: opacity 0.3s ease,
+                bottom 0.25s ease,
+                left 0.25s ease,
+                transform 0.25s ease,
+                width 0.25s ease,
+                border-radius 0.25s ease;
+}
+
+/* ---- CONTROLS PANEL — DOCKED MODE ---- */
+/*
+   Applied dynamically when the bottom black letterbox bar is at least
+   110 px tall. The panel expands to fill the full container width and
+   sits at the TOP of the black bar (top is set via JS = renderedVideoHeight).
+*/
+#omt-root #controls-panel.controls-docked {
+    /* top is injected by JS as renderedVideoHeight px from container top */
+    bottom: auto;
+    left: 0;
+    right: 0;
+    width: 100%;
+    transform: none;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    border-top: none;
+    background: rgba(10, 10, 10, 0.92);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+/* In docked mode only hide the ≡ grip — keep all control buttons visible */
+#omt-root #controls-panel.controls-docked .drag-center-grip {
+    display: none !important;
+}
+
+/* Drag handle becomes a normal toolbar row in docked mode (no grab cursor) */
+#omt-root #controls-panel.controls-docked .drag-handle {
+    cursor: default !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 /* ---- LIVE BUTTON ---- */
@@ -699,6 +737,31 @@
     transform: translateX(18px);
 }
 
+/* ---- LOCAL VIDEO WINDOWED SCALING ---- */
+/*
+   Ensures the <video> element fills the full viewport in windowed mode so that
+   our geometry calculation (vid.getBoundingClientRect) matches the visible area.
+   Without this the browser may render the video at its natural resolution with
+   scroll bars, making the black-bar computation unreliable.
+*/
+.omt-local-env body,
+.omt-local-env html {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    overflow: hidden !important;
+    background: black !important;
+}
+
+.omt-local-env video {
+    display: block !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: 100vw !important;
+    max-height: 100vh !important;
+}
+
 /* ---- LOCAL VIDEO FULLSCREEN SCALING ---- */
 .omt-local-env:fullscreen video {
     width: 100% !important;
@@ -706,4 +769,17 @@
     max-width: 100% !important;
     max-height: 100% !important;
     object-fit: contain !important;
+}
+
+/* ---- VIDEO TOP-ALIGNMENT (non-Xeatre platforms) ---- */
+/*
+   Injected on Inplay, Examino, and Local pages at init time via JS.
+   Forces the video to render at the TOP of its container instead of
+   the centre, so both letterbox gaps merge into one large bottom bar
+   — the space our docked control panel occupies.
+   Xeatre already aligns to the top natively; no class is added there.
+*/
+video.omt-top-align {
+    object-fit: contain !important;
+    object-position: top center !important;
 }

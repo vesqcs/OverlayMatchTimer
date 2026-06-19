@@ -29,6 +29,14 @@
     let hasAutomatedDvr = false;
     const isLocalVideo = window.location.protocol === 'file:';
     const isExamino = window.location.hostname.includes('examino');
+    const isXeatre = window.location.hostname.includes('xeatre');
+
+    // Docked layout state
+    let isDocked = false;
+    let omtAnchor = null;
+    let dockResizeObserver = null;
+    let dockDebounceTimer = null;
+    let dockFullscreenHandler = null;
 
     // Kickoff markers (persisted in localStorage)
     let kickoff1 = localStorage.getItem('matchTimerKickoff1') !== null ? parseFloat(localStorage.getItem('matchTimerKickoff1')) : null;
@@ -63,6 +71,20 @@
             clearTimeout(mouseMoveTimeout);
             mouseMoveTimeout = null;
         }
+        // Disconnect dock engine
+        if (dockResizeObserver) {
+            dockResizeObserver.disconnect();
+            dockResizeObserver = null;
+        }
+        if (dockDebounceTimer) {
+            clearTimeout(dockDebounceTimer);
+            dockDebounceTimer = null;
+        }
+        if (dockFullscreenHandler) {
+            document.removeEventListener('fullscreenchange', dockFullscreenHandler);
+            window.removeEventListener('resize', dockFullscreenHandler);
+            dockFullscreenHandler = null;
+        }
         // Clean up ShuttleXpress
         cleanupShuttle();
         if (navigator.hid) {
@@ -88,6 +110,8 @@
         shuttleToggle = null;
         shuttleCheatsheet = null;
         hasAutomatedDvr = false;
+        isDocked = false;
+        omtAnchor = null;
     }
 
     function boot() {
@@ -145,6 +169,10 @@
         vid = videoEl;
         vid.preservesPitch = true;
 
+        if (!isXeatre) {
+            vid.classList.add('omt-top-align');
+        }
+
         // Give Video.js time to fully initialise before we grab its internals
         setTimeout(() => {
             hlsInstance = getHlsInstance();
@@ -159,6 +187,7 @@
             startSPAMonitor();
             initShuttleXpress();
             automateExaminoDvr();
+            initDockedLayoutEngine();
             console.log('[OMT] Overlay MatchTimer extension active.');
         }, 1800);
     }
@@ -341,6 +370,8 @@
         }
 
         if (!anchor) { console.error('[OMT] Could not find anchor element.'); return; }
+
+        omtAnchor = anchor;
 
         if (!isLocal) {
             // Ensure relative positioning so absolute children work
@@ -1398,6 +1429,14 @@
 
         if (vid && (!vid.duration || !isFinite(vid.duration))) return;
 
+        if (isDocked) {
+            if (controlsPanel) {
+                controlsPanel.style.opacity = '1';
+                controlsPanel.style.pointerEvents = 'auto';
+            }
+            return;
+        }
+
         if (controlsPanel) {
             controlsPanel.style.opacity = '1';
             controlsPanel.style.pointerEvents = 'auto';
@@ -1518,6 +1557,9 @@
         let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
 
         handle.onmousedown = function (e) {
+            // Guard: don't allow dragging controls panel if docked
+            if (isDocked && panel === controlsPanel) return;
+
             // Ignore clicks on interactive child elements
             if (e.target.closest('button, select, input')) return;
             e.preventDefault();
@@ -1868,6 +1910,148 @@
 
         esconderSetup();
         mostrarOSD('⏱ Timer Restored');
+    }
+
+    /* =========================================================
+       18. DOCKED LAYOUT ENGINE
+       ========================================================= */
+    const DOCK_THRESHOLD = 110; // Fixed value with safe margin
+
+    function computeBottomBlackBarHeight() {
+        if (!vid) return 0;
+
+        const vidRect = vid.getBoundingClientRect();
+        const containerHeight = vidRect.height;
+        const containerWidth  = vidRect.width;
+
+        if (containerHeight === 0 || containerWidth === 0) return 0;
+
+        // Native aspect ratio of the video content
+        let videoAspectRatio = 16 / 9; // safe default before metadata loads
+        if (vid.videoWidth && vid.videoHeight) {
+            videoAspectRatio = vid.videoWidth / vid.videoHeight;
+        }
+
+        // With object-fit: contain (enforced by omt-top-align), the rendered
+        // video image fits within the <video> element box, letter-boxed.
+        // The rendered image height = min(element height, element width / aspectRatio)
+        const renderedVideoHeight = Math.min(containerHeight, containerWidth / videoAspectRatio);
+
+        // Because omt-top-align forces object-position: top center, the image
+        // sits at the top, so ALL leftover space is at the bottom.
+        const blackBarHeight = containerHeight - renderedVideoHeight;
+        return Math.max(0, blackBarHeight);
+    }
+
+    function applyDockedLayout(dock) {
+        if (!controlsPanel) return;
+
+        if (dock) {
+            if (!isDocked) {
+                isDocked = true;
+
+                // Compute where the video image ends (= start of the black bar)
+                const vidRect = vid.getBoundingClientRect();
+                const contH = vidRect.height;
+                const contW = vidRect.width;
+                let ar = (vid.videoWidth && vid.videoHeight)
+                    ? vid.videoWidth / vid.videoHeight
+                    : 16 / 9;
+                const renderedH = Math.min(contH, contW / ar);
+
+                // For local files #omt-root is position:fixed (viewport coords).
+                // For stream platforms it is position:absolute inside the anchor.
+                // In both cases #omt-root fills the same area as the video element,
+                // so top = renderedH correctly lands at the video/black-bar boundary.
+                controlsPanel.style.top    = renderedH + 'px';
+                controlsPanel.style.bottom = 'auto';
+                controlsPanel.style.left   = '';
+                controlsPanel.style.transform = '';
+                controlsPanel.style.width  = '';
+
+                controlsPanel.classList.add('controls-docked');
+                resetControlsTimeout();
+            }
+        } else {
+            if (isDocked) {
+                isDocked = false;
+                controlsPanel.classList.remove('controls-docked');
+
+                // Restore default CSS-driven positioning
+                controlsPanel.style.top    = '';
+                controlsPanel.style.bottom = '';
+                controlsPanel.style.left   = '';
+                controlsPanel.style.transform = '';
+                controlsPanel.style.width  = '';
+
+                resetControlsTimeout();
+            }
+        }
+    }
+
+    function scheduleDockRecalc() {
+        if (dockDebounceTimer) {
+            clearTimeout(dockDebounceTimer);
+        }
+        dockDebounceTimer = setTimeout(() => {
+            dockDebounceTimer = null;
+
+            // Fullscreen — always overlay mode
+            if (document.fullscreenElement) {
+                applyDockedLayout(false);
+                return;
+            }
+
+            const blackBarHeight = computeBottomBlackBarHeight();
+            const shouldDock = blackBarHeight >= DOCK_THRESHOLD;
+            console.log(`[OMT] Dock recalc — blackBar: ${blackBarHeight.toFixed(1)}px, threshold: ${DOCK_THRESHOLD}px, dock: ${shouldDock}`);
+
+            if (shouldDock) {
+                // Always refresh the top position (may have changed due to resize)
+                if (vid && controlsPanel) {
+                    const vidRect = vid.getBoundingClientRect();
+                    const contH = vidRect.height;
+                    const contW = vidRect.width;
+                    const ar = (vid.videoWidth && vid.videoHeight)
+                        ? vid.videoWidth / vid.videoHeight : 16 / 9;
+                    const renderedH = Math.min(contH, contW / ar);
+                    controlsPanel.style.top = renderedH + 'px';
+                }
+                applyDockedLayout(true);
+            } else {
+                applyDockedLayout(false);
+            }
+        }, 100);
+    }
+
+    function initDockedLayoutEngine() {
+        if (!vid) return;
+
+        // 1. Create ResizeObserver — observe the <video> element directly since
+        //    computeBottomBlackBarHeight() uses vid.getBoundingClientRect().
+        //    Also observe the anchor as a backup for platforms where the video
+        //    element itself is fixed-size but the container changes.
+        if (window.ResizeObserver) {
+            dockResizeObserver = new ResizeObserver(() => {
+                scheduleDockRecalc();
+            });
+            dockResizeObserver.observe(vid);
+            if (omtAnchor && omtAnchor !== document.body) {
+                dockResizeObserver.observe(omtAnchor);
+            }
+        }
+
+        // 2. Listen for fullscreen and window resize events
+        dockFullscreenHandler = () => {
+            scheduleDockRecalc();
+        };
+        document.addEventListener('fullscreenchange', dockFullscreenHandler);
+        window.addEventListener('resize', dockFullscreenHandler);
+
+        // 3. Run initial calculation (video metadata may not be ready yet;
+        //    also re-run when metadata loads so aspect ratio is accurate)
+        vid.addEventListener('loadedmetadata', scheduleDockRecalc);
+        scheduleDockRecalc();
     }
 
     /* =========================================================
