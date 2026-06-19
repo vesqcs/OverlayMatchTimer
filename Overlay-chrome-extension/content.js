@@ -401,6 +401,7 @@
 
     function buildHTML() {
         return `
+<div id="omt-video-spacer"></div>
 <div id="match-timer">00:00</div>
 <div id="osd-message">MatchTimer</div>
 
@@ -1950,21 +1951,11 @@
             if (!isDocked) {
                 isDocked = true;
 
-                // Compute where the video image ends (= start of the black bar)
-                const vidRect = vid.getBoundingClientRect();
-                const contH = vidRect.height;
-                const contW = vidRect.width;
-                let ar = (vid.videoWidth && vid.videoHeight)
-                    ? vid.videoWidth / vid.videoHeight
-                    : 16 / 9;
-                const renderedH = Math.min(contH, contW / ar);
-
-                // For local files #omt-root is position:fixed (viewport coords).
-                // For stream platforms it is position:absolute inside the anchor.
-                // In both cases #omt-root fills the same area as the video element,
-                // so top = renderedH correctly lands at the video/black-bar boundary.
-                controlsPanel.style.top    = renderedH + 'px';
-                controlsPanel.style.bottom = 'auto';
+                // Pure CSS flexbox handles positioning — no JS top calculation needed.
+                // #omt-root is a flex column: the spacer takes flex:1 (video area),
+                // and .controls-docked sits naturally at the bottom in the same frame.
+                controlsPanel.style.top    = '';
+                controlsPanel.style.bottom = '';
                 controlsPanel.style.left   = '';
                 controlsPanel.style.transform = '';
                 controlsPanel.style.width  = '';
@@ -2007,16 +1998,7 @@
             console.log(`[OMT] Dock recalc — blackBar: ${blackBarHeight.toFixed(1)}px, threshold: ${DOCK_THRESHOLD}px, dock: ${shouldDock}`);
 
             if (shouldDock) {
-                // Always refresh the top position (may have changed due to resize)
-                if (vid && controlsPanel) {
-                    const vidRect = vid.getBoundingClientRect();
-                    const contH = vidRect.height;
-                    const contW = vidRect.width;
-                    const ar = (vid.videoWidth && vid.videoHeight)
-                        ? vid.videoWidth / vid.videoHeight : 16 / 9;
-                    const renderedH = Math.min(contH, contW / ar);
-                    controlsPanel.style.top = renderedH + 'px';
-                }
+                // CSS flexbox handles the position natively — no top recalc needed.
                 applyDockedLayout(true);
             } else {
                 applyDockedLayout(false);

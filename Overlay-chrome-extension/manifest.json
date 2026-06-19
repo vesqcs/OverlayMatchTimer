@@ -6,7 +6,7 @@
 
   "version": "1.0.0",
 
-  "description": "Injects the Overlay MatchTimer UI over InplayIP live streams for professional match analysis.",
+  "description": "Professional match analysis overlay for Xeatre, Inplayip & Examino streams. Drift-proof timer, frame scrubbing, ShuttleXpress hardware support & smart docked controls.",
 
   "author": "Vasco Oliveira",
 

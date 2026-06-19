@@ -47,6 +47,10 @@
     z-index: 2147483640;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     color: white;
+    /* Flex column: spacer fills the video image area, docked panel flows below it */
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
 }
 
 /* Allow panels to receive pointer events */
@@ -54,6 +58,17 @@
 #omt-root #match-timer,
 #omt-root #osd-message {
     pointer-events: auto;
+}
+
+/* ---- VIDEO SPACER (flex child) ----
+   Fills the rendered video image area so the docked controls panel
+   is pushed naturally to the bottom black bar by the browser's layout
+   engine — zero JS measurement, zero frame lag on resize.
+*/
+#omt-root #omt-video-spacer {
+    flex: 1 1 auto;       /* grows to fill the video image height */
+    pointer-events: none; /* transparent — clicks pass through to the video */
+    min-height: 0;
 }
 
 /* ---- OSD MATCH TIMER ---- */
@@ -289,10 +304,15 @@
 /*
    Applied dynamically when the bottom black letterbox bar is at least
    110 px tall. The panel expands to fill the full container width and
-   sits at the TOP of the black bar (top is set via JS = renderedVideoHeight).
+   sits at the TOP of the black bar.
+   Position is handled entirely by the flex column layout of #omt-root:
+   #omt-video-spacer takes flex:1 (the video image area), and this panel
+   follows immediately after it — no JS top calculation, no frame lag.
 */
 #omt-root #controls-panel.controls-docked {
-    /* top is injected by JS as renderedVideoHeight px from container top */
+    /* Remove absolute positioning — let flexbox flow handle it */
+    position: relative;
+    top: auto;
     bottom: auto;
     left: 0;
     right: 0;
@@ -305,6 +325,7 @@
     background: rgba(10, 10, 10, 0.92);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
+    flex-shrink: 0; /* never compress the controls panel */
 }
 
 /* In docked mode only hide the ≡ grip — keep all control buttons visible */
