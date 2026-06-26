@@ -274,8 +274,9 @@
     const EXAMINO_SELECTORS = [
         '.button-bar.svelte-1azck0y',
         '.op-ui.op-clear',
-        '.op-progressbar-container.op-clear',
-        '.op-button.op-setting-button'
+        '.op-progressbar-container.op-clear'
+        // NOTE: .op-button.op-setting-button is intentionally kept visible
+        // as a manual fallback in case DVR automation fails.
     ];
 
     /**
@@ -312,8 +313,9 @@
         style.textContent = [
             '.button-bar.svelte-1azck0y    { display: none !important; }',
             '.op-ui.op-clear               { display: none !important; }',
-            '.op-progressbar-container.op-clear { display: none !important; }',
-            '.op-button.op-setting-button  { display: none !important; }'
+            '.op-progressbar-container.op-clear { display: none !important; }'
+            // .op-button.op-setting-button is intentionally NOT hidden here —
+            // it acts as a manual fallback if DVR automation fails.
         ].join('\n');
         (document.head || document.documentElement).appendChild(style);
         console.log('[OMT] Examino CSS hide rules injected.');
@@ -738,11 +740,16 @@
             btnMainPlay.classList.add('playing');
             controlsPanel.classList.add('playing-state');
             resetControlsTimeout();
+            // Fix #5: Suppress native control bars that can re-appear on play events
+            // (e.g. ShuttleXpress triggering play via vid.play() directly)
+            suppressNativeControlBarsOnPlayback();
         });
         vid.addEventListener('pause', () => {
             btnMainPlay.innerHTML = '⏯ Play';
             btnMainPlay.classList.remove('playing');
             controlsPanel.classList.remove('playing-state');
+            // Also suppress on pause — some platforms re-show controls when paused
+            suppressNativeControlBarsOnPlayback();
         });
 
         // --- Drag system for both panels ---
@@ -1553,53 +1560,74 @@
 
     /* =========================================================
        15. PANEL DRAG SYSTEM
+       Exact port of the working fazerArrastavel() from OverlayMatchTimer.html.
+       Uses the classic delta-movement pattern with document.onmousemove so the
+       drag never drops even when the cursor moves faster than the panel repaints.
+       NOTE: CSS transitions on 'left' and 'transform' are suppressed for the
+       entire drag gesture and restored on mouseup — otherwise every style.left
+       update is animated over 0.25 s instead of being immediate, which causes
+       broken horizontal movement and a visible jump when transform is cleared.
        ========================================================= */
     function fazerArrastavel(panel, handle) {
         let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
 
         handle.onmousedown = function (e) {
-            // Guard: don't allow dragging controls panel if docked
+            // Guard: don't allow dragging controls panel when docked
             if (isDocked && panel === controlsPanel) return;
 
             // Ignore clicks on interactive child elements
             if (e.target.closest('button, select, input')) return;
+
+            e = e || window.event;
             e.preventDefault();
 
-            // Anchor the panel at its current rendered position before clearing transforms
+            // Snapshot the panel's current rendered position once and commit it
+            // as explicit top/left px so delta moves work predictably regardless
+            // of prior CSS (transform, bottom, %, etc.)
             const rect = panel.getBoundingClientRect();
             const rootRect = omtRoot.getBoundingClientRect();
-            panel.style.top = (rect.top - rootRect.top) + 'px';
-            panel.style.left = (rect.left - rootRect.left) + 'px';
+
+            // Kill CSS transitions for the duration of the drag so that every
+            // style.left / style.top assignment takes effect immediately.
+            panel.style.transition = 'none';
+
+            panel.style.top       = (rect.top  - rootRect.top)  + 'px';
+            panel.style.left      = (rect.left - rootRect.left) + 'px';
             panel.style.transform = 'none';
-            panel.style.bottom = 'auto';
+            panel.style.bottom    = 'auto';
 
             pos3 = e.clientX;
             pos4 = e.clientY;
 
+            document.onmouseup   = stopDrag;
             document.onmousemove = drag;
-            document.onmouseup = stopDrag;
         };
 
         function drag(e) {
+            e = e || window.event;
             e.preventDefault();
+
+            // Delta from last known mouse position — no getBoundingClientRect here
             pos1 = pos3 - e.clientX;
             pos2 = pos4 - e.clientY;
             pos3 = e.clientX;
             pos4 = e.clientY;
 
-            let newTop = panel.offsetTop - pos2;
+            let newTop  = panel.offsetTop  - pos2;
             let newLeft = panel.offsetLeft - pos1;
 
-            newTop = Math.max(0, Math.min(newTop, window.innerHeight - panel.offsetHeight));
-            newLeft = Math.max(0, Math.min(newLeft, window.innerWidth - panel.offsetWidth));
+            newTop  = Math.max(0, Math.min(newTop,  window.innerHeight - panel.offsetHeight));
+            newLeft = Math.max(0, Math.min(newLeft, window.innerWidth  - panel.offsetWidth));
 
-            panel.style.top = newTop + 'px';
+            panel.style.top  = newTop  + 'px';
             panel.style.left = newLeft + 'px';
         }
 
         function stopDrag() {
-            document.onmouseup = null;
+            document.onmouseup   = null;
             document.onmousemove = null;
+            // Restore transitions after the drag ends
+            panel.style.transition = '';
         }
     }
 
@@ -1850,18 +1878,25 @@
         console.log('[OMT] Examino: Scheduling DVR automation (2.5 s delay)...');
 
         setTimeout(() => {
-            // Step A — locate and click the settings button
+            // Step A — locate and click the settings button.
+            // The settings button is now always visible (not hidden by CSS) so
+            // the user can click it manually if automation fails.
             const settingsBtn = document.querySelector('.op-button.op-setting-button');
             if (!settingsBtn) {
-                console.warn('[OMT] Examino: .op-setting-button not found — DVR automation skipped.');
+                console.warn('[OMT] Examino: .op-setting-button not found — DVR automation skipped. The button will remain visible for manual use.');
                 return;
             }
 
             settingsBtn.click();
             console.log('[OMT] Examino: Settings button clicked.');
 
-            // Step B — wait 600 ms for the settings menu to render
-            setTimeout(() => {
+            // Fix #3: Retry up to 3 times with 400 ms delay if the DVR button
+            // is not found immediately after the settings panel opens.
+            let dvrRetries = 0;
+            const MAX_DVR_RETRIES = 3;
+            const DVR_RETRY_DELAY_MS = 400;
+
+            function attemptDvrClick() {
                 // Step C — target the DVR source button (op-data-value="1")
                 const dvrBtn = document.querySelector('div[op-data-value="1"]');
 
@@ -1869,12 +1904,20 @@
                     // Step D — click the DVR source button
                     dvrBtn.click();
                     console.log('[OMT] Examino: DVR source button clicked (op-data-value="1").');
+                } else if (dvrRetries < MAX_DVR_RETRIES) {
+                    dvrRetries++;
+                    console.warn(`[OMT] Examino: DVR button not found — retry ${dvrRetries}/${MAX_DVR_RETRIES} in ${DVR_RETRY_DELAY_MS}ms...`);
+                    setTimeout(attemptDvrClick, DVR_RETRY_DELAY_MS);
                 } else {
-                    console.warn('[OMT] Examino: DVR button (div[op-data-value="1"]) not found — closing settings.');
-                    // Close the panel gracefully if DVR item is absent
+                    console.warn('[OMT] Examino: DVR button (div[op-data-value="1"]) not found after all retries. Settings button remains visible for manual use.');
+                    // Close the panel gracefully so the user sees a clean UI.
+                    // The settings button itself is still accessible for manual clicks.
                     settingsBtn.click();
                 }
-            }, 600);
+            }
+
+            // Step B — wait 600 ms for the settings menu to render, then start
+            setTimeout(attemptDvrClick, 600);
         }, 2500);
     }
 
@@ -2006,6 +2049,83 @@
         }, 100);
     }
 
+    /* =========================================================
+       FIX #1: XEATRE — SMALL-VIEW OPACITY ENFORCEMENT
+       When the window is too small for the dock threshold, the
+       auto-hide timer might leave the panel at opacity:0. On
+       Xeatre specifically, we must force the panel visible.
+       Bound to resize (not rAF) per the CRITICAL PERFORMANCE RULE.
+       ========================================================= */
+    function applyXeatreSmallViewOpacity() {
+        if (!isXeatre || !controlsPanel) return;
+        // If the user manually hid the panel (H key), never override that decision.
+        if (isManuallyHidden) return;
+        // If not docked and window is small enough that dock won't trigger,
+        // override opacity/pointer-events so the panel cannot disappear.
+        const blackBarHeight = computeBottomBlackBarHeight();
+        const isSmallView = blackBarHeight < DOCK_THRESHOLD;
+        if (isSmallView) {
+            controlsPanel.style.setProperty('opacity', '1', 'important');
+            controlsPanel.style.setProperty('pointer-events', 'auto', 'important');
+        } else {
+            // Larger views: let the normal auto-hide system handle it
+            controlsPanel.style.removeProperty('opacity');
+            controlsPanel.style.removeProperty('pointer-events');
+        }
+    }
+
+    /* =========================================================
+       FIX #2: EXAMINO — SMALL-VIEW FLEX ALIGNMENT
+       In small popup views, Examino's .video-container centres
+       the video vertically, creating white bars and hiding the
+       panel. Force align-items:flex-start to snap it to the top.
+       Bound to resize (not rAF) per the CRITICAL PERFORMANCE RULE.
+       ========================================================= */
+    let examinoFlexStyle = null;
+
+    function applyExaminoFlexAlignment() {
+        if (!isExamino) return;
+
+        // Lazily create the <style> element once
+        if (!examinoFlexStyle) {
+            examinoFlexStyle = document.createElement('style');
+            examinoFlexStyle.id = 'omt-examino-flex-align';
+            (document.head || document.documentElement).appendChild(examinoFlexStyle);
+        }
+
+        const blackBarHeight = computeBottomBlackBarHeight();
+        const isSmallLayout = blackBarHeight < DOCK_THRESHOLD;
+
+        if (isSmallLayout) {
+            // Snap video to top so the bottom space is freed for our panel
+            examinoFlexStyle.textContent =
+                '.video-container.svelte-iq8mv8 { align-items: flex-start !important; }';
+        } else {
+            examinoFlexStyle.textContent = '';
+        }
+    }
+
+    /* =========================================================
+       FIX #5: SUPPRESS NATIVE CONTROLS ON PLAY/PAUSE
+       Directly silences native control wrappers whenever the
+       HTML5 video element fires 'play' or 'pause'. This stops
+       ShuttleXpress-triggered playback from hijacking the UI.
+       ========================================================= */
+    function suppressNativeControlBarsOnPlayback() {
+        const nativeSelectors = [
+            '.op-ui.op-clear',   // Examino controls wrapper only — NOT the player root
+            '.vjs-control-bar',  // Xeatre/Inplay Video.js control bar
+            '.button-bar'        // Examino button bar
+        ];
+        nativeSelectors.forEach(sel => {
+            try {
+                document.querySelectorAll(sel).forEach(el => {
+                    el.style.setProperty('display', 'none', 'important');
+                });
+            } catch (_) {}
+        });
+    }
+
     function initDockedLayoutEngine() {
         if (!vid) return;
 
@@ -2030,10 +2150,27 @@
         document.addEventListener('fullscreenchange', dockFullscreenHandler);
         window.addEventListener('resize', dockFullscreenHandler);
 
+        // Fix #1 & #2: Bind responsive overlay fixes to the resize event only
+        // (never inside rAF / animation loop — per CRITICAL PERFORMANCE RULE).
+        let responsiveFixDebounce = null;
+        window.addEventListener('resize', () => {
+            if (responsiveFixDebounce) clearTimeout(responsiveFixDebounce);
+            responsiveFixDebounce = setTimeout(() => {
+                applyXeatreSmallViewOpacity();
+                applyExaminoFlexAlignment();
+            }, 80);
+        });
+
         // 3. Run initial calculation (video metadata may not be ready yet;
         //    also re-run when metadata loads so aspect ratio is accurate)
         vid.addEventListener('loadedmetadata', scheduleDockRecalc);
         scheduleDockRecalc();
+
+        // Run the responsive fixes once on init (after a short settle delay)
+        setTimeout(() => {
+            applyXeatreSmallViewOpacity();
+            applyExaminoFlexAlignment();
+        }, 200);
     }
 
     /* =========================================================

@@ -32,10 +32,12 @@
 }
 
 /* Examino */
+/* NOTE: .op-button.op-setting-button is intentionally NOT listed here.
+   It remains visible as a manual fallback in case DVR automation fails.
+   The JS module (injectExaminoHideCSS) also omits it for the same reason. */
 .button-bar.fullscreen,
 .button-bar.svelte-1azck0y,
-.op-progressbar-container,
-.op-button.op-setting-button {
+.op-progressbar-container {
     display: none !important;
 }
 
