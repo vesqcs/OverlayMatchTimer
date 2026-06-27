@@ -41,12 +41,23 @@
     display: none !important;
 }
 
+/* Examino: ALWAYS keep the native settings/gear button accessible — it is the
+   manual fallback for DVR mode. This rule MUST come after all hide rules so
+   its specificity wins. The JS aggressive observer also enforces this. */
+.op-button.op-setting-button {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+}
+
 /* Ensure the video container is position:relative so our panels anchor correctly */
 #omt-root {
     position: absolute;
     inset: 0;
     pointer-events: none;
-    z-index: 2147483640;
+    /* Absolute max stacking priority — must render above every host-page element */
+    z-index: 999999999 !important;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     color: white;
     /* Flex column: spacer fills the video image area, docked panel flows below it */
@@ -136,7 +147,8 @@
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 10px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-    z-index: 50;
+    /* Panels must always render above host-page bars (white/black layout elements) */
+    z-index: 999999999 !important;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -231,6 +243,8 @@
     top: 80px;
     left: 80px;
     width: 300px;
+    /* Explicit stacking override — must not be obscured by host layout bars */
+    z-index: 999999999 !important;
 }
 
 #omt-root .setup-content {
@@ -294,12 +308,26 @@
     width: min(560px, 95vw);
     display: flex;
     flex-direction: column;
+    /* Explicit stacking override — must not be obscured by host layout bars */
+    z-index: 999999999 !important;
     transition: opacity 0.3s ease,
                 bottom 0.25s ease,
                 left 0.25s ease,
                 transform 0.25s ease,
                 width 0.25s ease,
                 border-radius 0.25s ease;
+}
+
+/* ---- CLASS-BASED HIDE STATE ----
+   Used by the auto-hide timer and manual H-key. Using a class instead of an
+   inline opacity means the small-view layout enforcer can simply check whether
+   to cancel the timeout — it never fights over inline style values.
+   The transition is intentionally quick (0.2s) so the panel snaps away cleanly.
+*/
+#omt-root #controls-panel.omt-hidden {
+    opacity: 0 !important;
+    pointer-events: none !important;
+    transition: opacity 0.2s ease !important;
 }
 
 /* ---- CONTROLS PANEL — DOCKED MODE ---- */

@@ -37,6 +37,9 @@
     let dockResizeObserver = null;
     let dockDebounceTimer = null;
     let dockFullscreenHandler = null;
+    // True when a structural small-view override is active (Xeatre < 550px or Examino < 600px).
+    // When set, the auto-hide timeout is suppressed so the panel can never flicker.
+    let isSmallViewForced = false;
 
     // Kickoff markers (persisted in localStorage)
     let kickoff1 = localStorage.getItem('matchTimerKickoff1') !== null ? parseFloat(localStorage.getItem('matchTimerKickoff1')) : null;
@@ -111,6 +114,7 @@
         shuttleCheatsheet = null;
         hasAutomatedDvr = false;
         isDocked = false;
+        isSmallViewForced = false;
         omtAnchor = null;
     }
 
@@ -301,6 +305,94 @@
     }
 
     /**
+     * SAFETY NET: After any hide sweep on Examino, forcibly un-hides the native
+     * settings button so DVR automation can always find it, and so the user has
+     * a manual fallback. This function is idempotent and cheap — it only removes
+     * an inline display:none that our own JS may have inadvertently set.
+     */
+    function restoreSettingsButton() {
+        if (!isExamino) return;
+        try {
+            document.querySelectorAll('.op-button.op-setting-button').forEach(el => {
+                // Remove any inline style.display we may have set; CSS rule takes over.
+                el.style.removeProperty('display');
+                el.style.removeProperty('visibility');
+                el.style.removeProperty('opacity');
+            });
+        } catch (_) {}
+    }
+
+    /**
+     * AGGRESSIVE CLASS-CHANGE OBSERVER
+     * Attaches MutationObservers to all present and future player container elements
+     * (.video-js, .video-container) watching only for class attribute changes.
+     * When Video.js adds 'vjs-user-active' (triggered by ShuttleXpress buttons,
+     * Spacebar, or any native keyboard handler), this fires synchronously and:
+     *   1. Removes vjs-user-active so Video.js CSS cannot show the control bar.
+     *   2. Adds vjs-user-inactive as a belt-and-suspenders measure.
+     *   3. Re-runs the full native-controls suppression sweep.
+     *   4. Restores the Examino settings button if it was caught in the sweep.
+     *
+     * Also monitors document.body for new player containers being added so the
+     * observer is always attached even after SPA navigation.
+     */
+    function attachAggressivePlayerObserver() {
+        const PLAYER_SELECTORS = ['.video-js', '.video-container'];
+
+        // Set of already-observed elements to avoid duplicate observers
+        const observed = new WeakSet();
+
+        function suppressOnClassChange(container) {
+            if (observed.has(container)) return;
+            observed.add(container);
+
+            const obs = new MutationObserver(() => {
+                // Video.js shows .vjs-control-bar when 'vjs-user-active' is present.
+                // Remove it immediately so the bar stays hidden.
+                if (container.classList.contains('vjs-user-active')) {
+                    container.classList.remove('vjs-user-active');
+                }
+                // Belt-and-suspenders: ensure inactive class is set
+                if (!container.classList.contains('vjs-user-inactive')) {
+                    container.classList.add('vjs-user-inactive');
+                }
+                // Re-run full suppression sweep
+                hidePlatformControls();
+                suppressNativeControlBarsOnPlayback();
+                // Ensure the settings button was not caught in the sweep
+                restoreSettingsButton();
+            });
+
+            obs.observe(container, { attributes: true, attributeFilter: ['class'] });
+        }
+
+        // Attach to all player containers already in the DOM
+        PLAYER_SELECTORS.forEach(sel => {
+            document.querySelectorAll(sel).forEach(el => suppressOnClassChange(el));
+        });
+
+        // Watch for dynamically added player containers (SPA navigation / lazy mount)
+        const bodyWatcher = new MutationObserver(mutations => {
+            for (const m of mutations) {
+                for (const node of m.addedNodes) {
+                    if (node.nodeType !== 1) continue;
+                    PLAYER_SELECTORS.forEach(sel => {
+                        try {
+                            if (node.matches && node.matches(sel)) suppressOnClassChange(node);
+                            if (node.querySelectorAll) {
+                                node.querySelectorAll(sel).forEach(el => suppressOnClassChange(el));
+                            }
+                        } catch (_) {}
+                    });
+                }
+            }
+        });
+        bodyWatcher.observe(document.body, { childList: true, subtree: true });
+
+        console.log('[OMT] Aggressive player observer attached.');
+    }
+
+    /**
      * Injects a <style> block that permanently hides Examino native controls
      * using !important so that Svelte/player CSS cannot override us.
      * Only injected when running on examino.statsperform.io.
@@ -326,6 +418,12 @@
      * hidePlatformControls() whenever new nodes are added to the DOM.
      * Also runs immediately to cover any elements already present.
      * The MutationObserver for Examino-specific controls only runs on Examino.
+     *
+     * AGGRESSIVE EXTENSION: also attaches attribute observers on all player
+     * container elements (.video-js, .video-container) so that class mutations
+     * (e.g. Video.js adding "vjs-user-active" after a ShuttleXpress keypress or
+     * Spacebar) are intercepted and the native control bars are re-hidden
+     * before a single frame is painted.
      */
     function suppressPlatformControls() {
         // Inject CSS !important rules for Examino (belt-and-suspenders)
@@ -333,6 +431,7 @@
 
         // Immediate DOM sweep — cover elements already present at init time
         hidePlatformControls();
+        restoreSettingsButton();
 
         // Global observer: covers Xeatre re-injection on all platforms
         const observer = new MutationObserver(mutations => {
@@ -344,13 +443,19 @@
                 }
             }
             // Only act when new nodes actually appeared (skip attribute/text mutations)
-            if (hasAdditions) hidePlatformControls();
+            if (hasAdditions) {
+                hidePlatformControls();
+                restoreSettingsButton();
+            }
         });
 
         observer.observe(document.body, {
             childList: true,
             subtree: true
         });
+
+        // Aggressive class-change observer
+        attachAggressivePlayerObserver();
 
         console.log('[OMT] Platform control suppressor active' + (isExamino ? ' (Xeatre + Examino).' : ' (Xeatre).'));
     }
@@ -388,7 +493,11 @@
         omtRoot.style.pointerEvents = 'none';
         if (isLocal) {
             omtRoot.style.position = 'fixed';
-            omtRoot.style.zIndex = '999999';
+            omtRoot.style.zIndex = '999999999';
+        } else {
+            // Absolute maximum stacking priority — must win over every host-page element
+            // (white/black letterbox bars, Svelte wrappers, Video.js overlays, etc.)
+            omtRoot.style.zIndex = '999999999';
         }
         omtRoot.innerHTML = buildHTML();
         anchor.appendChild(omtRoot);
@@ -1426,6 +1535,9 @@
 
     /* =========================================================
        13B. AUTO-HIDE CONTROLS
+       Uses a CSS class (.omt-hidden) rather than inline style.opacity
+       so the small-view layout enforcer (applySmallViewLayout) can never
+       fight over the same property — eliminating the ~1-second flicker loop.
        ========================================================= */
     function resetControlsTimeout() {
         if (mouseMoveTimeout) {
@@ -1433,31 +1545,31 @@
             mouseMoveTimeout = null;
         }
 
+        // Manual hide always wins — don't touch anything.
         if (isManuallyHidden) return;
 
+        // On pure-live streams the panel is intentionally hidden — don't show it.
         if (vid && (!vid.duration || !isFinite(vid.duration))) return;
 
-        if (isDocked) {
-            if (controlsPanel) {
-                controlsPanel.style.opacity = '1';
-                controlsPanel.style.pointerEvents = 'auto';
-            }
-            return;
+        // Show the panel (remove the hide class and clear any legacy inline opacity).
+        if (controlsPanel) {
+            controlsPanel.classList.remove('omt-hidden');
+            controlsPanel.style.opacity = '';
+            controlsPanel.style.pointerEvents = '';
         }
 
-        if (controlsPanel) {
-            controlsPanel.style.opacity = '1';
-            controlsPanel.style.pointerEvents = 'auto';
-        }
+        // In docked mode OR small-view forced mode, the panel must always stay
+        // visible — never set a hide timeout. The layout enforcer owns visibility.
+        if (isDocked || isSmallViewForced) return;
 
         mouseMoveTimeout = setTimeout(() => {
             if (isDraggingTimeline) {
                 resetControlsTimeout();
                 return;
             }
-            if (controlsPanel) {
-                controlsPanel.style.opacity = '0';
-                controlsPanel.style.pointerEvents = 'none';
+            // Only hide if manual-hide and small-view are still inactive.
+            if (!isManuallyHidden && !isSmallViewForced && controlsPanel) {
+                controlsPanel.classList.add('omt-hidden');
             }
         }, 2500);
     }
@@ -1528,6 +1640,9 @@
                 if (controlsPanel) {
                     if (isManuallyHidden) {
                         isManuallyHidden = false;
+                        // Clear any legacy inline opacity that may still be set
+                        controlsPanel.style.opacity = '';
+                        controlsPanel.style.pointerEvents = '';
                         resetControlsTimeout();
                         mostrarOSD('🖥️ Controls Visible');
                     } else {
@@ -1536,8 +1651,10 @@
                             clearTimeout(mouseMoveTimeout);
                             mouseMoveTimeout = null;
                         }
-                        controlsPanel.style.opacity = '0';
-                        controlsPanel.style.pointerEvents = 'none';
+                        // Use class-based hide so it overrides any small-view enforcer
+                        controlsPanel.classList.add('omt-hidden');
+                        controlsPanel.style.opacity = '';
+                        controlsPanel.style.pointerEvents = '';
                         mostrarOSD('🙈 Controls Hidden');
                     }
                 }
@@ -2030,9 +2147,21 @@
         dockDebounceTimer = setTimeout(() => {
             dockDebounceTimer = null;
 
-            // Fullscreen — always overlay mode
+            // Fullscreen — always overlay mode (never docked)
             if (document.fullscreenElement) {
+                isSmallViewForced = false;
                 applyDockedLayout(false);
+                return;
+            }
+
+            // ── EXAMINO STRUCTURAL OVERRIDE ──────────────────────────────────────
+            // In small popup views the video metadata may not be ready yet, or the
+            // computed black-bar height never crosses the threshold because the
+            // container is too compact. Bypass the math entirely and force dock.
+            if (isExamino && window.innerHeight < 600) {
+                console.log('[OMT] Dock recalc — Examino small-view override active (force dock).');
+                applyDockedLayout(true);
+                applyExaminoFlexAlignment();
                 return;
             }
 
@@ -2050,28 +2179,51 @@
     }
 
     /* =========================================================
-       FIX #1: XEATRE — SMALL-VIEW OPACITY ENFORCEMENT
-       When the window is too small for the dock threshold, the
-       auto-hide timer might leave the panel at opacity:0. On
-       Xeatre specifically, we must force the panel visible.
-       Bound to resize (not rAF) per the CRITICAL PERFORMANCE RULE.
+       FIX #1 & #2: UNIFIED SMALL-VIEW LAYOUT ENFORCER
+       Replaces the old applyXeatreSmallViewOpacity() which used
+       inline style.opacity — the root cause of the flickering loop.
+
+       NEW APPROACH:
+       - Sets the module-level isSmallViewForced flag.
+       - Calls applyDockedLayout(true) to activate the docked CSS class.
+       - Cancels any pending hide timeout and removes .omt-hidden.
+       - NEVER writes inline style.opacity, so the auto-hide timeout
+         cannot enter a conflict loop with this function.
+       - When exiting forced mode, scheduleDockRecalc() re-evaluates
+         whether the panel should remain docked or revert to overlay.
        ========================================================= */
-    function applyXeatreSmallViewOpacity() {
-        if (!isXeatre || !controlsPanel) return;
-        // If the user manually hid the panel (H key), never override that decision.
-        if (isManuallyHidden) return;
-        // If not docked and window is small enough that dock won't trigger,
-        // override opacity/pointer-events so the panel cannot disappear.
-        const blackBarHeight = computeBottomBlackBarHeight();
-        const isSmallView = blackBarHeight < DOCK_THRESHOLD;
-        if (isSmallView) {
-            controlsPanel.style.setProperty('opacity', '1', 'important');
-            controlsPanel.style.setProperty('pointer-events', 'auto', 'important');
-        } else {
-            // Larger views: let the normal auto-hide system handle it
-            controlsPanel.style.removeProperty('opacity');
-            controlsPanel.style.removeProperty('pointer-events');
+    function applySmallViewLayout() {
+        if (!controlsPanel) return;
+
+        const wasForced = isSmallViewForced;
+
+        // Determine whether small-view override should be active
+        const xeatreSmall = isXeatre && window.innerHeight < 550;
+        const examinoSmall = isExamino && window.innerHeight < 600;
+        isSmallViewForced = xeatreSmall || examinoSmall;
+
+        if (isSmallViewForced) {
+            // Force dock — class-based layout, no JS measurement needed
+            applyDockedLayout(true);
+
+            // If the user hasn't manually hidden the panel, ensure it is visible.
+            // We cancel any pending auto-hide timeout and remove the hide class.
+            // We do NOT write style.opacity here — the CSS class owns that.
+            if (!isManuallyHidden) {
+                if (mouseMoveTimeout) {
+                    clearTimeout(mouseMoveTimeout);
+                    mouseMoveTimeout = null;
+                }
+                controlsPanel.classList.remove('omt-hidden');
+            }
+        } else if (wasForced && !isSmallViewForced) {
+            // Transitioning out of forced mode — hand control back to the
+            // normal dock engine so it can re-evaluate based on measurements.
+            scheduleDockRecalc();
         }
+
+        // Always keep Examino's container flex-aligned on small views
+        if (isExamino) applyExaminoFlexAlignment();
     }
 
     /* =========================================================
@@ -2079,6 +2231,8 @@
        In small popup views, Examino's .video-container centres
        the video vertically, creating white bars and hiding the
        panel. Force align-items:flex-start to snap it to the top.
+       Now also triggers on window.innerHeight regardless of
+       computed black-bar height (which can be 0 in small views).
        Bound to resize (not rAF) per the CRITICAL PERFORMANCE RULE.
        ========================================================= */
     let examinoFlexStyle = null;
@@ -2093,8 +2247,11 @@
             (document.head || document.documentElement).appendChild(examinoFlexStyle);
         }
 
+        // Use window.innerHeight as primary signal — computeBottomBlackBarHeight()
+        // may return 0 on small views before metadata is available.
+        const forceByHeight = window.innerHeight < 600;
         const blackBarHeight = computeBottomBlackBarHeight();
-        const isSmallLayout = blackBarHeight < DOCK_THRESHOLD;
+        const isSmallLayout = forceByHeight || blackBarHeight < DOCK_THRESHOLD;
 
         if (isSmallLayout) {
             // Snap video to top so the bottom space is freed for our panel
@@ -2110,6 +2267,7 @@
        Directly silences native control wrappers whenever the
        HTML5 video element fires 'play' or 'pause'. This stops
        ShuttleXpress-triggered playback from hijacking the UI.
+       Also called by the aggressive player observer on class mutations.
        ========================================================= */
     function suppressNativeControlBarsOnPlayback() {
         const nativeSelectors = [
@@ -2120,10 +2278,14 @@
         nativeSelectors.forEach(sel => {
             try {
                 document.querySelectorAll(sel).forEach(el => {
+                    // Guard: never hide the settings button even if a broad selector matches it.
+                    if (el.classList.contains('op-setting-button')) return;
                     el.style.setProperty('display', 'none', 'important');
                 });
             } catch (_) {}
         });
+        // Belt-and-suspenders: ensure the settings button is never hidden on Examino.
+        restoreSettingsButton();
     }
 
     function initDockedLayoutEngine() {
@@ -2150,15 +2312,20 @@
         document.addEventListener('fullscreenchange', dockFullscreenHandler);
         window.addEventListener('resize', dockFullscreenHandler);
 
-        // Fix #1 & #2: Bind responsive overlay fixes to the resize event only
-        // (never inside rAF / animation loop — per CRITICAL PERFORMANCE RULE).
+        // Responsive layout enforcer: bound to resize only — never in rAF.
+        // applySmallViewLayout() manages the isSmallViewForced flag and
+        // delegates opacity to CSS classes (never sets style.opacity).
         let responsiveFixDebounce = null;
         window.addEventListener('resize', () => {
             if (responsiveFixDebounce) clearTimeout(responsiveFixDebounce);
             responsiveFixDebounce = setTimeout(() => {
-                applyXeatreSmallViewOpacity();
-                applyExaminoFlexAlignment();
+                applySmallViewLayout();
             }, 80);
+        });
+
+        // Also run the enforcer on fullscreenchange (popup ↔ fullscreen transitions)
+        document.addEventListener('fullscreenchange', () => {
+            setTimeout(() => applySmallViewLayout(), 150);
         });
 
         // 3. Run initial calculation (video metadata may not be ready yet;
@@ -2166,10 +2333,9 @@
         vid.addEventListener('loadedmetadata', scheduleDockRecalc);
         scheduleDockRecalc();
 
-        // Run the responsive fixes once on init (after a short settle delay)
+        // Run the enforcer once on init (after a short settle delay)
         setTimeout(() => {
-            applyXeatreSmallViewOpacity();
-            applyExaminoFlexAlignment();
+            applySmallViewLayout();
         }, 200);
     }
 
