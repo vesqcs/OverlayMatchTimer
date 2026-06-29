@@ -66,8 +66,12 @@
     align-items: stretch;
 }
 
-/* Allow panels to receive pointer events */
-#omt-root .glass-panel,
+/* Allow actual interactive panels to receive pointer events.
+   NOTE: .glass-panel itself stays pointer-events:none so it doesn't act
+   as an invisible wall across the whole video area. Only the concrete
+   panels (#controls-panel, #setup-panel) and OSD get pointer-events:auto. */
+#omt-root #controls-panel,
+#omt-root #setup-panel,
 #omt-root #match-timer,
 #omt-root #osd-message {
     pointer-events: auto;

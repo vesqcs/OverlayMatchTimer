@@ -41,6 +41,16 @@
     // When set, the auto-hide timeout is suppressed so the panel can never flicker.
     let isSmallViewForced = false;
 
+    // Observers & Event cleanup (Memory Leak Prevention)
+    let nativeControlsObserver = null;
+    let platformControlsObserver = null;
+    let aggressiveBodyWatcher = null;
+    let containerObservers = [];
+    let layoutResizeHandler = null;
+    let layoutFullscreenHandler = null;
+    let responsiveFixDebounce = null;
+    let vidAbortController = null;
+
     // Kickoff markers (persisted in localStorage)
     let kickoff1 = localStorage.getItem('matchTimerKickoff1') !== null ? parseFloat(localStorage.getItem('matchTimerKickoff1')) : null;
     let kickoff2 = localStorage.getItem('matchTimerKickoff2') !== null ? parseFloat(localStorage.getItem('matchTimerKickoff2')) : null;
@@ -97,6 +107,20 @@
         }
         // Remove keydown listener
         document.removeEventListener('keydown', handleKeydown, true);
+        // Remove mousemove listener (was moved from vid to document — must clean up here)
+        document.removeEventListener('mousemove', resetControlsTimeout);
+        // Disconnect all MutationObservers to prevent memory leaks in SPA
+        if (nativeControlsObserver) { nativeControlsObserver.disconnect(); nativeControlsObserver = null; }
+        if (platformControlsObserver) { platformControlsObserver.disconnect(); platformControlsObserver = null; }
+        if (aggressiveBodyWatcher) { aggressiveBodyWatcher.disconnect(); aggressiveBodyWatcher = null; }
+        containerObservers.forEach(obs => obs.disconnect());
+        containerObservers = [];
+        // Remove layout handlers
+        if (layoutResizeHandler) { window.removeEventListener('resize', layoutResizeHandler); layoutResizeHandler = null; }
+        if (layoutFullscreenHandler) { document.removeEventListener('fullscreenchange', layoutFullscreenHandler); layoutFullscreenHandler = null; }
+        if (responsiveFixDebounce) { clearTimeout(responsiveFixDebounce); responsiveFixDebounce = null; }
+        // Abort all vid listeners
+        if (vidAbortController) { vidAbortController.abort(); vidAbortController = null; }
         // Remove the injected HUD from the DOM
         const existingRoot = document.getElementById('omt-root');
         if (existingRoot && existingRoot.parentNode) {
@@ -113,6 +137,7 @@
         shuttleToggle = null;
         shuttleCheatsheet = null;
         hasAutomatedDvr = false;
+        examinoDvrFallbackInjected = false;
         isDocked = false;
         isSmallViewForced = false;
         omtAnchor = null;
@@ -172,6 +197,7 @@
     function init(videoEl) {
         vid = videoEl;
         vid.preservesPitch = true;
+        vidAbortController = new AbortController();
 
         if (!isXeatre) {
             vid.classList.add('omt-top-align');
@@ -251,10 +277,11 @@
         vid.controls = false;
 
         // Keep overriding in case Video.js re-enables them
-        const observer = new MutationObserver(() => {
+        if (nativeControlsObserver) nativeControlsObserver.disconnect();
+        nativeControlsObserver = new MutationObserver(() => {
             if (vid.controls) vid.controls = false;
         });
-        observer.observe(vid, { attributes: true, attributeFilter: ['controls'] });
+        nativeControlsObserver.observe(vid, { attributes: true, attributeFilter: ['controls'] });
 
         // Swallow Video.js keyboard events so our handler wins
         document.querySelectorAll('.video-js, .vjs-tech').forEach(el => {
@@ -364,6 +391,7 @@
             });
 
             obs.observe(container, { attributes: true, attributeFilter: ['class'] });
+            containerObservers.push(obs);
         }
 
         // Attach to all player containers already in the DOM
@@ -372,7 +400,8 @@
         });
 
         // Watch for dynamically added player containers (SPA navigation / lazy mount)
-        const bodyWatcher = new MutationObserver(mutations => {
+        if (aggressiveBodyWatcher) aggressiveBodyWatcher.disconnect();
+        aggressiveBodyWatcher = new MutationObserver(mutations => {
             for (const m of mutations) {
                 for (const node of m.addedNodes) {
                     if (node.nodeType !== 1) continue;
@@ -387,7 +416,7 @@
                 }
             }
         });
-        bodyWatcher.observe(document.body, { childList: true, subtree: true });
+        aggressiveBodyWatcher.observe(document.body, { childList: true, subtree: true });
 
         console.log('[OMT] Aggressive player observer attached.');
     }
@@ -434,7 +463,8 @@
         restoreSettingsButton();
 
         // Global observer: covers Xeatre re-injection on all platforms
-        const observer = new MutationObserver(mutations => {
+        if (platformControlsObserver) platformControlsObserver.disconnect();
+        platformControlsObserver = new MutationObserver(mutations => {
             let hasAdditions = false;
             for (const mutation of mutations) {
                 if (mutation.addedNodes.length > 0) {
@@ -449,7 +479,7 @@
             }
         });
 
-        observer.observe(document.body, {
+        platformControlsObserver.observe(document.body, {
             childList: true,
             subtree: true
         });
@@ -502,11 +532,20 @@
         omtRoot.innerHTML = buildHTML();
         anchor.appendChild(omtRoot);
 
-        // Restore pointer interactivity for every direct child of #omt-root so our
-        // panels and controls remain fully clickable while the video stays clickable.
+        // Restore pointer interactivity only for the actual interactive panels —
+        // NOT for #omt-video-spacer (which fills the video image area and must
+        // stay pointer-events:none so clicks reach the native player underneath).
         const omtPointerStyle = document.createElement('style');
         omtPointerStyle.id = 'omt-pointer-events-css';
-        omtPointerStyle.textContent = '#omt-root > * { pointer-events: auto !important; }';
+        omtPointerStyle.textContent = [
+            '#omt-root #controls-panel { pointer-events: auto !important; }',
+            '#omt-root #setup-panel    { pointer-events: auto !important; }',
+            '#omt-root #match-timer    { pointer-events: auto !important; }',
+            // osd-message is pointer-events:none (it's just a notification overlay)
+            // omt-video-spacer is intentionally pointer-events:none
+            // omt-examino-dvr-fallback is an absolute button — needs auto
+            '#omt-root #omt-examino-dvr-fallback { pointer-events: auto !important; }',
+        ].join('\n');
         (document.head || document.documentElement).appendChild(omtPointerStyle);
     }
 
@@ -802,7 +841,7 @@
                 volumeRange.value = vid.volume;
                 atualizarIconeVolume(vid.volume);
             }
-        });
+        }, { signal: vidAbortController.signal });
 
         // --- Timeline slider ---
         timelineSlider.addEventListener('input', function () {
@@ -817,9 +856,11 @@
             resetControlsTimeout();
         });
 
+        const signal = vidAbortController.signal;
+
         // --- Video element events ---
-        vid.addEventListener('loadedmetadata', inicializarMetadadosTimeline);
-        vid.addEventListener('durationchange', inicializarMetadadosTimeline);
+        vid.addEventListener('loadedmetadata', inicializarMetadadosTimeline, { signal });
+        vid.addEventListener('durationchange', inicializarMetadadosTimeline, { signal });
 
         vid.addEventListener('timeupdate', () => {
             // Anti-live-snap: if HLS pushed us forward unexpectedly, pull back
@@ -842,7 +883,7 @@
                     }
                 }
             }
-        });
+        }, { signal });
 
         vid.addEventListener('play', () => {
             btnMainPlay.innerHTML = '⏸ Pause';
@@ -852,22 +893,26 @@
             // Fix #5: Suppress native control bars that can re-appear on play events
             // (e.g. ShuttleXpress triggering play via vid.play() directly)
             suppressNativeControlBarsOnPlayback();
-        });
+        }, { signal });
         vid.addEventListener('pause', () => {
             btnMainPlay.innerHTML = '⏯ Play';
             btnMainPlay.classList.remove('playing');
             controlsPanel.classList.remove('playing-state');
             // Also suppress on pause — some platforms re-show controls when paused
             suppressNativeControlBarsOnPlayback();
-        });
+        }, { signal });
 
         // --- Drag system for both panels ---
         fazerArrastavel(setupPanel, q('setup-handle'));
         fazerArrastavel(controlsPanel, q('controls-handle'));
 
         // --- Auto-hide controls on mouse inactivity ---
-        vid.addEventListener('mousemove', resetControlsTimeout);
-        controlsPanel.addEventListener('mousemove', resetControlsTimeout);
+        // FIX (Invisible Wall Bug): listen on document, not on vid/controlsPanel.
+        // #omt-root has z-index:999999999 and covers the full video element, so any
+        // listener attached to vid would never fire — the overlay intercepts first.
+        // Listening on document means ANY mouse movement anywhere on the page wakes
+        // up the controls, regardless of which element is on top.
+        document.addEventListener('mousemove', resetControlsTimeout);
         resetControlsTimeout();
 
         // --- Keyboard shortcuts (capture phase, highest priority) ---
@@ -1986,55 +2031,170 @@
        Waits 2.5 s after page load, opens the player settings,
        then clicks the DVR source button after 600 ms.
        ========================================================= */
+    /* =========================================================
+       EXAMINO FALLBACK DVR BUTTON
+       Injects an independent "📹 DVR" button directly into #omt-root
+       so we don't rely on Examino's fragile Svelte DOM structure at all.
+       The button is always visible and calls into the native player settings
+       programmatically. If the Svelte app has removed/hidden its own settings
+       button or its parent wrapper, our fallback is completely unaffected.
+    ========================================================= */
+    let examinoDvrFallbackInjected = false;
+
+    function injectExaminoDvrFallback() {
+        if (!isExamino) return;
+        if (examinoDvrFallbackInjected) return;
+        if (!omtRoot) return;
+        examinoDvrFallbackInjected = true;
+
+        const btn = document.createElement('button');
+        btn.id = 'omt-examino-dvr-fallback';
+        btn.title = 'Switch to DVR / Recording mode';
+        btn.innerText = '📹 DVR';
+        btn.style.cssText = [
+            'position:absolute',
+            'top:8px',
+            'right:8px',
+            'z-index:999999999',
+            'pointer-events:auto',
+            'background:rgba(255,80,0,0.18)',
+            'color:#ff8c42',
+            'border:1px solid rgba(255,80,0,0.4)',
+            'border-radius:5px',
+            'padding:4px 10px',
+            'font-size:11px',
+            'font-weight:bold',
+            'cursor:pointer',
+            'font-family:inherit',
+            'letter-spacing:0.4px',
+            'transition:background 0.2s,border-color 0.2s'
+        ].join(';');
+
+        btn.addEventListener('mouseenter', () => {
+            btn.style.background = 'rgba(255,80,0,0.35)';
+            btn.style.borderColor = 'rgba(255,80,0,0.7)';
+        });
+        btn.addEventListener('mouseleave', () => {
+            btn.style.background = 'rgba(255,80,0,0.18)';
+            btn.style.borderColor = 'rgba(255,80,0,0.4)';
+        });
+
+        btn.addEventListener('click', () => {
+            // Try the native settings button first (covers all DOM states)
+            const settingsBtn = document.querySelector('.op-button.op-setting-button');
+            if (settingsBtn) {
+                // Force it visible before clicking in case parent is hidden
+                const parent = settingsBtn.parentElement;
+                if (parent) {
+                    parent.style.setProperty('display', 'flex', 'important');
+                    parent.style.setProperty('visibility', 'visible', 'important');
+                    parent.style.setProperty('opacity', '1', 'important');
+                }
+                settingsBtn.style.setProperty('display', 'block', 'important');
+                settingsBtn.style.setProperty('visibility', 'visible', 'important');
+                settingsBtn.click();
+                console.log('[OMT] Examino DVR fallback: settings button clicked via fallback.');
+
+                // Click the DVR source after panel opens
+                setTimeout(() => {
+                    const dvrBtn = document.querySelector('div[op-data-value="1"]');
+                    if (dvrBtn) {
+                        dvrBtn.click();
+                        console.log('[OMT] Examino DVR fallback: DVR source clicked.');
+                        mostrarOSD('📹 DVR Mode Activated');
+                        // Hide the fallback button once successful
+                        btn.style.display = 'none';
+                    } else {
+                        // Panel may still be opening — retry once more
+                        setTimeout(() => {
+                            const dvrBtn2 = document.querySelector('div[op-data-value="1"]');
+                            if (dvrBtn2) {
+                                dvrBtn2.click();
+                                mostrarOSD('📹 DVR Mode Activated');
+                                btn.style.display = 'none';
+                            } else {
+                                mostrarOSD('⚠️ DVR panel not found — try manually');
+                            }
+                        }, 500);
+                    }
+                }, 700);
+            } else {
+                // Settings button entirely absent from DOM — try DVR button directly
+                const dvrBtn = document.querySelector('div[op-data-value="1"]');
+                if (dvrBtn) {
+                    dvrBtn.click();
+                    mostrarOSD('📹 DVR Mode Activated');
+                    btn.style.display = 'none';
+                } else {
+                    mostrarOSD('⚠️ Settings button not found in DOM');
+                    console.warn('[OMT] Examino DVR fallback: neither settings button nor DVR button found.');
+                }
+            }
+        });
+
+        omtRoot.appendChild(btn);
+        console.log('[OMT] Examino DVR fallback button injected.');
+    }
+
     function forceDVR() {
         // Guard: only run on Examino, and only once per page load.
         if (!isExamino) return;
         if (hasAutomatedDvr) return;
         hasAutomatedDvr = true;
 
+        // Always inject the fallback button first — it is independent of the
+        // Svelte DOM and will work even if the native settings button is absent.
+        injectExaminoDvrFallback();
+
         console.log('[OMT] Examino: Scheduling DVR automation (2.5 s delay)...');
 
         setTimeout(() => {
-            // Step A — locate and click the settings button.
-            // The settings button is now always visible (not hidden by CSS) so
-            // the user can click it manually if automation fails.
+            // Step A — locate the settings button.
+            // If its parent container is hidden by Svelte, forcibly restore it.
             const settingsBtn = document.querySelector('.op-button.op-setting-button');
             if (!settingsBtn) {
-                console.warn('[OMT] Examino: .op-setting-button not found — DVR automation skipped. The button will remain visible for manual use.');
+                console.warn('[OMT] Examino: .op-setting-button not found — DVR automation skipped. Fallback button is available.');
                 return;
             }
+
+            // Ensure the parent wrapper is visible before clicking
+            const parent = settingsBtn.parentElement;
+            if (parent) {
+                parent.style.setProperty('display', 'flex', 'important');
+                parent.style.setProperty('visibility', 'visible', 'important');
+                parent.style.setProperty('opacity', '1', 'important');
+            }
+            settingsBtn.style.setProperty('display', 'block', 'important');
+            settingsBtn.style.setProperty('visibility', 'visible', 'important');
 
             settingsBtn.click();
             console.log('[OMT] Examino: Settings button clicked.');
 
-            // Fix #3: Retry up to 3 times with 400 ms delay if the DVR button
-            // is not found immediately after the settings panel opens.
             let dvrRetries = 0;
-            const MAX_DVR_RETRIES = 3;
-            const DVR_RETRY_DELAY_MS = 400;
+            const MAX_DVR_RETRIES = 4;
+            const DVR_RETRY_DELAY_MS = 500;
 
             function attemptDvrClick() {
-                // Step C — target the DVR source button (op-data-value="1")
                 const dvrBtn = document.querySelector('div[op-data-value="1"]');
 
                 if (dvrBtn) {
-                    // Step D — click the DVR source button
                     dvrBtn.click();
                     console.log('[OMT] Examino: DVR source button clicked (op-data-value="1").');
+                    // Successfully automated — hide the fallback button
+                    const fb = document.getElementById('omt-examino-dvr-fallback');
+                    if (fb) fb.style.display = 'none';
                 } else if (dvrRetries < MAX_DVR_RETRIES) {
                     dvrRetries++;
                     console.warn(`[OMT] Examino: DVR button not found — retry ${dvrRetries}/${MAX_DVR_RETRIES} in ${DVR_RETRY_DELAY_MS}ms...`);
                     setTimeout(attemptDvrClick, DVR_RETRY_DELAY_MS);
                 } else {
-                    console.warn('[OMT] Examino: DVR button (div[op-data-value="1"]) not found after all retries. Settings button remains visible for manual use.');
-                    // Close the panel gracefully so the user sees a clean UI.
-                    // The settings button itself is still accessible for manual clicks.
+                    console.warn('[OMT] Examino: DVR button not found after all retries. Fallback button remains for manual use.');
+                    // Close the panel gracefully
                     settingsBtn.click();
                 }
             }
 
-            // Step B — wait 600 ms for the settings menu to render, then start
-            setTimeout(attemptDvrClick, 600);
+            setTimeout(attemptDvrClick, 700);
         }, 2500);
     }
 
@@ -2108,35 +2268,58 @@
         if (!controlsPanel) return;
 
         if (dock) {
-            if (!isDocked) {
-                isDocked = true;
+            // Always apply (not just when isDocked changes) so that re-entering
+            // docked mode after a resize or forced-small-view transition is reliable.
+            isDocked = true;
 
-                // Pure CSS flexbox handles positioning — no JS top calculation needed.
-                // #omt-root is a flex column: the spacer takes flex:1 (video area),
-                // and .controls-docked sits naturally at the bottom in the same frame.
-                controlsPanel.style.top    = '';
-                controlsPanel.style.bottom = '';
-                controlsPanel.style.left   = '';
-                controlsPanel.style.transform = '';
-                controlsPanel.style.width  = '';
+            // Clear all inline position overrides so the CSS .controls-docked
+            // class can take full ownership via flexbox flow.
+            controlsPanel.style.position  = '';
+            controlsPanel.style.top       = '';
+            controlsPanel.style.bottom    = '';
+            controlsPanel.style.left      = '';
+            controlsPanel.style.right     = '';
+            controlsPanel.style.transform = '';
+            controlsPanel.style.width     = '';
 
-                controlsPanel.classList.add('controls-docked');
-                resetControlsTimeout();
+            // Ensure #omt-root is the flex column it needs to be for docking
+            if (omtRoot) {
+                omtRoot.style.display       = 'flex';
+                omtRoot.style.flexDirection = 'column';
+                omtRoot.style.alignItems    = 'stretch';
             }
+
+            controlsPanel.classList.add('controls-docked');
+
+            // Panel must be visible when docked — remove any hide class
+            if (!isManuallyHidden) {
+                controlsPanel.classList.remove('omt-hidden');
+                controlsPanel.style.opacity = '';
+                controlsPanel.style.pointerEvents = '';
+            }
+
+            console.log('[OMT] applyDockedLayout: docked=true, class added, inline styles cleared.');
         } else {
-            if (isDocked) {
-                isDocked = false;
-                controlsPanel.classList.remove('controls-docked');
+            isDocked = false;
+            controlsPanel.classList.remove('controls-docked');
 
-                // Restore default CSS-driven positioning
-                controlsPanel.style.top    = '';
-                controlsPanel.style.bottom = '';
-                controlsPanel.style.left   = '';
-                controlsPanel.style.transform = '';
-                controlsPanel.style.width  = '';
+            // Restore default CSS-driven absolute positioning
+            controlsPanel.style.position  = '';
+            controlsPanel.style.top       = '';
+            controlsPanel.style.bottom    = '';
+            controlsPanel.style.left      = '';
+            controlsPanel.style.right     = '';
+            controlsPanel.style.transform = '';
+            controlsPanel.style.width     = '';
 
-                resetControlsTimeout();
+            if (omtRoot) {
+                omtRoot.style.display       = '';
+                omtRoot.style.flexDirection = '';
+                omtRoot.style.alignItems    = '';
             }
+
+            resetControlsTimeout();
+            console.log('[OMT] applyDockedLayout: docked=false, class removed.');
         }
     }
 
@@ -2315,22 +2498,23 @@
         // Responsive layout enforcer: bound to resize only — never in rAF.
         // applySmallViewLayout() manages the isSmallViewForced flag and
         // delegates opacity to CSS classes (never sets style.opacity).
-        let responsiveFixDebounce = null;
-        window.addEventListener('resize', () => {
+        layoutResizeHandler = () => {
             if (responsiveFixDebounce) clearTimeout(responsiveFixDebounce);
             responsiveFixDebounce = setTimeout(() => {
                 applySmallViewLayout();
             }, 80);
-        });
+        };
+        window.addEventListener('resize', layoutResizeHandler);
 
         // Also run the enforcer on fullscreenchange (popup ↔ fullscreen transitions)
-        document.addEventListener('fullscreenchange', () => {
+        layoutFullscreenHandler = () => {
             setTimeout(() => applySmallViewLayout(), 150);
-        });
+        };
+        document.addEventListener('fullscreenchange', layoutFullscreenHandler);
 
         // 3. Run initial calculation (video metadata may not be ready yet;
         //    also re-run when metadata loads so aspect ratio is accurate)
-        vid.addEventListener('loadedmetadata', scheduleDockRecalc);
+        vid.addEventListener('loadedmetadata', scheduleDockRecalc, { signal: vidAbortController.signal });
         scheduleDockRecalc();
 
         // Run the enforcer once on init (after a short settle delay)
