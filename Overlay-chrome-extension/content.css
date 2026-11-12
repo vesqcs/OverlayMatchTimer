@@ -300,9 +300,10 @@
     border-radius: 4px;
     font-size: 10px;
     font-weight: bold;
-    padding: 3px 8px;
+    padding: 3px 10px;
     cursor: pointer;
-    margin-right: 5px;
+    margin-left: 10px;
+    margin-right: 14px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     display: flex;
@@ -310,6 +311,13 @@
     align-items: center;
     gap: 5px;
     transition: all 0.3s ease;
+}
+
+/* Extra gap so LIVE is harder to hit by accident next to volume / seek chrome */
+#omt-root .omt-live-spacer {
+    display: inline-block;
+    width: 10px;
+    flex-shrink: 0;
 }
 
 #omt-live-btn:hover {

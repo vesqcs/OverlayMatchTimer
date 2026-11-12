@@ -70,25 +70,38 @@ async function run() {
   try {
     await page.goto(`${base}/examino-mock.html`, { waitUntil: 'domcontentloaded' });
     await waitForOmt(page, 20000);
-    await page.waitForTimeout(2800);
-    await waitForOmt(page);
 
+    // Auto-VOD should land quickly via MutationObserver (not a fixed 1.2s+ delay).
+    const autoVodStarted = Date.now();
     await page.waitForFunction(() => {
       const v = document.querySelector('video');
-      return v && v.dataset.omtSource === 'VOD' && v.duration >= 7000;
-    }, null, { timeout: 15000 }).catch(() => {});
+      const sel = document.getElementById('omt-examino-source');
+      return v && v.dataset.omtSource === 'VOD' && v.duration >= 7000 &&
+        sel && sel.value === 'VOD' && !sel.disabled;
+    }, null, { timeout: 12000 });
+    const autoVodMs = Date.now() - autoVodStarted;
+    results.push({
+      name: 'examino-auto-vod-fast',
+      pass: autoVodMs < 9000,
+      detail: { autoVodMs }
+    });
 
     // ---- Simplified settings: Source + Auto-VOD only ----
     const settingsShape = await page.evaluate(() => {
       const section = document.getElementById('omt-examino-settings');
+      const sel = document.getElementById('omt-examino-source');
+      const opts = sel ? Array.from(sel.options).map((o) => o.textContent.trim()) : [];
       return {
         visible: !!(section && getComputedStyle(section).display !== 'none'),
-        hasSource: !!document.getElementById('omt-examino-source'),
+        hasSource: !!sel,
         hasAuto: !!document.getElementById('omt-examino-auto-vod'),
         hasAudio: !!document.getElementById('omt-examino-audio'),
         hasSpeed: !!document.getElementById('omt-examino-speed'),
         hasNative: !!document.getElementById('omt-btn-native-settings'),
-        hasRefresh: !!document.getElementById('omt-examino-refresh-settings')
+        hasRefresh: !!document.getElementById('omt-examino-refresh-settings'),
+        sourceValue: sel ? sel.value : null,
+        sourceOptions: opts,
+        liveSpacer: !!document.querySelector('#omt-root .omt-live-spacer')
       };
     });
     results.push({
@@ -97,8 +110,132 @@ async function run() {
         !settingsShape.hasAudio && !settingsShape.hasSpeed && !settingsShape.hasNative && !settingsShape.hasRefresh,
       detail: settingsShape
     });
+    results.push({
+      name: 'examino-source-label-vod',
+      pass: settingsShape.sourceValue === 'VOD',
+      detail: { sourceValue: settingsShape.sourceValue }
+    });
+    results.push({
+      name: 'examino-source-options-clean',
+      pass: settingsShape.sourceOptions.length === 2 &&
+        settingsShape.sourceOptions.includes('DVR') &&
+        settingsShape.sourceOptions.includes('VOD') &&
+        settingsShape.sourceOptions.every((t) => t === 'DVR' || t === 'VOD'),
+      detail: { sourceOptions: settingsShape.sourceOptions }
+    });
+    results.push({
+      name: 'examino-live-spacer',
+      pass: settingsShape.liveSpacer === true
+    });
 
-    // ---- Click to pause (extension owns toggle; native only plays) ----
+    // ---- Native gear/settings clicks must not be swallowed (v1.2.1 regression) ----
+    await page.evaluate(async () => {
+      const setup = document.getElementById('setup-panel');
+      if (setup) setup.style.display = 'none';
+      const panel = document.getElementById('controls-panel');
+      if (panel) {
+        panel.style.opacity = '0';
+        panel.style.pointerEvents = 'none';
+      }
+      const timer = document.getElementById('match-timer');
+      if (timer) timer.style.visibility = 'hidden';
+      document.querySelectorAll('.op-setting-panel').forEach((p) => {
+        p.classList.remove('open');
+        p.classList.remove('omt-settings-raised');
+      });
+      // Temporarily show the normally-hidden gear so a real pointer click can hit it.
+      const holder = document.querySelector('.setting-holder');
+      const gear = document.getElementById('native-gear');
+      if (holder) {
+        holder.classList.remove('omt-examino-native-hidden');
+        holder.style.setProperty('display', 'block', 'important');
+        holder.style.setProperty('opacity', '1', 'important');
+        holder.style.setProperty('pointer-events', 'auto', 'important');
+        holder.style.setProperty('position', 'fixed', 'important');
+        holder.style.setProperty('top', '12px', 'important');
+        holder.style.setProperty('right', '12px', 'important');
+        holder.style.setProperty('z-index', '2147483000', 'important');
+        holder.style.setProperty('max-height', 'none', 'important');
+      }
+      if (gear) {
+        gear.style.setProperty('display', 'block', 'important');
+        gear.style.setProperty('opacity', '1', 'important');
+        gear.style.setProperty('pointer-events', 'auto', 'important');
+      }
+      const v = document.querySelector('video');
+      if (v) {
+        try { await v.play(); } catch (_) {}
+      }
+      window.__omtGearPauseProbe = !!(v && v.paused);
+    });
+    await page.waitForTimeout(100);
+    const gearBox = await page.locator('#native-gear').boundingBox();
+    if (gearBox) {
+      await page.mouse.click(gearBox.x + gearBox.width / 2, gearBox.y + gearBox.height / 2);
+    }
+    await page.waitForTimeout(200);
+    const gearOpened = await page.evaluate(() => {
+      const panel = document.querySelector('.op-setting-panel');
+      const v = document.querySelector('video');
+      return {
+        open: !!(panel && panel.classList.contains('open')),
+        paused: !!(v && v.paused),
+        wasPaused: window.__omtGearPauseProbe === true
+      };
+    });
+    results.push({
+      name: 'examino-native-gear-unblocked',
+      pass: gearOpened.open === true && gearOpened.paused === false,
+      detail: gearOpened
+    });
+
+    // Native Source submenu still works with extension loaded (same clicks OpenPlayer uses)
+    const nativeSource = await page.evaluate(async () => {
+      const sourceRow = Array.from(document.querySelectorAll('.op-setting-item'))
+        .find((el) => ((el.querySelector('.op-setting-item-title') || {}).textContent || '').trim() === 'Source');
+      if (!sourceRow) return { ok: false, reason: 'no-source-row' };
+      sourceRow.click();
+      await new Promise((r) => setTimeout(r, 80));
+      const dvr = Array.from(document.querySelectorAll('.op-setting-item'))
+        .find((el) => el.getAttribute('op-data-value') === 'DVR' && !el.getAttribute('op-panel-type'));
+      if (!dvr) return { ok: false, reason: 'no-dvr-option' };
+      dvr.click();
+      await new Promise((r) => setTimeout(r, 500));
+      return {
+        ok: (window.__omtMockSource || document.querySelector('video')?.dataset?.omtSource) === 'DVR',
+        source: window.__omtMockSource
+      };
+    });
+    results.push({ name: 'examino-native-source-switch', pass: nativeSource.ok === true, detail: nativeSource });
+
+    // Overlay Source select must apply without "Source change failed"
+    const overlaySwitch = await page.evaluate(async () => {
+      const setup = document.getElementById('setup-panel');
+      if (setup) setup.style.display = 'flex';
+      const sel = document.getElementById('omt-examino-source');
+      if (!sel) return { ok: false, reason: 'no-select' };
+      sel.focus();
+      await new Promise((r) => setTimeout(r, 700));
+      if ([...sel.options].every((o) => o.value !== 'VOD')) {
+        return { ok: false, reason: 'no-vod-option', options: [...sel.options].map((o) => o.value) };
+      }
+      sel.value = 'VOD';
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 1400));
+      const osd = document.getElementById('osd-message');
+      const osdText = osd ? (osd.textContent || '') : '';
+      return {
+        ok: (window.__omtMockSource || document.querySelector('video')?.dataset?.omtSource) === 'VOD' &&
+          sel.value === 'VOD' &&
+          !/Source change failed/i.test(osdText),
+        source: window.__omtMockSource,
+        sel: sel.value,
+        osdText
+      };
+    });
+    results.push({ name: 'examino-overlay-source-switch', pass: overlaySwitch.ok === true, detail: overlaySwitch });
+
+    // ---- Click to pause: only the video surface (not whole .op-player) ----
     await page.evaluate(async () => {
       const setup = document.getElementById('setup-panel');
       if (setup) setup.style.display = 'none';
@@ -115,19 +252,19 @@ async function run() {
         try { await v.play(); } catch (_) {}
       }
     });
-    const playerBox = await page.locator('.op-player').boundingBox();
-    const clickPlayerTop = async () => {
-      if (!playerBox) return;
-      await page.mouse.click(playerBox.x + playerBox.width / 2, playerBox.y + 24);
+    const videoBox = await page.locator('video').boundingBox();
+    const clickVideoCenter = async () => {
+      if (!videoBox) return;
+      await page.mouse.click(videoBox.x + videoBox.width / 2, videoBox.y + videoBox.height / 2);
     };
-    await clickPlayerTop();
+    await clickVideoCenter();
     await page.waitForTimeout(200);
     const afterPause = await page.evaluate(() => {
       const v = document.querySelector('video');
       return { paused: !!(v && v.paused), native: window.__omtNativeClickPlay || 0 };
     });
     results.push({ name: 'examino-click-pauses', pass: afterPause.paused === true, detail: afterPause });
-    await clickPlayerTop();
+    await clickVideoCenter();
     await page.waitForTimeout(200);
     const afterPlay = await page.evaluate(() => {
       const v = document.querySelector('video');

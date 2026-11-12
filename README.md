@@ -2,7 +2,7 @@
 
 **Overlay MatchTimer** is a Chrome MV3 extension for professional football / sports match analysts. It injects a drift-aware match timer, HUD timeline, and playback controls over supported stream players.
 
-Supported by this extension build (**v1.2.1**):
+Supported by this extension build (**v1.2.2**):
 
 * **InplayIP** (`*.inplayip.tv`) — Video.js Review/DVR sessions (unchanged known-good behaviour)
 * **Examino** (`examino.statsperform.io/play/dvr/*` and `/play/vod/*`) — OpenPlayer DVR/VOD pages (no iframes / shadow roots)
@@ -29,8 +29,8 @@ The local companion app (`OverlayMatchTimer.html`) and the user guide (`Overlay 
 * Compact CSS mode for small popup players (~465×261)
 * Native OpenPlayer + Examino chrome hidden (3 bottom button rows, hamburger, gear, OpenPlayer bars); main player expands into the freed space
 * **Window capture-phase hotkeys** installed at `document_start` so OpenPlayer/Examino shortcuts never win
-* **Click-to-toggle** play/pause on the video (exclusive capture so OpenPlayer cannot double-toggle)
-* Setup panel keeps a compact **Source (DVR/VOD)** control + **Auto-switch to VOD** checkbox (chrome.storage via `bridge.js`, default ON). Manual DVR choice wins for the page session; VOD→DVR settles to the live edge (no out-of-window seek freeze)
+* **Click-to-toggle** play/pause on the **video surface only** (never the whole `.op-player` tree — that broke OpenPlayer Source switching in v1.2.1)
+* Setup panel keeps a compact **Source (DVR/VOD)** control + **Auto-switch to VOD** checkbox (chrome.storage via `bridge.js`, default ON). Options are exact `DVR`/`VOD` only; label tracks the live Source; MutationObserver drives faster auto-VOD. Manual DVR choice wins for the page session; settle-to-live runs only after VOD→DVR
 * Auto-hide treats clicks / wheel / keys on our UI as activity and never hides while the pointer is over the controls (InplayIP included)
 
 ---

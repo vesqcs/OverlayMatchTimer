@@ -152,10 +152,13 @@
               <div class="op-setting-item" op-panel-type="audioTrack" op-data-value="${state.audio}"><span class="op-setting-item-title">Audio</span><span class="op-setting-item-nexticon">&gt;</span><span class="op-setting-item-value">${state.audio}</span></div>
             </div>`;
         } else if (state.view === 'source') {
+          // Exact DVR/VOD only. Deliberate decoys must NOT appear in the overlay select.
           panel.innerHTML = `
             <div class="op-setting-title-container"><div class="op-setting-title" tabindex="0"><span class="op-setting-title-title">Source</span></div></div>
             <div class="op-setting-item" op-data-value="DVR"><span class="op-setting-item-title">DVR</span></div>
-            <div class="op-setting-item" op-data-value="VOD"><span class="op-setting-item-title">VOD</span></div>`;
+            <div class="op-setting-item" op-data-value="VOD"><span class="op-setting-item-title">VOD</span></div>
+            <div class="op-setting-item" op-data-value="vod1_backup"><span class="op-setting-item-title">vod1_backup</span></div>
+            <div class="op-setting-item" op-data-value="dvr_alt"><span class="op-setting-item-title">dvr_alt</span></div>`;
         } else if (state.view === 'audio') {
           panel.innerHTML = `
             <div class="op-setting-title-container"><div class="op-setting-title" tabindex="0"><span class="op-setting-title-title">Audio</span></div></div>
