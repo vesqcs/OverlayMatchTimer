@@ -1,7 +1,8 @@
 /* ============================================================
    Overlay MatchTimer — Chrome Extension Content Script
-   Runs in MAIN world on inplayip.tv
-   Injects the full timer UI over the existing Video.js player.
+   Runs in MAIN world on InplayIP / Examino (OpenPlayer).
+   Site-specific selectors & positioning live in SITE ADAPTERS;
+   shared timer/HUD logic is shared below.
    ============================================================ */
 
 (function () {
@@ -9,6 +10,8 @@
 
     // SPA monitor interval handle
     let spaMonitorInterval = null;
+    let bootObserver = null;
+    let fullscreenHooked = false;
 
     /* =========================================================
        MODULE STATE
@@ -49,6 +52,199 @@
         volumeRange, volumeIconBtn, shuttleToggle, shuttleCheatsheet;
 
     /* =========================================================
+       SITE ADAPTERS
+       Isolate host-specific DOM / mode / fullscreen behaviour so
+       InplayIP keeps its proven Review/Live SPA logic while Examino
+       uses OpenPlayer-aware wait/anchor/suppress rules.
+       ========================================================= */
+    const SITE_INPLAYIP = {
+        id: 'inplayip',
+        rootClass: 'omt-inplayip',
+
+        findVideo() {
+            // Prefer the Video.js tech element
+            const tech = document.querySelector('.vjs-tech');
+            if (tech && tech.tagName === 'VIDEO') return tech;
+            const any = document.querySelector('video');
+            return any || null;
+        },
+
+        findAnchor(videoEl) {
+            return videoEl.closest('.video-js') ||
+                videoEl.closest('.vjs-player') ||
+                videoEl.parentElement;
+        },
+
+        findFullscreenTarget(videoEl) {
+            return videoEl.closest('.video-js') || videoEl.parentElement || videoEl;
+        },
+
+        // Exact Inplay Review/Live signals from the known-good baseline.
+        isReviewStream() {
+            return !!document.querySelector('.vjs-progress-control');
+        },
+
+        isLiveStream() {
+            const bodyText = document.body ? document.body.innerText : '';
+            if (/\b(hd|sd)\s+live\b/i.test(bodyText)) return true;
+            const hasLiveUI = !!document.querySelector('.vjs-live-control, .vjs-live-display');
+            const hasProgress = !!document.querySelector('.vjs-progress-control');
+            if (hasLiveUI && !hasProgress) return true;
+            return false;
+        },
+
+        suppressHostControls(videoEl) {
+            document.querySelectorAll('.video-js, .vjs-tech').forEach(el => {
+                el.setAttribute('tabindex', '-1');
+            });
+        },
+
+        // MSE DVR on Inplay Review exposes a finite duration — keep baseline gate.
+        mediaReady(videoEl) {
+            return !!(videoEl && videoEl.duration && isFinite(videoEl.duration));
+        },
+
+        effectiveDuration(videoEl) {
+            if (videoEl && videoEl.duration && isFinite(videoEl.duration)) return videoEl.duration;
+            return NaN;
+        }
+    };
+
+    const SITE_EXAMINO = {
+        id: 'examino',
+        rootClass: 'omt-examino',
+
+        findVideo() {
+            const inOp = document.querySelector('.op-media-element-container video, .op-player video');
+            if (inOp) return inOp;
+            const any = document.querySelector('video');
+            return any || null;
+        },
+
+        findAnchor(videoEl) {
+            // Prefer the OpenPlayer root that typically owns fullscreen, then
+            // fall back to the media container / parent.
+            return videoEl.closest('.op-player') ||
+                videoEl.closest('.video-container') ||
+                videoEl.closest('.op-media-element-container') ||
+                videoEl.parentElement;
+        },
+
+        findFullscreenTarget(videoEl) {
+            return videoEl.closest('.op-player') ||
+                videoEl.closest('.video-container') ||
+                videoEl.closest('.op-media-element-container') ||
+                videoEl.parentElement ||
+                videoEl;
+        },
+
+        // Examino /play/dvr/ pages are already DVR — no Live/Review fork.
+        isReviewStream() { return true; },
+        isLiveStream() { return false; },
+
+        suppressHostControls(videoEl) {
+            // Soften OpenPlayer keyboard/focus capture so our capture-phase
+            // hotkeys win; CSS hides the chrome (see content.css).
+            const root = this.findAnchor(videoEl) || document;
+            root.querySelectorAll(
+                '.op-controls, .op-ui, .op-progressbar-container, .button-bar, video, button, [tabindex]'
+            ).forEach(el => {
+                if (el.id === 'omt-root' || (omtRoot && omtRoot.contains(el))) return;
+                try { el.setAttribute('tabindex', '-1'); } catch (_) {}
+            });
+            if (!document.getElementById('omt-examino-hide-css')) {
+                const style = document.createElement('style');
+                style.id = 'omt-examino-hide-css';
+                style.textContent = [
+                    '.op-controls,',
+                    '.op-ui,',
+                    '.op-progressbar-container,',
+                    '.op-player .button-bar,',
+                    '.video-container > .button-bar {',
+                    '  display: none !important;',
+                    '  opacity: 0 !important;',
+                    '  pointer-events: none !important;',
+                    '}'
+                ].join('\n');
+                (document.head || document.documentElement).appendChild(style);
+            }
+        },
+
+        // OpenPlayer MSE often reports duration=Infinity; seekable end is enough.
+        mediaReady(videoEl) {
+            if (!videoEl) return false;
+            if (videoEl.duration && isFinite(videoEl.duration)) return true;
+            try {
+                return !!(videoEl.seekable && videoEl.seekable.length > 0);
+            } catch (_) {
+                return false;
+            }
+        },
+
+        effectiveDuration(videoEl) {
+            if (!videoEl) return NaN;
+            if (videoEl.duration && isFinite(videoEl.duration)) return videoEl.duration;
+            try {
+                if (videoEl.seekable && videoEl.seekable.length > 0) {
+                    return videoEl.seekable.end(videoEl.seekable.length - 1);
+                }
+            } catch (_) {}
+            return NaN;
+        }
+    };
+
+    // Xeatre works differently (URL paste into the HTML app). Out of scope —
+    // leave a stub so a future adapter can plug in without another rewrite.
+    const SITE_XEATRE = {
+        id: 'xeatre',
+        rootClass: 'omt-xeatre',
+        findVideo() { return null; },
+        findAnchor() { return null; },
+        findFullscreenTarget() { return null; },
+        isReviewStream() { return false; },
+        isLiveStream() { return false; },
+        suppressHostControls() {},
+        mediaReady() { return false; },
+        effectiveDuration() { return NaN; },
+        // TODO(xeatre): dedicated adapter when Xeatre DVR is reachable again.
+        stub: true
+    };
+
+    function detectSite() {
+        const host = (location.hostname || '').toLowerCase();
+        const path = location.pathname || '';
+        const forced = (document.documentElement.dataset.omtSite || '').toLowerCase();
+
+        if (forced === 'examino' || host.includes('examino') || /examino/i.test(path)) {
+            return SITE_EXAMINO;
+        }
+        // TODO(xeatre): enable when bringing Xeatre injection back
+        if (forced === 'xeatre' || host.includes('xeatre')) {
+            return SITE_XEATRE;
+        }
+        if (forced === 'inplayip' || host.includes('inplayip') || /inplay/i.test(path)) {
+            return SITE_INPLAYIP;
+        }
+        // Local Playwright fixtures served from 127.0.0.1 / localhost
+        if (host === 'localhost' || host === '127.0.0.1') {
+            if (/examino/i.test(path)) return SITE_EXAMINO;
+            if (/inplay/i.test(path)) return SITE_INPLAYIP;
+        }
+        return null;
+    }
+
+    const site = detectSite();
+    if (!site) {
+        console.log('[OMT] No matching site adapter — content script idle.');
+        return;
+    }
+    if (site.stub) {
+        console.log('[OMT] Xeatre adapter is a stub (out of scope) — content script idle.');
+        return;
+    }
+    console.log('[OMT] Site adapter:', site.id);
+
+    /* =========================================================
        1. BOOT — WAIT FOR VIDEO ELEMENT
        ========================================================= */
     function teardown() {
@@ -56,6 +252,10 @@
         if (spaMonitorInterval) {
             clearInterval(spaMonitorInterval);
             spaMonitorInterval = null;
+        }
+        if (bootObserver) {
+            bootObserver.disconnect();
+            bootObserver = null;
         }
         // Stop any running timers
         if (mouseMoveTimeout) {
@@ -119,93 +319,73 @@
     }
 
     /* =========================================================
-       1A. STREAM MODE DETECTION — CONTROL BAR + TEXT
+       1A. STREAM MODE DETECTION — delegated to site adapter
        =========================================================
-       The Inplay platform is a true SPA: the URL never changes from
-       /schedule, regardless of whether a video is active or not. All
-       URL-based guards have been removed.
-
-       Mode is determined by inspecting two reliable DOM signals:
-
-       isReviewStream()
-         → Positive Review indicator. VJS renders a .vjs-progress-control
-           element ONLY in DVR/Review mode. Its presence means the stream
-           has a seekable timeline. This is the trigger for full injection.
-
-       isLiveStream()
-         → Positive Live indicator. Two sub-signals, either is sufficient:
-           1. Page text contains "hd live" or "sd live" (Inplay's badge).
-           2. .vjs-live-control or .vjs-live-display exists in the player
-              AND no .vjs-progress-control is present (Live-only control bar).
+       InplayIP: Review vs Live via VJS control-bar / text badges
+       (byte-equivalent to the known-good baseline).
+       Examino: /play/dvr/ is always treated as Review/DVR.
     */
-    function isReviewStream() {
-        return !!document.querySelector('.vjs-progress-control');
-    }
-
-    function isLiveStream() {
-        // Signal 1: explicit text badge rendered by Inplay.
-        const bodyText = document.body ? document.body.innerText : '';
-        if (/\b(hd|sd)\s+live\b/i.test(bodyText)) return true;
-
-        // Signal 2: VJS live-display present but no seekable progress bar.
-        const hasLiveUI = !!document.querySelector('.vjs-live-control, .vjs-live-display');
-        const hasProgress = !!document.querySelector('.vjs-progress-control');
-        if (hasLiveUI && !hasProgress) return true;
-
-        return false;
-    }
+    function isReviewStream() { return site.isReviewStream(); }
+    function isLiveStream() { return site.isLiveStream(); }
 
     /* =========================================================
        1B. BOOT — OBSERVE FOR PLAYER, THEN ROUTE BY MODE
        =========================================================
        boot() is the single entry point for all (re-)initializations.
-       It checks current DOM state immediately, and if the player is not
-       ready yet, attaches a MutationObserver that waits specifically for
-       the VJS control bar to render before making a mode decision.
+       InplayIP waits for the VJS control bar before deciding mode.
+       Examino waits for a (possibly late / replaced) <video> via
+       MutationObserver — OpenPlayer mounts after document_idle.
     */
     function boot() {
+        if (bootObserver) {
+            bootObserver.disconnect();
+            bootObserver = null;
+        }
+
         // --- Immediate check: player may already be in the DOM ---
         if (isReviewStream()) {
             const v = findVideo();
             if (v) { init(v); return; }
-        }
-        if (isLiveStream()) {
+            // Review/DVR signal present (or Examino always-DVR) but <video> not
+            // mounted yet — fall through to the MutationObserver below.
+        } else if (site.id === 'inplayip' && isLiveStream()) {
             console.log('[OMT] Live stream — extension inactive. Watching for next session.');
             startSPAMonitor();
             return;
         }
 
-        // --- Player not ready yet: observe until control bar renders ---
-        // We disconnect as soon as we can make a definitive decision so this
-        // observer never runs continuously once a session is established.
-        let bootObs = new MutationObserver(() => {
-            if (isReviewStream()) {
-                const v = findVideo();
-                if (!v) return; // Video element itself not yet attached — keep watching.
-                bootObs.disconnect();
-                bootObs = null;
-                init(v);
+        // --- Player / video not ready yet: observe DOM mutations ---
+        bootObserver = new MutationObserver(() => {
+            if (site.id === 'inplayip') {
+                if (isReviewStream()) {
+                    const v = findVideo();
+                    if (!v) return; // Video element itself not yet attached — keep watching.
+                    bootObserver.disconnect();
+                    bootObserver = null;
+                    init(v);
+                    return;
+                }
+                if (isLiveStream()) {
+                    bootObserver.disconnect();
+                    bootObserver = null;
+                    console.log('[OMT] Live stream — extension inactive. Watching for next session.');
+                    startSPAMonitor();
+                }
                 return;
             }
-            if (isLiveStream()) {
-                bootObs.disconnect();
-                bootObs = null;
-                console.log('[OMT] Live stream — extension inactive. Watching for next session.');
-                startSPAMonitor();
-            }
-            // Neither signal yet — keep observing (player still loading).
+
+            // Examino (and other always-DVR adapters): any video is enough.
+            const v = findVideo();
+            if (!v) return;
+            bootObserver.disconnect();
+            bootObserver = null;
+            init(v);
         });
-        bootObs.observe(document.documentElement, { childList: true, subtree: true });
+        bootObserver.observe(document.documentElement, { childList: true, subtree: true });
     }
 
     function findVideo() {
-        // Prefer the Video.js tech element
-        const tech = document.querySelector('.vjs-tech');
-        if (tech && tech.tagName === 'VIDEO') return tech;
-        // Generic fallback
-        const any = document.querySelector('video');
-        if (any) return any;
-        return null;
+        return site.findVideo();
     }
 
     /* =========================================================
@@ -323,7 +503,7 @@
     function suppressNativeControls() {
         vid.controls = false;
 
-        // Video.js may re-enable native controls during its own startup sequence.
+        // Video.js / OpenPlayer may re-enable native controls during startup.
         // We watch for that race condition and immediately override it.
         // Performance contract:
         //   - The callback is debounced (10 ms) so rapid consecutive mutations
@@ -352,20 +532,15 @@
             }
         }, autoDisconnectMs);
 
-        // Swallow Video.js keyboard events so our handler wins
-        document.querySelectorAll('.video-js, .vjs-tech').forEach(el => {
-            el.setAttribute('tabindex', '-1');
-        });
+        // Site-specific native chrome / focus suppression (Inplay VJS or OpenPlayer).
+        site.suppressHostControls(vid);
     }
 
     /* =========================================================
        4. INJECT UI INTO THE PAGE
        ========================================================= */
     function injectUI() {
-        // Find the best container to anchor inside
-        const anchor = vid.closest('.video-js') ||
-            vid.closest('.vjs-player') ||
-            vid.parentElement;
+        const anchor = site.findAnchor(vid);
 
         if (!anchor) { console.error('[OMT] Could not find anchor element.'); return; }
 
@@ -375,8 +550,45 @@
 
         omtRoot = document.createElement('div');
         omtRoot.id = 'omt-root';
+        omtRoot.classList.add(site.rootClass);
         omtRoot.innerHTML = buildHTML();
         anchor.appendChild(omtRoot);
+
+        updateCompactLayout();
+        ensureFullscreenHook();
+    }
+
+    function updateCompactLayout() {
+        if (!omtRoot) return;
+        // Examino popup players are often ~465×261 — shrink chrome so the HUD fits.
+        const anchor = omtRoot.parentElement;
+        const w = (anchor && anchor.clientWidth) || window.innerWidth;
+        const h = (anchor && anchor.clientHeight) || window.innerHeight;
+        const compact = site.id === 'examino' && (w < 720 || h < 420);
+        omtRoot.classList.toggle('omt-compact', compact);
+    }
+
+    function ensureFullscreenHook() {
+        if (fullscreenHooked) return;
+        fullscreenHooked = true;
+        document.addEventListener('fullscreenchange', () => {
+            if (!vid || !omtRoot) return;
+            updateCompactLayout();
+            // If OpenPlayer (or the browser) fullscreens a parent that does not
+            // contain our root, reparent so the overlay stays visible.
+            const fs = document.fullscreenElement;
+            if (fs && fs.contains(vid) && !fs.contains(omtRoot)) {
+                fs.appendChild(omtRoot);
+                const cs = getComputedStyle(fs);
+                if (cs.position === 'static') fs.style.position = 'relative';
+            } else if (!fs && vid.isConnected) {
+                const anchor = site.findAnchor(vid);
+                if (anchor && omtRoot.parentElement !== anchor) {
+                    anchor.appendChild(omtRoot);
+                }
+            }
+        });
+        window.addEventListener('resize', () => updateCompactLayout());
     }
 
     function buildHTML() {
@@ -858,7 +1070,10 @@
     }
 
     function inicializarMetadadosTimeline() {
-        if (vid.duration && isFinite(vid.duration)) {
+        const mediaDuration = site.effectiveDuration(vid);
+        // InplayIP path: only enters when duration is finite (effectiveDuration === vid.duration).
+        // Examino path: also accepts seekable-end when MSE reports Infinity.
+        if (mediaDuration && isFinite(mediaDuration)) {
             let minVal = 0;
             // Precision zoom: shrink slider to 15 min before kickoff1
             if (kickoff1 !== null) {
@@ -868,8 +1083,8 @@
                 }
             }
             timelineSlider.min = minVal;
-            timelineSlider.max = vid.duration;
-            vTimeDuration.innerText = formatarTempoVideo(vid.duration);
+            timelineSlider.max = mediaDuration;
+            vTimeDuration.innerText = formatarTempoVideo(mediaDuration);
             timelineSlider.disabled = false;
             if (parseFloat(timelineSlider.value) < minVal) timelineSlider.value = minVal;
 
@@ -1271,7 +1486,7 @@
         if (!markerContainer) return;
         markerContainer.innerHTML = '';
 
-        const duration = vid.duration;
+        const duration = site.effectiveDuration(vid);
         if (!duration || !isFinite(duration)) {
             [btnK1, btnK2, btnKC1, btnKC2].forEach(b => { if (b) b.style.display = 'none'; });
             return;
@@ -1377,7 +1592,7 @@
     }
 
     function toggleFullScreen() {
-        const container = vid.closest('.video-js') || vid.parentElement;
+        const container = site.findFullscreenTarget(vid);
         if (!document.fullscreenElement) {
             (container || vid).requestFullscreen().catch(() => vid.requestFullscreen().catch(() => { }));
         } else {
@@ -1433,7 +1648,8 @@
 
         if (isManuallyHidden) return;
 
-        if (vid && (!vid.duration || !isFinite(vid.duration))) return;
+        // InplayIP: identical finite-duration gate. Examino: allow seekable MSE.
+        if (vid && !site.mediaReady(vid)) return;
 
         if (showPanel && controlsPanel) {
             controlsPanel.style.opacity = '1';

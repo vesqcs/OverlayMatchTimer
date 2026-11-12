@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en" data-omt-site="examino">
+<head>
+  <meta charset="UTF-8" />
+  <title>Examino OpenPlayer Mock DVR</title>
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #0b1220;
+      font-family: "Segoe UI", sans-serif;
+      color: #ddd;
+    }
+    .video-container {
+      position: relative;
+      width: 465px;
+      height: 261px;
+      margin: 40px auto;
+      background: #000;
+      overflow: hidden;
+    }
+    .op-player {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      background: #111;
+    }
+    .op-media-element-container {
+      position: absolute;
+      inset: 0;
+    }
+    .op-media-element-container video {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: #000;
+    }
+    .op-controls, .op-ui, .op-progressbar-container, .button-bar {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 36px;
+      background: rgba(255, 80, 0, 0.35);
+      z-index: 5;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+    }
+    #status {
+      text-align: center;
+      margin-top: 12px;
+      font-size: 13px;
+      color: #9ad;
+    }
+  </style>
+</head>
+<body>
+  <div class="video-container">
+    <div class="op-player" id="op-player">
+      <!-- Video is injected late to mimic OpenPlayer MSE mount after document_idle -->
+      <div class="op-media-element-container op-clear" id="media-host"></div>
+      <div class="op-ui op-clear">OpenPlayer UI</div>
+      <div class="op-controls">OpenPlayer Controls</div>
+      <div class="op-progressbar-container op-clear">Progress</div>
+      <div class="button-bar">Native Button Bar</div>
+    </div>
+  </div>
+  <div id="status">Waiting to inject video…</div>
+  <script>
+    (function () {
+      const host = document.getElementById('media-host');
+      const status = document.getElementById('status');
+      const player = document.getElementById('op-player');
+
+      function makeVideo(label) {
+        const video = document.createElement('video');
+        video.preload = 'auto';
+        video.playsInline = true;
+        video.setAttribute('playsinline', '');
+        video.muted = true;
+        // Tiny valid muted clip via MediaSource-like finite blob is heavy;
+        // use a short generated MediaStream canvas instead for seekable timeline.
+        const canvas = document.createElement('canvas');
+        canvas.width = 640;
+        canvas.height = 360;
+        const ctx = canvas.getContext('2d');
+        let t0 = performance.now();
+        function draw() {
+          const t = (performance.now() - t0) / 1000;
+          ctx.fillStyle = '#143d2b';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.fillStyle = '#00ff88';
+          ctx.font = '28px sans-serif';
+          ctx.fillText(label + ' t=' + t.toFixed(1) + 's', 24, 48);
+          ctx.strokeStyle = '#fff';
+          ctx.strokeRect(40, 80, 560, 200);
+          requestAnimationFrame(draw);
+        }
+        draw();
+        const stream = canvas.captureStream(30);
+        video.srcObject = stream;
+        // Fake a finite DVR window for timeline tests by monkey-patching
+        // duration/seekable once metadata-ish is ready.
+        Object.defineProperty(video, 'duration', { configurable: true, get: () => 600 });
+        const seekable = {
+          length: 1,
+          start: () => 0,
+          end: () => 600
+        };
+        Object.defineProperty(video, 'seekable', { configurable: true, get: () => seekable });
+        let _ct = 12;
+        Object.defineProperty(video, 'currentTime', {
+          configurable: true,
+          get: () => _ct,
+          set: (v) => { _ct = Math.max(0, Math.min(600, Number(v) || 0)); }
+        });
+        video.play().catch(() => {});
+        return video;
+      }
+
+      // Late mount (~800ms after idle) then replace once (~2.2s) to exercise observers.
+      setTimeout(() => {
+        const v1 = makeVideo('EXAMINO-A');
+        host.appendChild(v1);
+        status.textContent = 'Video A mounted (late)';
+      }, 800);
+
+      setTimeout(() => {
+        host.innerHTML = '';
+        const v2 = makeVideo('EXAMINO-B');
+        host.appendChild(v2);
+        status.textContent = 'Video B replaced — extension should rebind';
+      }, 2200);
+
+      // Optional native-like fullscreen target used by tests
+      window.__mockRequestFs = () => player.requestFullscreen();
+    })();
+  </script>
+</body>
+</html>

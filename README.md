@@ -1,157 +1,100 @@
-# Overlay MatchTimer ⚽⏱️
+# Overlay MatchTimer
 
-**Overlay MatchTimer** is a high-performance Google Chrome Extension designed for professional football and sports match analysts. It injects a highly accurate, customisable match timer overlay and a full tactical video control suite directly over live and DVR video streams powered by Video.js — specifically tailored for platforms such as **Xeatre**, **Inplayip.tv**, **Examino** (statsperform.io), and local video files.
+**Overlay MatchTimer** is a Chrome MV3 extension for professional football / sports match analysts. It injects a drift-aware match timer, HUD timeline, and playback controls over supported stream players.
 
-This tool eliminates the limitations of native web video players, providing video stability, drift-proof synchronisation, precise scrubbing, hardware device integration, and a smart responsive layout that adapts seamlessly to any window size.
+Supported by this extension build:
 
----
+* **InplayIP** (`*.inplayip.tv`) — Video.js Review/DVR sessions (unchanged known-good behaviour)
+* **Examino** (`examino.statsperform.io/play/dvr/*`) — OpenPlayer DVR pages (no iframes / shadow roots)
 
-## 🌟 Key Features
+Xeatre remains out of scope for the extension injector (use the local HTML companion to load copied DVR URLs). A stub adapter is left in `content.js` for a future pass.
 
-### 1. Advanced Synchronisation & Stability
-
-* **HLS PDT Absolute Sync:** Automatically reads `programDateTime` (PDT) from HLS.js fragment data and Video.js VHS segment internals. The match clock is calibrated to absolute wall-clock time, making it completely bulletproof against stream drifts, buffering events, or reconnections.
-* **Anti-Live-Snap Engine:** A custom protection mechanism prevents the HLS player from forcefully pulling the playhead back to the live edge during active analysis. A 4-second safety window preserves the analyst's exact position after every manual seek.
-* **Persistent Local State:** All session variables — whistle offsets, kickoff markers, volume levels, selected half, and custom period boundaries — are automatically persisted via `localStorage`. After a page refresh or crash, the full timeline state is instantly restored with no re-configuration required.
+The local companion app (`OverlayMatchTimer.html`) and the user guide (`Overlay MatchTimer Guideline.pdf`) document kick-off sync, halves, hotkeys, the draggable auto-hiding panel, HUD timeline jumps, and ShuttleXpress.
 
 ---
 
-### 2. Intelligent Responsive Control Panel
+## Key features
 
-The controls panel dynamically adapts its layout based on the current window geometry, ensuring the interface is never obstructive regardless of window size or platform.
+* Kick-off sync with half / custom period selection and persistent `localStorage` state
+* Capture-phase hotkeys (Space, arrows, Z/C/X, H) that override host player shortcuts
+* Draggable glass setup + controls panels with auto-hide
+* HUD match clock with click-to-jump minute editing
+* Contour ShuttleXpress via WebHID
+* HLS PDT sync + anti-live-snap when a VHS / hls.js instance is present (InplayIP)
 
-#### Docked Mode (Letterbox-Embedded)
-When the video container has a bottom black letterbox bar of at least **110 px** (the typical result of 16:9 content in a non-16:9 window), the controls panel automatically docks into that black bar, spanning the full container width. The docking position is determined by a pure **CSS Flexbox layout** — the browser's rendering engine positions both the video spacer and the controls panel in the exact same paint frame, achieving **0 ms resize latency** with no JavaScript measurement involved. Resizing the window vertically feels completely native with no jumping or delay.
+### Examino-specific behaviour
 
-#### Overlay Mode (Floating)
-In compact windows or fullscreen, the controls panel floats as a centred glassmorphism overlay above the video. It auto-hides after **2.5 seconds** of mouse inactivity and reappears instantly on any mouse movement.
-
-#### Platform Normalisation
-Across all supported platforms, the extension enforces consistent video geometry:
-* **Xeatre, Inplayip & Local files:** The `<video>` element is top-aligned (`object-position: top center`) so that all letterbox space is consolidated at the bottom — the exact region the docked panel occupies.
-* **Xeatre:** Native `#ControlBar` overlay is suppressed in both normal and fullscreen modes.
-* **Examino:** Native button bar, progress bar, and settings button are hidden via both CSS `!important` rules and a persistent `MutationObserver` that suppresses any re-injected controls.
-* **Fullscreen:** The docked panel automatically reverts to Overlay Mode when entering fullscreen, and re-evaluates on exit.
-
----
-
-### 3. Contour ShuttleXpress Hardware Integration
-
-Native support for the **Contour ShuttleXpress** USB device via the **WebHID API**, providing hands-on, tactile control of video playback without touching the keyboard or mouse.
-
-| Control | Action |
-| :--- | :--- |
-| **Inner Jog Wheel** | Frame-by-frame navigation (±0.04s per click). Automatically pauses the video. Supports multi-step scrolls |
-| **Outer Shuttle Ring** | Variable-speed continuous scrubbing. Supports 7 speed steps in each direction: `0.2×`, `0.5×`, `1.0×`, `2.0×`, `4.0×`, `8.0×`, `16.0×` |
-| **Button 1 (Far Left)** | Skip −2 minutes |
-| **Button 2** | Skip −10 seconds |
-| **Button 3 (Centre)** | Play / Pause toggle |
-| **Button 4** | Skip +10 seconds |
-| **Button 5 (Far Right)** | Skip +2 minutes |
-
-**Connection flow:** Toggle the *Enable ShuttleXpress* switch in the Setup Panel. If the device has not been paired before, Chrome will display a WebHID permission prompt. On subsequent page loads, the device is reconnected automatically in the background. If fullscreen is active when pairing is initiated, the extension exits fullscreen automatically before requesting device access (a Chrome WebHID requirement).
+* Site adapter waits for a late-mounted / replaced `<video>` (OpenPlayer MSE) via `MutationObserver` + SPA monitor
+* Overlay anchors inside `.op-player` / `.op-media-element-container` and reparents on fullscreen so the HUD stays visible
+* Compact CSS mode for small popup players (~465×261)
+* Native OpenPlayer controls / UI chrome are hidden so they do not fight OMT hotkeys and clicks
 
 ---
 
-### 4. Tailored Tactical Playback Controls
+## Install (Developer Mode)
 
-* **Frame-by-Frame Scrubbing:** Step forward or backward with surgical precision (±0.04s per frame) to freeze-frame offsides, defensive lines, or passing lanes.
-* **Smart Timeline Markers & Kickoff Jumps:** Dynamically calculates coloured tick-marks on the timeline for the 1st Half, 2nd Half, and up to two Custom Extra-Time periods. Dedicated badge buttons allow instant one-click jumping to the exact moment of each kick-off.
-* **Timeline Precision Zoom:** Once kickoff markers are set, the timeline slider automatically adjusts its start point to 15 minutes before the 1st Half kickoff, zooming the scrub range to the relevant match window and improving scrubbing resolution.
-* **Variable Playback Speed:** Scale playback speed from `0.25×` to `2.00×` via the speed selector or keyboard hotkeys. The speed display stays synchronised across all input methods.
-* **Draggable Glassmorphism UI:** Both the *Setup Panel* and the *Controls Panel* (when in Overlay Mode) feature independent drag-and-drop handles for free positioning over the video canvas. Dragging is blocked in Docked Mode.
-* **Volume Control & Mute:** Persistent volume slider with mute toggle. Volume level is restored across page loads.
-* **Live Edge Button:** Instantly seeks to the live edge of an HLS stream using `hls.liveSyncPosition` or the seekable buffer end. The button visually pulses red when at the live edge (within 8 seconds).
+1. Clone or download this repository.
+2. Open `chrome://extensions/` and enable **Developer mode**.
+3. Click **Load unpacked** and select `Overlay-chrome-extension/` (the folder that contains `manifest.json`).
+4. Open an InplayIP Review session or an Examino DVR URL such as  
+   `https://examino.statsperform.io/play/dvr/<id>/?st=<epoch ms>`.
+5. The Overlay MatchTimer HUD should appear over the player within a couple of seconds after the `<video>` mounts.
 
----
-
-### 5. Interactive Timer Navigation (Jump to Minute)
-
-Analysts can click directly on the on-screen match timer to transform it into an editable input field:
-
-* **Type any target match minute** (e.g., `13`, `67`, or `46.5`) and press **`Enter`** to instantly seek the video to that exact game moment.
-* Press **`Escape`** to cancel and restore the live running clock without seeking.
-* Clicking away from the field confirms the value automatically.
-
-**Smart context-aware seeking:** The extension resolves the correct video timestamp relative to the active period (1st Half, 2nd Half, Custom 1, Custom 2) and all stored kickoff markers. If the typed minute falls within a different period, the extension automatically maps the seek target to the correct kickoff boundary — including injury time handling and cross-period disambiguation.
+Optional: the local HTML companion (`OverlayMatchTimer.html`) can still be used for offline files and for pasting Xeatre/Examino DVR URLs into the dashboard player.
 
 ---
 
-### 6. Examino DVR Automation
+## Local verification (without Stats Perform login)
 
-On **Examino (statsperform.io)**, the extension automatically switches the player to DVR mode on page load. After a 2.5-second delay (to allow the player to fully initialise), it opens the player settings menu and clicks the DVR source option — eliminating a manual step that would otherwise be required on every stream load.
+Real Examino / InplayIP hosts are internal. This repo includes OpenPlayer-like and Video.js-like fixtures plus a Playwright harness:
 
----
+```bash
+cd test
+npm install
+npx playwright install chromium
+xvfb-run -a npm run test:e2e   # or omit xvfb-run on a machine with a display
+```
 
-### 7. Single-Page Application (SPA) Resilience
+What the harness checks:
 
-A background monitor polls every **1.5 seconds** to detect stream changes in single-page application environments (e.g., navigating between matches without a full page reload). It automatically:
-* **Tears down** the HUD cleanly when leaving a stream page.
-* **Reinitialises** the full extension when a new video element is detected.
-* **Handles stream switches** mid-session when the underlying `<video>` element is replaced.
+* Examino mock: late video inject + one replacement, overlay appears, compact mode, kick-off sync, Space / seek hotkeys, panel drag, fullscreen keeps overlay
+* InplayIP mock: overlay regression + kick-off sync
 
----
+Fixtures live under `test/fixtures/`. Screenshots are written to `/opt/cursor/artifacts/` when run in the Cloud Agent environment (or adjust the path in `test/e2e/extension.spec.mjs`).
 
-## 🛠️ Project Structure
-
-The project repository consists of two main components:
-
-1. **The Chrome Extension** (`Overlay-chrome-extension/`): Injects the professional analysis interface over the remote stream platform. Contains `manifest.json`, `content.js`, and `content.css`.
-2. **The HTML Companion App:** A local analytical dashboard file that acts as a local hub and links directly to documentation and extension deployment.
+`http://127.0.0.1/*` and `http://localhost/*` are included in the extension match patterns solely so these fixtures can load the content script.
 
 ---
 
-## 🚀 Installation & Setup
+## Project layout
 
-Since the extension is currently tailored for professional internal workflows, it can be loaded instantly in Developer Mode at no cost:
+| Path | Purpose |
+| --- | --- |
+| `Overlay-chrome-extension/` | MV3 extension (`manifest.json`, `content.js`, `content.css`) |
+| `OverlayMatchTimer.html` | Local companion dashboard |
+| `Overlay MatchTimer Guideline.pdf` | End-user guide |
+| `test/fixtures/` | Examino OpenPlayer + InplayIP Video.js mocks |
+| `test/e2e/` | Playwright extension smoke tests |
 
-### Loading the Chrome Extension
-
-1. Download or clone this repository to your local computer.
-2. Open Google Chrome and navigate to: `chrome://extensions/`
-3. In the top-right corner, toggle the **"Developer mode"** switch to **ON**.
-4. In the top-left corner, click **"Load unpacked"** (Carregar extensão expandida).
-5. Select the `Overlay-chrome-extension/` folder (the one containing `manifest.json`).
-6. *(Optional — Local File Testing):* Click **"Details"** on the extension card and enable **"Allow access to file URLs"** to use the extension with offline video files.
-
-### Launching the Dashboard App
-
-Double-click the `OverlayMatchTimer v.x.html` app file to launch the local hub console. From there you can load stream URLs directly or access documentation.
+Site-specific selectors and positioning are isolated in small adapters at the top of `content.js` (`SITE_INPLAYIP`, `SITE_EXAMINO`, `SITE_XEATRE` stub).
 
 ---
 
-## 🕹️ How to Use (Workflow)
-
-1. Open a supported stream (Xeatre, Examino, Inplayip, or a local video file).
-2. The **Overlay MatchTimer** HUD loads automatically over the video within approximately 2 seconds.
-3. Click the **⚙️ icon** to open the **Setup Panel**.
-4. Select the **Match Half** (1st Half, 2nd Half, or Custom Extra-Times with configurable starting minutes).
-5. **Sync the Clock:** Enter the exact Hour:Minute:Second timestamp of the referee's whistle. Alternatively, leave the fields empty and click **"SET KICK-OFF TIME"** to capture the current video frame as the 00:00 reference anchor.
-6. Close the setup panel. The timer, timeline markers, and kickoff jump badges are now active.
-7. Use the timeline, buttons, keyboard shortcuts, or ShuttleXpress device to execute your analysis.
-
----
-
-## ⌨️ Keyboard Shortcuts Cheatsheet
-
-All shortcuts use global capture-phase interception and override any native browser or Video.js key bindings.
+## Keyboard shortcuts
 
 | Action | Shortcut |
-| :--- | :--- |
-| **Play / Pause** | `Spacebar` |
-| **Skip ±2s** | `→` / `←` |
-| **Skip ±10s** | `Shift` + `→` / `←` |
-| **Skip ±2m** | `Ctrl` + `→` / `←` |
-| **Next Frame (+0.04s)** | `↑` |
-| **Previous Frame (−0.04s)** | `↓` |
-| **Increase Speed (+0.25×)** | `C` |
-| **Decrease Speed (−0.25×)** | `Z` |
-| **Reset Speed to 1.00×** | `X` |
-| **Toggle Controls Visibility** | `H` |
+| --- | --- |
+| Play / Pause | `Space` |
+| Skip ±2s | `→` / `←` |
+| Skip ±10s | `Shift` + `→` / `←` |
+| Skip ±2m | `Ctrl` + `→` / `←` |
+| Next / previous frame | `↑` / `↓` |
+| Speed ±0.25× / reset | `C` / `Z` / `X` |
+| Toggle controls visibility | `H` |
 
 ---
 
-## 👥 Author & License
+## Author
 
-* **Developer:** Vasco Oliveira
+* Developer: Vasco Oliveira  
 * Designed for professional performance analysis. All rights reserved.

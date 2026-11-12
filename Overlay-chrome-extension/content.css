@@ -1,10 +1,11 @@
 /* ============================================================
    Overlay MatchTimer — Chrome Extension Injected Styles
-   Targets inplayip.tv – hides native VJS controls,
-   injects glassmorphism panels over the video player.
+   InplayIP: hides native VJS controls.
+   Examino: hides OpenPlayer chrome (also reinforced via JS style tag).
+   Injects glassmorphism panels over the video player.
    ============================================================ */
 
-/* ---- HIDE NATIVE VIDEO.JS CONTROLS ---- */
+/* ---- HIDE NATIVE VIDEO.JS CONTROLS (InplayIP) ---- */
 .vjs-control-bar,
 .vjs-big-play-button,
 .vjs-loading-spinner,
@@ -12,6 +13,17 @@
 .vjs-menu-button-popup .vjs-menu,
 .vjs-text-track-display,
 .video-js .vjs-control-bar {
+    display: none !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* ---- HIDE OPENPLAYER CHROME (Examino) ---- */
+.op-controls,
+.op-ui,
+.op-progressbar-container,
+.op-player .button-bar,
+.video-container > .button-bar {
     display: none !important;
     opacity: 0 !important;
     pointer-events: none !important;
@@ -708,4 +720,55 @@
 }
 #omt-root .omt-shuttle-switch input:checked + .omt-shuttle-slider:before {
     transform: translateX(18px);
+}
+
+/* ============================================================
+   EXAMINO / COMPACT PLAYER LAYOUT
+   OpenPlayer popup DVR windows are often ~465×261. Shrink the HUD
+   so timer + controls remain usable without covering the pitch.
+   ============================================================ */
+#omt-root.omt-examino.omt-compact #match-timer {
+    top: 8px;
+    left: 8px;
+    padding: 6px 12px;
+    font-size: 18px;
+}
+
+#omt-root.omt-examino.omt-compact #osd-message {
+    top: 8px;
+    padding: 8px 16px;
+    font-size: 14px;
+}
+
+#omt-root.omt-examino.omt-compact #setup-panel {
+    top: 44px;
+    left: 8px;
+    width: min(280px, calc(100% - 16px));
+    max-height: calc(100% - 52px);
+    overflow: auto;
+}
+
+#omt-root.omt-examino.omt-compact #controls-panel {
+    bottom: 8px;
+    width: min(560px, calc(100% - 16px));
+}
+
+#omt-root.omt-examino.omt-compact .controls-content {
+    padding: 4px 8px 8px;
+    gap: 4px;
+}
+
+#omt-root.omt-examino.omt-compact .ctrl-btn {
+    padding: 4px 6px;
+    font-size: 10px;
+}
+
+#omt-root.omt-examino.omt-compact .timeline-container {
+    padding: 4px 10px 2px;
+    font-size: 10px;
+}
+
+/* Keep overlay above OpenPlayer layers in normal + fullscreen */
+#omt-root.omt-examino {
+    z-index: 2147483646;
 }
