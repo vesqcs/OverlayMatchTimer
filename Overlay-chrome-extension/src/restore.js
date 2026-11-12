@@ -9,7 +9,10 @@
         timerAtivo = true;
         offsetEmSegundos = parseFloat(localStorage.getItem('matchTimerOffset')) || 0;
         tempoBase = parseFloat(localStorage.getItem('matchTimerTempoBase')) || 0;
-        timerUI.style.display = 'block';
+        if (timerUI) timerUI.style.display = 'block';
+        const wrap = q('match-timer-wrap');
+        if (wrap) wrap.style.display = 'flex';
+        if (omtRoot) omtRoot.classList.add('omt-timer-on');
 
         q('omt-sync-hr').value = localStorage.getItem('matchTimerSyncHr') || '';
         q('omt-sync-min').value = localStorage.getItem('matchTimerSyncMin') || '';
@@ -27,14 +30,8 @@
         if (savedCMin1) q('omt-custom-minute-c1').value = savedCMin1;
         if (savedCMin2) q('omt-custom-minute-c2').value = savedCMin2;
 
-        // Restore the permanent active state on the kick-off button
         const _kickoffBtnRestore = q('omt-btn-set-kickoff');
-        _kickoffBtnRestore.classList.add('kickoff-set');
-        _kickoffBtnRestore.style.setProperty('background', '#00cc6a', 'important');
-        _kickoffBtnRestore.style.setProperty('color', '#000', 'important');
-        _kickoffBtnRestore.style.setProperty('opacity', '1', 'important');
-        _kickoffBtnRestore.style.setProperty('box-shadow', '0 0 14px rgba(0,255,136,0.5)', 'important');
-        _kickoffBtnRestore.style.setProperty('border', '1px solid rgba(0,255,136,0.4)', 'important');
+        if (_kickoffBtnRestore) _kickoffBtnRestore.classList.add('kickoff-set');
         esconderSetup();
-        mostrarOSD('\u23f1 Timer Restored');
+        mostrarOSD('Timer Restored');
     }

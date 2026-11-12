@@ -8,6 +8,7 @@
   "src/boot.js",
   "src/hls.js",
   "src/suppress.js",
+  "src/icons.js",
   "src/ui.js",
   "src/wire.js",
   "src/anti-snap.js",

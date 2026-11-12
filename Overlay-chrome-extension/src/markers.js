@@ -54,6 +54,6 @@
         const t = getVideoTimeForPdt(raw);
         if (t !== null && t >= 0) {
             seekTo(t);
-            mostrarOSD(`⚽ Jumped to ${labels[half]} Kickoff`);
+            mostrarOSD('Jumped to ' + labels[half] + ' Kickoff');
         }
     }

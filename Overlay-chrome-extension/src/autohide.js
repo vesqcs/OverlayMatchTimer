@@ -10,7 +10,7 @@
         if (!target || !omtRoot) return false;
         const el = target.nodeType === 1 ? target : target.parentElement;
         if (!el || !omtRoot.contains(el)) return false;
-        return !!el.closest('.glass-panel, #match-timer, #osd-message, button, input, select, label, a, .timeline-container');
+        return !!el.closest('.glass-panel, #match-timer-wrap, #match-timer, #omt-kickoff-bar, #omt-examino-settings, #osd-message, button, input, select, label, a, .timeline-container, .omt-hud-chip');
     }
 
     function noteOmtUiActivity(showPanel = true) {

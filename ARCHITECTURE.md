@@ -93,3 +93,8 @@ Each adapter is a plain object:
 - Programmatic OpenPlayer menu clicks use `examinoSuppressClickToggle` / `withClickToggleSuppressed`.
 - Settle-to-live only after explicit VOD→DVR (`examinoPendingDvrSettle`).
 - **LIVE button behaviour / time logic** stays as in v1.2.2 (`irParaLive` / `atualizarEstadoLive` untouched in intent).
+
+
+## Toolbar popup (v1.4.0)
+
+Branding, Shuttle toggle, shortcuts reference, and the prepared **Personalizar** section live in `popup.html` (Chrome `action.default_popup`). Values sync through `chrome.storage.local` via `bridge.js` (now also injected on InplayIP). In-video UI stays limited to transport, timeline, LIVE, match clock + offset nudge, kick-off, and Examino Source.

@@ -3,12 +3,21 @@
        6. WIRE ALL EVENTS
        ========================================================= */
     function wireEvents() {
-        // --- Setup panel buttons ---
-        q('omt-btn-close-setup').addEventListener('click', esconderSetup);
+        // --- Kick-off strip (in-video) ---
         q('omt-btn-set-kickoff').addEventListener('click', () => { iniciarTimer(); });
         q('omt-btn-clear-timer').addEventListener('click', () => { limparTimer(); });
-        q('omt-btn-show-setup').addEventListener('click', mostrarSetup);
         q('omt-btn-fullscreen').addEventListener('click', toggleFullScreen);
+
+        // --- Kick-off offset nudge (same offsetEmSegundos / kickoff state) ---
+        const nudge = (sec) => () => nudgeKickoffOffset(sec);
+        const nM5 = q('omt-offset-m5');
+        const nM1 = q('omt-offset-m1');
+        const nP1 = q('omt-offset-p1');
+        const nP5 = q('omt-offset-p5');
+        if (nM5) nM5.addEventListener('click', nudge(-5));
+        if (nM1) nM1.addEventListener('click', nudge(-1));
+        if (nP1) nP1.addEventListener('click', nudge(1));
+        if (nP5) nP5.addEventListener('click', nudge(5));
 
         // --- Half selector memory ---
         q('omt-half-select').addEventListener('change', function () {
@@ -146,37 +155,29 @@
 
         vid.addEventListener('play', () => {
             if (!btnMainPlay || !controlsPanel) return; // null-guard: UI may have been torn down
-            btnMainPlay.innerHTML = '⏸ Pause';
-            btnMainPlay.classList.add('playing');
+            atualizarBotaoPlay(true);
             controlsPanel.classList.add('playing-state');
             // Don't reveal the panel — ShuttleXpress triggers play() silently.
             resetControlsTimeout(false);
         }, vsig);
         vid.addEventListener('pause', () => {
             if (!btnMainPlay || !controlsPanel) return; // null-guard: UI may have been torn down
-            btnMainPlay.innerHTML = '⏯ Play';
-            btnMainPlay.classList.remove('playing');
+            atualizarBotaoPlay(false);
             controlsPanel.classList.remove('playing-state');
         }, vsig);
 
-        // --- Drag system for both panels ---
-        fazerArrastavel(setupPanel, q('setup-handle'));
-        fazerArrastavel(controlsPanel, q('controls-handle'));
+        // --- Drag (controls bar only; setup panel is no longer an in-video surface) ---
+        if (controlsPanel) fazerArrastavel(controlsPanel, q('controls-handle'));
 
         // --- Auto-hide controls: mouse move + clicks/keys/wheel on our UI ---
-        // Never hide while the pointer is over our interactive chrome.
         vid.addEventListener('mousemove', () => resetControlsTimeout(true), vsig);
         wireOmtUiActivityTracking();
-        resetControlsTimeout(false); // bootstrap: start timer, don't force-show
+        resetControlsTimeout(false);
 
-        // --- Keyboard shortcuts (capture phase, highest priority) ---
-        // Examino: persistent window listener installed at document_start.
-        // InplayIP: document capture listener (baseline behaviour).
         if (site.id === 'examino') {
             installExaminoHotkeys();
             installExaminoClickToToggle();
             wireExaminoSettingsUI();
-            // Only settle to live-edge after an explicit VOD→DVR switch — never on every bind.
             if (examinoPendingDvrSettle) {
                 examinoPendingDvrSettle = false;
                 settleExaminoMediaAfterBind();
@@ -185,22 +186,20 @@
             document.addEventListener('keydown', handleKeydown, true);
         }
 
-        // Auto-blur our own buttons after click (prevent shortcut hijack)
         omtRoot.addEventListener('click', function (e) {
             noteOmtUiActivity(true);
             const el = e.target.closest('button');
             if (el) setTimeout(() => el.blur(), 50);
         });
 
-        // Show live button immediately (always a stream)
         liveBtn.style.display = 'flex';
 
-        // Click listener for interactive timer
-        timerUI.addEventListener('click', iniciarEdicaoTimer);
+        // Match-clock click-to-edit ("set video time") removed from in-video UI.
+        // navegarParaMinutoDeJogo / iniciarEdicaoTimer remain available internally.
 
-        // ShuttleXpress toggle change listener
+        // Shuttle toggle lives in the toolbar popup; keep a hidden input synced via storage.
         if (shuttleToggle) {
             shuttleToggle.addEventListener('change', handleToggleChange);
-            shuttleToggle.addEventListener('click', () => shuttleToggle.blur());
         }
+        syncShuttleToggleFromStorage();
     }

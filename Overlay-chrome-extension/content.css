@@ -1,9 +1,22 @@
 /* ============================================================
-   Overlay MatchTimer — Chrome Extension Injected Styles
-   InplayIP: hides native VJS controls.
-   Examino: hides OpenPlayer chrome (also reinforced via JS style tag).
-   Injects glassmorphism panels over the video player.
+   Overlay MatchTimer — v1.4.0 UI (YouTube-like dark minimal)
+   Accent orange: Stats Perform #F5831F (Brandfetch statsperform.com)
+   Live progress / LIVE indicator: red. No emoji; Lucide SVGs in markup.
    ============================================================ */
+
+:root {
+    --omt-bg: rgba(15, 15, 15, 0.82);
+    --omt-bg-solid: #0f0f0f;
+    --omt-border: rgba(255, 255, 255, 0.10);
+    --omt-text: #f1f1f1;
+    --omt-muted: #aaaaaa;
+    --omt-orange: #F5831F;          /* Stats Perform accent — Brandfetch */
+    --omt-orange-dim: rgba(245, 131, 31, 0.18);
+    --omt-live: #ff0000;            /* YouTube-like live red */
+    --omt-behind: #909090;          /* scrubber when behind live */
+    --omt-font: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --omt-mono: "Segoe UI", system-ui, ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
 
 /* ---- HIDE NATIVE VIDEO.JS CONTROLS (InplayIP) ---- */
 .vjs-control-bar,
@@ -34,7 +47,6 @@
     pointer-events: none !important;
 }
 
-/* Expand Examino main player after hiding the ~108px bottom button stack */
 .main-container.svelte-iq8mv8,
 .main-container {
     height: 100% !important;
@@ -51,320 +63,652 @@
     right: 12px !important;
 }
 
-/* Ensure the video container is position:relative so our panels anchor correctly */
 #omt-root {
     position: absolute;
     inset: 0;
     pointer-events: none;
     z-index: 2147483640;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    color: white;
+    font-family: var(--omt-font);
+    color: var(--omt-text);
+    -webkit-font-smoothing: antialiased;
 }
 
-/* Allow panels / timer to receive pointer events.
-   OSD stays pointer-events:none so it never swallows video click-to-toggle. */
 #omt-root .glass-panel,
-#omt-root #match-timer {
+#omt-root #match-timer-wrap,
+#omt-root #match-timer,
+#omt-root #omt-kickoff-bar,
+#omt-root #omt-examino-settings,
+#omt-root .omt-hud-chip {
     pointer-events: auto;
 }
 
-/* ---- OSD MATCH TIMER ---- */
-#match-timer {
+#omt-root .omt-icon {
+    display: block;
+    flex-shrink: 0;
+}
+
+#omt-root .omt-btn-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+/* ---- MATCH CLOCK + OFFSET NUDGE (top-left) ---- */
+#match-timer-wrap {
     position: absolute;
-    top: 40px;
-    left: 40px;
-    background: rgba(0, 0, 0, 0.7);
-    border-left: 4px solid #00ff88;
-    padding: 10px 20px;
-    font-size: 32px;
-    font-weight: bold;
-    border-radius: 6px;
+    top: 16px;
+    left: 16px;
     z-index: 9999;
-    pointer-events: auto;
-    cursor: pointer;
-    text-shadow: 1px 1px 3px black;
     display: none;
-    backdrop-filter: blur(5px);
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+}
+#match-timer-wrap.is-visible,
+#omt-root.omt-timer-on #match-timer-wrap {
+    display: flex;
+}
+#match-timer {
+    position: relative;
+    top: auto;
+    left: auto;
+    background: rgba(0, 0, 0, 0.72);
+    border: 1px solid var(--omt-border);
+    border-left: 3px solid var(--omt-orange);
+    padding: 8px 14px;
+    font-size: 28px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    font-family: var(--omt-mono);
+    border-radius: 4px;
+    cursor: default;
+    display: block;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
     user-select: none;
-    -webkit-user-select: none;
-    -moz-user-select: none;
-    -ms-user-select: none;
+    letter-spacing: 0.04em;
+}
+.omt-offset-nudge {
+    display: inline-flex;
+    gap: 2px;
+    background: rgba(0, 0, 0, 0.55);
+    border: 1px solid var(--omt-border);
+    border-radius: 4px;
+    padding: 2px;
+}
+.omt-offset-btn {
+    background: transparent;
+    border: none;
+    color: #ddd;
+    font-size: 10px;
+    font-weight: 700;
+    font-family: var(--omt-font);
+    font-variant-numeric: tabular-nums;
+    padding: 3px 6px;
+    border-radius: 3px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+}
+.omt-offset-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--omt-orange);
 }
 
-/* ---- OSD NOTIFICATION PILL ---- */
+/* Compact kick-off + Examino Source chips */
+.omt-hud-chip {
+    position: absolute;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--omt-bg);
+    border: 1px solid var(--omt-border);
+    border-radius: 6px;
+    padding: 6px 8px;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+#omt-kickoff-bar {
+    top: 16px;
+    right: 16px;
+}
+#omt-examino-settings.omt-source-chip,
+.omt-source-chip {
+    top: 56px;
+    right: 16px;
+}
+#omt-kickoff-bar select,
+.omt-source-chip select {
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--omt-border);
+    color: var(--omt-text);
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 6px;
+    font-family: var(--omt-font);
+}
+#omt-kickoff-bar .omt-custom-minute input {
+    width: 52px;
+    padding: 4px 6px;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--omt-border);
+    color: var(--omt-text);
+    border-radius: 4px;
+    font-size: 11px;
+}
+#omt-kickoff-bar .btn-sync {
+    flex: 0 0 auto;
+    padding: 6px 10px;
+    font-size: 11px;
+}
+#omt-kickoff-bar .btn-sync.kickoff-set {
+    background: var(--omt-orange);
+    color: #111;
+}
+#omt-kickoff-bar .btn-clear-timer {
+    padding: 6px;
+}
+.omt-source-chip label {
+    font-size: 10px;
+    color: var(--omt-muted);
+    font-weight: 600;
+}
+.omt-source-chip .omt-toggle-row {
+    gap: 6px;
+    font-size: 10px;
+}
+
+/* ---- OSD ---- */
 #osd-message {
     position: absolute;
-    top: 40px;
+    top: 20px;
     left: 50%;
-    transform: translate(-50%, -10px) scale(0.9);
-    background: rgba(20, 20, 20, 0.85);
-    border: 1px solid rgba(0, 255, 136, 0.3);
-    color: #00ff88;
-    padding: 12px 28px;
-    font-size: 20px;
-    font-weight: bold;
-    border-radius: 30px;
+    transform: translate(-50%, -6px);
+    background: rgba(20, 20, 20, 0.88);
+    border: 1px solid var(--omt-border);
+    color: var(--omt-text);
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: 4px;
     z-index: 9999;
     pointer-events: none;
     opacity: 0;
-    box-shadow: 0 8px 32px rgba(0, 255, 136, 0.15), 0 0 15px rgba(0, 255, 136, 0.1);
-    transition: opacity 0.15s ease-out, transform 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    letter-spacing: 0.5px;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    letter-spacing: 0.02em;
 }
 
 #osd-message.visible {
     opacity: 1;
-    transform: translate(-50%, 0) scale(1);
+    transform: translate(-50%, 0);
 }
 
-/* ---- GLASSMORPHISM BASE ---- */
-.glass-panel {
+/* ---- PANELS ---- */
+.glass-panel,
+.omt-panel {
     position: absolute;
-    background: rgba(20, 20, 20, 0.65);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 10px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    background: var(--omt-bg);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid var(--omt-border);
+    border-radius: 8px;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
     z-index: 50;
     display: flex;
     flex-direction: column;
     overflow: hidden;
     height: fit-content;
-    transition: border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
 .glass-panel.playing-state {
-    border-color: rgba(0, 136, 255, 0.5);
-    box-shadow: 0 8px 32px rgba(0, 136, 255, 0.15), 0 0 12px rgba(0, 136, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.14);
 }
 
-/* ---- DRAG HANDLE ---- */
 .drag-handle {
     background: transparent;
-    padding: 4px 12px;
+    padding: 6px 10px;
     cursor: grab;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-    height: 22px;
+    border-bottom: 1px solid var(--omt-border);
+    min-height: 28px;
 }
 
-.drag-handle:active {
-    cursor: grabbing;
-}
+.drag-handle:active { cursor: grabbing; }
 
-.drag-side-left {
+.drag-side-left,
+.drag-side-right {
     flex: 1;
     display: flex;
-    justify-content: flex-start;
     align-items: center;
     gap: 8px;
 }
+.drag-side-left { justify-content: flex-start; }
+.drag-side-right { justify-content: flex-end; }
 
 .drag-center-grip {
     flex: 1;
     display: flex;
     justify-content: center;
     align-items: center;
-    font-size: 18px;
-    color: #555;
-    letter-spacing: 1px;
-    font-weight: bold;
+    color: #666;
     user-select: none;
 }
-
-.drag-side-right {
-    flex: 1;
-    display: flex;
-    justify-content: flex-end;
-    align-items: center;
-}
+.drag-center-grip .omt-grip { opacity: 0.55; }
 
 .handle-btn {
-    background: none;
+    background: transparent;
     border: none;
-    color: white;
+    color: var(--omt-text);
     cursor: pointer;
-    font-size: 14px;
-    padding: 2px 6px;
-    display: flex;
+    padding: 4px;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    transition: opacity 0.2s;
+    border-radius: 4px;
+    opacity: 0.9;
 }
-
 .handle-btn:hover {
-    opacity: 0.7;
+    background: rgba(255, 255, 255, 0.08);
+    opacity: 1;
+}
+.handle-btn:focus-visible {
+    outline: 2px solid var(--omt-orange);
+    outline-offset: 1px;
 }
 
 .top-select {
-    background: rgba(0, 0, 0, 0.5);
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(0, 0, 0, 0.45);
+    border: 1px solid var(--omt-border);
     color: #ddd;
     font-size: 11px;
-    padding: 1px 4px;
+    padding: 2px 6px;
     border-radius: 4px;
     outline: none;
     cursor: pointer;
-    font-weight: bold;
+    font-weight: 600;
+    font-family: var(--omt-font);
 }
-
+.top-select:focus-visible {
+    border-color: var(--omt-orange);
+}
 .top-select option {
     background: #1a1a1a;
     color: white;
 }
 
-/* ---- SETUP PANEL ---- */
+/* ---- SETUP / SETTINGS ---- */
 #setup-panel {
-    top: 80px;
-    left: 80px;
-    width: 300px;
+    top: 64px;
+    left: 64px;
+    width: 320px;
 }
 
 .setup-content {
-    padding: 20px;
+    padding: 14px 14px 16px;
     display: flex;
     flex-direction: column;
-    gap: 15px;
+    gap: 12px;
 }
 
 .brand-container {
     display: flex;
     justify-content: center;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--omt-border);
+}
+
+.omt-brand {
+    display: flex;
+    flex-direction: column;
     align-items: center;
-    padding-bottom: 5px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    margin-bottom: 5px;
+    gap: 6px;
+    text-align: center;
+}
+.omt-sp-logo {
+    display: block;
+    width: 168px;
+    height: auto;
+    opacity: 0.95;
+}
+.omt-wordmark {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--omt-text);
+}
+.omt-brand-credit {
+    font-size: 10px;
+    color: var(--omt-muted);
+    letter-spacing: 0.02em;
+}
+
+.omt-tabs {
+    display: flex;
+    gap: 2px;
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 6px;
+    padding: 2px;
+}
+.omt-tab {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--omt-muted);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 7px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: var(--omt-font);
+}
+.omt-tab:hover { color: var(--omt-text); }
+.omt-tab.is-active {
+    background: var(--omt-orange-dim);
+    color: var(--omt-orange);
+}
+.omt-tab:focus-visible {
+    outline: 2px solid var(--omt-orange);
+    outline-offset: 1px;
+}
+
+.omt-pane { display: none; flex-direction: column; gap: 12px; }
+.omt-pane.is-active { display: flex; }
+
+.omt-pane-note {
+    margin: 0;
+    font-size: 11px;
+    color: var(--omt-muted);
+    line-height: 1.45;
+}
+
+.omt-soon-banner {
+    display: inline-flex;
+    align-self: flex-start;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--omt-orange);
+    border: 1px solid rgba(245, 131, 31, 0.35);
+    background: var(--omt-orange-dim);
+    border-radius: 3px;
+    padding: 3px 8px;
+}
+.omt-soon { opacity: 0.55; }
+
+.control-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.control-group label,
+.omt-row-label {
+    font-size: 11px;
+    color: var(--omt-muted);
+    font-weight: 600;
+}
+
+.control-group select,
+.omt-custom-minute input,
+.time-inputs input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--omt-border);
+    color: var(--omt-text);
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: var(--omt-font);
+    outline: none;
+}
+.control-group select:focus,
+.omt-custom-minute input:focus,
+.time-inputs input:focus {
+    border-color: var(--omt-orange);
+}
+
+.time-inputs {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--omt-muted);
+}
+.time-inputs input {
+    width: 64px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+.omt-sync-actions {
+    display: flex;
+    gap: 6px;
+}
+.btn-sync {
+    flex: 1;
+    background: var(--omt-orange);
+    color: #111;
+    border: none;
+    border-radius: 4px;
+    padding: 10px 12px;
+    font-weight: 700;
+    font-size: 12px;
+    cursor: pointer;
+    font-family: var(--omt-font);
+    letter-spacing: 0.02em;
+}
+.btn-sync:hover { filter: brightness(1.05); }
+.btn-sync:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 2px;
+}
+.btn-clear-timer {
+    background: rgba(255, 255, 255, 0.06);
+    color: #ff6b6b;
+    border: 1px solid rgba(255, 107, 107, 0.35);
+    border-radius: 4px;
+    padding: 0 12px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.omt-row-between,
+.omt-toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 11px;
+    color: #ddd;
+}
+
+.omt-toggle-row input[type="checkbox"],
+#omt-examino-auto-vod {
+    accent-color: var(--omt-orange);
+    width: 16px;
+    height: 16px;
+}
+
+.omt-shuttle-switch {
+    position: relative;
+    display: inline-block;
+    width: 38px;
+    height: 20px;
+    margin: 0;
+}
+.omt-shuttle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+    margin: 0;
+    position: absolute;
+}
+.omt-shuttle-slider {
+    position: absolute;
+    inset: 0;
+    background: rgba(255, 255, 255, 0.18);
+    border-radius: 20px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+.omt-shuttle-slider::before {
+    content: "";
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    left: 3px;
+    top: 3px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.2s;
+}
+.omt-shuttle-switch input:checked + .omt-shuttle-slider {
+    background: var(--omt-orange);
+}
+.omt-shuttle-switch input:checked + .omt-shuttle-slider::before {
+    transform: translateX(18px);
+}
+.omt-shuttle-switch input:focus-visible + .omt-shuttle-slider {
+    outline: 2px solid var(--omt-orange);
+    outline-offset: 2px;
 }
 
 .cheatsheet {
-    margin-top: 10px;
-    background: rgba(0, 0, 0, 0.25);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(0, 0, 0, 0.28);
+    border: 1px solid var(--omt-border);
     border-radius: 6px;
     padding: 10px;
 }
-
 .cheatsheet-title {
     font-size: 10px;
-    color: #00ff88;
-    font-weight: bold;
+    color: var(--omt-orange);
+    font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.05em;
     margin-bottom: 8px;
-    border-bottom: 1px solid rgba(0, 255, 136, 0.2);
+    border-bottom: 1px solid var(--omt-border);
     padding-bottom: 4px;
 }
-
 .shortcut-item {
     display: flex;
     justify-content: space-between;
     font-size: 11px;
-    line-height: 1.6;
+    line-height: 1.65;
     color: #ccc;
 }
-
 .shortcut-key {
-    font-family: monospace;
-    color: #66b3ff;
-    font-weight: bold;
+    font-family: var(--omt-mono);
+    color: #cfcfcf;
+    font-weight: 600;
     background: rgba(255, 255, 255, 0.05);
-    padding: 0px 4px;
+    padding: 0 5px;
     border-radius: 3px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--omt-border);
+    font-variant-numeric: tabular-nums;
 }
 
-/* ---- CONTROLS PANEL ---- */
+/* ---- CONTROLS BAR (bottom, YouTube-like) ---- */
 #controls-panel {
-    bottom: 40px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 560px;
-    display: flex;
-    flex-direction: column;
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    width: auto;
+    max-width: none;
+    transform: none;
     transition: opacity 0.3s ease;
 }
 
-/* ---- LIVE BUTTON ---- */
-#omt-live-btn {
-    background: transparent;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    color: #888;
-    border-radius: 4px;
-    font-size: 10px;
-    font-weight: bold;
-    padding: 3px 10px;
-    cursor: pointer;
-    margin-left: 10px;
-    margin-right: 14px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+.omt-live-volume {
     display: flex;
-    /* always shown in extension – it IS a stream */
     align-items: center;
-    gap: 5px;
-    transition: all 0.3s ease;
+    gap: 6px;
+    margin-right: 6px;
 }
 
-/* Extra gap so LIVE is harder to hit by accident next to volume / seek chrome */
+#omt-volume-range {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 64px;
+    height: 3px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.22);
+    outline: none;
+    cursor: pointer;
+}
+#omt-volume-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: #fff;
+    border: none;
+}
+
+/* LIVE indicator — look only; click still calls irParaLive */
+#omt-live-btn {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    color: #bdbdbd;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 3px 8px;
+    cursor: pointer;
+    margin-left: 4px;
+    margin-right: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--omt-font);
+}
 #omt-root .omt-live-spacer {
     display: inline-block;
     width: 10px;
     flex-shrink: 0;
 }
-
-#omt-live-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #ccc;
-}
-
 #omt-live-btn .live-dot {
     width: 6px;
     height: 6px;
     border-radius: 50%;
     background: #888;
-    transition: all 0.3s ease;
 }
-
-/* Active state: user is at the live edge — button turns red */
+#omt-live-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #eee;
+}
 #omt-live-btn.is-live {
-    background: rgba(255, 59, 48, 0.18);
+    background: rgba(255, 0, 0, 0.14);
     color: #fff;
-    border-color: rgba(255, 59, 48, 0.55);
-    cursor: default;
+    border-color: rgba(255, 0, 0, 0.55);
 }
-
 #omt-live-btn.is-live .live-dot {
-    background: #ff3b30;
-    box-shadow: 0 0 6px rgba(255, 59, 48, 0.8);
-    animation: live-pulse 1.4s ease-in-out infinite;
+    background: var(--omt-live);
 }
-
-@keyframes live-pulse {
-    0%, 100% { opacity: 1; }
-    50%       { opacity: 0.45; }
-}
-
 #omt-live-btn.is-live:hover {
-    background: rgba(255, 59, 48, 0.25);
+    background: rgba(255, 0, 0, 0.2);
 }
 
 /* ---- TIMELINE ---- */
 .timeline-container {
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    padding: 8px 20px 2px 20px;
-    font-family: monospace;
+    gap: 4px;
+    padding: 6px 14px 2px;
+    font-family: var(--omt-mono);
     font-size: 11px;
-    color: #aaa;
+    color: var(--omt-muted);
+    font-variant-numeric: tabular-nums;
 }
 
 .timeline-slider-row {
@@ -374,431 +718,209 @@
     width: 100%;
 }
 
+#omt-v-time-current,
+#omt-v-time-duration {
+    font-variant-numeric: tabular-nums;
+    min-width: 64px;
+}
+#omt-v-time-duration { text-align: right; }
+
 .timeline-badges-row {
     display: flex;
     align-items: center;
     gap: 4px;
-    min-height: 18px;
+    min-height: 16px;
 }
 
-.timeline-slider {
+.omt-timeline-track {
+    position: relative;
     flex: 1;
+    display: flex;
+    align-items: center;
+    height: 16px;
+}
+
+#omt-timeline-markers {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 3px;
+    top: 50%;
+    transform: translateY(-50%);
+    pointer-events: none;
+}
+
+/* Thin scrubber; thickens on hover. Red at live, grey when behind. */
+.timeline-slider {
     -webkit-appearance: none;
     appearance: none;
-    background: rgba(255, 255, 255, 0.15);
-    height: 6px;
-    border-radius: 3px;
+    width: 100%;
+    height: 3px;
+    border-radius: 2px;
     outline: none;
     cursor: pointer;
-    transition: background 0.2s;
+    background: rgba(255, 255, 255, 0.18);
+    transition: height 0.12s ease;
 }
-
+#controls-panel.omt-at-live .timeline-slider {
+    background: linear-gradient(
+        to right,
+        var(--omt-live) 0%,
+        var(--omt-live) var(--omt-progress, 100%),
+        rgba(255, 255, 255, 0.18) var(--omt-progress, 100%)
+    );
+}
+#controls-panel:not(.omt-at-live) .timeline-slider {
+    background: linear-gradient(
+        to right,
+        var(--omt-behind) 0%,
+        var(--omt-behind) var(--omt-progress, 0%),
+        rgba(255, 255, 255, 0.18) var(--omt-progress, 0%)
+    );
+}
+.timeline-container:hover .timeline-slider,
 .timeline-slider:hover {
-    background: rgba(255, 255, 255, 0.25);
+    height: 6px;
 }
-
 .timeline-slider::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
     width: 12px;
     height: 12px;
     border-radius: 50%;
-    background: #00ff88;
-    box-shadow: 0 0 8px rgba(0, 255, 136, 0.6);
-    transition: transform 0.1s ease;
+    background: #fff;
+    border: none;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+    opacity: 0;
+    transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.timeline-container:hover .timeline-slider::-webkit-slider-thumb,
+.timeline-slider:hover::-webkit-slider-thumb,
+.timeline-slider:active::-webkit-slider-thumb {
+    opacity: 1;
+}
+.timeline-slider::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #fff;
+    border: none;
+    opacity: 0;
 }
 
-.timeline-slider::-webkit-slider-thumb:hover {
-    transform: scale(1.25);
-}
-
-/* ---- CONTROLS CONTENT ---- */
 .controls-content {
-    padding: 8px 20px 12px 20px;
+    padding: 6px 12px 10px;
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 8px;
 }
 
 .ctrl-group-left,
-.ctrl-group-right {
-    display: flex;
-    gap: 8px;
-    flex: 1;
-}
-
-.ctrl-group-right {
-    justify-content: flex-end;
-}
-
+.ctrl-group-right,
 .ctrl-group-center {
     display: flex;
-    gap: 6px;
     align-items: center;
-    justify-content: center;
-    flex: initial;
+    gap: 4px;
 }
-
-.control-group {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-}
-
-/* Override global label so it only applies inside our panels */
-#omt-root label {
-    font-size: 10px;
-    color: #aaa;
-    font-weight: bold;
-    text-transform: uppercase;
-}
-
-.time-inputs {
-    display: flex;
-    gap: 5px;
-    align-items: center;
-}
-
-#omt-root input[type="number"] {
-    width: 50px;
-    padding: 8px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid #444;
-    color: white;
-    border-radius: 4px;
-    text-align: center;
-    outline: none;
-    font-family: inherit;
-}
-
-#omt-root .setup-content select {
-    width: 100%;
-    padding: 8px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid #444;
-    color: white;
-    border-radius: 4px;
-    font-size: 12px;
-    cursor: pointer;
-    outline: none;
-}
-
-/* SET KICK-OFF TIME button — scoped to #omt-root to beat Inplay's host CSS.
-   !important guards every visual property so nothing from the host page can
-   override the color, background, or opacity of this button. */
-#omt-root .btn-sync {
-    background: #00ff88 !important;
-    color: #000 !important;
-    border: none !important;
-    padding: 10px !important;
-    font-weight: bold !important;
-    border-radius: 4px !important;
-    cursor: pointer !important;
-    transition: background 0.2s, box-shadow 0.2s !important;
-    margin-top: 5px !important;
-    letter-spacing: 0.5px !important;
-    font-family: inherit !important;
-    opacity: 1 !important;
-    display: block !important;
-    text-transform: uppercase !important;
-    box-shadow: none !important;
-}
-
-#omt-root .btn-sync:hover {
-    background: #00e07a !important;
-    box-shadow: 0 0 10px rgba(0, 255, 136, 0.35) !important;
-    opacity: 1 !important;
-}
-
-/* .kickoff-set — applied by JS when a kick-off time has been saved.
-   Forces a permanently brighter green so the user always knows a time is set.
-   Also applied as inline style by JS for absolute override certainty. */
-#omt-root .btn-sync.kickoff-set {
-    background: #00cc6a !important;
-    color: #000 !important;
-    box-shadow: 0 0 14px rgba(0, 255, 136, 0.5) !important;
-    opacity: 1 !important;
-    border: 1px solid rgba(0, 255, 136, 0.4) !important;
-}
-
-#omt-root .btn-sync.kickoff-set:hover {
-    background: #00b35c !important;
-    box-shadow: 0 0 18px rgba(0, 255, 136, 0.65) !important;
-    opacity: 1 !important;
-}
-
-.ctrl-btn {
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    color: #ddd;
-    padding: 8px 10px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 13px;
-    font-weight: bold;
-    transition: all 0.2s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 42px;
-    font-family: inherit;
-}
-
-.ctrl-btn:hover {
-    background: rgba(255, 255, 255, 0.15);
-    color: white;
-    transform: translateY(-1px);
-}
-
-.ctrl-btn:active {
-    transform: translateY(1px);
-}
-
-.btn-play {
-    background: rgba(0, 136, 255, 0.1);
-    border-color: rgba(0, 136, 255, 0.3);
-    color: #66b3ff;
-    min-width: 65px;
-    transition: all 0.3s ease;
-}
-
-.btn-play:hover {
-    background: rgba(0, 136, 255, 0.3);
-    border-color: rgba(0, 136, 255, 0.6);
-}
-
-.btn-play.playing {
-    background: rgba(0, 255, 136, 0.15);
-    border-color: rgba(0, 255, 136, 0.5);
-    color: #00ff88;
-}
-
-.btn-play.playing:hover {
-    background: rgba(0, 255, 136, 0.3);
-    border-color: rgba(0, 255, 136, 0.7);
-}
-
-.btn-frame {
-    color: #ffcc00;
-    border-color: rgba(255, 204, 0, 0.3);
-}
+.ctrl-group-center { justify-content: center; }
 
 .separator {
     width: 1px;
-    height: 24px;
-    background: rgba(255, 255, 255, 0.1);
+    height: 16px;
+    background: var(--omt-border);
     margin: 0 4px;
 }
 
-/* ---- KICKOFF BADGES ---- */
-.kickoff-badge {
-    background: rgba(0, 255, 136, 0.15);
-    border: 1px solid rgba(0, 255, 136, 0.3);
-    color: #00ff88;
-    font-size: 10px;
-    font-weight: bold;
-    padding: 2px 6px;
-    border-radius: 4px;
+.ctrl-btn {
+    background: transparent;
+    border: none;
+    color: var(--omt-text);
     cursor: pointer;
-    transition: all 0.2s;
+    padding: 6px 8px;
+    border-radius: 4px;
     display: inline-flex;
     align-items: center;
-    gap: 2px;
-    border-style: solid;
-    font-family: inherit;
+    gap: 5px;
+    font-family: var(--omt-font);
+    font-size: 11px;
 }
-
-.kickoff-badge:hover {
-    background: rgba(0, 255, 136, 0.3);
-    color: white;
-    box-shadow: 0 0 8px rgba(0, 255, 136, 0.4);
+.ctrl-btn:hover { background: rgba(255, 255, 255, 0.08); }
+.ctrl-btn:focus-visible {
+    outline: 2px solid var(--omt-orange);
+    outline-offset: 1px;
 }
-
-.kickoff-badge.k1 {
-    background: rgba(0, 255, 136, 0.15);
-    border-color: rgba(0, 255, 136, 0.3);
-    color: #00ff88;
+.ctrl-btn.btn-play {
+    background: rgba(255, 255, 255, 0.08);
+    padding: 6px 12px;
+    font-weight: 700;
 }
-
-.kickoff-badge.k1:hover {
-    background: rgba(0, 255, 136, 0.3);
-    color: white;
-    box-shadow: 0 0 8px rgba(0, 255, 136, 0.4);
+.ctrl-btn.btn-play.playing {
+    background: var(--omt-orange-dim);
+    color: var(--omt-orange);
 }
+.ctrl-btn.btn-frame { padding: 6px; }
 
-.kickoff-badge.k2 {
-    background: rgba(255, 59, 48, 0.15);
-    border-color: rgba(255, 59, 48, 0.3);
-    color: #ff3b30;
+.kickoff-badge {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--omt-border);
+    color: #ddd;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    cursor: pointer;
+    font-family: var(--omt-font);
 }
+.kickoff-badge:hover { border-color: var(--omt-orange); color: var(--omt-orange); }
 
-.kickoff-badge.k2:hover {
-    background: rgba(255, 59, 48, 0.3);
-    color: white;
-    box-shadow: 0 0 8px rgba(255, 59, 48, 0.4);
-}
-
-.kickoff-badge.kc1 {
-    background: rgba(255, 149, 0, 0.15);
-    border-color: rgba(255, 149, 0, 0.3);
-    color: #ff9500;
-}
-
-.kickoff-badge.kc1:hover {
-    background: rgba(255, 149, 0, 0.3);
-    color: white;
-    box-shadow: 0 0 8px rgba(255, 149, 0, 0.4);
-}
-
-.kickoff-badge.kc2 {
-    background: rgba(191, 90, 242, 0.15);
-    border-color: rgba(191, 90, 242, 0.3);
-    color: #bf5af2;
-}
-
-.kickoff-badge.kc2:hover {
-    background: rgba(191, 90, 242, 0.3);
-    color: white;
-    box-shadow: 0 0 8px rgba(191, 90, 242, 0.4);
-}
-
-/* ---- TIMELINE MARKER TICKS ---- */
 .timeline-marker-tick {
     position: absolute;
-    width: 3px;
-    height: 12px;
-    background: #ffcc00;
-    border-radius: 1.5px;
-    transform: translate(-50%, -3px);
-    z-index: 10;
-    box-shadow: 0 0 6px rgba(255, 204, 0, 0.8);
-    pointer-events: none;
-}
-
-.timeline-marker-tick.k1 {
-    background: #00ff88;
-    box-shadow: 0 0 6px rgba(0, 255, 136, 0.8);
-}
-
-.timeline-marker-tick.k2 {
-    background: #ff3b30;
-    box-shadow: 0 0 6px rgba(255, 59, 48, 0.8);
-}
-
-.timeline-marker-tick.kc1 {
-    background: #ff9500;
-    box-shadow: 0 0 6px rgba(255, 149, 0, 0.8);
-}
-
-.timeline-marker-tick.kc2 {
-    background: #bf5af2;
-    box-shadow: 0 0 6px rgba(191, 90, 242, 0.8);
-}
-
-/* ---- VOLUME RANGE ---- */
-#volume-range {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 60px;
-    height: 4px;
-    border-radius: 2px;
-    background: rgba(255, 255, 255, 0.2);
-    outline: none;
-    cursor: pointer;
-}
-
-/* ---- SHUTTLE TOGGLE SWITCH ---- */
-#omt-root .omt-shuttle-switch {
-    position: relative;
-    display: inline-block;
-    width: 38px;
-    height: 20px;
-    flex-shrink: 0;
-}
-#omt-root .omt-shuttle-switch input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-    margin: 0;
-    position: absolute;
-}
-#omt-root .omt-shuttle-slider {
-    position: absolute;
-    cursor: pointer;
     top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: #555;
-    transition: background-color 0.3s ease;
-    border-radius: 999px;
+    width: 2px;
+    height: 100%;
+    background: var(--omt-orange);
+    transform: translateX(-50%);
+    opacity: 0.85;
 }
-#omt-root .omt-shuttle-slider:before {
-    position: absolute;
-    content: "";
-    height: 14px;
-    width: 14px;
-    left: 3px;
-    bottom: 3px;
-    background-color: white;
-    transition: transform 0.3s ease;
-    border-radius: 50%;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.4);
-}
-#omt-root .omt-shuttle-switch input:checked + .omt-shuttle-slider {
-    background-color: #2ecc71;
-}
-#omt-root .omt-shuttle-switch input:checked + .omt-shuttle-slider:before {
-    transform: translateX(18px);
-}
+.timeline-marker-tick.k1 { background: var(--omt-orange); }
+.timeline-marker-tick.k2 { background: #66b3ff; }
+.timeline-marker-tick.kc1 { background: #c084fc; }
+.timeline-marker-tick.kc2 { background: #f472b6; }
 
-/* ============================================================
-   EXAMINO / COMPACT PLAYER LAYOUT
-   OpenPlayer popup DVR windows are often ~465×261. Shrink the HUD
-   so timer + controls remain usable without covering the pitch.
-   ============================================================ */
+/* Compact Examino popup */
+#omt-root.omt-examino.omt-compact #match-timer-wrap {
+    top: 8px;
+    left: 8px;
+}
 #omt-root.omt-examino.omt-compact #match-timer {
-    top: 8px;
-    left: 8px;
-    padding: 6px 12px;
     font-size: 18px;
+    padding: 4px 8px;
 }
-
-#omt-root.omt-examino.omt-compact #osd-message {
+#omt-root.omt-examino.omt-compact #omt-kickoff-bar {
     top: 8px;
-    padding: 8px 16px;
-    font-size: 14px;
+    right: 8px;
 }
-
-#omt-root.omt-examino.omt-compact #setup-panel {
+#omt-root.omt-examino.omt-compact #omt-examino-settings {
     top: 44px;
-    left: 8px;
-    width: min(280px, calc(100% - 16px));
-    max-height: calc(100% - 52px);
-    overflow: auto;
+    right: 8px;
 }
-
 #omt-root.omt-examino.omt-compact #controls-panel {
-    bottom: 8px;
-    width: min(560px, calc(100% - 16px));
+    left: 6px;
+    right: 6px;
+    bottom: 6px;
 }
-
-#omt-root.omt-examino.omt-compact .controls-content {
-    padding: 4px 8px 8px;
-    gap: 4px;
-}
-
-#omt-root.omt-examino.omt-compact .ctrl-btn {
-    padding: 4px 6px;
-    font-size: 10px;
-}
-
 #omt-root.omt-examino.omt-compact .timeline-container {
-    padding: 4px 10px 2px;
-    font-size: 10px;
+    padding: 4px 8px 0;
 }
-
-/* Keep overlay above OpenPlayer layers in normal + fullscreen */
-#omt-root.omt-examino {
-    z-index: 2147483646;
+#omt-root.omt-examino.omt-compact .controls-content {
+    padding: 4px 6px 8px;
+}
+#omt-root.omt-examino.omt-compact .ctrl-btn .omt-btn-label {
+    display: none;
+}
+#omt-root.omt-examino.omt-compact #setup-panel {
+    width: min(300px, 92%);
+    left: 4%;
+    top: 40px;
 }

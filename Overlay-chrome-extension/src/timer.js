@@ -16,7 +16,7 @@
             q('omt-sync-hr').value = hInput;
             q('omt-sync-min').value = mInput;
             q('omt-sync-sec').value = sInput;
-            mostrarOSD('🎯 Captured: ' + formatarTempoVideo(ct));
+            mostrarOSD('Captured: ' + formatarTempoVideo(ct));
         }
 
         const h = parseInt(hInput) || 0;
@@ -38,7 +38,10 @@
 
         offsetEmSegundos = kickoffVal;
         timerAtivo = true;
-        timerUI.style.display = 'block';
+        if (timerUI) timerUI.style.display = 'block';
+        const wrap = q('match-timer-wrap');
+        if (wrap) wrap.style.display = 'flex';
+        if (omtRoot) omtRoot.classList.add('omt-timer-on');
         previousHalf = parte;
 
         // Persist
@@ -63,21 +66,17 @@
         atualizarMarcadores();
         atualizarRelogio();
         esconderSetup();
-        // Mark the button as permanently active (stays green until cleared).
-        // Class + inline style together beat any host-page CSS override.
         const _kickoffBtn = q('omt-btn-set-kickoff');
-        _kickoffBtn.classList.add('kickoff-set');
-        _kickoffBtn.style.setProperty('background', '#00cc6a', 'important');
-        _kickoffBtn.style.setProperty('color', '#000', 'important');
-        _kickoffBtn.style.setProperty('opacity', '1', 'important');
-        _kickoffBtn.style.setProperty('box-shadow', '0 0 14px rgba(0,255,136,0.5)', 'important');
-        _kickoffBtn.style.setProperty('border', '1px solid rgba(0,255,136,0.4)', 'important');
-        mostrarOSD('\u23f1 Timer Synced');
+        if (_kickoffBtn) _kickoffBtn.classList.add('kickoff-set');
+        mostrarOSD('Timer Synced');
     }
 
     function limparTimer() {
         timerAtivo = false;
-        timerUI.style.display = 'none';
+        if (timerUI) timerUI.style.display = 'none';
+        const wrapClear = q('match-timer-wrap');
+        if (wrapClear) wrapClear.style.display = 'none';
+        if (omtRoot) omtRoot.classList.remove('omt-timer-on');
         offsetEmSegundos = 0;
         tempoBase = 0;
         previousHalf = '1';
@@ -102,15 +101,56 @@
 
         inicializarMetadadosTimeline();
         atualizarMarcadores();
-        // Remove the active state from the kick-off button and clear inline overrides
         const _kickoffBtnClear = q('omt-btn-set-kickoff');
-        _kickoffBtnClear.classList.remove('kickoff-set');
-        _kickoffBtnClear.style.removeProperty('background');
-        _kickoffBtnClear.style.removeProperty('color');
-        _kickoffBtnClear.style.removeProperty('opacity');
-        _kickoffBtnClear.style.removeProperty('box-shadow');
-        _kickoffBtnClear.style.removeProperty('border');
-        mostrarOSD('\u2715 Timer Cleared');
+        if (_kickoffBtnClear) _kickoffBtnClear.classList.remove('kickoff-set');
+        mostrarOSD('Timer Cleared');
+    }
+
+    /** Nudge kick-off offset by ±seconds using existing offset/kickoff state (no new math). */
+    function nudgeKickoffOffset(deltaSec) {
+        if (!timerAtivo || !deltaSec) return;
+        const applyDelta = (val) => {
+            if (val === null || val === undefined || val === '') return val;
+            const n = Number(val);
+            if (!isFinite(n)) return val;
+            return isPdtTimestamp(n) ? (n + deltaSec * 1000) : (n + deltaSec);
+        };
+
+        offsetEmSegundos = applyDelta(offsetEmSegundos);
+        localStorage.setItem('matchTimerOffset', offsetEmSegundos);
+
+        const parte = previousHalf || (q('omt-half-select') && q('omt-half-select').value) || '1';
+        if (parte === '1' && kickoff1 !== null) {
+            kickoff1 = applyDelta(kickoff1);
+            localStorage.setItem('matchTimerKickoff1', kickoff1);
+        } else if (parte === '2' && kickoff2 !== null) {
+            kickoff2 = applyDelta(kickoff2);
+            localStorage.setItem('matchTimerKickoff2', kickoff2);
+        } else if (parte === 'custom1' && kickoffC1 !== null) {
+            kickoffC1 = applyDelta(kickoffC1);
+            localStorage.setItem('matchTimerKickoffC1', kickoffC1);
+        } else if (parte === 'custom2' && kickoffC2 !== null) {
+            kickoffC2 = applyDelta(kickoffC2);
+            localStorage.setItem('matchTimerKickoffC2', kickoffC2);
+        }
+
+        // Keep hidden whistle fields aligned when offset is plain video seconds.
+        if (!isPdtTimestamp(offsetEmSegundos)) {
+            const ct = Math.max(0, Number(offsetEmSegundos) || 0);
+            const hrEl = q('omt-sync-hr');
+            const minEl = q('omt-sync-min');
+            const secEl = q('omt-sync-sec');
+            if (hrEl) hrEl.value = String(Math.floor(ct / 3600));
+            if (minEl) minEl.value = String(Math.floor((ct % 3600) / 60));
+            if (secEl) secEl.value = String(Math.floor(ct % 60));
+            localStorage.setItem('matchTimerSyncHr', hrEl ? hrEl.value : '0');
+            localStorage.setItem('matchTimerSyncMin', minEl ? minEl.value : '0');
+            localStorage.setItem('matchTimerSyncSec', secEl ? secEl.value : '0');
+        }
+
+        atualizarMarcadores();
+        atualizarRelogio();
+        mostrarOSD('Offset ' + (deltaSec > 0 ? '+' : '') + deltaSec + 's');
     }
 
     function atualizarRelogio() {
@@ -309,7 +349,7 @@
                 targetVideoTime = Math.min(targetVideoTime, vid.duration);
             }
             seekTo(targetVideoTime);
-            mostrarOSD(`↪️ Jumped to Min ${minutoAlvo}`);
+            mostrarOSD('Jumped to Min ' + minutoAlvo);
         }
     }
 

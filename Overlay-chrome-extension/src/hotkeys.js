@@ -53,7 +53,7 @@
                 const newIndex = Math.max(0, currentIndex - 1);
                 vid.playbackRate = allowedRates[newIndex];
                 syncSpeedSelect();
-                mostrarOSD('⚡ Speed: ' + vid.playbackRate.toFixed(2) + 'x');
+                mostrarOSD('Speed: ' + vid.playbackRate.toFixed(2) + 'x');
                 break;
             }
             case 'c': {
@@ -66,20 +66,20 @@
                 const newIndex = Math.min(allowedRates.length - 1, currentIndex + 1);
                 vid.playbackRate = allowedRates[newIndex];
                 syncSpeedSelect();
-                mostrarOSD('⚡ Speed: ' + vid.playbackRate.toFixed(2) + 'x');
+                mostrarOSD('Speed: ' + vid.playbackRate.toFixed(2) + 'x');
                 break;
             }
             case 'x':
                 vid.playbackRate = 1.0;
                 syncSpeedSelect();
-                mostrarOSD('⚡ Speed: 1.00x');
+                mostrarOSD('Speed: 1.00x');
                 break;
             case 'h':
                 if (controlsPanel) {
                     if (isManuallyHidden) {
                         isManuallyHidden = false;
                         resetControlsTimeout();
-                        mostrarOSD('🖥️ Controls Visible');
+                        mostrarOSD('Controls Visible');
                     } else {
                         isManuallyHidden = true;
                         if (mouseMoveTimeout) {
@@ -88,7 +88,7 @@
                         }
                         controlsPanel.style.opacity = '0';
                         controlsPanel.style.pointerEvents = 'none';
-                        mostrarOSD('🙈 Controls Hidden');
+                        mostrarOSD('Controls Hidden');
                     }
                 }
                 break;

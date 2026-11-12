@@ -4,35 +4,36 @@
        ========================================================= */
     function saltarVideo(segundos) {
         seekTo(vid.currentTime + segundos);
-        mostrarOSD(`${segundos > 0 ? '⏩' : '⏪'} ${segundos > 0 ? '+' : ''}${segundos}s`);
+        mostrarOSD((segundos > 0 ? '+' : '') + segundos + 's');
     }
 
     function togglePlay() {
-        if (vid.paused) { vid.play(); mostrarOSD('▶ Play'); }
-        else { vid.pause(); mostrarOSD('⏸ Pause'); }
+        if (vid.paused) { vid.play(); mostrarOSD('Play'); }
+        else { vid.pause(); mostrarOSD('Pause'); }
     }
 
     function avancarFrame() {
         vid.pause();
         vid.currentTime += 0.04;
-        mostrarOSD('🎞 +1 Frame');
+        mostrarOSD('+1 Frame');
     }
 
     function retrocederFrame() {
         vid.pause();
         vid.currentTime -= 0.04;
-        mostrarOSD('🎞 -1 Frame');
+        mostrarOSD('-1 Frame');
     }
 
     function selecionarVelocidade() {
         const valor = parseFloat(speedSelect.value);
         vid.playbackRate = valor;
-        mostrarOSD('⚡ Speed: ' + valor.toFixed(2) + 'x');
+        mostrarOSD('Speed: ' + valor.toFixed(2) + 'x');
         speedSelect.blur();
     }
 
     function irParaLive() {
         // Try to read the live sync position from hls.js directly
+        // (seek target / timing logic unchanged from v1.2.2 / v1.3.0)
         if (hlsInstance && typeof hlsInstance.liveSyncPosition === 'number') {
             seekTo(hlsInstance.liveSyncPosition);
         } else if (vid.seekable && vid.seekable.length > 0) {
@@ -42,7 +43,7 @@
         }
         // After going live, clear seek lock so stream can advance normally
         setTimeout(() => { userIntendedTime = null; seekLockUntil = 0; }, 3000);
-        mostrarOSD('📡 Going Live');
+        mostrarOSD('Going Live');
         liveBtn.blur();
     }
 
@@ -55,7 +56,17 @@
             liveEdge = vid.duration;
         }
         const dist = liveEdge - vid.currentTime;
-        liveBtn.classList.toggle('is-live', liveEdge > 0 && dist <= 8);
+        const atLive = liveEdge > 0 && dist <= 8;
+        liveBtn.classList.toggle('is-live', atLive);
+        // Presentation only: drive scrubber colour (red at live / grey behind)
+        if (controlsPanel) controlsPanel.classList.toggle('omt-at-live', atLive);
+        if (timelineSlider) {
+            const min = parseFloat(timelineSlider.min) || 0;
+            const max = parseFloat(timelineSlider.max) || 0;
+            const val = parseFloat(timelineSlider.value) || 0;
+            const pct = max > min ? ((val - min) / (max - min)) * 100 : 0;
+            timelineSlider.style.setProperty('--omt-progress', Math.max(0, Math.min(100, pct)) + '%');
+        }
     }
 
     function toggleFullScreen() {
@@ -84,5 +95,15 @@
     }
 
     function atualizarIconeVolume(vol) {
-        volumeIconBtn.innerText = vol === 0 ? '🔇' : vol < 0.5 ? '🔉' : '🔊';
+        if (!volumeIconBtn) return;
+        const name = vol === 0 ? 'volume-x' : vol < 0.5 ? 'volume-1' : 'volume-2';
+        volumeIconBtn.innerHTML = omtIcon(name, 15);
+    }
+
+    function atualizarBotaoPlay(playing) {
+        if (!btnMainPlay) return;
+        btnMainPlay.innerHTML = playing
+            ? omtIconBtnLabel('pause', 'Pause', 16)
+            : omtIconBtnLabel('play', 'Play', 16);
+        btnMainPlay.classList.toggle('playing', !!playing);
     }

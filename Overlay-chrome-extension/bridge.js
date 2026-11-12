@@ -2,18 +2,38 @@
    Overlay MatchTimer — isolated-world storage bridge
    MAIN-world content.js cannot touch chrome.storage; this script
    mirrors chrome.storage.local <-> localStorage + postMessage.
+   Also used by the toolbar popup (writes) so in-page UI stays in sync.
    ============================================================ */
 (function () {
   'use strict';
 
   const KEY_AUTO_VOD = 'omtAutoSwitchVod';
-  const DEFAULTS = { [KEY_AUTO_VOD]: true };
+  const KEY_SHUTTLE = 'shuttleXpressEnabled';
+  const KEY_CLOCK_POS = 'omtClockPosition';
+  const KEY_CLOCK_SIZE = 'omtClockSize';
+  const KEY_CLOCK_SHAPE = 'omtClockShape';
+
+  const DEFAULTS = {
+    [KEY_AUTO_VOD]: true,
+    [KEY_SHUTTLE]: false,
+    [KEY_CLOCK_POS]: 'top-left',
+    [KEY_CLOCK_SIZE]: 'medium',
+    [KEY_CLOCK_SHAPE]: 'rounded'
+  };
 
   function syncToPage(values) {
     try {
       if (Object.prototype.hasOwnProperty.call(values, KEY_AUTO_VOD)) {
         localStorage.setItem(KEY_AUTO_VOD, values[KEY_AUTO_VOD] ? 'true' : 'false');
       }
+      if (Object.prototype.hasOwnProperty.call(values, KEY_SHUTTLE)) {
+        localStorage.setItem(KEY_SHUTTLE, values[KEY_SHUTTLE] ? 'true' : 'false');
+      }
+      [KEY_CLOCK_POS, KEY_CLOCK_SIZE, KEY_CLOCK_SHAPE].forEach((k) => {
+        if (Object.prototype.hasOwnProperty.call(values, k) && values[k] != null) {
+          localStorage.setItem(k, String(values[k]));
+        }
+      });
     } catch (_) {}
     try {
       window.postMessage({ source: 'omt-bridge', type: 'OMT_STORAGE_SYNC', values }, '*');

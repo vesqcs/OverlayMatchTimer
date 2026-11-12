@@ -67,26 +67,26 @@
         // A) 5 Buttons edge detection
         if (bytes[3] === 16 && prevBytes3 !== 16) {
             vid.currentTime -= 120;
-            mostrarOSD('⏪ Skip -2m');
+            mostrarOSD('Skip -2m');
         } else if (bytes[3] === 32 && prevBytes3 !== 32) {
             vid.currentTime -= 10;
-            mostrarOSD('⏪ Skip -10s');
+            mostrarOSD('Skip -10s');
         } else if (bytes[3] === 64 && prevBytes3 !== 64) {
             if (vid.paused) {
                 vid.play().catch(e => {});
-                mostrarOSD('▶ Play');
+                mostrarOSD('Play');
             } else {
                 vid.pause();
-                mostrarOSD('⏸ Pause');
+                mostrarOSD('Pause');
             }
         } else if (bytes[3] === 128 && prevBytes3 !== 128) {
             vid.currentTime += 10;
-            mostrarOSD('⏩ Skip +10s');
+            mostrarOSD('Skip +10s');
         }
 
         if (bytes[4] === 1 && prevBytes4 !== 1) {
             vid.currentTime += 120;
-            mostrarOSD('⏩ Skip +2m');
+            mostrarOSD('Skip +2m');
         }
 
         prevBytes3 = bytes[3];
@@ -103,7 +103,7 @@
 
             if (delta !== 0) {
                 vid.currentTime += delta * 0.04;
-                mostrarOSD(delta > 0 ? `🎞 +${delta} Frame${delta > 1 ? 's' : ''}` : `🎞 ${delta} Frame${delta < -1 ? 's' : ''}`);
+                mostrarOSD(delta > 0 ? `+${delta} Frame${delta > 1 ? 's' : ''}` : `${delta} Frame${delta < -1 ? 's' : ''}`);
             }
         }
         lastJogValue = currentJog;
@@ -201,7 +201,7 @@
 
     async function handleToggleChange() {
         if (shuttleToggle.checked) {
-            localStorage.setItem('shuttleXpressEnabled', 'true');
+            storageSetShuttleEnabled(true);
             try {
                 const devices = await navigator.hid.getDevices();
                 let device = devices.find(d => d.vendorId === 0x0b33);
@@ -218,15 +218,15 @@
                     await connectDevice(device);
                 } else {
                     updateToggleUI(false);
-                    localStorage.setItem('shuttleXpressEnabled', 'false');
+                    storageSetShuttleEnabled(false);
                 }
             } catch (err) {
                 console.error('[OMT] Failed to request ShuttleXpress:', err);
                 updateToggleUI(false);
-                localStorage.setItem('shuttleXpressEnabled', 'false');
+                storageSetShuttleEnabled(false);
             }
         } else {
-            localStorage.setItem('shuttleXpressEnabled', 'false');
+            storageSetShuttleEnabled(false);
             cleanupShuttle();
         }
     }

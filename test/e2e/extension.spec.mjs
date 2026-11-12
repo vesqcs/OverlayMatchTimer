@@ -210,8 +210,6 @@ async function run() {
 
     // Overlay Source select must apply without "Source change failed"
     const overlaySwitch = await page.evaluate(async () => {
-      const setup = document.getElementById('setup-panel');
-      if (setup) setup.style.display = 'flex';
       const sel = document.getElementById('omt-examino-source');
       if (!sel) return { ok: false, reason: 'no-select' };
       sel.focus();
@@ -301,15 +299,34 @@ async function run() {
     });
     results.push({ name: 'examino-autohide-respects-clicks', pass: autoHide.ok === true, detail: autoHide });
 
-    // Kick-off sync
+    // Kick-off sync (in-video strip; no setup panel)
     const timerSync = await page.evaluate(() => {
-      const setup = document.getElementById('setup-panel');
-      if (setup) setup.style.display = 'flex';
       document.getElementById('omt-btn-set-kickoff')?.click();
       const t = document.getElementById('match-timer');
-      return { ok: !!(t && t.style.display === 'block') };
+      const wrap = document.getElementById('match-timer-wrap');
+      const nudge = document.getElementById('omt-offset-p1');
+      return {
+        ok: !!(t && (t.style.display === 'block' || (wrap && getComputedStyle(wrap).display !== 'none'))),
+        hasNudge: !!nudge
+      };
     });
-    results.push({ name: 'examino-timer-sync', pass: timerSync.ok === true });
+    results.push({ name: 'examino-timer-sync', pass: timerSync.ok === true, detail: timerSync });
+    results.push({ name: 'examino-offset-nudge-present', pass: timerSync.hasNudge === true });
+
+    // Offset nudge uses existing offset state
+    const offsetNudge = await page.evaluate(() => {
+      const before = localStorage.getItem('matchTimerOffset');
+      document.getElementById('omt-offset-p1')?.click();
+      const after = localStorage.getItem('matchTimerOffset');
+      document.getElementById('omt-offset-m1')?.click();
+      const back = localStorage.getItem('matchTimerOffset');
+      return {
+        ok: before != null && after != null && Number(after) === Number(before) + 1 &&
+          Math.abs(Number(back) - Number(before)) < 0.001,
+        before, after, back
+      };
+    });
+    results.push({ name: 'examino-offset-nudge', pass: offsetNudge.ok === true, detail: offsetNudge });
 
     // Hotkeys still win
     await page.evaluate(() => { window.__omtHostileKeySeen = false; });
@@ -389,16 +406,24 @@ async function run() {
       detail: liveBtn
     });
 
+    // Whistle / set-video-time inputs are not in the in-video UI
+    const noWhistleUi = await page.evaluate(() => {
+      const sync = document.getElementById('omt-hidden-sync');
+      const editWired = !document.getElementById('match-timer')?.onclick;
+      return {
+        ok: !!(sync && sync.hidden) && !document.querySelector('#setup-panel .time-inputs'),
+        editWired
+      };
+    });
+    results.push({ name: 'examino-no-whistle-ui', pass: noWhistleUi.ok === true, detail: noWhistleUi });
+
     // ---- VOD deep seek → DVR must not freeze ----
     const vodToDvr = await page.evaluate(async () => {
-      const setup = document.getElementById('setup-panel');
-      if (setup) setup.style.display = 'flex';
       const v = document.querySelector('video');
       if (v) v.currentTime = 5000; // deep in VOD
       await new Promise((r) => setTimeout(r, 100));
       const sel = document.getElementById('omt-examino-source');
       if (!sel) return { ok: false, reason: 'no-select' };
-      // Ensure options include DVR
       sel.focus();
       await new Promise((r) => setTimeout(r, 700));
       sel.value = 'DVR';
@@ -409,7 +434,6 @@ async function run() {
       const source = window.__omtMockSource || v2?.dataset?.omtSource;
       const ct = v2 ? v2.currentTime : null;
       const dur = v2 ? v2.duration : null;
-      // Play should work (not stuck)
       if (v2) {
         try { await v2.play(); } catch (_) {}
       }
@@ -461,19 +485,20 @@ async function run() {
 
     const inplayState = await page.evaluate(() => {
       const root = document.getElementById('omt-root');
-      const setup = document.getElementById('setup-panel');
-      if (setup) setup.style.display = 'flex';
       const examinoSection = document.getElementById('omt-examino-settings');
+      const kickoff = document.getElementById('omt-kickoff-bar');
       return {
         hasRoot: !!root,
         siteClass: root ? root.className : '',
         inVideoJs: !!(root && root.closest('.video-js')),
-        examinoHidden: !examinoSection || getComputedStyle(examinoSection).display === 'none'
+        examinoHidden: !examinoSection || getComputedStyle(examinoSection).display === 'none',
+        hasKickoff: !!kickoff
       };
     });
     results.push({
       name: 'inplayip-overlay-regression',
-      pass: inplayState.hasRoot && inplayState.siteClass.includes('omt-inplayip') && inplayState.inVideoJs
+      pass: inplayState.hasRoot && inplayState.siteClass.includes('omt-inplayip') && inplayState.inVideoJs && inplayState.hasKickoff,
+      detail: inplayState
     });
     results.push({ name: 'inplayip-no-examino-section', pass: inplayState.examinoHidden === true });
 
@@ -497,14 +522,60 @@ async function run() {
     results.push({ name: 'inplayip-autohide-respects-clicks', pass: inplayAutohide.ok === true, detail: inplayAutohide });
 
     const inplayTimer = await page.evaluate(() => {
-      document.getElementById('setup-panel').style.display = 'flex';
       document.getElementById('omt-btn-set-kickoff').click();
       const t = document.getElementById('match-timer');
-      return { ok: !!(t && t.style.display === 'block') };
+      const wrap = document.getElementById('match-timer-wrap');
+      return { ok: !!(t && (t.style.display === 'block' || (wrap && wrap.style.display === 'flex'))) };
     });
     results.push({ name: 'inplayip-timer-sync', pass: inplayTimer.ok === true });
     await page.screenshot({ path: path.join(ARTIFACTS, 'inplayip-overlay.png'), fullPage: true });
     await page.screenshot({ path: path.join(ARTIFACTS, 'examino-settings.png'), fullPage: true });
+
+    // Toolbar popup (branding + Personalizar)
+    const extUrlRe = /chrome-extension:\/\/([^/]+)/;
+    let extId = null;
+    const resolveExtId = () => {
+      for (const sw of context.serviceWorkers()) {
+        const m = String(sw.url()).match(extUrlRe);
+        if (m) return m[1];
+      }
+      return null;
+    };
+    extId = resolveExtId();
+    if (!extId) {
+      try {
+        const sw = await context.waitForEvent('serviceworker', { timeout: 8000 });
+        const m = String(sw.url()).match(extUrlRe);
+        if (m) extId = m[1];
+      } catch (_) {
+        extId = resolveExtId();
+      }
+    }
+    if (extId) {
+      const popupPage = await context.newPage();
+      await popupPage.goto(`chrome-extension://${extId}/popup.html`);
+      await popupPage.waitForTimeout(200);
+      await popupPage.screenshot({ path: path.join(ARTIFACTS, 'popup_logo_above.png') });
+      await popupPage.click('#brand-layout-toggle');
+      await popupPage.waitForTimeout(100);
+      await popupPage.screenshot({ path: path.join(ARTIFACTS, 'popup_wordmark_above.png') });
+      const popupOk = await popupPage.evaluate(() => {
+        return {
+          hasWordmark: !!document.querySelector('.omt-wordmark'),
+          hasPersonalizar: !!document.querySelector('[data-tab="personalizar"]'),
+          hasSoon: !!document.querySelector('.omt-soon-banner'),
+          hasShuttle: !!document.getElementById('shuttle-toggle')
+        };
+      });
+      results.push({
+        name: 'popup-branding-and-personalizar',
+        pass: popupOk.hasWordmark && popupOk.hasPersonalizar && popupOk.hasSoon && popupOk.hasShuttle,
+        detail: popupOk
+      });
+      await popupPage.close();
+    } else {
+      results.push({ name: 'popup-branding-and-personalizar', pass: false, detail: { reason: 'no-extension-id' } });
+    }
 
   } finally {
     await context.close();

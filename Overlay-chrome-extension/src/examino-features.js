@@ -86,10 +86,10 @@
         e.stopImmediatePropagation();
         if (media.paused) {
             media.play().catch(() => {});
-            mostrarOSD('▶ Play');
+            mostrarOSD('Play');
         } else {
             media.pause();
-            mostrarOSD('⏸ Pause');
+            mostrarOSD('Pause');
         }
         noteOmtUiActivity(false);
     }
