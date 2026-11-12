@@ -326,6 +326,69 @@ async function run() {
       detail: hotkey
     });
 
+    // Space must toggle via capture-phase (page hostile handler must not win)
+    await page.evaluate(async () => {
+      window.__omtHostileKeySeen = false;
+      const v = document.querySelector('video');
+      if (v) {
+        try { await v.play(); } catch (_) {}
+      }
+    });
+    await page.keyboard.press('Space');
+    await page.waitForTimeout(150);
+    const spaceToggle = await page.evaluate(() => {
+      const v = document.querySelector('video');
+      return {
+        paused: !!(v && v.paused),
+        hostile: window.__omtHostileKeySeen === true
+      };
+    });
+    results.push({
+      name: 'examino-space-hotkey-pauses',
+      pass: spaceToggle.paused === true && spaceToggle.hostile === false,
+      detail: spaceToggle
+    });
+    await page.keyboard.press('Space');
+    await page.waitForTimeout(150);
+    const spacePlay = await page.evaluate(() => !!(document.querySelector('video')?.paused));
+    results.push({ name: 'examino-space-hotkey-plays', pass: spacePlay === false });
+
+    // Native Examino / OpenPlayer chrome stays hidden
+    const hiddenChrome = await page.evaluate(() => {
+      const pick = (sel) => document.querySelector(sel);
+      const hidden = (el) => {
+        if (!el) return true;
+        const cs = getComputedStyle(el);
+        return cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0' ||
+          el.classList.contains('omt-examino-native-hidden');
+      };
+      return {
+        bottom: hidden(pick('.examino-bottom-controls')),
+        hamburger: hidden(pick('.hamburger-menu')),
+        settingHolder: hidden(pick('.setting-holder')),
+        opControls: hidden(pick('.op-controls')),
+        opUi: hidden(pick('.op-ui'))
+      };
+    });
+    results.push({
+      name: 'examino-native-bars-hidden',
+      pass: hiddenChrome.bottom && hiddenChrome.hamburger && hiddenChrome.settingHolder &&
+        hiddenChrome.opControls && hiddenChrome.opUi,
+      detail: hiddenChrome
+    });
+
+    // LIVE control still present (untangle must not redesign / remove it)
+    const liveBtn = await page.evaluate(() => {
+      const btn = document.getElementById('omt-live-btn');
+      const spacer = document.querySelector('#omt-root .omt-live-spacer');
+      return { hasBtn: !!btn, hasSpacer: !!spacer, text: btn ? btn.textContent.replace(/\s+/g, ' ').trim() : null };
+    });
+    results.push({
+      name: 'examino-live-button-unchanged',
+      pass: liveBtn.hasBtn && liveBtn.hasSpacer && /LIVE/i.test(liveBtn.text || ''),
+      detail: liveBtn
+    });
+
     // ---- VOD deep seek → DVR must not freeze ----
     const vodToDvr = await page.evaluate(async () => {
       const setup = document.getElementById('setup-panel');
