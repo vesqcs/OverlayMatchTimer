@@ -73,6 +73,12 @@
 ,
         "chevrons-right": `<path d="m6 17 5-5-5-5" />
   <path d="m13 17 5-5-5-5" />`
+,
+        "chevrons-up": `<path d="m17 11-5-5-5 5" />
+  <path d="m17 18-5-5-5 5" />`
+,
+        "chevrons-down": `<path d="m7 13 5 5 5-5" />
+  <path d="m7 6 5 5 5-5" />`
     };
 
     function omtIcon(name, size = 16, extraClass = '') {

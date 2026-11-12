@@ -1,9 +1,10 @@
 /* Inject Overlay MatchTimer HUD, cache element refs, compact layout, fullscreen reparent. */
     /* =========================================================
        4. INJECT UI INTO THE PAGE
-       In-video chrome stays minimal: match clock + offset nudge,
-       kick-off sync, Examino Source, and the bottom transport bar.
-       Branding / Personalizar / Shuttle live in the toolbar popup.
+       Plain match clock top-left. YouTube-like bottom bar:
+       separate timeline + one control row + expandable more panel
+       (kick-off, period, offset, Source, Shuttle). Toolbar popup
+       keeps branding / Customize / shortcuts only.
        ========================================================= */
     function injectUI() {
         const anchor = site.findAnchor(vid);
@@ -53,49 +54,16 @@
         window.addEventListener('resize', () => updateCompactLayout());
     }
 
+    function tip(text) {
+        return ' data-tip="' + String(text).replace(/"/g, '&quot;') + '"';
+    }
+
     function buildHTML() {
         return `
 <div id="match-timer-wrap">
     <div id="match-timer">00:00</div>
-    <div class="omt-offset-nudge" title="Nudge kick-off offset">
-        <button type="button" class="omt-offset-btn" id="omt-offset-m5" title="Offset -5s">${omtIcon('chevrons-left', 12)}5</button>
-        <button type="button" class="omt-offset-btn" id="omt-offset-m1" title="Offset -1s">-1</button>
-        <button type="button" class="omt-offset-btn" id="omt-offset-p1" title="Offset +1s">+1</button>
-        <button type="button" class="omt-offset-btn" id="omt-offset-p5" title="Offset +5s">5${omtIcon('chevrons-right', 12)}</button>
-    </div>
 </div>
 <div id="osd-message">MatchTimer</div>
-
-<!-- Compact kick-off strip (always reachable while watching) -->
-<div id="omt-kickoff-bar" class="omt-hud-chip">
-    <select id="omt-half-select" title="Match half">
-        <option value="1">1st</option>
-        <option value="2">2nd</option>
-        <option value="custom1">C1</option>
-        <option value="custom2">C2</option>
-    </select>
-    <div id="omt-custom-c1" class="omt-custom-minute" style="display:none;">
-        <input type="number" id="omt-custom-minute-c1" placeholder="min" min="0" title="Custom 1 start minute">
-    </div>
-    <div id="omt-custom-c2" class="omt-custom-minute" style="display:none;">
-        <input type="number" id="omt-custom-minute-c2" placeholder="min" min="0" title="Custom 2 start minute">
-    </div>
-    <button type="button" class="btn-sync" id="omt-btn-set-kickoff" title="Set kick-off at current frame">Kick-off</button>
-    <button type="button" id="omt-btn-clear-timer" class="btn-clear-timer" title="Clear timer">${omtIcon('x', 13)}</button>
-</div>
-
-<!-- Examino Source (shown only on Examino) -->
-<div id="omt-examino-settings" class="omt-hud-chip omt-source-chip" style="display:none;">
-    <label for="omt-examino-source">Source</label>
-    <select id="omt-examino-source">
-        <option value="DVR">DVR</option>
-        <option value="VOD">VOD</option>
-    </select>
-    <label class="omt-toggle-row" for="omt-examino-auto-vod" title="Auto-switch to VOD">
-        <span>Auto VOD</span>
-        <input type="checkbox" id="omt-examino-auto-vod" checked>
-    </label>
-</div>
 
 <!-- Hidden whistle-time fields: kept for iniciarTimer / restore (no visible UI) -->
 <div id="omt-hidden-sync" hidden aria-hidden="true">
@@ -104,71 +72,106 @@
     <input type="number" id="omt-sync-sec" value="">
 </div>
 
-<!-- Legacy id kept so restore/teardown null-guards stay safe; panel unused in-video -->
+<!-- Legacy ids kept for null-guards / restore -->
 <div id="setup-panel" class="glass-panel" style="display:none;" hidden></div>
 <div id="omt-shuttle-cheatsheet" style="display:none;" hidden></div>
-<input type="checkbox" id="omt-shuttle-enable-toggle" style="display:none;" hidden>
 
-<!-- CONTROLS PANEL (YouTube-like bottom bar) -->
-<div id="controls-panel" class="glass-panel omt-panel omt-controls">
-    <div class="drag-handle" id="controls-handle">
-        <div class="drag-side-left">
-            <select id="omt-speed-select" class="top-select" title="Playback speed">
+<!-- Kick-off jump targets stay in DOM for wire/markers; no visible chip row -->
+<div id="omt-kickoff-jumps" hidden aria-hidden="true">
+    <button id="omt-jump-k1" type="button" style="display:none;"></button>
+    <button id="omt-jump-k2" type="button" style="display:none;"></button>
+    <button id="omt-jump-kc1" type="button" style="display:none;"></button>
+    <button id="omt-jump-kc2" type="button" style="display:none;"></button>
+</div>
+
+<!-- YouTube-like bottom scrim: timeline (separate) + optional more panel + one control row -->
+<div id="controls-panel" class="omt-controls-scrim">
+    <div class="omt-timeline-full">
+        <div class="omt-timeline-track" id="controls-handle">
+            <input type="range" id="omt-timeline-slider" class="timeline-slider omt-tip" min="0" max="100" value="0" step="0.01"${tip('Seek timeline')}>
+            <div id="omt-timeline-markers"></div>
+        </div>
+    </div>
+
+    <div id="omt-more-panel" class="omt-more-panel" aria-hidden="true">
+        <div id="omt-kickoff-bar" class="omt-more-block">
+            <label class="omt-more-label" for="omt-half-select">Period</label>
+            <select id="omt-half-select" class="omt-tip" title="Match period"${tip('Match period')}>
+                <option value="1">1st Half</option>
+                <option value="2">2nd Half</option>
+                <option value="custom1">Custom 1</option>
+                <option value="custom2">Custom 2</option>
+            </select>
+            <div id="omt-custom-c1" class="omt-custom-minute" style="display:none;">
+                <input type="number" id="omt-custom-minute-c1" class="omt-tip" placeholder="min" min="0"${tip('Custom 1 start minute')}>
+            </div>
+            <div id="omt-custom-c2" class="omt-custom-minute" style="display:none;">
+                <input type="number" id="omt-custom-minute-c2" class="omt-tip" placeholder="min" min="0"${tip('Custom 2 start minute')}>
+            </div>
+            <button type="button" class="btn-sync omt-tip" id="omt-btn-set-kickoff"${tip('Set kick-off at current frame (K)')}>Kick-off</button>
+            <button type="button" id="omt-btn-clear-timer" class="btn-clear-timer omt-tip"${tip('Clear match timer')}>${omtIcon('x', 13)}</button>
+            <div class="omt-offset-nudge" aria-label="Kick-off offset">
+                <button type="button" class="omt-offset-btn omt-tip" id="omt-offset-m5"${tip('Offset −5 seconds')}>${omtIcon('chevrons-left', 12)}5</button>
+                <button type="button" class="omt-offset-btn omt-tip" id="omt-offset-m1"${tip('Offset −1 second')}>−1</button>
+                <button type="button" class="omt-offset-btn omt-tip" id="omt-offset-p1"${tip('Offset +1 second')}>+1</button>
+                <button type="button" class="omt-offset-btn omt-tip" id="omt-offset-p5"${tip('Offset +5 seconds')}>5${omtIcon('chevrons-right', 12)}</button>
+            </div>
+        </div>
+
+        <div id="omt-examino-settings" class="omt-more-block omt-source-block" style="display:none;">
+            <label class="omt-more-label" for="omt-examino-source">Source</label>
+            <select id="omt-examino-source" class="omt-tip"${tip('Examino stream source')}>
+                <option value="DVR">DVR</option>
+                <option value="VOD">VOD</option>
+            </select>
+            <label class="omt-toggle-row omt-tip" for="omt-examino-auto-vod"${tip('Auto-switch to VOD when available')}>
+                <span>Auto VOD</span>
+                <input type="checkbox" id="omt-examino-auto-vod" checked>
+            </label>
+        </div>
+
+        <div class="omt-more-block omt-shuttle-block">
+            <label class="omt-toggle-row omt-tip" for="omt-shuttle-enable-toggle"${tip('Enable ShuttleXpress pairing on this browser')}>
+                <span>ShuttleXpress</span>
+                <input type="checkbox" id="omt-shuttle-enable-toggle">
+            </label>
+        </div>
+    </div>
+
+    <div class="omt-controls-row">
+        <div class="omt-controls-left">
+            <button class="ctrl-btn omt-tip" id="omt-m120" type="button"${tip('Skip −2 minutes (Ctrl + ←)')}>${omtIcon('rewind', 16)}</button>
+            <button class="ctrl-btn omt-tip" id="omt-m10" type="button"${tip('Skip −10 seconds (Shift + ←)')}>${omtIcon('skip-back', 16)}</button>
+            <button class="ctrl-btn omt-tip" id="omt-m2" type="button"${tip('Skip −2 seconds (←)')}>${omtIcon('skip-back', 14)}</button>
+            <button class="ctrl-btn btn-frame omt-tip" id="omt-prev-frame" type="button"${tip('Previous frame (↓)')}>${omtIcon('step-back', 15)}</button>
+            <button class="ctrl-btn btn-play omt-tip" id="omt-btn-play" type="button"${tip('Play / Pause (Space)')}>${omtIcon('play', 18)}</button>
+            <button class="ctrl-btn btn-frame omt-tip" id="omt-next-frame" type="button"${tip('Next frame (↑)')}>${omtIcon('step-forward', 15)}</button>
+            <button class="ctrl-btn omt-tip" id="omt-p2" type="button"${tip('Skip +2 seconds (→)')}>${omtIcon('skip-forward', 14)}</button>
+            <button class="ctrl-btn omt-tip" id="omt-p10" type="button"${tip('Skip +10 seconds (Shift + →)')}>${omtIcon('skip-forward', 16)}</button>
+            <button class="ctrl-btn omt-tip" id="omt-p120" type="button"${tip('Skip +2 minutes (Ctrl + →)')}>${omtIcon('fast-forward', 16)}</button>
+            <span id="omt-v-time-current" class="omt-time-text omt-tip"${tip('Current video time')}>00:00:00</span>
+            <span class="omt-time-sep" aria-hidden="true">/</span>
+            <span id="omt-v-time-duration" class="omt-time-text omt-tip"${tip('Duration / live edge')}>00:00:00</span>
+            <button id="omt-live-btn" class="omt-tip" type="button"${tip('Go to live edge (L)')}>
+                <span class="live-dot"></span><span class="live-label">LIVE</span>
+            </button>
+            <span class="omt-live-spacer" aria-hidden="true"></span>
+        </div>
+        <div class="omt-controls-right">
+            <select id="omt-speed-select" class="top-select omt-tip"${tip('Playback speed (Z / C / X)')}>
                 <option value="0.25">0.25x</option>
                 <option value="0.5">0.50x</option>
                 <option value="1.0" selected>1.00x</option>
                 <option value="1.5">1.50x</option>
                 <option value="2.0">2.00x</option>
             </select>
-        </div>
-        <div class="drag-center-grip">${omtIcon('grip-horizontal', 14, 'omt-grip')}</div>
-        <div class="drag-side-right">
-            <div class="omt-live-volume">
-                <button id="omt-live-btn" type="button" title="Go to Live Edge">
-                    <span class="live-dot"></span><span class="live-label">LIVE</span>
-                </button>
-                <span class="omt-live-spacer" aria-hidden="true"></span>
-                <button class="handle-btn" id="omt-volume-icon-btn" type="button" title="Mute/Unmute">${omtIcon('volume-2', 15)}</button>
-                <input type="range" id="omt-volume-range" min="0" max="1" step="0.05" value="1">
-            </div>
-            <button class="handle-btn" id="omt-btn-fullscreen" type="button" title="Fullscreen">${omtIcon('maximize', 15)}</button>
-        </div>
-    </div>
-
-    <div class="timeline-container">
-        <div class="timeline-badges-row" id="omt-kickoff-jumps">
-            <button id="omt-jump-k1"  class="kickoff-badge k1"  style="display:none;" type="button" title="Jump to 1st Half Kickoff">1st</button>
-            <button id="omt-jump-k2"  class="kickoff-badge k2"  style="display:none;" type="button" title="Jump to 2nd Half Kickoff">2nd</button>
-            <button id="omt-jump-kc1" class="kickoff-badge kc1" style="display:none;" type="button" title="Jump to Custom 1 Kickoff">C1</button>
-            <button id="omt-jump-kc2" class="kickoff-badge kc2" style="display:none;" type="button" title="Jump to Custom 2 Kickoff">C2</button>
-        </div>
-        <div class="timeline-slider-row">
-            <span id="omt-v-time-current">00:00:00</span>
-            <div class="omt-timeline-track">
-                <input type="range" id="omt-timeline-slider" class="timeline-slider" min="0" max="100" value="0" step="0.01">
-                <div id="omt-timeline-markers"></div>
-            </div>
-            <span id="omt-v-time-duration">00:00:00</span>
-        </div>
-    </div>
-
-    <div class="controls-content">
-        <div class="ctrl-group-left">
-            <button class="ctrl-btn" id="omt-m120" type="button" title="-2 min">${omtIconBtnLabel('rewind', '2m')}</button>
-            <button class="ctrl-btn" id="omt-m10" type="button" title="-10 s">${omtIconBtnLabel('skip-back', '10s')}</button>
-            <button class="ctrl-btn" id="omt-m2" type="button" title="-2 s">${omtIconBtnLabel('skip-back', '2s')}</button>
-        </div>
-        <div class="ctrl-group-center">
-            <div class="separator"></div>
-            <button class="ctrl-btn btn-frame" id="omt-prev-frame" type="button" title="Previous Frame">${omtIcon('step-back', 15)}</button>
-            <button class="ctrl-btn btn-play" id="omt-btn-play" type="button">${omtIconBtnLabel('play', 'Play', 16)}</button>
-            <button class="ctrl-btn btn-frame" id="omt-next-frame" type="button" title="Next Frame">${omtIcon('step-forward', 15)}</button>
-            <div class="separator"></div>
-        </div>
-        <div class="ctrl-group-right">
-            <button class="ctrl-btn" id="omt-p2" type="button" title="+2 s">${omtIconBtnLabel('skip-forward', '2s')}</button>
-            <button class="ctrl-btn" id="omt-p10" type="button" title="+10 s">${omtIconBtnLabel('skip-forward', '10s')}</button>
-            <button class="ctrl-btn" id="omt-p120" type="button" title="+2 min">${omtIconBtnLabel('fast-forward', '2m')}</button>
+            <button class="handle-btn omt-tip" id="omt-volume-icon-btn" type="button"${tip('Mute / Unmute')}>${omtIcon('volume-2', 16)}</button>
+            <input type="range" id="omt-volume-range" class="omt-tip" min="0" max="1" step="0.05" value="1"${tip('Volume')}>
+            <button class="handle-btn omt-tip" id="omt-btn-fullscreen" type="button"${tip('Fullscreen')}>${omtIcon('maximize', 16)}</button>
+            <button type="button" id="omt-more-toggle" class="omt-more-toggle omt-tip" aria-expanded="false"${tip('Match controls')}>
+                <span class="omt-more-icon-collapsed">${omtIcon('chevrons-up', 20)}</span>
+                <span class="omt-more-icon-expanded" hidden>${omtIcon('chevrons-down', 20)}</span>
+            </button>
         </div>
     </div>
 </div>`;
@@ -194,4 +197,26 @@
         volumeIconBtn = q('omt-volume-icon-btn');
         shuttleToggle = q('omt-shuttle-enable-toggle');
         shuttleCheatsheet = q('omt-shuttle-cheatsheet');
+    }
+
+    function setMorePanelOpen(open) {
+        const panel = q('omt-more-panel');
+        const btn = q('omt-more-toggle');
+        if (!panel || !btn) return;
+        const next = !!open;
+        panel.classList.toggle('is-open', next);
+        panel.setAttribute('aria-hidden', next ? 'false' : 'true');
+        btn.setAttribute('aria-expanded', next ? 'true' : 'false');
+        btn.classList.toggle('is-open', next);
+        const collapsedIcon = btn.querySelector('.omt-more-icon-collapsed');
+        const expandedIcon = btn.querySelector('.omt-more-icon-expanded');
+        if (collapsedIcon) collapsedIcon.hidden = next;
+        if (expandedIcon) expandedIcon.hidden = !next;
+        if (controlsPanel) controlsPanel.classList.toggle('omt-more-open', next);
+    }
+
+    function toggleMorePanel() {
+        const panel = q('omt-more-panel');
+        if (!panel) return;
+        setMorePanelOpen(!panel.classList.contains('is-open'));
     }

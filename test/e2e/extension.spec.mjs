@@ -299,19 +299,30 @@ async function run() {
     });
     results.push({ name: 'examino-autohide-respects-clicks', pass: autoHide.ok === true, detail: autoHide });
 
-    // Kick-off sync (in-video strip; no setup panel)
+    // Kick-off sync (in expandable more panel; same handlers)
     const timerSync = await page.evaluate(() => {
+      document.getElementById('omt-more-toggle')?.click();
       document.getElementById('omt-btn-set-kickoff')?.click();
       const t = document.getElementById('match-timer');
       const wrap = document.getElementById('match-timer-wrap');
       const nudge = document.getElementById('omt-offset-p1');
+      const more = document.getElementById('omt-more-panel');
+      const topKickoff = getComputedStyle(document.getElementById('omt-kickoff-bar') || document.body).position;
       return {
         ok: !!(t && (t.style.display === 'block' || (wrap && getComputedStyle(wrap).display !== 'none'))),
-        hasNudge: !!nudge
+        hasNudge: !!nudge,
+        moreOpen: !!(more && more.classList.contains('is-open')),
+        kickoffNotAbsolute: topKickoff !== 'absolute',
+        plainClock: !document.querySelector('#match-timer-wrap .omt-offset-nudge')
       };
     });
     results.push({ name: 'examino-timer-sync', pass: timerSync.ok === true, detail: timerSync });
     results.push({ name: 'examino-offset-nudge-present', pass: timerSync.hasNudge === true });
+    results.push({
+      name: 'examino-more-panel-holds-controls',
+      pass: timerSync.moreOpen && timerSync.kickoffNotAbsolute && timerSync.plainClock,
+      detail: timerSync
+    });
 
     // Offset nudge uses existing offset state
     const offsetNudge = await page.evaluate(() => {
@@ -508,7 +519,221 @@ async function run() {
     const stayedDvr = await page.evaluate(() => window.__omtMockSource || document.querySelector('video')?.dataset?.omtSource);
     results.push({ name: 'examino-manual-dvr-wins', pass: stayedDvr === 'DVR', detail: { stayedDvr } });
 
+    // YouTube-like bottom scrim: separate timeline + one control row + more toggle
+    const chromeShape = await page.evaluate(() => {
+      const panel = document.getElementById('controls-panel');
+      const jumps = document.getElementById('omt-kickoff-jumps');
+      const badges = document.querySelectorAll('.kickoff-badge, .timeline-badges-row');
+      const rows = panel ? panel.querySelectorAll('.omt-controls-row').length : 0;
+      const timeline = panel ? panel.querySelector('.omt-timeline-full .timeline-slider') : null;
+      const moreBtn = document.getElementById('omt-more-toggle');
+      const morePanel = document.getElementById('omt-more-panel');
+      const tipCount = document.querySelectorAll('#controls-panel [data-tip]').length;
+      const timelineBox = timeline ? timeline.getBoundingClientRect() : null;
+      const rowBox = panel?.querySelector('.omt-controls-row')?.getBoundingClientRect();
+      const gap = timelineBox && rowBox ? (rowBox.top - timelineBox.bottom) : 0;
+      return {
+        scrim: !!(panel && panel.classList.contains('omt-controls-scrim')),
+        rows,
+        hasTimeline: !!timeline,
+        jumpsHidden: !!(jumps && jumps.hidden),
+        noBadges: badges.length === 0,
+        hasMore: !!(moreBtn && morePanel),
+        tipCount,
+        timelineGap: gap,
+        clockPlain: !document.querySelector('#match-timer-wrap .omt-offset-nudge') &&
+          (() => {
+            const el = document.getElementById('match-timer');
+            if (!el) return false;
+            const c = getComputedStyle(el).borderLeftColor || '';
+            return !/245,\s*131,\s*31/.test(c) && !/#F5831F/i.test(c);
+          })()
+      };
+    });
+    results.push({
+      name: 'examino-youtube-scrim-shape',
+      pass: chromeShape.scrim && chromeShape.rows === 1 && chromeShape.hasTimeline &&
+        chromeShape.jumpsHidden && chromeShape.noBadges && chromeShape.hasMore &&
+        chromeShape.tipCount >= 12 && chromeShape.timelineGap >= 6 && chromeShape.clockPlain,
+      detail: chromeShape
+    });
+
+    // Force controls visible for polish screenshots
+    await page.evaluate(() => {
+      const panel = document.getElementById('controls-panel');
+      if (panel) {
+        panel.style.opacity = '1';
+        panel.style.pointerEvents = 'auto';
+      }
+      const settings = document.getElementById('omt-examino-settings');
+      if (settings) settings.style.display = 'flex';
+      // Collapse more panel for baseline shot
+      const more = document.getElementById('omt-more-panel');
+      const btn = document.getElementById('omt-more-toggle');
+      if (more) {
+        more.classList.remove('is-open');
+        more.setAttribute('aria-hidden', 'true');
+      }
+      if (btn) {
+        btn.classList.remove('is-open');
+        btn.setAttribute('aria-expanded', 'false');
+        const c = btn.querySelector('.omt-more-icon-collapsed');
+        const e = btn.querySelector('.omt-more-icon-expanded');
+        if (c) c.hidden = false;
+        if (e) e.hidden = true;
+      }
+    });
+
+    // At live → red scrubber (pause first so timeupdate does not race the shot)
+    await page.evaluate(async () => {
+      const v = document.querySelector('video');
+      const slider = document.getElementById('omt-timeline-slider');
+      const panel = document.getElementById('controls-panel');
+      const live = document.getElementById('omt-live-btn');
+      if (!v) return;
+      try { v.pause(); } catch (_) {}
+      const end = v.seekable?.length ? v.seekable.end(v.seekable.length - 1) : v.duration;
+      const liveAt = typeof end === 'number' ? Math.max(0, end - 2) : v.currentTime;
+      try { v.currentTime = liveAt; } catch (_) {}
+      if (slider && typeof end === 'number' && isFinite(end) && end > 0) {
+        slider.min = '0';
+        slider.max = String(end);
+        slider.value = String(liveAt);
+        slider.style.setProperty('--omt-progress', '100%');
+        const dur = document.getElementById('omt-v-time-duration');
+        const cur = document.getElementById('omt-v-time-current');
+        if (dur) {
+          const h = Math.floor(end / 3600).toString().padStart(2, '0');
+          const m = Math.floor((end % 3600) / 60).toString().padStart(2, '0');
+          const s = Math.floor(end % 60).toString().padStart(2, '0');
+          dur.innerText = `${h}:${m}:${s}`;
+        }
+        if (cur) {
+          const h = Math.floor(liveAt / 3600).toString().padStart(2, '0');
+          const m = Math.floor((liveAt % 3600) / 60).toString().padStart(2, '0');
+          const s = Math.floor(liveAt % 60).toString().padStart(2, '0');
+          cur.innerText = `${h}:${m}:${s}`;
+        }
+      }
+      if (panel) panel.classList.add('omt-at-live');
+      if (live) live.classList.add('is-live');
+    });
+    await page.waitForTimeout(80);
+    const atLiveState = await page.evaluate(() => {
+      const panel = document.getElementById('controls-panel');
+      const live = document.getElementById('omt-live-btn');
+      const slider = document.getElementById('omt-timeline-slider');
+      const bg = slider ? getComputedStyle(slider).backgroundImage || getComputedStyle(slider).background : '';
+      return {
+        atLive: !!(panel && panel.classList.contains('omt-at-live')),
+        liveOn: !!(live && live.classList.contains('is-live')),
+        progress: slider ? slider.style.getPropertyValue('--omt-progress') : null,
+        bg
+      };
+    });
+    results.push({
+      name: 'examino-timeline-red-at-live',
+      pass: atLiveState.atLive && atLiveState.liveOn && /e0201b|rgb\(224,\s*32,\s*27\)/i.test(atLiveState.bg),
+      detail: atLiveState
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'examino_at_live.png'), fullPage: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'examino_collapsed.png'), fullPage: true });
     await page.screenshot({ path: path.join(ARTIFACTS, 'examino-overlay.png'), fullPage: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'ui_timeline_at_live.png'), fullPage: true });
+
+    // Expanded more panel + tooltip
+    await page.evaluate(() => {
+      document.getElementById('omt-more-toggle')?.click();
+    });
+    await page.waitForTimeout(160);
+    await page.screenshot({ path: path.join(ARTIFACTS, 'examino_expanded.png'), fullPage: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'examino-settings.png'), fullPage: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'ui_in_video_settings.png'), fullPage: true });
+    const playBox = await page.locator('#omt-btn-play').boundingBox();
+    if (playBox) {
+      await page.mouse.move(playBox.x + playBox.width / 2, playBox.y + playBox.height / 2);
+      await page.waitForTimeout(100);
+    }
+    await page.screenshot({ path: path.join(ARTIFACTS, 'examino_tooltip.png'), fullPage: true });
+    await page.evaluate(() => {
+      document.getElementById('omt-more-toggle')?.click();
+    });
+    await page.waitForTimeout(140);
+
+    // Behind live → grey scrubber (partial fill)
+    await page.evaluate(async () => {
+      const v = document.querySelector('video');
+      const slider = document.getElementById('omt-timeline-slider');
+      const panel = document.getElementById('controls-panel');
+      const live = document.getElementById('omt-live-btn');
+      if (!v) return;
+      try { v.pause(); } catch (_) {}
+      const end = v.seekable?.length ? v.seekable.end(v.seekable.length - 1) : v.duration;
+      const behindAt = typeof end === 'number' ? Math.max(0, end * 0.55) : 100;
+      try { v.currentTime = behindAt; } catch (_) {}
+      if (slider && typeof end === 'number' && isFinite(end) && end > 0) {
+        slider.min = '0';
+        slider.max = String(end);
+        slider.value = String(behindAt);
+        slider.style.setProperty('--omt-progress', '55%');
+        const dur = document.getElementById('omt-v-time-duration');
+        const cur = document.getElementById('omt-v-time-current');
+        if (dur) {
+          const h = Math.floor(end / 3600).toString().padStart(2, '0');
+          const m = Math.floor((end % 3600) / 60).toString().padStart(2, '0');
+          const s = Math.floor(end % 60).toString().padStart(2, '0');
+          dur.innerText = `${h}:${m}:${s}`;
+        }
+        if (cur) {
+          const h = Math.floor(behindAt / 3600).toString().padStart(2, '0');
+          const m = Math.floor((behindAt % 3600) / 60).toString().padStart(2, '0');
+          const s = Math.floor(behindAt % 60).toString().padStart(2, '0');
+          cur.innerText = `${h}:${m}:${s}`;
+        }
+      }
+      if (panel) panel.classList.remove('omt-at-live');
+      if (live) live.classList.remove('is-live');
+    });
+    await page.waitForTimeout(80);
+    const behindState = await page.evaluate(() => {
+      const panel = document.getElementById('controls-panel');
+      const live = document.getElementById('omt-live-btn');
+      const slider = document.getElementById('omt-timeline-slider');
+      const bg = slider ? getComputedStyle(slider).backgroundImage || getComputedStyle(slider).background : '';
+      return {
+        atLive: !!(panel && panel.classList.contains('omt-at-live')),
+        liveOn: !!(live && live.classList.contains('is-live')),
+        progress: slider ? slider.style.getPropertyValue('--omt-progress') : null,
+        bg
+      };
+    });
+    results.push({
+      name: 'examino-timeline-grey-behind',
+      pass: !behindState.atLive && !behindState.liveOn &&
+        /909090|rgb\(144,\s*144,\s*144\)/i.test(behindState.bg) &&
+        /55%/.test(behindState.progress || ''),
+      detail: behindState
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'examino_behind_live.png'), fullPage: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'ui_timeline_behind_live.png'), fullPage: true });
+
+    // Hover thickens the timeline
+    const timelineBox = await page.locator('#omt-timeline-slider').boundingBox();
+    if (timelineBox) {
+      await page.mouse.move(timelineBox.x + timelineBox.width * 0.55, timelineBox.y + timelineBox.height / 2);
+      await page.waitForTimeout(120);
+    }
+    const hoverH = await page.evaluate(() => {
+      const slider = document.getElementById('omt-timeline-slider');
+      return slider ? parseFloat(getComputedStyle(slider).height) : 0;
+    });
+    results.push({
+      name: 'examino-timeline-thickens-on-hover',
+      pass: hoverH >= 5.5,
+      detail: { hoverH }
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'examino_hover.png'), fullPage: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'ui_timeline_hover.png'), fullPage: true });
 
     // Fullscreen
     await page.evaluate(async () => {
@@ -582,10 +807,17 @@ async function run() {
       return { ok: !!(t && (t.style.display === 'block' || (wrap && wrap.style.display === 'flex'))) };
     });
     results.push({ name: 'inplayip-timer-sync', pass: inplayTimer.ok === true });
+    await page.evaluate(() => {
+      const panel = document.getElementById('controls-panel');
+      if (panel) {
+        panel.style.opacity = '1';
+        panel.style.pointerEvents = 'auto';
+      }
+    });
     await page.screenshot({ path: path.join(ARTIFACTS, 'inplayip-overlay.png'), fullPage: true });
-    await page.screenshot({ path: path.join(ARTIFACTS, 'examino-settings.png'), fullPage: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'inplayip_overlay.png'), fullPage: true });
 
-    // Toolbar popup (branding + Personalizar)
+    // Toolbar popup (logo above wordmark only)
     const extUrlRe = /chrome-extension:\/\/([^/]+)/;
     let extId = null;
     const resolveExtId = () => {
@@ -609,21 +841,32 @@ async function run() {
       const popupPage = await context.newPage();
       await popupPage.goto(`chrome-extension://${extId}/popup.html`);
       await popupPage.waitForTimeout(200);
+      await popupPage.screenshot({ path: path.join(ARTIFACTS, 'popup.png') });
       await popupPage.screenshot({ path: path.join(ARTIFACTS, 'popup_logo_above.png') });
-      await popupPage.click('#brand-layout-toggle');
-      await popupPage.waitForTimeout(100);
-      await popupPage.screenshot({ path: path.join(ARTIFACTS, 'popup_wordmark_above.png') });
       const popupOk = await popupPage.evaluate(() => {
+        const foot = (document.querySelector('.omt-popup-foot')?.textContent || '').trim();
+        const soon = (document.querySelector('.omt-soon-banner')?.textContent || '').trim();
         return {
           hasWordmark: !!document.querySelector('.omt-wordmark'),
-          hasPersonalizar: !!document.querySelector('[data-tab="personalizar"]'),
-          hasSoon: !!document.querySelector('.omt-soon-banner'),
-          hasShuttle: !!document.getElementById('shuttle-toggle')
+          hasLogo: !!document.querySelector('.omt-sp-logo'),
+          logoCount: document.querySelectorAll('.omt-sp-logo').length,
+          hasCustomize: !!document.querySelector('[data-tab="customize"]'),
+          soonOk: soon === 'Coming soon',
+          noShuttle: !document.getElementById('shuttle-toggle'),
+          noSwap: !document.getElementById('brand-layout-toggle'),
+          noCredit: !document.querySelector('.omt-brand-credit'),
+          noPersonalizar: !document.body.textContent.includes('Personalizar') &&
+            !document.body.textContent.includes('Em breve'),
+          footOk: foot === 'v1.4.0',
+          keyCaps: document.querySelectorAll('.shortcut-keys kbd').length >= 8
         };
       });
       results.push({
         name: 'popup-branding-and-personalizar',
-        pass: popupOk.hasWordmark && popupOk.hasPersonalizar && popupOk.hasSoon && popupOk.hasShuttle,
+        pass: popupOk.hasWordmark && popupOk.hasLogo && popupOk.logoCount === 1 &&
+          popupOk.hasCustomize && popupOk.soonOk && popupOk.noShuttle &&
+          popupOk.noSwap && popupOk.noCredit && popupOk.noPersonalizar &&
+          popupOk.footOk && popupOk.keyCaps,
         detail: popupOk
       });
       await popupPage.close();

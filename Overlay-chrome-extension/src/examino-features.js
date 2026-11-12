@@ -557,7 +557,7 @@
     async function refreshExaminoSourceSelect() {
         if (site.id !== 'examino' || !omtRoot) return;
         const section = q('omt-examino-settings');
-        if (section) section.style.display = 'block';
+        if (section) section.style.display = 'flex';
         const source = await scrapeOpSourceOptions();
         fillSourceSelect(source);
         const autoBox = q('omt-examino-auto-vod');
@@ -568,7 +568,7 @@
 
     function wireExaminoSettingsUI() {
         const section = q('omt-examino-settings');
-        if (section) section.style.display = 'block';
+        if (section) section.style.display = 'flex';
 
         const autoBox = q('omt-examino-auto-vod');
         if (autoBox) {

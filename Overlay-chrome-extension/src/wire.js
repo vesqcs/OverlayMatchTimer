@@ -3,10 +3,12 @@
        6. WIRE ALL EVENTS
        ========================================================= */
     function wireEvents() {
-        // --- Kick-off strip (in-video) ---
+        // --- Kick-off / more panel (in-video expandable group) ---
         q('omt-btn-set-kickoff').addEventListener('click', () => { iniciarTimer(); });
         q('omt-btn-clear-timer').addEventListener('click', () => { limparTimer(); });
         q('omt-btn-fullscreen').addEventListener('click', toggleFullScreen);
+        const moreToggle = q('omt-more-toggle');
+        if (moreToggle) moreToggle.addEventListener('click', () => toggleMorePanel());
 
         // --- Kick-off offset nudge (same offsetEmSegundos / kickoff state) ---
         const nudge = (sec) => () => nudgeKickoffOffset(sec);
@@ -166,8 +168,7 @@
             controlsPanel.classList.remove('playing-state');
         }, vsig);
 
-        // --- Drag (controls bar only; setup panel is no longer an in-video surface) ---
-        if (controlsPanel) fazerArrastavel(controlsPanel, q('controls-handle'));
+        // Bottom scrim stays fixed (YouTube-like); no drag.
 
         // --- Auto-hide controls: mouse move + clicks/keys/wheel on our UI ---
         vid.addEventListener('mousemove', () => resetControlsTimeout(true), vsig);
@@ -197,9 +198,10 @@
         // Match-clock click-to-edit ("set video time") removed from in-video UI.
         // navegarParaMinutoDeJogo / iniciarEdicaoTimer remain available internally.
 
-        // Shuttle toggle lives in the toolbar popup; keep a hidden input synced via storage.
+        // Shuttle toggle lives in the in-video more panel (analyst browser only).
         if (shuttleToggle) {
             shuttleToggle.addEventListener('change', handleToggleChange);
         }
         syncShuttleToggleFromStorage();
+        setMorePanelOpen(false);
     }

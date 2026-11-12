@@ -9,5 +9,5 @@
         void osd.offsetWidth; // reflow
         osd.classList.add('visible');
         clearTimeout(osdTimeout);
-        osdTimeout = setTimeout(() => { if (osd) osd.classList.remove('visible'); }, 1800);
+        osdTimeout = setTimeout(() => { if (osd) osd.classList.remove('visible'); }, 1100);
     }

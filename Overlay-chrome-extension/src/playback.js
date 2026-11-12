@@ -102,8 +102,6 @@
 
     function atualizarBotaoPlay(playing) {
         if (!btnMainPlay) return;
-        btnMainPlay.innerHTML = playing
-            ? omtIconBtnLabel('pause', 'Pause', 16)
-            : omtIconBtnLabel('play', 'Play', 16);
+        btnMainPlay.innerHTML = playing ? omtIcon('pause', 18) : omtIcon('play', 18);
         btnMainPlay.classList.toggle('playing', !!playing);
     }
