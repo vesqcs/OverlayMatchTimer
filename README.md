@@ -2,12 +2,14 @@
 
 **Overlay MatchTimer** is a Chrome MV3 extension for professional football / sports match analysts. It injects a drift-aware match timer, HUD timeline, and playback controls over supported stream players.
 
-Supported by this extension build (**v1.2.2**):
+Supported by this extension build (**v1.3.0**, behaviour-identical to **v1.2.2**):
 
 * **InplayIP** (`*.inplayip.tv`) — Video.js Review/DVR sessions (unchanged known-good behaviour)
 * **Examino** (`examino.statsperform.io/play/dvr/*` and `/play/vod/*`) — OpenPlayer DVR/VOD pages (no iframes / shadow roots)
 
-Xeatre remains out of scope for the extension injector (use the local HTML companion to load copied DVR URLs). A stub adapter is left in `content.js` for a future pass.
+Xeatre remains out of scope for the extension injector (use the local HTML companion to load copied DVR URLs). A stub adapter lives under `Overlay-chrome-extension/src/adapters/xeatre.js`.
+
+**Layout:** editable sources are in `Overlay-chrome-extension/src/` (concatenated into committed `content.js`). See [`ARCHITECTURE.md`](./ARCHITECTURE.md). After editing sources: `node Overlay-chrome-extension/scripts/build-content.mjs`. Load unpacked still needs no build step.
 
 The local companion app (`OverlayMatchTimer.html`) and the user guide (`Overlay MatchTimer Guideline.pdf`) document kick-off sync, halves, hotkeys, the draggable auto-hiding panel, HUD timeline jumps, and ShuttleXpress.
 
@@ -75,13 +77,13 @@ Fixtures live under `test/fixtures/`. Screenshots are written to `/opt/cursor/ar
 
 | Path | Purpose |
 | --- | --- |
-| `Overlay-chrome-extension/` | MV3 extension (`manifest.json`, `content.js`, `content.css`) |
+| `Overlay-chrome-extension/` | MV3 extension (`manifest.json`, committed `content.js`, `content.css`, `bridge.js`) |
+| `Overlay-chrome-extension/src/` | Content-script fragments (adapters, timer, playback, hotkeys, …) |
+| `ARCHITECTURE.md` | Module map + site adapter interface |
 | `OverlayMatchTimer.html` | Local companion dashboard |
 | `Overlay MatchTimer Guideline.pdf` | End-user guide |
 | `test/fixtures/` | Examino OpenPlayer + InplayIP Video.js mocks |
 | `test/e2e/` | Playwright extension smoke tests |
-
-Site-specific selectors and positioning are isolated in small adapters at the top of `content.js` (`SITE_INPLAYIP`, `SITE_EXAMINO`, `SITE_XEATRE` stub).
 
 ---
 
