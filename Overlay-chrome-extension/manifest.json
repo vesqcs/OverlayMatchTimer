@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Overlay MatchTimer",
-  "version": "1.1.0",
-  "description": "Injects the Overlay MatchTimer UI over InplayIP and Examino DVR streams for professional match analysis.",
+  "version": "1.2.0",
+  "description": "Injects the Overlay MatchTimer UI over InplayIP and Examino DVR/VOD streams for professional match analysis.",
   "author": "Vasco Oliveira",
   "permissions": [
     "storage"
@@ -17,13 +17,35 @@
     {
       "matches": [
         "*://*.inplayip.tv/*",
-        "*://examino.statsperform.io/play/dvr/*",
-        "http://127.0.0.1/*",
-        "http://localhost/*"
+        "http://127.0.0.1/*inplay*",
+        "http://localhost/*inplay*"
       ],
       "js": ["content.js"],
       "css": ["content.css"],
       "run_at": "document_idle",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "*://examino.statsperform.io/play/dvr/*",
+        "*://examino.statsperform.io/play/vod/*",
+        "http://127.0.0.1/*examino*",
+        "http://localhost/*examino*"
+      ],
+      "js": ["bridge.js"],
+      "run_at": "document_start",
+      "world": "ISOLATED"
+    },
+    {
+      "matches": [
+        "*://examino.statsperform.io/play/dvr/*",
+        "*://examino.statsperform.io/play/vod/*",
+        "http://127.0.0.1/*examino*",
+        "http://localhost/*examino*"
+      ],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_start",
       "world": "MAIN"
     }
   ]

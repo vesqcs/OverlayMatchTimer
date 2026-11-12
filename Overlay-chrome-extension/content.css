@@ -18,15 +18,37 @@
     pointer-events: none !important;
 }
 
-/* ---- HIDE OPENPLAYER CHROME (Examino) ---- */
+/* ---- HIDE OPENPLAYER / EXAMINO NATIVE CHROME ---- */
 .op-controls,
-.op-ui,
+.op-ui:not(.op-media-element-container),
 .op-progressbar-container,
 .op-player .button-bar,
-.video-container > .button-bar {
+.video-container > .button-bar,
+.setting-holder,
+.op-button.op-setting-button,
+.hamburger-menu,
+.examino-bottom-controls,
+.omt-examino-native-hidden {
     display: none !important;
     opacity: 0 !important;
     pointer-events: none !important;
+}
+
+/* Expand Examino main player after hiding the ~108px bottom button stack */
+.main-container.svelte-iq8mv8,
+.main-container {
+    height: 100% !important;
+    max-height: 100% !important;
+}
+
+.op-setting-panel.omt-settings-raised {
+    display: block !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    z-index: 2147483647 !important;
+    position: fixed !important;
+    top: 48px !important;
+    right: 12px !important;
 }
 
 /* Ensure the video container is position:relative so our panels anchor correctly */
