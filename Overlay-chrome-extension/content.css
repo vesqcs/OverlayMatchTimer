@@ -5,50 +5,16 @@
    ============================================================ */
 
 /* ---- HIDE NATIVE VIDEO.JS CONTROLS ---- */
-.video-js:has(#omt-root) .vjs-control-bar,
-.video-js:has(#omt-root) .vjs-big-play-button,
-.video-js:has(#omt-root) .vjs-loading-spinner,
-.video-js:has(#omt-root) .vjs-poster,
-.video-js:has(#omt-root) .vjs-menu-button-popup .vjs-menu,
-.video-js:has(#omt-root) .vjs-text-track-display {
+.vjs-control-bar,
+.vjs-big-play-button,
+.vjs-loading-spinner,
+.vjs-poster,
+.vjs-menu-button-popup .vjs-menu,
+.vjs-text-track-display,
+.video-js .vjs-control-bar {
     display: none !important;
     opacity: 0 !important;
     pointer-events: none !important;
-}
-
-/* ---- PLATFORM CONTROL SUPPRESSION ---- */
-/*
-   Xeatre  — hides the native overlay control bar in both fullscreen and normal modes.
-   Examino — hides the button bar, progress bar, and settings gear.
-   NOTE:  These are intentionally global (not scoped to #omt-root) so they can
-          reach the host page's own DOM tree.
-          The <video> element and #omt-root are NOT targeted here.
-*/
-
-/* Xeatre */
-#ControlBar.overlay-fullscreen,
-#ControlBar.overlay-normal {
-    display: none !important;
-}
-
-/* Examino */
-/* NOTE: .op-button.op-setting-button is intentionally NOT listed here.
-   It remains visible as a manual fallback in case DVR automation fails.
-   The JS module (injectExaminoHideCSS) also omits it for the same reason. */
-.button-bar.fullscreen,
-.button-bar.svelte-1azck0y,
-.op-progressbar-container {
-    display: none !important;
-}
-
-/* Examino: ALWAYS keep the native settings/gear button accessible — it is the
-   manual fallback for DVR mode. This rule MUST come after all hide rules so
-   its specificity wins. The JS aggressive observer also enforces this. */
-.op-button.op-setting-button {
-    display: block !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-    pointer-events: auto !important;
 }
 
 /* Ensure the video container is position:relative so our panels anchor correctly */
@@ -56,40 +22,20 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
-    /* Absolute max stacking priority — must render above every host-page element */
-    z-index: 999999999 !important;
+    z-index: 2147483640;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     color: white;
-    /* Flex column: spacer fills the video image area, docked panel flows below it */
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
 }
 
-/* Allow actual interactive panels to receive pointer events.
-   NOTE: .glass-panel itself stays pointer-events:none so it doesn't act
-   as an invisible wall across the whole video area. Only the concrete
-   panels (#controls-panel, #setup-panel) and OSD get pointer-events:auto. */
-#omt-root #controls-panel,
-#omt-root #setup-panel,
+/* Allow panels to receive pointer events */
+#omt-root .glass-panel,
 #omt-root #match-timer,
 #omt-root #osd-message {
     pointer-events: auto;
 }
 
-/* ---- VIDEO SPACER (flex child) ----
-   Fills the rendered video image area so the docked controls panel
-   is pushed naturally to the bottom black bar by the browser's layout
-   engine — zero JS measurement, zero frame lag on resize.
-*/
-#omt-root #omt-video-spacer {
-    flex: 1 1 auto;       /* grows to fill the video image height */
-    pointer-events: none; /* transparent — clicks pass through to the video */
-    min-height: 0;
-}
-
 /* ---- OSD MATCH TIMER ---- */
-#omt-root #match-timer {
+#match-timer {
     position: absolute;
     top: 40px;
     left: 40px;
@@ -112,7 +58,7 @@
 }
 
 /* ---- OSD NOTIFICATION PILL ---- */
-#omt-root #osd-message {
+#osd-message {
     position: absolute;
     top: 40px;
     left: 50%;
@@ -137,13 +83,13 @@
     letter-spacing: 0.5px;
 }
 
-#omt-root #osd-message.visible {
+#osd-message.visible {
     opacity: 1;
     transform: translate(-50%, 0) scale(1);
 }
 
 /* ---- GLASSMORPHISM BASE ---- */
-#omt-root .glass-panel {
+.glass-panel {
     position: absolute;
     background: rgba(20, 20, 20, 0.65);
     backdrop-filter: blur(12px);
@@ -151,8 +97,7 @@
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 10px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-    /* Panels must always render above host-page bars (white/black layout elements) */
-    z-index: 999999999 !important;
+    z-index: 50;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -160,13 +105,13 @@
     transition: border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
-#omt-root .glass-panel.playing-state {
+.glass-panel.playing-state {
     border-color: rgba(0, 136, 255, 0.5);
     box-shadow: 0 8px 32px rgba(0, 136, 255, 0.15), 0 0 12px rgba(0, 136, 255, 0.1);
 }
 
 /* ---- DRAG HANDLE ---- */
-#omt-root .drag-handle {
+.drag-handle {
     background: transparent;
     padding: 4px 12px;
     cursor: grab;
@@ -177,11 +122,11 @@
     height: 22px;
 }
 
-#omt-root .drag-handle:active {
+.drag-handle:active {
     cursor: grabbing;
 }
 
-#omt-root .drag-side-left {
+.drag-side-left {
     flex: 1;
     display: flex;
     justify-content: flex-start;
@@ -189,7 +134,7 @@
     gap: 8px;
 }
 
-#omt-root .drag-center-grip {
+.drag-center-grip {
     flex: 1;
     display: flex;
     justify-content: center;
@@ -201,14 +146,14 @@
     user-select: none;
 }
 
-#omt-root .drag-side-right {
+.drag-side-right {
     flex: 1;
     display: flex;
     justify-content: flex-end;
     align-items: center;
 }
 
-#omt-root .handle-btn {
+.handle-btn {
     background: none;
     border: none;
     color: white;
@@ -221,11 +166,11 @@
     transition: opacity 0.2s;
 }
 
-#omt-root .handle-btn:hover {
+.handle-btn:hover {
     opacity: 0.7;
 }
 
-#omt-root .top-select {
+.top-select {
     background: rgba(0, 0, 0, 0.5);
     border: 1px solid rgba(255, 255, 255, 0.2);
     color: #ddd;
@@ -237,28 +182,26 @@
     font-weight: bold;
 }
 
-#omt-root .top-select option {
+.top-select option {
     background: #1a1a1a;
     color: white;
 }
 
 /* ---- SETUP PANEL ---- */
-#omt-root #setup-panel {
+#setup-panel {
     top: 80px;
     left: 80px;
     width: 300px;
-    /* Explicit stacking override — must not be obscured by host layout bars */
-    z-index: 999999999 !important;
 }
 
-#omt-root .setup-content {
+.setup-content {
     padding: 20px;
     display: flex;
     flex-direction: column;
     gap: 15px;
 }
 
-#omt-root .brand-container {
+.brand-container {
     display: flex;
     justify-content: center;
     align-items: center;
@@ -267,7 +210,7 @@
     margin-bottom: 5px;
 }
 
-#omt-root .cheatsheet {
+.cheatsheet {
     margin-top: 10px;
     background: rgba(0, 0, 0, 0.25);
     border: 1px solid rgba(255, 255, 255, 0.08);
@@ -275,7 +218,7 @@
     padding: 10px;
 }
 
-#omt-root .cheatsheet-title {
+.cheatsheet-title {
     font-size: 10px;
     color: #00ff88;
     font-weight: bold;
@@ -286,7 +229,7 @@
     padding-bottom: 4px;
 }
 
-#omt-root .shortcut-item {
+.shortcut-item {
     display: flex;
     justify-content: space-between;
     font-size: 11px;
@@ -294,7 +237,7 @@
     color: #ccc;
 }
 
-#omt-root .shortcut-key {
+.shortcut-key {
     font-family: monospace;
     color: #66b3ff;
     font-weight: bold;
@@ -305,76 +248,18 @@
 }
 
 /* ---- CONTROLS PANEL ---- */
-#omt-root #controls-panel {
+#controls-panel {
     bottom: 40px;
     left: 50%;
     transform: translateX(-50%);
-    width: min(560px, 95vw);
+    width: 560px;
     display: flex;
     flex-direction: column;
-    /* Explicit stacking override — must not be obscured by host layout bars */
-    z-index: 999999999 !important;
-    transition: opacity 0.3s ease,
-                bottom 0.25s ease,
-                left 0.25s ease,
-                transform 0.25s ease,
-                width 0.25s ease,
-                border-radius 0.25s ease;
-}
-
-/* ---- CLASS-BASED HIDE STATE ----
-   Used by the auto-hide timer and manual H-key. Using a class instead of an
-   inline opacity means the small-view layout enforcer can simply check whether
-   to cancel the timeout — it never fights over inline style values.
-   The transition is intentionally quick (0.2s) so the panel snaps away cleanly.
-*/
-#omt-root #controls-panel.omt-hidden {
-    opacity: 0 !important;
-    pointer-events: none !important;
-    transition: opacity 0.2s ease !important;
-}
-
-/* ---- CONTROLS PANEL — DOCKED MODE ---- */
-/*
-   Applied dynamically when the bottom black letterbox bar is at least
-   110 px tall. The panel expands to fill the full container width and
-   sits at the TOP of the black bar.
-   Position is handled entirely by the flex column layout of #omt-root:
-   #omt-video-spacer takes flex:1 (the video image area), and this panel
-   follows immediately after it — no JS top calculation, no frame lag.
-*/
-#omt-root #controls-panel.controls-docked {
-    /* Remove absolute positioning — let flexbox flow handle it */
-    position: relative;
-    top: auto;
-    bottom: auto;
-    left: 0;
-    right: 0;
-    width: 100%;
-    transform: none;
-    border-radius: 0;
-    border-left: none;
-    border-right: none;
-    border-top: none;
-    background: rgba(10, 10, 10, 0.92);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    flex-shrink: 0; /* never compress the controls panel */
-}
-
-/* In docked mode only hide the ≡ grip — keep all control buttons visible */
-#omt-root #controls-panel.controls-docked .drag-center-grip {
-    display: none !important;
-}
-
-/* Drag handle becomes a normal toolbar row in docked mode (no grab cursor) */
-#omt-root #controls-panel.controls-docked .drag-handle {
-    cursor: default !important;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    transition: opacity 0.3s ease;
 }
 
 /* ---- LIVE BUTTON ---- */
-#omt-root #omt-live-btn {
+#omt-live-btn {
     background: transparent;
     border: 1px solid rgba(255, 255, 255, 0.15);
     color: #888;
@@ -393,12 +278,12 @@
     transition: all 0.3s ease;
 }
 
-#omt-root #omt-live-btn:hover {
+#omt-live-btn:hover {
     background: rgba(255, 255, 255, 0.1);
     color: #ccc;
 }
 
-#omt-root #omt-live-btn .live-dot {
+#omt-live-btn .live-dot {
     width: 6px;
     height: 6px;
     border-radius: 50%;
@@ -406,23 +291,31 @@
     transition: all 0.3s ease;
 }
 
-#omt-root #omt-live-btn.is-live {
+/* Active state: user is at the live edge — button turns red */
+#omt-live-btn.is-live {
+    background: rgba(255, 59, 48, 0.18);
     color: #fff;
-    border-color: rgba(255, 59, 48, 0.4);
+    border-color: rgba(255, 59, 48, 0.55);
     cursor: default;
 }
 
-#omt-root #omt-live-btn.is-live .live-dot {
+#omt-live-btn.is-live .live-dot {
     background: #ff3b30;
     box-shadow: 0 0 6px rgba(255, 59, 48, 0.8);
+    animation: live-pulse 1.4s ease-in-out infinite;
 }
 
-#omt-root #omt-live-btn.is-live:hover {
-    background: transparent;
+@keyframes live-pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.45; }
+}
+
+#omt-live-btn.is-live:hover {
+    background: rgba(255, 59, 48, 0.25);
 }
 
 /* ---- TIMELINE ---- */
-#omt-root .timeline-container {
+.timeline-container {
     display: flex;
     flex-direction: column;
     gap: 2px;
@@ -432,21 +325,21 @@
     color: #aaa;
 }
 
-#omt-root .timeline-slider-row {
+.timeline-slider-row {
     display: flex;
     align-items: center;
     gap: 10px;
     width: 100%;
 }
 
-#omt-root .timeline-badges-row {
+.timeline-badges-row {
     display: flex;
     align-items: center;
     gap: 4px;
     min-height: 18px;
 }
 
-#omt-root .timeline-slider {
+.timeline-slider {
     flex: 1;
     -webkit-appearance: none;
     appearance: none;
@@ -458,11 +351,11 @@
     transition: background 0.2s;
 }
 
-#omt-root .timeline-slider:hover {
+.timeline-slider:hover {
     background: rgba(255, 255, 255, 0.25);
 }
 
-#omt-root .timeline-slider::-webkit-slider-thumb {
+.timeline-slider::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
     width: 12px;
@@ -473,30 +366,30 @@
     transition: transform 0.1s ease;
 }
 
-#omt-root .timeline-slider::-webkit-slider-thumb:hover {
+.timeline-slider::-webkit-slider-thumb:hover {
     transform: scale(1.25);
 }
 
 /* ---- CONTROLS CONTENT ---- */
-#omt-root .controls-content {
+.controls-content {
     padding: 8px 20px 12px 20px;
     display: flex;
     align-items: center;
     justify-content: space-between;
 }
 
-#omt-root .ctrl-group-left,
-#omt-root .ctrl-group-right {
+.ctrl-group-left,
+.ctrl-group-right {
     display: flex;
     gap: 8px;
     flex: 1;
 }
 
-#omt-root .ctrl-group-right {
+.ctrl-group-right {
     justify-content: flex-end;
 }
 
-#omt-root .ctrl-group-center {
+.ctrl-group-center {
     display: flex;
     gap: 6px;
     align-items: center;
@@ -504,7 +397,7 @@
     flex: initial;
 }
 
-#omt-root .control-group {
+.control-group {
     display: flex;
     flex-direction: column;
     gap: 5px;
@@ -518,7 +411,7 @@
     text-transform: uppercase;
 }
 
-#omt-root .time-inputs {
+.time-inputs {
     display: flex;
     gap: 5px;
     align-items: center;
@@ -548,26 +441,51 @@
     outline: none;
 }
 
+/* SET KICK-OFF TIME button — scoped to #omt-root to beat Inplay's host CSS.
+   !important guards every visual property so nothing from the host page can
+   override the color, background, or opacity of this button. */
 #omt-root .btn-sync {
-    background: #00ff88;
-    color: black;
-    border: none;
-    padding: 10px;
-    font-weight: bold;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: 0.2s;
-    margin-top: 5px;
-    letter-spacing: 0.5px;
-    font-family: inherit;
+    background: #00ff88 !important;
+    color: #000 !important;
+    border: none !important;
+    padding: 10px !important;
+    font-weight: bold !important;
+    border-radius: 4px !important;
+    cursor: pointer !important;
+    transition: background 0.2s, box-shadow 0.2s !important;
+    margin-top: 5px !important;
+    letter-spacing: 0.5px !important;
+    font-family: inherit !important;
+    opacity: 1 !important;
+    display: block !important;
+    text-transform: uppercase !important;
+    box-shadow: none !important;
 }
 
 #omt-root .btn-sync:hover {
-    background: #00cc6a;
-    box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+    background: #00e07a !important;
+    box-shadow: 0 0 10px rgba(0, 255, 136, 0.35) !important;
+    opacity: 1 !important;
 }
 
-#omt-root .ctrl-btn {
+/* .kickoff-set — applied by JS when a kick-off time has been saved.
+   Forces a permanently brighter green so the user always knows a time is set.
+   Also applied as inline style by JS for absolute override certainty. */
+#omt-root .btn-sync.kickoff-set {
+    background: #00cc6a !important;
+    color: #000 !important;
+    box-shadow: 0 0 14px rgba(0, 255, 136, 0.5) !important;
+    opacity: 1 !important;
+    border: 1px solid rgba(0, 255, 136, 0.4) !important;
+}
+
+#omt-root .btn-sync.kickoff-set:hover {
+    background: #00b35c !important;
+    box-shadow: 0 0 18px rgba(0, 255, 136, 0.65) !important;
+    opacity: 1 !important;
+}
+
+.ctrl-btn {
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.1);
     color: #ddd;
@@ -584,17 +502,17 @@
     font-family: inherit;
 }
 
-#omt-root .ctrl-btn:hover {
+.ctrl-btn:hover {
     background: rgba(255, 255, 255, 0.15);
     color: white;
     transform: translateY(-1px);
 }
 
-#omt-root .ctrl-btn:active {
+.ctrl-btn:active {
     transform: translateY(1px);
 }
 
-#omt-root .btn-play {
+.btn-play {
     background: rgba(0, 136, 255, 0.1);
     border-color: rgba(0, 136, 255, 0.3);
     color: #66b3ff;
@@ -602,28 +520,28 @@
     transition: all 0.3s ease;
 }
 
-#omt-root .btn-play:hover {
+.btn-play:hover {
     background: rgba(0, 136, 255, 0.3);
     border-color: rgba(0, 136, 255, 0.6);
 }
 
-#omt-root .btn-play.playing {
+.btn-play.playing {
     background: rgba(0, 255, 136, 0.15);
     border-color: rgba(0, 255, 136, 0.5);
     color: #00ff88;
 }
 
-#omt-root .btn-play.playing:hover {
+.btn-play.playing:hover {
     background: rgba(0, 255, 136, 0.3);
     border-color: rgba(0, 255, 136, 0.7);
 }
 
-#omt-root .btn-frame {
+.btn-frame {
     color: #ffcc00;
     border-color: rgba(255, 204, 0, 0.3);
 }
 
-#omt-root .separator {
+.separator {
     width: 1px;
     height: 24px;
     background: rgba(255, 255, 255, 0.1);
@@ -631,7 +549,7 @@
 }
 
 /* ---- KICKOFF BADGES ---- */
-#omt-root .kickoff-badge {
+.kickoff-badge {
     background: rgba(0, 255, 136, 0.15);
     border: 1px solid rgba(0, 255, 136, 0.3);
     color: #00ff88;
@@ -648,62 +566,62 @@
     font-family: inherit;
 }
 
-#omt-root .kickoff-badge:hover {
+.kickoff-badge:hover {
     background: rgba(0, 255, 136, 0.3);
     color: white;
     box-shadow: 0 0 8px rgba(0, 255, 136, 0.4);
 }
 
-#omt-root .kickoff-badge.k1 {
+.kickoff-badge.k1 {
     background: rgba(0, 255, 136, 0.15);
     border-color: rgba(0, 255, 136, 0.3);
     color: #00ff88;
 }
 
-#omt-root .kickoff-badge.k1:hover {
+.kickoff-badge.k1:hover {
     background: rgba(0, 255, 136, 0.3);
     color: white;
     box-shadow: 0 0 8px rgba(0, 255, 136, 0.4);
 }
 
-#omt-root .kickoff-badge.k2 {
+.kickoff-badge.k2 {
     background: rgba(255, 59, 48, 0.15);
     border-color: rgba(255, 59, 48, 0.3);
     color: #ff3b30;
 }
 
-#omt-root .kickoff-badge.k2:hover {
+.kickoff-badge.k2:hover {
     background: rgba(255, 59, 48, 0.3);
     color: white;
     box-shadow: 0 0 8px rgba(255, 59, 48, 0.4);
 }
 
-#omt-root .kickoff-badge.kc1 {
+.kickoff-badge.kc1 {
     background: rgba(255, 149, 0, 0.15);
     border-color: rgba(255, 149, 0, 0.3);
     color: #ff9500;
 }
 
-#omt-root .kickoff-badge.kc1:hover {
+.kickoff-badge.kc1:hover {
     background: rgba(255, 149, 0, 0.3);
     color: white;
     box-shadow: 0 0 8px rgba(255, 149, 0, 0.4);
 }
 
-#omt-root .kickoff-badge.kc2 {
+.kickoff-badge.kc2 {
     background: rgba(191, 90, 242, 0.15);
     border-color: rgba(191, 90, 242, 0.3);
     color: #bf5af2;
 }
 
-#omt-root .kickoff-badge.kc2:hover {
+.kickoff-badge.kc2:hover {
     background: rgba(191, 90, 242, 0.3);
     color: white;
     box-shadow: 0 0 8px rgba(191, 90, 242, 0.4);
 }
 
 /* ---- TIMELINE MARKER TICKS ---- */
-#omt-root .timeline-marker-tick {
+.timeline-marker-tick {
     position: absolute;
     width: 3px;
     height: 12px;
@@ -715,28 +633,28 @@
     pointer-events: none;
 }
 
-#omt-root .timeline-marker-tick.k1 {
+.timeline-marker-tick.k1 {
     background: #00ff88;
     box-shadow: 0 0 6px rgba(0, 255, 136, 0.8);
 }
 
-#omt-root .timeline-marker-tick.k2 {
+.timeline-marker-tick.k2 {
     background: #ff3b30;
     box-shadow: 0 0 6px rgba(255, 59, 48, 0.8);
 }
 
-#omt-root .timeline-marker-tick.kc1 {
+.timeline-marker-tick.kc1 {
     background: #ff9500;
     box-shadow: 0 0 6px rgba(255, 149, 0, 0.8);
 }
 
-#omt-root .timeline-marker-tick.kc2 {
+.timeline-marker-tick.kc2 {
     background: #bf5af2;
     box-shadow: 0 0 6px rgba(191, 90, 242, 0.8);
 }
 
 /* ---- VOLUME RANGE ---- */
-#omt-root #omt-volume-range {
+#volume-range {
     -webkit-appearance: none;
     appearance: none;
     width: 60px;
@@ -790,51 +708,4 @@
 }
 #omt-root .omt-shuttle-switch input:checked + .omt-shuttle-slider:before {
     transform: translateX(18px);
-}
-
-/* ---- LOCAL VIDEO WINDOWED SCALING ---- */
-/*
-   Ensures the <video> element fills the full viewport in windowed mode so that
-   our geometry calculation (vid.getBoundingClientRect) matches the visible area.
-   Without this the browser may render the video at its natural resolution with
-   scroll bars, making the black-bar computation unreliable.
-*/
-.omt-local-env body,
-.omt-local-env html {
-    margin: 0 !important;
-    padding: 0 !important;
-    width: 100% !important;
-    height: 100% !important;
-    overflow: hidden !important;
-    background: black !important;
-}
-
-.omt-local-env video {
-    display: block !important;
-    width: 100vw !important;
-    height: 100vh !important;
-    max-width: 100vw !important;
-    max-height: 100vh !important;
-}
-
-/* ---- LOCAL VIDEO FULLSCREEN SCALING ---- */
-.omt-local-env:fullscreen video {
-    width: 100% !important;
-    height: 100% !important;
-    max-width: 100% !important;
-    max-height: 100% !important;
-    object-fit: contain !important;
-}
-
-/* ---- VIDEO TOP-ALIGNMENT (non-Xeatre platforms) ---- */
-/*
-   Injected on Inplay, Examino, and Local pages at init time via JS.
-   Forces the video to render at the TOP of its container instead of
-   the centre, so both letterbox gaps merge into one large bottom bar
-   — the space our docked control panel occupies.
-   Xeatre already aligns to the top natively; no class is added there.
-*/
-video.omt-top-align {
-    object-fit: contain !important;
-    object-position: top center !important;
 }

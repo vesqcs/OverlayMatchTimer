@@ -6,7 +6,7 @@
 
   "version": "1.0.0",
 
-  "description": "Professional match analysis overlay for Xeatre, Inplayip & Examino streams. Drift-proof timer, frame scrubbing, ShuttleXpress hardware support & smart docked controls.",
+  "description": "Injects the Overlay MatchTimer UI over InplayIP live streams for professional match analysis.",
 
   "author": "Vasco Oliveira",
 
@@ -21,25 +21,29 @@
 
 
   "host_permissions": [
-    "*://*.inplayip.tv/*",
-    "file:///*",
-    "*://statsperform.media.xeatre.cloud/*",
-    "*://examino.statsperform.io/play/dvr/*"
+
+    "*://*.inplayip.tv/*"
+
   ],
 
+
+
   "content_scripts": [
+
     {
-      "matches": [
-        "*://*.inplayip.tv/*",
-        "file:///*",
-        "*://statsperform.media.xeatre.cloud/*",
-        "*://examino.statsperform.io/play/dvr/*"
-      ],
+
+      "matches": ["*://*.inplayip.tv/*"],
+
       "js": ["content.js"],
+
       "css": ["content.css"],
+
       "run_at": "document_idle",
+
       "world": "MAIN"
+
     }
+
   ]
 
 } 
