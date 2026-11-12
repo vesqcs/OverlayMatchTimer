@@ -2,33 +2,76 @@
     /* =========================================================
        12. PLAYBACK CONTROLS
        ========================================================= */
+    // Examino OpenPlayer may replace <video> during DVR/VOD switches.
+    // Prefer the live connected element so transport/speed always hit the player.
+    function ensureLiveVideo() {
+        if (vid && vid.isConnected) return vid;
+        const found = (site && typeof site.findVideo === 'function')
+            ? site.findVideo()
+            : document.querySelector('video');
+        if (found) vid = found;
+        return vid;
+    }
+
     function saltarVideo(segundos) {
+        if (!ensureLiveVideo()) return;
         seekTo(vid.currentTime + segundos);
         mostrarOSD((segundos > 0 ? '+' : '') + segundos + 's');
     }
 
     function togglePlay() {
+        if (!ensureLiveVideo()) return;
         if (vid.paused) { vid.play(); mostrarOSD('Play'); }
         else { vid.pause(); mostrarOSD('Pause'); }
     }
 
     function avancarFrame() {
+        if (!ensureLiveVideo()) return;
         vid.pause();
         vid.currentTime += 0.04;
         mostrarOSD('+1 Frame');
     }
 
     function retrocederFrame() {
+        if (!ensureLiveVideo()) return;
         vid.pause();
         vid.currentTime -= 0.04;
         mostrarOSD('-1 Frame');
     }
 
     function selecionarVelocidade() {
+        if (!ensureLiveVideo() || !speedSelect) return;
         const valor = parseFloat(speedSelect.value);
         vid.playbackRate = valor;
         mostrarOSD('Speed: ' + valor.toFixed(2) + 'x');
+        syncSpeedChips();
         speedSelect.blur();
+    }
+
+    function applyPlaybackSpeed(rate, { announce = true } = {}) {
+        const valor = parseFloat(rate);
+        if (!ensureLiveVideo() || !isFinite(valor) || valor <= 0) return;
+        vid.playbackRate = valor;
+        if (speedSelect) {
+            const rateStrings = { 0.25: '0.25', 0.5: '0.5', 1.0: '1.0', 1.5: '1.5', 2.0: '2.0' };
+            const key = Object.keys(rateStrings).map(Number).reduce((prev, curr) =>
+                Math.abs(curr - valor) < Math.abs(prev - valor) ? curr : prev, 1.0);
+            speedSelect.value = rateStrings[key] || String(valor);
+        }
+        syncSpeedChips();
+        if (announce) mostrarOSD('Speed: ' + valor.toFixed(2) + 'x');
+    }
+
+    function syncSpeedChips() {
+        if (!omtRoot || !ensureLiveVideo()) return;
+        const rate = vid.playbackRate || 1;
+        const chips = omtRoot.querySelectorAll('.omt-speed-chip');
+        chips.forEach((chip) => {
+            const chipRate = parseFloat(chip.getAttribute('data-speed'));
+            const active = Math.abs(chipRate - rate) < 0.05;
+            chip.classList.toggle('is-active', active);
+            chip.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
     }
 
     function irParaLive() {

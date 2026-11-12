@@ -687,6 +687,187 @@ async function run() {
     });
     results.push({ name: 'examino-skip-amount-labels', pass: skipLabels.ok === true, detail: skipLabels });
 
+    // Option A transport: flush segmented row + speed chips under it
+    const optionA = await page.evaluate(() => {
+      const seg = document.querySelector('#controls-panel .omt-transport-seg');
+      const buttons = seg ? Array.from(seg.querySelectorAll('.ctrl-btn')) : [];
+      const ids = buttons.map((b) => b.id);
+      const expected = ['omt-m120', 'omt-m10', 'omt-m2', 'omt-prev-frame', 'omt-btn-play', 'omt-next-frame', 'omt-p2', 'omt-p10', 'omt-p120'];
+      const boxes = buttons.map((b) => b.getBoundingClientRect());
+      let flush = boxes.length === expected.length;
+      for (let i = 1; i < boxes.length; i++) {
+        // Adjacent buttons should touch (allow 2px for hairline dividers)
+        if (Math.abs(boxes[i].left - boxes[i - 1].right) > 3) flush = false;
+        if (boxes[i].height < 40) flush = false;
+      }
+      const play = document.getElementById('omt-btn-play');
+      const playBox = play ? play.getBoundingClientRect() : null;
+      const chips = Array.from(document.querySelectorAll('.omt-speed-chip')).map((c) => ({
+        speed: c.getAttribute('data-speed'),
+        text: (c.textContent || '').trim(),
+        active: c.classList.contains('is-active')
+      }));
+      const speedRow = document.querySelector('.omt-speed-row');
+      const transport = document.querySelector('.controls-content');
+      const speedBelow = !!(speedRow && transport && seg &&
+        speedRow.getBoundingClientRect().top >= seg.getBoundingClientRect().bottom - 1);
+      return {
+        orderOk: ids.join(',') === expected.join(','),
+        flush,
+        playProminent: !!(playBox && boxes[0] && playBox.width >= boxes[0].width),
+        chips,
+        speedBelow,
+        hideBtn: (() => {
+          const btn = document.getElementById('omt-hide-panel');
+          return {
+            present: !!btn,
+            tip: btn ? (btn.getAttribute('data-tip') || '') : ''
+          };
+        })()
+      };
+    });
+    results.push({
+      name: 'examino-option-a-transport',
+      pass: optionA.orderOk && optionA.flush && optionA.playProminent &&
+        optionA.speedBelow &&
+        optionA.chips.map((c) => c.text).join(',') === '0.5x,1x,1.5x,2x' &&
+        optionA.hideBtn.present && /Hide controls \(H\)/.test(optionA.hideBtn.tip),
+      detail: optionA
+    });
+
+    // Speed row syncs with select + Z/C/X hotkeys
+    // Mock MSE fixtures often clamp HTMLMediaElement.playbackRate to 1; stub the
+    // prototype so rate UI sync can be asserted without real media support.
+    await page.evaluate(() => {
+      if (window.__omtPlaybackRateStubbed) return;
+      const desc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'playbackRate');
+      if (!desc || !desc.configurable) return;
+      let forced = 1;
+      Object.defineProperty(HTMLMediaElement.prototype, 'playbackRate', {
+        configurable: true,
+        get() { return forced; },
+        set(n) {
+          forced = Number(n);
+          try { desc.set.call(this, n); } catch (_) {}
+        }
+      });
+      window.__omtPlaybackRateStubbed = true;
+    });
+    const speedAfterChip = await page.evaluate(() => {
+      const select = document.getElementById('omt-speed-select');
+      const v = document.querySelector('video');
+      const chip15 = document.querySelector('.omt-speed-chip[data-speed="1.5"]');
+      if (!select || !v || !chip15) return { ok: false, reason: 'missing' };
+      chip15.click();
+      return {
+        ok: Math.abs(v.playbackRate - 1.5) < 0.05 && select.value === '1.5' &&
+          chip15.classList.contains('is-active') &&
+          !document.querySelector('.omt-speed-chip[data-speed="1.0"]')?.classList.contains('is-active'),
+        rate: v.playbackRate,
+        select: select.value
+      };
+    });
+    await page.waitForTimeout(40);
+    const speedAfterSelect = await page.evaluate(() => {
+      const select = document.getElementById('omt-speed-select');
+      const v = document.querySelector('video');
+      if (!select || !v) return { ok: false };
+      select.value = '2.0';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      const chip20 = document.querySelector('.omt-speed-chip[data-speed="2.0"]');
+      return {
+        ok: Math.abs(v.playbackRate - 2) < 0.05 && chip20?.classList.contains('is-active') === true,
+        rate: v.playbackRate
+      };
+    });
+    await page.keyboard.press('KeyX');
+    await page.waitForTimeout(80);
+    const speedAfterX = await page.evaluate(() => {
+      const select = document.getElementById('omt-speed-select');
+      const v = document.querySelector('video');
+      const chip10 = document.querySelector('.omt-speed-chip[data-speed="1.0"]');
+      return {
+        ok: Math.abs(v?.playbackRate - 1) < 0.05 && select?.value === '1.0' &&
+          chip10?.classList.contains('is-active') === true,
+        rate: v?.playbackRate,
+        select: select?.value
+      };
+    });
+    await page.keyboard.press('KeyC');
+    await page.waitForTimeout(80);
+    const speedAfterC = await page.evaluate(() => {
+      const v = document.querySelector('video');
+      const chip15 = document.querySelector('.omt-speed-chip[data-speed="1.5"]');
+      return {
+        ok: Math.abs((v?.playbackRate || 0) - 1.5) < 0.05 &&
+          chip15?.classList.contains('is-active') === true,
+        rate: v?.playbackRate
+      };
+    });
+    await page.keyboard.press('KeyZ');
+    await page.waitForTimeout(80);
+    const speedAfterZ = await page.evaluate(() => {
+      const v = document.querySelector('video');
+      const chip10 = document.querySelector('.omt-speed-chip[data-speed="1.0"]');
+      return {
+        ok: Math.abs((v?.playbackRate || 0) - 1) < 0.05 &&
+          chip10?.classList.contains('is-active') === true,
+        rate: v?.playbackRate
+      };
+    });
+    results.push({
+      name: 'examino-speed-row-sync',
+      pass: speedAfterChip.ok && speedAfterSelect.ok && speedAfterX.ok &&
+        speedAfterC.ok && speedAfterZ.ok,
+      detail: { speedAfterChip, speedAfterSelect, speedAfterX, speedAfterC, speedAfterZ }
+    });
+
+    // Hide panel button mirrors H hotkey
+    await page.evaluate(() => {
+      const panel = document.getElementById('controls-panel');
+      const timeline = document.getElementById('omt-timeline-bar');
+      if (panel) {
+        panel.style.opacity = '1';
+        panel.style.pointerEvents = 'auto';
+      }
+      if (timeline) {
+        timeline.style.opacity = '1';
+        timeline.style.pointerEvents = 'auto';
+      }
+    });
+    await page.locator('#omt-hide-panel').click();
+    await page.waitForTimeout(80);
+    const afterHideBtn = await page.evaluate(() => {
+      const panel = document.getElementById('controls-panel');
+      const timeline = document.getElementById('omt-timeline-bar');
+      return {
+        panel: panel?.style.opacity,
+        timeline: timeline?.style.opacity,
+        pe: panel?.style.pointerEvents
+      };
+    });
+    await page.keyboard.press('KeyH');
+    await page.waitForTimeout(80);
+    const afterShowH = await page.evaluate(() => {
+      const panel = document.getElementById('controls-panel');
+      return { panel: panel?.style.opacity, pe: panel?.style.pointerEvents };
+    });
+    await page.evaluate(() => {
+      const panel = document.getElementById('controls-panel');
+      const timeline = document.getElementById('omt-timeline-bar');
+      [panel, timeline].forEach((el) => {
+        if (!el) return;
+        el.style.opacity = '1';
+        el.style.pointerEvents = 'auto';
+      });
+    });
+    results.push({
+      name: 'examino-hide-panel-button',
+      pass: afterHideBtn.panel === '0' && afterHideBtn.pe === 'none' &&
+        afterHideBtn.timeline === '0' && afterShowH.panel === '1',
+      detail: { afterHideBtn, afterShowH }
+    });
+
     // Expanded more panel with custom period + start-minute edit visible
     await page.evaluate(() => {
       const more = document.getElementById('omt-more-panel');
@@ -740,6 +921,14 @@ async function run() {
     });
     results.push({ name: 'examino-tooltip-has-shortcut', pass: tipOk === true });
     await page.screenshot({ path: path.join(ARTIFACTS, 'examino_tooltip.png'), fullPage: true });
+
+    // Hide-controls tooltip
+    const hideBox = await page.locator('#omt-hide-panel').boundingBox();
+    if (hideBox) {
+      await page.mouse.move(hideBox.x + hideBox.width / 2, hideBox.y + hideBox.height / 2);
+      await page.waitForTimeout(140);
+    }
+    await page.screenshot({ path: path.join(ARTIFACTS, 'examino_hide_tooltip.png'), fullPage: true });
     await page.evaluate(() => {
       document.getElementById('omt-more-toggle')?.click();
     });
@@ -894,13 +1083,76 @@ async function run() {
     results.push({ name: 'inplayip-timer-sync', pass: inplayTimer.ok === true });
     await page.evaluate(() => {
       const panel = document.getElementById('controls-panel');
-      if (panel) {
-        panel.style.opacity = '1';
-        panel.style.pointerEvents = 'auto';
+      const timelineBar = document.getElementById('omt-timeline-bar');
+      [panel, timelineBar].forEach((el) => {
+        if (!el) return;
+        el.style.opacity = '1';
+        el.style.pointerEvents = 'auto';
+      });
+      const more = document.getElementById('omt-more-panel');
+      const btn = document.getElementById('omt-more-toggle');
+      if (more) {
+        more.classList.remove('is-open');
+        more.setAttribute('aria-hidden', 'true');
+      }
+      if (btn) {
+        btn.classList.remove('is-open');
+        btn.setAttribute('aria-expanded', 'false');
+      }
+      const v = document.querySelector('video');
+      const slider = document.getElementById('omt-timeline-slider');
+      if (v && slider) {
+        try { v.pause(); } catch (_) {}
+        const end = v.seekable?.length ? v.seekable.end(v.seekable.length - 1) : v.duration;
+        const liveAt = typeof end === 'number' ? Math.max(0, end - 2) : v.currentTime;
+        try { v.currentTime = liveAt; } catch (_) {}
+        if (typeof end === 'number' && isFinite(end) && end > 0) {
+          slider.min = '0';
+          slider.max = String(end);
+          slider.value = String(liveAt);
+          slider.style.setProperty('--omt-progress', '100%');
+        }
+        timelineBar?.classList.add('omt-at-live');
+        document.getElementById('omt-live-btn')?.classList.add('is-live');
       }
     });
+    await page.waitForTimeout(100);
     await page.screenshot({ path: path.join(ARTIFACTS, 'inplayip-overlay.png'), fullPage: true });
     await page.screenshot({ path: path.join(ARTIFACTS, 'inplayip_overlay.png'), fullPage: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'inplayip_at_live.png'), fullPage: true });
+
+    await page.evaluate(() => {
+      const v = document.querySelector('video');
+      const slider = document.getElementById('omt-timeline-slider');
+      const timelineBar = document.getElementById('omt-timeline-bar');
+      const end = v?.seekable?.length ? v.seekable.end(v.seekable.length - 1) : v?.duration;
+      const behindAt = typeof end === 'number' ? Math.max(0, end * 0.55) : 100;
+      try { if (v) v.currentTime = behindAt; } catch (_) {}
+      if (slider && typeof end === 'number' && isFinite(end) && end > 0) {
+        slider.value = String(behindAt);
+        slider.style.setProperty('--omt-progress', '55%');
+      }
+      timelineBar?.classList.remove('omt-at-live');
+      document.getElementById('omt-live-btn')?.classList.remove('is-live');
+    });
+    await page.waitForTimeout(80);
+    await page.screenshot({ path: path.join(ARTIFACTS, 'inplayip_behind_live.png'), fullPage: true });
+
+    await page.evaluate(() => {
+      const more = document.getElementById('omt-more-panel');
+      if (more && !more.classList.contains('is-open')) {
+        document.getElementById('omt-more-toggle')?.click();
+      }
+    });
+    await page.waitForTimeout(140);
+    await page.screenshot({ path: path.join(ARTIFACTS, 'inplayip_expanded.png'), fullPage: true });
+
+    const hideTipBox = await page.locator('#omt-hide-panel').boundingBox();
+    if (hideTipBox) {
+      await page.mouse.move(hideTipBox.x + hideTipBox.width / 2, hideTipBox.y + hideTipBox.height / 2);
+      await page.waitForTimeout(140);
+    }
+    await page.screenshot({ path: path.join(ARTIFACTS, 'inplayip_hide_tooltip.png'), fullPage: true });
 
     // Toolbar popup (logo above wordmark only)
     const extUrlRe = /chrome-extension:\/\/([^/]+)/;
@@ -942,7 +1194,7 @@ async function run() {
           noCredit: !document.querySelector('.omt-brand-credit'),
           noPersonalizar: !document.body.textContent.includes('Personalizar') &&
             !document.body.textContent.includes('Em breve'),
-          footOk: foot === 'v1.4.1',
+          footOk: foot === 'v1.4.2',
           logoUncropped: (() => {
             const logo = document.querySelector('.omt-sp-logo');
             if (!logo) return false;

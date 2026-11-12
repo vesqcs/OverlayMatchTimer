@@ -96,7 +96,7 @@
     </div>
 </div>
 
-<!-- Floating draggable control panel (v1.2.2 structure, dark restyle) -->
+<!-- Floating draggable control panel (Option A transport + speed row) -->
 <div id="controls-panel" class="glass-panel">
     <div class="drag-handle" id="controls-handle">
         <div class="drag-side-left">
@@ -111,6 +111,9 @@
                 <option value="1.5">1.50x</option>
                 <option value="2.0">2.00x</option>
             </select>
+            <button type="button" id="omt-hide-panel" class="handle-btn omt-tip"${tip('Hide controls (H)')}>
+                ${omtIcon('eye-off', 16)}
+            </button>
         </div>
         <div class="drag-center-grip" aria-hidden="true">${omtIcon('grip-horizontal', 16)}</div>
         <div class="drag-side-right">
@@ -178,22 +181,24 @@
     </div>
 
     <div class="controls-content">
-        <div class="ctrl-group-left">
-            <button class="ctrl-btn omt-tip" id="omt-m120" type="button"${tip('Skip −2 minutes (Ctrl + ←)')}>${omtIcon('rewind', 14)}<span class="omt-btn-label">2m</span></button>
-            <button class="ctrl-btn omt-tip" id="omt-m10" type="button"${tip('Skip −10 seconds (Shift + ←)')}>${omtIcon('skip-back', 14)}<span class="omt-btn-label">10s</span></button>
-            <button class="ctrl-btn omt-tip" id="omt-m2" type="button"${tip('Skip −2 seconds (←)')}>${omtIcon('skip-back', 13)}<span class="omt-btn-label">2s</span></button>
+        <div class="omt-transport-seg" role="group" aria-label="Playback transport">
+            <button class="ctrl-btn omt-tip" id="omt-m120" type="button"${tip('Skip −2 minutes (Ctrl + ←)')}>${omtIcon('rewind', 18)}<span class="omt-btn-label">2m</span></button>
+            <button class="ctrl-btn omt-tip" id="omt-m10" type="button"${tip('Skip −10 seconds (Shift + ←)')}>${omtIcon('skip-back', 18)}<span class="omt-btn-label">10s</span></button>
+            <button class="ctrl-btn omt-tip" id="omt-m2" type="button"${tip('Skip −2 seconds (←)')}>${omtIcon('skip-back', 17)}<span class="omt-btn-label">2s</span></button>
+            <span class="omt-seg-divider" aria-hidden="true"></span>
+            <button class="ctrl-btn btn-frame omt-tip" id="omt-prev-frame" type="button"${tip('Previous frame (↓)')}>${omtIcon('step-back', 18)}</button>
+            <button class="ctrl-btn btn-play omt-tip" id="omt-btn-play" type="button"${tip('Play / Pause (Space)')}>${omtIcon('play', 22)}</button>
+            <button class="ctrl-btn btn-frame omt-tip" id="omt-next-frame" type="button"${tip('Next frame (↑)')}>${omtIcon('step-forward', 18)}</button>
+            <span class="omt-seg-divider" aria-hidden="true"></span>
+            <button class="ctrl-btn omt-tip" id="omt-p2" type="button"${tip('Skip +2 seconds (→)')}><span class="omt-btn-label">2s</span>${omtIcon('skip-forward', 17)}</button>
+            <button class="ctrl-btn omt-tip" id="omt-p10" type="button"${tip('Skip +10 seconds (Shift + →)')}><span class="omt-btn-label">10s</span>${omtIcon('skip-forward', 18)}</button>
+            <button class="ctrl-btn omt-tip" id="omt-p120" type="button"${tip('Skip +2 minutes (Ctrl + →)')}><span class="omt-btn-label">2m</span>${omtIcon('fast-forward', 18)}</button>
         </div>
-        <div class="ctrl-group-center">
-            <div class="separator" aria-hidden="true"></div>
-            <button class="ctrl-btn btn-frame omt-tip" id="omt-prev-frame" type="button"${tip('Previous frame (↓)')}>${omtIcon('step-back', 15)}</button>
-            <button class="ctrl-btn btn-play omt-tip" id="omt-btn-play" type="button"${tip('Play / Pause (Space)')}>${omtIcon('play', 18)}</button>
-            <button class="ctrl-btn btn-frame omt-tip" id="omt-next-frame" type="button"${tip('Next frame (↑)')}>${omtIcon('step-forward', 15)}</button>
-            <div class="separator" aria-hidden="true"></div>
-        </div>
-        <div class="ctrl-group-right">
-            <button class="ctrl-btn omt-tip" id="omt-p2" type="button"${tip('Skip +2 seconds (→)')}><span class="omt-btn-label">2s</span>${omtIcon('skip-forward', 13)}</button>
-            <button class="ctrl-btn omt-tip" id="omt-p10" type="button"${tip('Skip +10 seconds (Shift + →)')}><span class="omt-btn-label">10s</span>${omtIcon('skip-forward', 14)}</button>
-            <button class="ctrl-btn omt-tip" id="omt-p120" type="button"${tip('Skip +2 minutes (Ctrl + →)')}><span class="omt-btn-label">2m</span>${omtIcon('fast-forward', 14)}</button>
+        <div class="omt-speed-row" role="group" aria-label="Playback speed">
+            <button type="button" class="omt-speed-chip omt-tip" data-speed="0.5"${tip('Speed 0.5x')}>0.5x</button>
+            <button type="button" class="omt-speed-chip omt-tip is-active" data-speed="1.0"${tip('Speed 1x (X)')}>1x</button>
+            <button type="button" class="omt-speed-chip omt-tip" data-speed="1.5"${tip('Speed 1.5x')}>1.5x</button>
+            <button type="button" class="omt-speed-chip omt-tip" data-speed="2.0"${tip('Speed 2x')}>2x</button>
         </div>
     </div>
 </div>`;

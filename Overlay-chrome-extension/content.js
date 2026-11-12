@@ -678,6 +678,11 @@
 ,
         "chevrons-down": `<path d="m7 13 5 5 5-5" />
   <path d="m7 6 5 5 5-5" />`
+,
+        "eye-off": `<path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49" />
+  <path d="M14.084 14.158a3 3 0 0 1-4.242-4.242" />
+  <path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143" />
+  <path d="m2 2 20 20" />`
     };
 
     function omtIcon(name, size = 16, extraClass = '') {
@@ -805,7 +810,7 @@
     </div>
 </div>
 
-<!-- Floating draggable control panel (v1.2.2 structure, dark restyle) -->
+<!-- Floating draggable control panel (Option A transport + speed row) -->
 <div id="controls-panel" class="glass-panel">
     <div class="drag-handle" id="controls-handle">
         <div class="drag-side-left">
@@ -820,6 +825,9 @@
                 <option value="1.5">1.50x</option>
                 <option value="2.0">2.00x</option>
             </select>
+            <button type="button" id="omt-hide-panel" class="handle-btn omt-tip"${tip('Hide controls (H)')}>
+                ${omtIcon('eye-off', 16)}
+            </button>
         </div>
         <div class="drag-center-grip" aria-hidden="true">${omtIcon('grip-horizontal', 16)}</div>
         <div class="drag-side-right">
@@ -887,22 +895,24 @@
     </div>
 
     <div class="controls-content">
-        <div class="ctrl-group-left">
-            <button class="ctrl-btn omt-tip" id="omt-m120" type="button"${tip('Skip −2 minutes (Ctrl + ←)')}>${omtIcon('rewind', 14)}<span class="omt-btn-label">2m</span></button>
-            <button class="ctrl-btn omt-tip" id="omt-m10" type="button"${tip('Skip −10 seconds (Shift + ←)')}>${omtIcon('skip-back', 14)}<span class="omt-btn-label">10s</span></button>
-            <button class="ctrl-btn omt-tip" id="omt-m2" type="button"${tip('Skip −2 seconds (←)')}>${omtIcon('skip-back', 13)}<span class="omt-btn-label">2s</span></button>
+        <div class="omt-transport-seg" role="group" aria-label="Playback transport">
+            <button class="ctrl-btn omt-tip" id="omt-m120" type="button"${tip('Skip −2 minutes (Ctrl + ←)')}>${omtIcon('rewind', 18)}<span class="omt-btn-label">2m</span></button>
+            <button class="ctrl-btn omt-tip" id="omt-m10" type="button"${tip('Skip −10 seconds (Shift + ←)')}>${omtIcon('skip-back', 18)}<span class="omt-btn-label">10s</span></button>
+            <button class="ctrl-btn omt-tip" id="omt-m2" type="button"${tip('Skip −2 seconds (←)')}>${omtIcon('skip-back', 17)}<span class="omt-btn-label">2s</span></button>
+            <span class="omt-seg-divider" aria-hidden="true"></span>
+            <button class="ctrl-btn btn-frame omt-tip" id="omt-prev-frame" type="button"${tip('Previous frame (↓)')}>${omtIcon('step-back', 18)}</button>
+            <button class="ctrl-btn btn-play omt-tip" id="omt-btn-play" type="button"${tip('Play / Pause (Space)')}>${omtIcon('play', 22)}</button>
+            <button class="ctrl-btn btn-frame omt-tip" id="omt-next-frame" type="button"${tip('Next frame (↑)')}>${omtIcon('step-forward', 18)}</button>
+            <span class="omt-seg-divider" aria-hidden="true"></span>
+            <button class="ctrl-btn omt-tip" id="omt-p2" type="button"${tip('Skip +2 seconds (→)')}><span class="omt-btn-label">2s</span>${omtIcon('skip-forward', 17)}</button>
+            <button class="ctrl-btn omt-tip" id="omt-p10" type="button"${tip('Skip +10 seconds (Shift + →)')}><span class="omt-btn-label">10s</span>${omtIcon('skip-forward', 18)}</button>
+            <button class="ctrl-btn omt-tip" id="omt-p120" type="button"${tip('Skip +2 minutes (Ctrl + →)')}><span class="omt-btn-label">2m</span>${omtIcon('fast-forward', 18)}</button>
         </div>
-        <div class="ctrl-group-center">
-            <div class="separator" aria-hidden="true"></div>
-            <button class="ctrl-btn btn-frame omt-tip" id="omt-prev-frame" type="button"${tip('Previous frame (↓)')}>${omtIcon('step-back', 15)}</button>
-            <button class="ctrl-btn btn-play omt-tip" id="omt-btn-play" type="button"${tip('Play / Pause (Space)')}>${omtIcon('play', 18)}</button>
-            <button class="ctrl-btn btn-frame omt-tip" id="omt-next-frame" type="button"${tip('Next frame (↑)')}>${omtIcon('step-forward', 15)}</button>
-            <div class="separator" aria-hidden="true"></div>
-        </div>
-        <div class="ctrl-group-right">
-            <button class="ctrl-btn omt-tip" id="omt-p2" type="button"${tip('Skip +2 seconds (→)')}><span class="omt-btn-label">2s</span>${omtIcon('skip-forward', 13)}</button>
-            <button class="ctrl-btn omt-tip" id="omt-p10" type="button"${tip('Skip +10 seconds (Shift + →)')}><span class="omt-btn-label">10s</span>${omtIcon('skip-forward', 14)}</button>
-            <button class="ctrl-btn omt-tip" id="omt-p120" type="button"${tip('Skip +2 minutes (Ctrl + →)')}><span class="omt-btn-label">2m</span>${omtIcon('fast-forward', 14)}</button>
+        <div class="omt-speed-row" role="group" aria-label="Playback speed">
+            <button type="button" class="omt-speed-chip omt-tip" data-speed="0.5"${tip('Speed 0.5x')}>0.5x</button>
+            <button type="button" class="omt-speed-chip omt-tip is-active" data-speed="1.0"${tip('Speed 1x (X)')}>1x</button>
+            <button type="button" class="omt-speed-chip omt-tip" data-speed="1.5"${tip('Speed 1.5x')}>1.5x</button>
+            <button type="button" class="omt-speed-chip omt-tip" data-speed="2.0"${tip('Speed 2x')}>2x</button>
         </div>
     </div>
 </div>`;
@@ -1026,8 +1036,23 @@
         q('omt-jump-kc1').addEventListener('click', () => jumpToKickoff('custom1'));
         q('omt-jump-kc2').addEventListener('click', () => jumpToKickoff('custom2'));
 
-        // --- Speed selector ---
+        // --- Speed selector + quick chips ---
         speedSelect.addEventListener('change', selecionarVelocidade);
+        omtRoot.querySelectorAll('.omt-speed-chip').forEach((chip) => {
+            chip.addEventListener('click', () => {
+                applyPlaybackSpeed(chip.getAttribute('data-speed'));
+                noteOmtUiActivity(true);
+            });
+        });
+        syncSpeedChips();
+
+        // --- Hide panel (same as H hotkey) ---
+        const hidePanelBtn = q('omt-hide-panel');
+        if (hidePanelBtn) {
+            hidePanelBtn.addEventListener('click', () => {
+                toggleManualControlsVisibility();
+            });
+        }
 
         // --- Live button ---
         liveBtn.addEventListener('click', irParaLive);
@@ -1789,33 +1814,76 @@
     /* =========================================================
        12. PLAYBACK CONTROLS
        ========================================================= */
+    // Examino OpenPlayer may replace <video> during DVR/VOD switches.
+    // Prefer the live connected element so transport/speed always hit the player.
+    function ensureLiveVideo() {
+        if (vid && vid.isConnected) return vid;
+        const found = (site && typeof site.findVideo === 'function')
+            ? site.findVideo()
+            : document.querySelector('video');
+        if (found) vid = found;
+        return vid;
+    }
+
     function saltarVideo(segundos) {
+        if (!ensureLiveVideo()) return;
         seekTo(vid.currentTime + segundos);
         mostrarOSD((segundos > 0 ? '+' : '') + segundos + 's');
     }
 
     function togglePlay() {
+        if (!ensureLiveVideo()) return;
         if (vid.paused) { vid.play(); mostrarOSD('Play'); }
         else { vid.pause(); mostrarOSD('Pause'); }
     }
 
     function avancarFrame() {
+        if (!ensureLiveVideo()) return;
         vid.pause();
         vid.currentTime += 0.04;
         mostrarOSD('+1 Frame');
     }
 
     function retrocederFrame() {
+        if (!ensureLiveVideo()) return;
         vid.pause();
         vid.currentTime -= 0.04;
         mostrarOSD('-1 Frame');
     }
 
     function selecionarVelocidade() {
+        if (!ensureLiveVideo() || !speedSelect) return;
         const valor = parseFloat(speedSelect.value);
         vid.playbackRate = valor;
         mostrarOSD('Speed: ' + valor.toFixed(2) + 'x');
+        syncSpeedChips();
         speedSelect.blur();
+    }
+
+    function applyPlaybackSpeed(rate, { announce = true } = {}) {
+        const valor = parseFloat(rate);
+        if (!ensureLiveVideo() || !isFinite(valor) || valor <= 0) return;
+        vid.playbackRate = valor;
+        if (speedSelect) {
+            const rateStrings = { 0.25: '0.25', 0.5: '0.5', 1.0: '1.0', 1.5: '1.5', 2.0: '2.0' };
+            const key = Object.keys(rateStrings).map(Number).reduce((prev, curr) =>
+                Math.abs(curr - valor) < Math.abs(prev - valor) ? curr : prev, 1.0);
+            speedSelect.value = rateStrings[key] || String(valor);
+        }
+        syncSpeedChips();
+        if (announce) mostrarOSD('Speed: ' + valor.toFixed(2) + 'x');
+    }
+
+    function syncSpeedChips() {
+        if (!omtRoot || !ensureLiveVideo()) return;
+        const rate = vid.playbackRate || 1;
+        const chips = omtRoot.querySelectorAll('.omt-speed-chip');
+        chips.forEach((chip) => {
+            const chipRate = parseFloat(chip.getAttribute('data-speed'));
+            const active = Math.abs(chipRate - rate) < 0.05;
+            chip.classList.toggle('is-active', active);
+            chip.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
     }
 
     function irParaLive() {
@@ -2034,7 +2102,7 @@
         e.stopPropagation();
         e.stopImmediatePropagation();
 
-        if (!vid) return;
+        if (!ensureLiveVideo()) return;
 
         switch (key) {
             case 'arrowright':
@@ -2058,9 +2126,7 @@
                 );
                 const currentIndex = allowedRates.indexOf(closestRate);
                 const newIndex = Math.max(0, currentIndex - 1);
-                vid.playbackRate = allowedRates[newIndex];
-                syncSpeedSelect();
-                mostrarOSD('Speed: ' + vid.playbackRate.toFixed(2) + 'x');
+                applyPlaybackSpeed(allowedRates[newIndex]);
                 break;
             }
             case 'c': {
@@ -2071,38 +2137,14 @@
                 );
                 const currentIndex = allowedRates.indexOf(closestRate);
                 const newIndex = Math.min(allowedRates.length - 1, currentIndex + 1);
-                vid.playbackRate = allowedRates[newIndex];
-                syncSpeedSelect();
-                mostrarOSD('Speed: ' + vid.playbackRate.toFixed(2) + 'x');
+                applyPlaybackSpeed(allowedRates[newIndex]);
                 break;
             }
             case 'x':
-                vid.playbackRate = 1.0;
-                syncSpeedSelect();
-                mostrarOSD('Speed: 1.00x');
+                applyPlaybackSpeed(1.0);
                 break;
             case 'h':
-                if (controlsPanel) {
-                    if (isManuallyHidden) {
-                        isManuallyHidden = false;
-                        resetControlsTimeout();
-                        mostrarOSD('Controls Visible');
-                    } else {
-                        isManuallyHidden = true;
-                        if (mouseMoveTimeout) {
-                            clearTimeout(mouseMoveTimeout);
-                            mouseMoveTimeout = null;
-                        }
-                        controlsPanel.style.opacity = '0';
-                        controlsPanel.style.pointerEvents = 'none';
-                        const timelineBar = omtRoot ? omtRoot.querySelector('#omt-timeline-bar') : null;
-                        if (timelineBar) {
-                            timelineBar.style.opacity = '0';
-                            timelineBar.style.pointerEvents = 'none';
-                        }
-                        mostrarOSD('Controls Hidden');
-                    }
-                }
+                toggleManualControlsVisibility();
                 break;
             case 'k':
                 // Same path as the Kick-off button (auto-captures current frame).
@@ -2116,6 +2158,29 @@
         }
     }
 
+    function toggleManualControlsVisibility() {
+        if (!controlsPanel) return;
+        if (isManuallyHidden) {
+            isManuallyHidden = false;
+            resetControlsTimeout();
+            mostrarOSD('Controls Visible');
+            return;
+        }
+        isManuallyHidden = true;
+        if (mouseMoveTimeout) {
+            clearTimeout(mouseMoveTimeout);
+            mouseMoveTimeout = null;
+        }
+        controlsPanel.style.opacity = '0';
+        controlsPanel.style.pointerEvents = 'none';
+        const timelineBar = omtRoot ? omtRoot.querySelector('#omt-timeline-bar') : null;
+        if (timelineBar) {
+            timelineBar.style.opacity = '0';
+            timelineBar.style.pointerEvents = 'none';
+        }
+        mostrarOSD('Controls Hidden');
+    }
+
     function syncSpeedSelect() {
         const currentRate = vid.playbackRate;
         const allowedRates = [0.25, 0.5, 1.0, 1.5, 2.0];
@@ -2126,6 +2191,7 @@
         if (speedSelect) {
             speedSelect.value = rateStrings[closestRate] || closestRate.toString();
         }
+        if (typeof syncSpeedChips === 'function') syncSpeedChips();
     }
 
 /* Draggable glass panels. */

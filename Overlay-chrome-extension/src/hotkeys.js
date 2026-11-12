@@ -29,7 +29,7 @@
         e.stopPropagation();
         e.stopImmediatePropagation();
 
-        if (!vid) return;
+        if (!ensureLiveVideo()) return;
 
         switch (key) {
             case 'arrowright':
@@ -53,9 +53,7 @@
                 );
                 const currentIndex = allowedRates.indexOf(closestRate);
                 const newIndex = Math.max(0, currentIndex - 1);
-                vid.playbackRate = allowedRates[newIndex];
-                syncSpeedSelect();
-                mostrarOSD('Speed: ' + vid.playbackRate.toFixed(2) + 'x');
+                applyPlaybackSpeed(allowedRates[newIndex]);
                 break;
             }
             case 'c': {
@@ -66,38 +64,14 @@
                 );
                 const currentIndex = allowedRates.indexOf(closestRate);
                 const newIndex = Math.min(allowedRates.length - 1, currentIndex + 1);
-                vid.playbackRate = allowedRates[newIndex];
-                syncSpeedSelect();
-                mostrarOSD('Speed: ' + vid.playbackRate.toFixed(2) + 'x');
+                applyPlaybackSpeed(allowedRates[newIndex]);
                 break;
             }
             case 'x':
-                vid.playbackRate = 1.0;
-                syncSpeedSelect();
-                mostrarOSD('Speed: 1.00x');
+                applyPlaybackSpeed(1.0);
                 break;
             case 'h':
-                if (controlsPanel) {
-                    if (isManuallyHidden) {
-                        isManuallyHidden = false;
-                        resetControlsTimeout();
-                        mostrarOSD('Controls Visible');
-                    } else {
-                        isManuallyHidden = true;
-                        if (mouseMoveTimeout) {
-                            clearTimeout(mouseMoveTimeout);
-                            mouseMoveTimeout = null;
-                        }
-                        controlsPanel.style.opacity = '0';
-                        controlsPanel.style.pointerEvents = 'none';
-                        const timelineBar = omtRoot ? omtRoot.querySelector('#omt-timeline-bar') : null;
-                        if (timelineBar) {
-                            timelineBar.style.opacity = '0';
-                            timelineBar.style.pointerEvents = 'none';
-                        }
-                        mostrarOSD('Controls Hidden');
-                    }
-                }
+                toggleManualControlsVisibility();
                 break;
             case 'k':
                 // Same path as the Kick-off button (auto-captures current frame).
@@ -111,6 +85,29 @@
         }
     }
 
+    function toggleManualControlsVisibility() {
+        if (!controlsPanel) return;
+        if (isManuallyHidden) {
+            isManuallyHidden = false;
+            resetControlsTimeout();
+            mostrarOSD('Controls Visible');
+            return;
+        }
+        isManuallyHidden = true;
+        if (mouseMoveTimeout) {
+            clearTimeout(mouseMoveTimeout);
+            mouseMoveTimeout = null;
+        }
+        controlsPanel.style.opacity = '0';
+        controlsPanel.style.pointerEvents = 'none';
+        const timelineBar = omtRoot ? omtRoot.querySelector('#omt-timeline-bar') : null;
+        if (timelineBar) {
+            timelineBar.style.opacity = '0';
+            timelineBar.style.pointerEvents = 'none';
+        }
+        mostrarOSD('Controls Hidden');
+    }
+
     function syncSpeedSelect() {
         const currentRate = vid.playbackRate;
         const allowedRates = [0.25, 0.5, 1.0, 1.5, 2.0];
@@ -121,4 +118,5 @@
         if (speedSelect) {
             speedSelect.value = rateStrings[closestRate] || closestRate.toString();
         }
+        if (typeof syncSpeedChips === 'function') syncSpeedChips();
     }

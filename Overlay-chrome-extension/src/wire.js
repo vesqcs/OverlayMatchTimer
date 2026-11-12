@@ -72,8 +72,23 @@
         q('omt-jump-kc1').addEventListener('click', () => jumpToKickoff('custom1'));
         q('omt-jump-kc2').addEventListener('click', () => jumpToKickoff('custom2'));
 
-        // --- Speed selector ---
+        // --- Speed selector + quick chips ---
         speedSelect.addEventListener('change', selecionarVelocidade);
+        omtRoot.querySelectorAll('.omt-speed-chip').forEach((chip) => {
+            chip.addEventListener('click', () => {
+                applyPlaybackSpeed(chip.getAttribute('data-speed'));
+                noteOmtUiActivity(true);
+            });
+        });
+        syncSpeedChips();
+
+        // --- Hide panel (same as H hotkey) ---
+        const hidePanelBtn = q('omt-hide-panel');
+        if (hidePanelBtn) {
+            hidePanelBtn.addEventListener('click', () => {
+                toggleManualControlsVisibility();
+            });
+        }
 
         // --- Live button ---
         liveBtn.addEventListener('click', irParaLive);
