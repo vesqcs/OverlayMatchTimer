@@ -1,7 +1,7 @@
 /* ============================================================
-   Overlay MatchTimer — v1.4.0 UI (YouTube-like dark minimal)
-   Accent orange: Stats Perform #F5831F (Brandfetch statsperform.com)
-   Live progress / LIVE indicator: red. No emoji; Lucide SVGs in markup.
+   Overlay MatchTimer — v1.4.0 UI (dark minimal)
+   Floating draggable control panel (v1.2.2 structure) + bottom-only
+   timeline. Accent orange: Stats Perform #F5831F. Live scrubber red.
    ============================================================ */
 
 :root {
@@ -74,9 +74,10 @@
 }
 
 #omt-root .glass-panel,
-#omt-root .omt-controls-scrim,
+#omt-root #controls-panel,
 #omt-root #match-timer-wrap,
 #omt-root #match-timer,
+#omt-root #omt-timeline-bar,
 #omt-root #omt-more-panel,
 #omt-root #omt-kickoff-bar,
 #omt-root #omt-examino-settings {
@@ -463,55 +464,64 @@
     color: #ddd;
 }
 
-.omt-toggle-row input[type="checkbox"],
-#omt-examino-auto-vod {
-    accent-color: var(--omt-orange);
-    width: 16px;
-    height: 16px;
-}
-
-.omt-shuttle-switch {
+/* Dark toggle switch (Auto VOD / ShuttleXpress) */
+.omt-switch {
     position: relative;
     display: inline-block;
-    width: 38px;
-    height: 20px;
+    width: 34px;
+    height: 18px;
     margin: 0;
+    flex-shrink: 0;
 }
-.omt-shuttle-switch input {
+.omt-switch input {
     opacity: 0;
     width: 0;
     height: 0;
     margin: 0;
     position: absolute;
 }
+.omt-switch-slider,
 .omt-shuttle-slider {
     position: absolute;
     inset: 0;
-    background: rgba(255, 255, 255, 0.18);
+    background: rgba(255, 255, 255, 0.16);
+    border: 1px solid rgba(255, 255, 255, 0.14);
     border-radius: 20px;
     cursor: pointer;
-    transition: background 0.2s;
+    transition: background 0.15s ease, border-color 0.15s ease;
 }
+.omt-switch-slider::before,
 .omt-shuttle-slider::before {
     content: "";
     position: absolute;
-    width: 14px;
-    height: 14px;
+    width: 12px;
+    height: 12px;
     left: 3px;
     top: 3px;
     background: #fff;
     border-radius: 50%;
     transition: transform 0.2s;
 }
+.omt-switch input:checked + .omt-switch-slider,
 .omt-shuttle-switch input:checked + .omt-shuttle-slider {
     background: var(--omt-orange);
+    border-color: rgba(245, 131, 31, 0.55);
 }
+.omt-switch input:checked + .omt-switch-slider::before,
 .omt-shuttle-switch input:checked + .omt-shuttle-slider::before {
-    transform: translateX(18px);
+    transform: translateX(16px);
 }
+.omt-switch input:focus-visible + .omt-switch-slider,
 .omt-shuttle-switch input:focus-visible + .omt-shuttle-slider {
     outline: 2px solid var(--omt-orange);
     outline-offset: 2px;
+}
+.omt-shuttle-switch {
+    position: relative;
+    display: inline-block;
+    width: 34px;
+    height: 18px;
+    margin: 0;
 }
 
 .cheatsheet {
@@ -548,46 +558,51 @@
     font-variant-numeric: tabular-nums;
 }
 
-/* ---- CONTROLS SCRIM (YouTube-like bottom bar) ---- */
-#controls-panel.omt-controls-scrim,
-.omt-controls-scrim {
+/* ---- FLOATING CONTROLS PANEL (v1.2.2 position / structure) ---- */
+#controls-panel {
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 560px;
+    display: flex;
+    flex-direction: column;
+    transition: opacity 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+    z-index: 50;
+}
+
+/* ---- BOTTOM TIMELINE (alone at video edge) ---- */
+.omt-timeline-bar {
     position: absolute;
     left: 0;
     right: 0;
     bottom: 0;
-    width: auto;
-    max-width: none;
-    transform: none;
+    z-index: 48;
     display: flex;
-    flex-direction: column;
-    gap: 0;
-    padding: 0 0 8px;
-    background: rgba(0, 0, 0, 0.42);
-    border: none;
-    border-radius: 0;
-    box-shadow: none;
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-    transition: opacity 0.3s ease;
-    z-index: 50;
-}
-
-/* Timeline is its own full-width track, clearly separated above controls */
-.omt-timeline-full {
-    width: 100%;
-    padding: 10px 12px 0;
-    margin: 0;
+    align-items: center;
+    gap: 10px;
+    padding: 0 10px 4px;
     box-sizing: border-box;
+    transition: opacity 0.3s ease;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.55) 0%, rgba(0, 0, 0, 0) 100%);
+    padding-top: 14px;
 }
 
 .omt-timeline-track {
     position: relative;
-    width: 100%;
+    flex: 1;
     display: flex;
     align-items: center;
     height: 16px;
-    margin: 0;
+    min-width: 0;
     cursor: pointer;
+}
+
+.omt-timeline-times {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
 }
 
 #omt-timeline-markers {
@@ -612,7 +627,7 @@
     background: rgba(255, 255, 255, 0.2);
     transition: height 0.12s ease;
 }
-#controls-panel.omt-at-live .timeline-slider {
+#omt-timeline-bar.omt-at-live .timeline-slider {
     background: linear-gradient(
         to right,
         var(--omt-live) 0%,
@@ -620,7 +635,7 @@
         rgba(255, 255, 255, 0.2) var(--omt-progress, 100%)
     );
 }
-#controls-panel:not(.omt-at-live) .timeline-slider {
+#omt-timeline-bar:not(.omt-at-live) .timeline-slider {
     background: linear-gradient(
         to right,
         var(--omt-behind) 0%,
@@ -628,7 +643,7 @@
         rgba(255, 255, 255, 0.2) var(--omt-progress, 0%)
     );
 }
-.omt-timeline-full:hover .timeline-slider,
+.omt-timeline-bar:hover .timeline-slider,
 .timeline-slider:hover {
     height: 6px;
 }
@@ -644,7 +659,7 @@
     opacity: 0;
     transition: opacity 0.12s ease;
 }
-.omt-timeline-full:hover .timeline-slider::-webkit-slider-thumb,
+.omt-timeline-bar:hover .timeline-slider::-webkit-slider-thumb,
 .timeline-slider:hover::-webkit-slider-thumb,
 .timeline-slider:active::-webkit-slider-thumb {
     opacity: 1;
@@ -658,13 +673,13 @@
     opacity: 0;
 }
 
-/* Expandable match-controls group (period / kick-off / source / shuttle) */
+/* Expandable match-controls group inside the floating panel */
 .omt-more-panel {
     max-height: 0;
     opacity: 0;
     overflow: hidden;
     pointer-events: none;
-    margin: 0 12px;
+    margin: 0 10px;
     padding: 0 8px;
     border: 1px solid transparent;
     border-radius: 6px;
@@ -677,10 +692,10 @@
         border-color 120ms ease;
 }
 .omt-more-panel.is-open {
-    max-height: 140px;
+    max-height: 240px;
     opacity: 1;
     pointer-events: auto;
-    margin: 8px 12px 0;
+    margin: 8px 10px 0;
     padding: 8px;
     border-color: rgba(255, 255, 255, 0.1);
 }
@@ -711,8 +726,13 @@
     padding: 4px 6px;
     font-family: var(--omt-font);
 }
+#omt-kickoff-bar .omt-custom-minute {
+    display: none;
+    align-items: center;
+    gap: 4px;
+}
 #omt-kickoff-bar .omt-custom-minute input {
-    width: 56px;
+    width: 64px;
     padding: 4px 6px;
     background: rgba(0, 0, 0, 0.4);
     border: 1px solid var(--omt-border);
@@ -737,7 +757,10 @@
 }
 #omt-examino-settings .omt-toggle-row,
 .omt-shuttle-block .omt-toggle-row {
-    gap: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
     font-size: 11px;
     color: #ddd;
 }
@@ -746,20 +769,19 @@
     border: none;
     color: #fff;
     cursor: pointer;
-    padding: 4px 6px;
+    padding: 4px;
     border-radius: 4px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    margin-left: 2px;
 }
 .omt-more-toggle:hover,
 .omt-more-toggle.is-open {
     background: rgba(255, 255, 255, 0.12);
 }
 .omt-more-toggle .omt-icon {
-    width: 20px;
-    height: 20px;
+    width: 16px;
+    height: 16px;
 }
 
 /* Dark minimal tooltips */
@@ -794,51 +816,29 @@
     visibility: visible;
     transform: translateX(-50%) translateY(0);
 }
-.omt-controls-right .omt-tip[data-tip]::after {
+.drag-side-right .omt-tip[data-tip]::after {
     left: auto;
     right: 0;
     transform: translateY(2px);
 }
-.omt-controls-right .omt-tip[data-tip]:hover::after,
-.omt-controls-right .omt-tip[data-tip]:focus-visible::after {
+.drag-side-right .omt-tip[data-tip]:hover::after,
+.drag-side-right .omt-tip[data-tip]:focus-visible::after {
     transform: translateY(0);
 }
-
-.omt-controls-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    width: 100%;
-    min-height: 36px;
-    margin-top: 10px;
-    padding: 0 12px;
-    box-sizing: border-box;
-}
-.omt-controls-left,
-.omt-controls-right {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    min-width: 0;
-}
-.omt-controls-left { flex: 1; }
-.omt-controls-right { flex-shrink: 0; }
 
 .omt-time-text {
     font-family: var(--omt-mono);
     font-size: 11px;
     font-variant-numeric: tabular-nums;
     color: #ddd;
-    margin-left: 6px;
+    flex-shrink: 0;
 }
 .omt-time-sep {
     color: #777;
     font-size: 11px;
-    margin: 0 2px;
+    margin: 0 1px;
+    flex-shrink: 0;
 }
-#omt-v-time-current { margin-left: 8px; }
-#omt-v-time-duration { margin-left: 0; }
 
 #omt-volume-range {
     -webkit-appearance: none;
@@ -859,7 +859,7 @@
     border: none;
 }
 
-/* LIVE pill — look only; click still calls irParaLive */
+/* LIVE pill — in floating panel drag-handle (same place as v1.2.2) */
 #omt-live-btn {
     background: transparent;
     border: 1px solid rgba(255, 255, 255, 0.28);
@@ -869,7 +869,7 @@
     font-weight: 700;
     padding: 3px 9px;
     cursor: pointer;
-    margin-left: 8px;
+    margin-left: 0;
     margin-right: 0;
     text-transform: uppercase;
     letter-spacing: 0.06em;
@@ -879,13 +879,9 @@
     font-family: var(--omt-font);
     flex-shrink: 0;
 }
-.omt-time-text,
-.omt-time-sep {
-    flex-shrink: 0;
-}
 #omt-root .omt-live-spacer {
     display: inline-block;
-    width: 8px;
+    width: 10px;
     flex-shrink: 0;
 }
 #omt-live-btn .live-dot {
@@ -910,59 +906,71 @@
     background: rgba(224, 32, 27, 0.28);
 }
 
-.handle-btn {
-    background: transparent;
-    border: none;
-    color: var(--omt-text);
-    cursor: pointer;
-    padding: 4px;
-    display: inline-flex;
+/* Transport row inside floating panel */
+.controls-content {
+    padding: 8px 14px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+}
+.ctrl-group-left,
+.ctrl-group-right {
+    display: flex;
+    gap: 6px;
+    flex: 1;
+}
+.ctrl-group-right { justify-content: flex-end; }
+.ctrl-group-center {
+    display: flex;
+    gap: 6px;
     align-items: center;
     justify-content: center;
-    border-radius: 4px;
-    opacity: 0.92;
+    flex: initial;
 }
-.handle-btn:hover {
-    background: rgba(255, 255, 255, 0.08);
-    opacity: 1;
+.separator {
+    width: 1px;
+    height: 22px;
+    background: rgba(255, 255, 255, 0.1);
+    margin: 0 2px;
 }
-
-.top-select {
-    background: rgba(0, 0, 0, 0.35);
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    color: #ddd;
-    font-size: 11px;
-    padding: 2px 6px;
-    border-radius: 4px;
-    outline: none;
-    cursor: pointer;
-    font-weight: 600;
-    font-family: var(--omt-font);
-}
-.top-select:focus-visible { border-color: var(--omt-orange); }
-.top-select option { background: #1a1a1a; color: white; }
 
 .ctrl-btn {
-    background: transparent;
-    border: none;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     color: var(--omt-text);
     cursor: pointer;
-    padding: 5px;
-    border-radius: 4px;
+    padding: 6px 8px;
+    border-radius: 5px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    min-width: 36px;
 }
-.ctrl-btn:hover { background: rgba(255, 255, 255, 0.1); }
+.ctrl-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+}
 .ctrl-btn:focus-visible {
     outline: 2px solid var(--omt-orange);
     outline-offset: 1px;
 }
 .ctrl-btn.btn-play {
-    padding: 5px 7px;
+    min-width: 48px;
+    background: rgba(245, 131, 31, 0.12);
+    border-color: rgba(245, 131, 31, 0.35);
+    color: var(--omt-orange);
+}
+.ctrl-btn.btn-play:hover {
+    background: rgba(245, 131, 31, 0.22);
 }
 .ctrl-btn.btn-play.playing {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
     color: #fff;
+}
+.ctrl-btn.btn-frame {
+    color: #ddd;
+    border-color: rgba(255, 255, 255, 0.14);
 }
 
 .timeline-marker-tick {
@@ -988,22 +996,33 @@
     font-size: 18px;
     padding: 4px 8px;
 }
-#omt-root.omt-examino.omt-compact .omt-controls-scrim {
-    padding-bottom: 6px;
+#omt-root.omt-examino.omt-compact #controls-panel {
+    bottom: 28px;
+    width: min(560px, calc(100% - 16px));
 }
-#omt-root.omt-examino.omt-compact .omt-timeline-full {
-    padding: 8px 8px 0;
+#omt-root.omt-examino.omt-compact .controls-content {
+    padding: 4px 8px 8px;
+    gap: 4px;
 }
-#omt-root.omt-examino.omt-compact .omt-controls-row {
-    padding: 0 8px;
-    margin-top: 8px;
+#omt-root.omt-examino.omt-compact .ctrl-btn {
+    padding: 4px 5px;
+    min-width: 28px;
+}
+#omt-root.omt-examino.omt-compact .ctrl-group-left .ctrl-btn:nth-child(1),
+#omt-root.omt-examino.omt-compact .ctrl-group-right .ctrl-btn:nth-child(3) {
+    display: none;
+}
+#omt-root.omt-examino.omt-compact .omt-timeline-bar {
+    padding: 10px 8px 3px;
+}
+#omt-root.omt-examino.omt-compact #omt-volume-range {
+    width: 40px;
 }
 #omt-root.omt-examino.omt-compact .omt-more-panel.is-open {
     margin: 6px 8px 0;
 }
-#omt-root.omt-examino.omt-compact .omt-controls-left .ctrl-btn:nth-child(1),
-#omt-root.omt-examino.omt-compact .omt-controls-left .ctrl-btn:nth-child(2),
-#omt-root.omt-examino.omt-compact .omt-controls-left .ctrl-btn:nth-child(8),
-#omt-root.omt-examino.omt-compact .omt-controls-left .ctrl-btn:nth-child(9) {
-    display: none;
+
+/* Keep overlay above OpenPlayer layers */
+#omt-root.omt-examino {
+    z-index: 2147483646;
 }

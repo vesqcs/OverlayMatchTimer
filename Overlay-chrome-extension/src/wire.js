@@ -39,8 +39,8 @@
             } else {
                 q('omt-sync-hr').value = q('omt-sync-min').value = q('omt-sync-sec').value = '';
             }
-            q('omt-custom-c1').style.display = (newHalf === 'custom1') ? 'block' : 'none';
-            q('omt-custom-c2').style.display = (newHalf === 'custom2') ? 'block' : 'none';
+            q('omt-custom-c1').style.display = (newHalf === 'custom1') ? 'inline-flex' : 'none';
+            q('omt-custom-c2').style.display = (newHalf === 'custom2') ? 'inline-flex' : 'none';
             previousHalf = newHalf;
             this.blur();
         });
@@ -168,7 +168,11 @@
             controlsPanel.classList.remove('playing-state');
         }, vsig);
 
-        // Bottom scrim stays fixed (YouTube-like); no drag.
+        // Floating control panel is draggable via the top handle (timeline stays fixed at bottom).
+        if (controlsPanel) {
+            const handle = q('controls-handle');
+            if (handle) fazerArrastavel(controlsPanel, handle);
+        }
 
         // --- Auto-hide controls: mouse move + clicks/keys/wheel on our UI ---
         vid.addEventListener('mousemove', () => resetControlsTimeout(true), vsig);

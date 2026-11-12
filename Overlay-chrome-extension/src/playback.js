@@ -59,6 +59,8 @@
         const atLive = liveEdge > 0 && dist <= 8;
         liveBtn.classList.toggle('is-live', atLive);
         // Presentation only: drive scrubber colour (red at live / grey behind)
+        const timelineBar = omtRoot ? omtRoot.querySelector('#omt-timeline-bar') : null;
+        if (timelineBar) timelineBar.classList.toggle('omt-at-live', atLive);
         if (controlsPanel) controlsPanel.classList.toggle('omt-at-live', atLive);
         if (timelineSlider) {
             const min = parseFloat(timelineSlider.min) || 0;

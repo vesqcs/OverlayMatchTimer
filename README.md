@@ -9,9 +9,9 @@ Supported by this extension build (**v1.4.0** UI redesign on top of the v1.3.0 u
 
 Xeatre remains out of scope for the extension injector (use the local HTML companion to load copied DVR URLs). A stub adapter lives under `Overlay-chrome-extension/src/adapters/xeatre.js`.
 
-**Layout:** editable sources are in `Overlay-chrome-extension/src/` (concatenated into committed `content.js`). See [`ARCHITECTURE.md`](./ARCHITECTURE.md). After editing sources: `node Overlay-chrome-extension/scripts/build-content.mjs`. Load unpacked still needs no build step. Toolbar popup holds branding / Shuttle / Personalizar (em breve).
+**Layout:** editable sources are in `Overlay-chrome-extension/src/` (concatenated into committed `content.js`). See [`ARCHITECTURE.md`](./ARCHITECTURE.md). After editing sources: `node Overlay-chrome-extension/scripts/build-content.mjs`. Load unpacked still needs no build step. Toolbar popup holds branding / Customize (Coming soon) / shortcuts. In-video: floating draggable control panel + bottom-only timeline; match controls (period, kick-off, Source, Shuttle) live in the panel’s expandable chevron group.
 
-The local companion app (`OverlayMatchTimer.html`) and the user guide (`Overlay MatchTimer Guideline.pdf`) document kick-off sync, halves, hotkeys, the draggable auto-hiding panel, HUD timeline jumps, and ShuttleXpress.
+The local companion app (`OverlayMatchTimer.html`) and the user guide (`Overlay MatchTimer Guideline.pdf`) document kick-off sync, halves, hotkeys, the draggable auto-hiding panel, HUD timeline, and ShuttleXpress.
 
 ---
 
@@ -32,7 +32,7 @@ The local companion app (`OverlayMatchTimer.html`) and the user guide (`Overlay 
 * Native OpenPlayer + Examino chrome hidden (3 bottom button rows, hamburger, gear, OpenPlayer bars); main player expands into the freed space
 * **Window capture-phase hotkeys** installed at `document_start` so OpenPlayer/Examino shortcuts never win
 * **Click-to-toggle** play/pause on the **video surface only** (never the whole `.op-player` tree — that broke OpenPlayer Source switching in v1.2.1)
-* Setup panel keeps a compact **Source (DVR/VOD)** control + **Auto-switch to VOD** checkbox (chrome.storage via `bridge.js`, default ON). Options are exact `DVR`/`VOD` only; label tracks the live Source; MutationObserver drives faster auto-VOD. Manual DVR choice wins for the page session; settle-to-live runs only after VOD→DVR
+* Expandable in-panel controls keep a compact **Source (DVR/VOD)** control + **Auto-switch to VOD** toggle (chrome.storage via `bridge.js`, default ON). Options are exact `DVR`/`VOD` only; label tracks the live Source; MutationObserver drives faster auto-VOD. Manual DVR choice wins for the page session; settle-to-live runs only after VOD→DVR
 * Auto-hide treats clicks / wheel / keys on our UI as activity and never hides while the pointer is over the controls (InplayIP included)
 
 ---

@@ -90,6 +90,11 @@
                         }
                         controlsPanel.style.opacity = '0';
                         controlsPanel.style.pointerEvents = 'none';
+                        const timelineBar = omtRoot ? omtRoot.querySelector('#omt-timeline-bar') : null;
+                        if (timelineBar) {
+                            timelineBar.style.opacity = '0';
+                            timelineBar.style.pointerEvents = 'none';
+                        }
                         mostrarOSD('Controls Hidden');
                     }
                 }

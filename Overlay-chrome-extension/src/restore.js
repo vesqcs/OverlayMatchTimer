@@ -21,8 +21,8 @@
         const savedHalf = localStorage.getItem('matchTimerHalf');
         if (savedHalf) {
             q('omt-half-select').value = savedHalf;
-            q('omt-custom-c1').style.display = (savedHalf === 'custom1') ? 'block' : 'none';
-            q('omt-custom-c2').style.display = (savedHalf === 'custom2') ? 'block' : 'none';
+            q('omt-custom-c1').style.display = (savedHalf === 'custom1') ? 'inline-flex' : 'none';
+            q('omt-custom-c2').style.display = (savedHalf === 'custom2') ? 'inline-flex' : 'none';
         }
 
         const savedCMin1 = localStorage.getItem('matchTimerCustomMinC1');
