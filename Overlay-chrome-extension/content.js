@@ -1,7 +1,8 @@
 /* ============================================================
    Overlay MatchTimer — Chrome Extension Content Script
-   Runs in MAIN world on inplayip.tv
-   Injects the full timer UI over the existing Video.js player.
+   Runs in MAIN world on InplayIP / Examino (OpenPlayer).
+   Site-specific selectors & positioning live in SITE ADAPTERS;
+   shared timer/HUD logic is shared below.
    ============================================================ */
 
 (function () {
@@ -9,6 +10,22 @@
 
     // SPA monitor interval handle
     let spaMonitorInterval = null;
+    let bootObserver = null;
+    let fullscreenHooked = false;
+    let nativeChromeObserver = null;
+    let examinoHotkeysInstalled = false;
+    let examinoSettingsRefreshTimer = null;
+    let examinoClickToggleInstalled = false;
+    let examinoClickArmed = false;
+    let examinoSuppressClickToggle = 0; // >0 while we drive OpenPlayer menus via .click()
+    let examinoAutoVodWatcher = null;
+    let examinoAutoVodInFlight = false;
+    let examinoAutoVodDone = false;
+    let vidAbortController = null;
+    let pointerOverOmtUi = false;
+    // Session override: once the user picks DVR manually, auto-VOD stops for this page.
+    let examinoManualSourceChoice = null;
+    let examinoPendingDvrSettle = false;
 
     /* =========================================================
        MODULE STATE
@@ -25,31 +42,9 @@
     let isDraggingTimeline = false;
     let isManuallyHidden = false;
     let mouseMoveTimeout = null;
+    let controlsObserver = null; // MutationObserver watching the video 'controls' attribute
     let isEditingTimer = false;
-    let hasAutomatedDvr = false;
-    const isLocalVideo = window.location.protocol === 'file:';
-    const isExamino = window.location.hostname.includes('examino');
-    const isXeatre = window.location.hostname.includes('xeatre');
-
-    // Docked layout state
-    let isDocked = false;
-    let omtAnchor = null;
-    let dockResizeObserver = null;
-    let dockDebounceTimer = null;
-    let dockFullscreenHandler = null;
-    // True when a structural small-view override is active (Xeatre < 550px or Examino < 600px).
-    // When set, the auto-hide timeout is suppressed so the panel can never flicker.
-    let isSmallViewForced = false;
-
-    // Observers & Event cleanup (Memory Leak Prevention)
-    let nativeControlsObserver = null;
-    let platformControlsObserver = null;
-    let aggressiveBodyWatcher = null;
-    let containerObservers = [];
-    let layoutResizeHandler = null;
-    let layoutFullscreenHandler = null;
-    let responsiveFixDebounce = null;
-    let vidAbortController = null;
+    const isLocalVideo = false; // Extension always targets a live/DVR stream
 
     // Kickoff markers (persisted in localStorage)
     let kickoff1 = localStorage.getItem('matchTimerKickoff1') !== null ? parseFloat(localStorage.getItem('matchTimerKickoff1')) : null;
@@ -71,6 +66,186 @@
         volumeRange, volumeIconBtn, shuttleToggle, shuttleCheatsheet;
 
     /* =========================================================
+       SITE ADAPTERS
+       Isolate host-specific DOM / mode / fullscreen behaviour so
+       InplayIP keeps its proven Review/Live SPA logic while Examino
+       uses OpenPlayer-aware wait/anchor/suppress rules.
+       ========================================================= */
+    const SITE_INPLAYIP = {
+        id: 'inplayip',
+        rootClass: 'omt-inplayip',
+
+        findVideo() {
+            // Prefer the Video.js tech element
+            const tech = document.querySelector('.vjs-tech');
+            if (tech && tech.tagName === 'VIDEO') return tech;
+            const any = document.querySelector('video');
+            return any || null;
+        },
+
+        findAnchor(videoEl) {
+            return videoEl.closest('.video-js') ||
+                videoEl.closest('.vjs-player') ||
+                videoEl.parentElement;
+        },
+
+        findFullscreenTarget(videoEl) {
+            return videoEl.closest('.video-js') || videoEl.parentElement || videoEl;
+        },
+
+        // Exact Inplay Review/Live signals from the known-good baseline.
+        isReviewStream() {
+            return !!document.querySelector('.vjs-progress-control');
+        },
+
+        isLiveStream() {
+            const bodyText = document.body ? document.body.innerText : '';
+            if (/\b(hd|sd)\s+live\b/i.test(bodyText)) return true;
+            const hasLiveUI = !!document.querySelector('.vjs-live-control, .vjs-live-display');
+            const hasProgress = !!document.querySelector('.vjs-progress-control');
+            if (hasLiveUI && !hasProgress) return true;
+            return false;
+        },
+
+        suppressHostControls(videoEl) {
+            document.querySelectorAll('.video-js, .vjs-tech').forEach(el => {
+                el.setAttribute('tabindex', '-1');
+            });
+        },
+
+        // MSE DVR on Inplay Review exposes a finite duration — keep baseline gate.
+        mediaReady(videoEl) {
+            return !!(videoEl && videoEl.duration && isFinite(videoEl.duration));
+        },
+
+        effectiveDuration(videoEl) {
+            if (videoEl && videoEl.duration && isFinite(videoEl.duration)) return videoEl.duration;
+            return NaN;
+        }
+    };
+
+    const SITE_EXAMINO = {
+        id: 'examino',
+        rootClass: 'omt-examino',
+
+        findVideo() {
+            const inOp = document.querySelector('.op-media-element-container video, .op-player video');
+            if (inOp) return inOp;
+            const any = document.querySelector('video');
+            return any || null;
+        },
+
+        findAnchor(videoEl) {
+            // Prefer the OpenPlayer root that typically owns fullscreen, then
+            // fall back to the media container / parent.
+            return videoEl.closest('.op-player') ||
+                videoEl.closest('.video-container') ||
+                videoEl.closest('.op-media-element-container') ||
+                videoEl.parentElement;
+        },
+
+        findFullscreenTarget(videoEl) {
+            return videoEl.closest('.op-player') ||
+                videoEl.closest('.video-container') ||
+                videoEl.closest('.op-media-element-container') ||
+                videoEl.parentElement ||
+                videoEl;
+        },
+
+        // Examino /play/dvr/ pages are already DVR — no Live/Review fork.
+        isReviewStream() { return true; },
+        isLiveStream() { return false; },
+
+        suppressHostControls(videoEl) {
+            injectExaminoHideCSS();
+            hideExaminoNativeChrome();
+            startExaminoNativeChromeObserver();
+            // Soften OpenPlayer keyboard/focus capture so our capture-phase
+            // hotkeys win; CSS hides the chrome.
+            const root = this.findAnchor(videoEl) || document;
+            root.querySelectorAll(
+                '.op-controls, .op-ui, .op-progressbar-container, .button-bar, .examino-bottom-controls, video, button, [tabindex]'
+            ).forEach(el => {
+                if (el.id === 'omt-root' || (omtRoot && omtRoot.contains(el))) return;
+                try { el.setAttribute('tabindex', '-1'); } catch (_) {}
+            });
+        },
+
+        // OpenPlayer MSE often reports duration=Infinity; seekable end is enough.
+        mediaReady(videoEl) {
+            if (!videoEl) return false;
+            if (videoEl.duration && isFinite(videoEl.duration)) return true;
+            try {
+                return !!(videoEl.seekable && videoEl.seekable.length > 0);
+            } catch (_) {
+                return false;
+            }
+        },
+
+        effectiveDuration(videoEl) {
+            if (!videoEl) return NaN;
+            if (videoEl.duration && isFinite(videoEl.duration)) return videoEl.duration;
+            try {
+                if (videoEl.seekable && videoEl.seekable.length > 0) {
+                    return videoEl.seekable.end(videoEl.seekable.length - 1);
+                }
+            } catch (_) {}
+            return NaN;
+        }
+    };
+
+    // Xeatre works differently (URL paste into the HTML app). Out of scope —
+    // leave a stub so a future adapter can plug in without another rewrite.
+    const SITE_XEATRE = {
+        id: 'xeatre',
+        rootClass: 'omt-xeatre',
+        findVideo() { return null; },
+        findAnchor() { return null; },
+        findFullscreenTarget() { return null; },
+        isReviewStream() { return false; },
+        isLiveStream() { return false; },
+        suppressHostControls() {},
+        mediaReady() { return false; },
+        effectiveDuration() { return NaN; },
+        // TODO(xeatre): dedicated adapter when Xeatre DVR is reachable again.
+        stub: true
+    };
+
+    function detectSite() {
+        const host = (location.hostname || '').toLowerCase();
+        const path = location.pathname || '';
+        const forced = (document.documentElement.dataset.omtSite || '').toLowerCase();
+
+        if (forced === 'examino' || host.includes('examino') || /examino/i.test(path)) {
+            return SITE_EXAMINO;
+        }
+        // TODO(xeatre): enable when bringing Xeatre injection back
+        if (forced === 'xeatre' || host.includes('xeatre')) {
+            return SITE_XEATRE;
+        }
+        if (forced === 'inplayip' || host.includes('inplayip') || /inplay/i.test(path)) {
+            return SITE_INPLAYIP;
+        }
+        // Local Playwright fixtures served from 127.0.0.1 / localhost
+        if (host === 'localhost' || host === '127.0.0.1') {
+            if (/examino/i.test(path)) return SITE_EXAMINO;
+            if (/inplay/i.test(path)) return SITE_INPLAYIP;
+        }
+        return null;
+    }
+
+    const site = detectSite();
+    if (!site) {
+        console.log('[OMT] No matching site adapter — content script idle.');
+        return;
+    }
+    if (site.stub) {
+        console.log('[OMT] Xeatre adapter is a stub (out of scope) — content script idle.');
+        return;
+    }
+    console.log('[OMT] Site adapter:', site.id);
+
+    /* =========================================================
        1. BOOT — WAIT FOR VIDEO ELEMENT
        ========================================================= */
     function teardown() {
@@ -79,24 +254,18 @@
             clearInterval(spaMonitorInterval);
             spaMonitorInterval = null;
         }
+        if (bootObserver) {
+            bootObserver.disconnect();
+            bootObserver = null;
+        }
         // Stop any running timers
         if (mouseMoveTimeout) {
             clearTimeout(mouseMoveTimeout);
             mouseMoveTimeout = null;
         }
-        // Disconnect dock engine
-        if (dockResizeObserver) {
-            dockResizeObserver.disconnect();
-            dockResizeObserver = null;
-        }
-        if (dockDebounceTimer) {
-            clearTimeout(dockDebounceTimer);
-            dockDebounceTimer = null;
-        }
-        if (dockFullscreenHandler) {
-            document.removeEventListener('fullscreenchange', dockFullscreenHandler);
-            window.removeEventListener('resize', dockFullscreenHandler);
-            dockFullscreenHandler = null;
+        if (osdTimeout) {
+            clearTimeout(osdTimeout);
+            osdTimeout = null;
         }
         // Clean up ShuttleXpress
         cleanupShuttle();
@@ -105,28 +274,36 @@
                 navigator.hid.removeEventListener('disconnect', handleHidDisconnect);
             } catch (e) {}
         }
-        // Remove keydown listener
-        document.removeEventListener('keydown', handleKeydown, true);
-        // Remove mousemove listener (was moved from vid to document — must clean up here)
-        document.removeEventListener('mousemove', resetControlsTimeout);
-        // Disconnect all MutationObservers to prevent memory leaks in SPA
-        if (nativeControlsObserver) { nativeControlsObserver.disconnect(); nativeControlsObserver = null; }
-        if (platformControlsObserver) { platformControlsObserver.disconnect(); platformControlsObserver = null; }
-        if (aggressiveBodyWatcher) { aggressiveBodyWatcher.disconnect(); aggressiveBodyWatcher = null; }
-        containerObservers.forEach(obs => obs.disconnect());
-        containerObservers = [];
-        // Remove layout handlers
-        if (layoutResizeHandler) { window.removeEventListener('resize', layoutResizeHandler); layoutResizeHandler = null; }
-        if (layoutFullscreenHandler) { document.removeEventListener('fullscreenchange', layoutFullscreenHandler); layoutFullscreenHandler = null; }
-        if (responsiveFixDebounce) { clearTimeout(responsiveFixDebounce); responsiveFixDebounce = null; }
-        // Abort all vid listeners
-        if (vidAbortController) { vidAbortController.abort(); vidAbortController = null; }
+        // Disconnect the controls-attribute observer (started in suppressNativeControls)
+        if (controlsObserver) {
+            controlsObserver.disconnect();
+            controlsObserver = null;
+        }
+        if (nativeChromeObserver) {
+            nativeChromeObserver.disconnect();
+            nativeChromeObserver = null;
+        }
+        if (examinoSettingsRefreshTimer) {
+            clearTimeout(examinoSettingsRefreshTimer);
+            examinoSettingsRefreshTimer = null;
+        }
+        // Detach all per-video listeners so a replaced MediaSource/video cannot
+        // keep seeking/playing the new element (VOD→DVR freeze root cause).
+        if (vidAbortController) {
+            try { vidAbortController.abort(); } catch (_) {}
+            vidAbortController = null;
+        }
+        // InplayIP: remove document capture listener. Examino keeps a persistent
+        // window capture listener installed at document_start.
+        if (site.id !== 'examino') {
+            document.removeEventListener('keydown', handleKeydown, true);
+        }
         // Remove the injected HUD from the DOM
         const existingRoot = document.getElementById('omt-root');
         if (existingRoot && existingRoot.parentNode) {
             existingRoot.parentNode.removeChild(existingRoot);
         }
-        // Clear references
+        // Clear element references
         omtRoot = null;
         vid = null;
         hlsInstance = null;
@@ -136,60 +313,138 @@
         controlsPanel = null;
         shuttleToggle = null;
         shuttleCheatsheet = null;
-        hasAutomatedDvr = false;
-        examinoDvrFallbackInjected = false;
-        isDocked = false;
-        isSmallViewForced = false;
-        omtAnchor = null;
+        liveBtn = null;
+        btnMainPlay = null;
+        timelineSlider = null;
+        vTimeCurrent = null;
+        vTimeDuration = null;
+        speedSelect = null;
+        volumeRange = null;
+        volumeIconBtn = null;
+
+        // --- TOTAL LIFECYCLE RESET (Bug 1 fix) ---
+        // Every SPA navigation must begin with a completely clean slate so that
+        // going Live -> Review (or any other transition) re-evaluates everything
+        // from scratch without stale flags blocking re-injection.
+        isManuallyHidden = false;
+        isDraggingTimeline = false;
+        isEditingTimer = false;
+        userIntendedTime = null;
+        seekLockUntil = 0;
+        timerAtivo = false;
+        offsetEmSegundos = 0;
+        tempoBase = 0;
     }
 
-    function boot() {
-        if (window.location.protocol === 'file:') {
-            document.documentElement.classList.add('omt-local-env');
-        }
-        const v = findVideo();
-        if (v) { init(v); return; }
+    /* =========================================================
+       1A. STREAM MODE DETECTION — delegated to site adapter
+       =========================================================
+       InplayIP: Review vs Live via VJS control-bar / text badges
+       (byte-equivalent to the known-good baseline).
+       Examino: /play/dvr/ is always treated as Review/DVR.
+    */
+    function isReviewStream() { return site.isReviewStream(); }
+    function isLiveStream() { return site.isLiveStream(); }
 
-        const obs = new MutationObserver(() => {
-            const found = findVideo();
-            if (found) { obs.disconnect(); init(found); }
+    /* =========================================================
+       1B. BOOT — OBSERVE FOR PLAYER, THEN ROUTE BY MODE
+       =========================================================
+       boot() is the single entry point for all (re-)initializations.
+       InplayIP waits for the VJS control bar before deciding mode.
+       Examino waits for a (possibly late / replaced) <video> via
+       MutationObserver — OpenPlayer mounts after document_idle.
+    */
+    function boot() {
+        if (bootObserver) {
+            bootObserver.disconnect();
+            bootObserver = null;
+        }
+
+        // --- Immediate check: player may already be in the DOM ---
+        if (isReviewStream()) {
+            const v = findVideo();
+            if (v) { init(v); return; }
+            // Review/DVR signal present (or Examino always-DVR) but <video> not
+            // mounted yet — fall through to the MutationObserver below.
+        } else if (site.id === 'inplayip' && isLiveStream()) {
+            console.log('[OMT] Live stream — extension inactive. Watching for next session.');
+            startSPAMonitor();
+            return;
+        }
+
+        // --- Player / video not ready yet: observe DOM mutations ---
+        bootObserver = new MutationObserver(() => {
+            if (site.id === 'inplayip') {
+                if (isReviewStream()) {
+                    const v = findVideo();
+                    if (!v) return; // Video element itself not yet attached — keep watching.
+                    bootObserver.disconnect();
+                    bootObserver = null;
+                    init(v);
+                    return;
+                }
+                if (isLiveStream()) {
+                    bootObserver.disconnect();
+                    bootObserver = null;
+                    console.log('[OMT] Live stream — extension inactive. Watching for next session.');
+                    startSPAMonitor();
+                }
+                return;
+            }
+
+            // Examino (and other always-DVR adapters): any video is enough.
+            const v = findVideo();
+            if (!v) return;
+            bootObserver.disconnect();
+            bootObserver = null;
+            init(v);
         });
-        obs.observe(document.documentElement, { childList: true, subtree: true });
+        bootObserver.observe(document.documentElement, { childList: true, subtree: true });
     }
 
     function findVideo() {
-        // Prefer the Video.js tech element
-        const tech = document.querySelector('.vjs-tech');
-        if (tech && tech.tagName === 'VIDEO') return tech;
-        // Generic fallback
-        const any = document.querySelector('video');
-        if (any) return any;
-        return null;
+        return site.findVideo();
     }
 
+    /* =========================================================
+       1C. SPA MONITOR — DETECT VIDEO REMOVAL / STREAM SWITCH
+       =========================================================
+       Runs every 1500 ms once a session (Live or Review) is active.
+       Detects three events and responds to each with teardown()+boot():
+
+         • Video element removed  → user exited the player back to schedule.
+         • Video present, HUD gone → stream was swapped (Review→Live or vice versa).
+         • Video element replaced  → a new player instance was mounted.
+
+       In all cases teardown() wipes all state, and boot() starts fresh
+       observation so the next session is correctly detected and handled.
+    */
     function startSPAMonitor() {
-        if (spaMonitorInterval) return; // Already running
+        if (spaMonitorInterval) return; // Already running — do not double-start.
         spaMonitorInterval = setInterval(() => {
             const currentVid = findVideo();
             const currentRoot = document.getElementById('omt-root');
 
-            if (!currentVid && currentRoot) {
-                // Left the stream page — tear down cleanly
+            if (!currentVid) {
+                // Video element gone — player was closed. Clean up and go back
+                // to watching state so the next session triggers correctly.
                 teardown();
+                boot();
                 return;
             }
 
             if (currentVid && !currentRoot) {
-                // New stream loaded but HUD is gone — reboot
+                // A new stream loaded but our HUD is missing — stream was swapped.
+                // Full teardown, then re-evaluate mode from scratch.
                 teardown();
-                init(currentVid);
+                boot();
                 return;
             }
 
             if (currentVid && currentVid !== vid) {
-                // Different video element — stream switched
+                // The video element itself was replaced by a new one.
                 teardown();
-                init(currentVid);
+                boot();
             }
         }, 1500);
     }
@@ -197,29 +452,22 @@
     function init(videoEl) {
         vid = videoEl;
         vid.preservesPitch = true;
-        vidAbortController = new AbortController();
 
-        if (!isXeatre) {
-            vid.classList.add('omt-top-align');
+        // Inject synchronously — control-bar detection already confirmed
+        // this is a Review/DVR session with a seekable timeline.
+        hlsInstance = getHlsInstance();
+        patchHlsForDvr();
+        suppressNativeControls();
+        injectUI();
+        cacheUIRefs();
+        wireEvents();
+        restoreState();
+        startSPAMonitor();
+        initShuttleXpress();
+        if (site.id === 'examino') {
+            initExaminoPlayerFeatures();
         }
-
-        // Give Video.js time to fully initialise before we grab its internals
-        setTimeout(() => {
-            hlsInstance = getHlsInstance();
-            patchHlsForDvr();
-            suppressNativeControls();
-            suppressPlatformControls();
-            injectUI();
-            cacheUIRefs();
-            wireEvents();
-            restoreState();
-            inicializarMetadadosTimeline();
-            startSPAMonitor();
-            initShuttleXpress();
-            automateExaminoDvr();
-            initDockedLayoutEngine();
-            console.log('[OMT] Overlay MatchTimer extension active.');
-        }, 1800);
+        console.log('[OMT] Overlay MatchTimer active — Review/DVR mode.');
     }
 
     /* =========================================================
@@ -276,282 +524,96 @@
     function suppressNativeControls() {
         vid.controls = false;
 
-        // Keep overriding in case Video.js re-enables them
-        if (nativeControlsObserver) nativeControlsObserver.disconnect();
-        nativeControlsObserver = new MutationObserver(() => {
-            if (vid.controls) vid.controls = false;
+        // Video.js / OpenPlayer may re-enable native controls during startup.
+        // We watch for that race condition and immediately override it.
+        // Performance contract:
+        //   - The callback is debounced (10 ms) so rapid consecutive mutations
+        //     collapse into a single correction instead of firing per-attribute-write.
+        //   - The observer automatically disconnects after 10 s — more than enough
+        //     time to win any VJS startup race — so it never polls continuously.
+        //   - The module-level `controlsObserver` reference lets teardown() clean
+        //     it up immediately on SPA navigation without waiting for the timer.
+        let debounceTimer = null;
+        controlsObserver = new MutationObserver(() => {
+            if (debounceTimer) return; // already scheduled, collapse this mutation
+            debounceTimer = setTimeout(() => {
+                debounceTimer = null;
+                if (vid && vid.controls) vid.controls = false;
+            }, 10);
         });
-        nativeControlsObserver.observe(vid, { attributes: true, attributeFilter: ['controls'] });
+        controlsObserver.observe(vid, { attributes: true, attributeFilter: ['controls'] });
 
-        // Swallow Video.js keyboard events so our handler wins
-        document.querySelectorAll('.video-js, .vjs-tech').forEach(el => {
-            el.setAttribute('tabindex', '-1');
-        });
-    }
-
-    /* =========================================================
-       3b. SUPPRESS PLATFORM-SPECIFIC NATIVE CONTROLS
-           Handles Xeatre and Examino control bars that are
-           injected / re-injected dynamically by the host page.
-           Runs a single persistent MutationObserver — no polling.
-       ========================================================= */
-    /* Selectors always hidden on every platform (Xeatre control bars) */
-    const XEATRE_SELECTORS = [
-        '#ControlBar.overlay-fullscreen',
-        '#ControlBar.overlay-normal'
-    ];
-
-    /* Selectors hidden ONLY on examino.statsperform.io */
-    const EXAMINO_SELECTORS = [
-        '.button-bar.svelte-1azck0y',
-        '.op-ui.op-clear',
-        '.op-progressbar-container.op-clear'
-        // NOTE: .op-button.op-setting-button is intentionally kept visible
-        // as a manual fallback in case DVR automation fails.
-    ];
-
-    /**
-     * Hides all currently present matching elements.
-     * Skips <video> and #omt-root — guaranteed by the selectors above.
-     * Examino-specific selectors are only evaluated when isExamino is true.
-     */
-    function hidePlatformControls() {
-        const selectors = isExamino
-            ? [...XEATRE_SELECTORS, ...EXAMINO_SELECTORS]
-            : XEATRE_SELECTORS;
-
-        selectors.forEach(selector => {
-            try {
-                document.querySelectorAll(selector).forEach(el => {
-                    if (el.style.display !== 'none') {
-                        el.style.display = 'none';
-                    }
-                });
-            } catch (e) { /* malformed selector guard */ }
-        });
-    }
-
-    /**
-     * SAFETY NET: After any hide sweep on Examino, forcibly un-hides the native
-     * settings button so DVR automation can always find it, and so the user has
-     * a manual fallback. This function is idempotent and cheap — it only removes
-     * an inline display:none that our own JS may have inadvertently set.
-     */
-    function restoreSettingsButton() {
-        if (!isExamino) return;
-        try {
-            document.querySelectorAll('.op-button.op-setting-button').forEach(el => {
-                // Remove any inline style.display we may have set; CSS rule takes over.
-                el.style.removeProperty('display');
-                el.style.removeProperty('visibility');
-                el.style.removeProperty('opacity');
-            });
-        } catch (_) {}
-    }
-
-    /**
-     * AGGRESSIVE CLASS-CHANGE OBSERVER
-     * Attaches MutationObservers to all present and future player container elements
-     * (.video-js, .video-container) watching only for class attribute changes.
-     * When Video.js adds 'vjs-user-active' (triggered by ShuttleXpress buttons,
-     * Spacebar, or any native keyboard handler), this fires synchronously and:
-     *   1. Removes vjs-user-active so Video.js CSS cannot show the control bar.
-     *   2. Adds vjs-user-inactive as a belt-and-suspenders measure.
-     *   3. Re-runs the full native-controls suppression sweep.
-     *   4. Restores the Examino settings button if it was caught in the sweep.
-     *
-     * Also monitors document.body for new player containers being added so the
-     * observer is always attached even after SPA navigation.
-     */
-    function attachAggressivePlayerObserver() {
-        const PLAYER_SELECTORS = ['.video-js', '.video-container'];
-
-        // Set of already-observed elements to avoid duplicate observers
-        const observed = new WeakSet();
-
-        function suppressOnClassChange(container) {
-            if (observed.has(container)) return;
-            observed.add(container);
-
-            const obs = new MutationObserver(() => {
-                // Video.js shows .vjs-control-bar when 'vjs-user-active' is present.
-                // Remove it immediately so the bar stays hidden.
-                if (container.classList.contains('vjs-user-active')) {
-                    container.classList.remove('vjs-user-active');
-                }
-                // Belt-and-suspenders: ensure inactive class is set
-                if (!container.classList.contains('vjs-user-inactive')) {
-                    container.classList.add('vjs-user-inactive');
-                }
-                // Re-run full suppression sweep
-                hidePlatformControls();
-                suppressNativeControlBarsOnPlayback();
-                // Ensure the settings button was not caught in the sweep
-                restoreSettingsButton();
-            });
-
-            obs.observe(container, { attributes: true, attributeFilter: ['class'] });
-            containerObservers.push(obs);
-        }
-
-        // Attach to all player containers already in the DOM
-        PLAYER_SELECTORS.forEach(sel => {
-            document.querySelectorAll(sel).forEach(el => suppressOnClassChange(el));
-        });
-
-        // Watch for dynamically added player containers (SPA navigation / lazy mount)
-        if (aggressiveBodyWatcher) aggressiveBodyWatcher.disconnect();
-        aggressiveBodyWatcher = new MutationObserver(mutations => {
-            for (const m of mutations) {
-                for (const node of m.addedNodes) {
-                    if (node.nodeType !== 1) continue;
-                    PLAYER_SELECTORS.forEach(sel => {
-                        try {
-                            if (node.matches && node.matches(sel)) suppressOnClassChange(node);
-                            if (node.querySelectorAll) {
-                                node.querySelectorAll(sel).forEach(el => suppressOnClassChange(el));
-                            }
-                        } catch (_) {}
-                    });
-                }
+        // Auto-disconnect once the VJS startup window has passed.
+        const autoDisconnectMs = 10000;
+        setTimeout(() => {
+            if (controlsObserver) {
+                controlsObserver.disconnect();
+                controlsObserver = null;
+                console.log('[OMT] controls-attribute observer disconnected (startup window elapsed).');
             }
-        });
-        aggressiveBodyWatcher.observe(document.body, { childList: true, subtree: true });
+        }, autoDisconnectMs);
 
-        console.log('[OMT] Aggressive player observer attached.');
-    }
-
-    /**
-     * Injects a <style> block that permanently hides Examino native controls
-     * using !important so that Svelte/player CSS cannot override us.
-     * Only injected when running on examino.statsperform.io.
-     */
-    function injectExaminoHideCSS() {
-        if (!isExamino) return;
-        if (document.getElementById('omt-examino-hide-css')) return; // idempotent
-        const style = document.createElement('style');
-        style.id = 'omt-examino-hide-css';
-        style.textContent = [
-            '.button-bar.svelte-1azck0y    { display: none !important; }',
-            '.op-ui.op-clear               { display: none !important; }',
-            '.op-progressbar-container.op-clear { display: none !important; }'
-            // .op-button.op-setting-button is intentionally NOT hidden here —
-            // it acts as a manual fallback if DVR automation fails.
-        ].join('\n');
-        (document.head || document.documentElement).appendChild(style);
-        console.log('[OMT] Examino CSS hide rules injected.');
-    }
-
-    /**
-     * Attaches a single MutationObserver on <body> (subtree) that calls
-     * hidePlatformControls() whenever new nodes are added to the DOM.
-     * Also runs immediately to cover any elements already present.
-     * The MutationObserver for Examino-specific controls only runs on Examino.
-     *
-     * AGGRESSIVE EXTENSION: also attaches attribute observers on all player
-     * container elements (.video-js, .video-container) so that class mutations
-     * (e.g. Video.js adding "vjs-user-active" after a ShuttleXpress keypress or
-     * Spacebar) are intercepted and the native control bars are re-hidden
-     * before a single frame is painted.
-     */
-    function suppressPlatformControls() {
-        // Inject CSS !important rules for Examino (belt-and-suspenders)
-        injectExaminoHideCSS();
-
-        // Immediate DOM sweep — cover elements already present at init time
-        hidePlatformControls();
-        restoreSettingsButton();
-
-        // Global observer: covers Xeatre re-injection on all platforms
-        if (platformControlsObserver) platformControlsObserver.disconnect();
-        platformControlsObserver = new MutationObserver(mutations => {
-            let hasAdditions = false;
-            for (const mutation of mutations) {
-                if (mutation.addedNodes.length > 0) {
-                    hasAdditions = true;
-                    break;
-                }
-            }
-            // Only act when new nodes actually appeared (skip attribute/text mutations)
-            if (hasAdditions) {
-                hidePlatformControls();
-                restoreSettingsButton();
-            }
-        });
-
-        platformControlsObserver.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
-
-        // Aggressive class-change observer
-        attachAggressivePlayerObserver();
-
-        console.log('[OMT] Platform control suppressor active' + (isExamino ? ' (Xeatre + Examino).' : ' (Xeatre).'));
+        // Site-specific native chrome / focus suppression (Inplay VJS or OpenPlayer).
+        site.suppressHostControls(vid);
     }
 
     /* =========================================================
        4. INJECT UI INTO THE PAGE
        ========================================================= */
     function injectUI() {
-        const isLocal = window.location.protocol === 'file:';
-        let anchor;
-
-        if (isLocal) {
-            anchor = document.body;
-        } else {
-            // Find the best container to anchor inside
-            anchor = vid.closest('.video-js') ||
-                vid.closest('.vjs-player') ||
-                vid.parentElement;
-        }
+        const anchor = site.findAnchor(vid);
 
         if (!anchor) { console.error('[OMT] Could not find anchor element.'); return; }
 
-        omtAnchor = anchor;
-
-        if (!isLocal) {
-            // Ensure relative positioning so absolute children work
-            const cs = getComputedStyle(anchor);
-            if (cs.position === 'static') anchor.style.position = 'relative';
-        }
+        // Ensure relative positioning so absolute children work
+        const cs = getComputedStyle(anchor);
+        if (cs.position === 'static') anchor.style.position = 'relative';
 
         omtRoot = document.createElement('div');
         omtRoot.id = 'omt-root';
-        // Allow clicks to pass through the transparent overlay root to the native video
-        // player underneath. Child elements (our panels/buttons) restore pointer-events.
-        omtRoot.style.pointerEvents = 'none';
-        if (isLocal) {
-            omtRoot.style.position = 'fixed';
-            omtRoot.style.zIndex = '999999999';
-        } else {
-            // Absolute maximum stacking priority — must win over every host-page element
-            // (white/black letterbox bars, Svelte wrappers, Video.js overlays, etc.)
-            omtRoot.style.zIndex = '999999999';
-        }
+        omtRoot.classList.add(site.rootClass);
         omtRoot.innerHTML = buildHTML();
         anchor.appendChild(omtRoot);
 
-        // Restore pointer interactivity only for the actual interactive panels —
-        // NOT for #omt-video-spacer (which fills the video image area and must
-        // stay pointer-events:none so clicks reach the native player underneath).
-        const omtPointerStyle = document.createElement('style');
-        omtPointerStyle.id = 'omt-pointer-events-css';
-        omtPointerStyle.textContent = [
-            '#omt-root #controls-panel { pointer-events: auto !important; }',
-            '#omt-root #setup-panel    { pointer-events: auto !important; }',
-            '#omt-root #match-timer    { pointer-events: auto !important; }',
-            // osd-message is pointer-events:none (it's just a notification overlay)
-            // omt-video-spacer is intentionally pointer-events:none
-            // omt-examino-dvr-fallback is an absolute button — needs auto
-            '#omt-root #omt-examino-dvr-fallback { pointer-events: auto !important; }',
-        ].join('\n');
-        (document.head || document.documentElement).appendChild(omtPointerStyle);
+        updateCompactLayout();
+        ensureFullscreenHook();
+    }
+
+    function updateCompactLayout() {
+        if (!omtRoot) return;
+        // Examino popup players are often ~465×261 — shrink chrome so the HUD fits.
+        const anchor = omtRoot.parentElement;
+        const w = (anchor && anchor.clientWidth) || window.innerWidth;
+        const h = (anchor && anchor.clientHeight) || window.innerHeight;
+        const compact = site.id === 'examino' && (w < 720 || h < 420);
+        omtRoot.classList.toggle('omt-compact', compact);
+    }
+
+    function ensureFullscreenHook() {
+        if (fullscreenHooked) return;
+        fullscreenHooked = true;
+        document.addEventListener('fullscreenchange', () => {
+            if (!vid || !omtRoot) return;
+            updateCompactLayout();
+            // If OpenPlayer (or the browser) fullscreens a parent that does not
+            // contain our root, reparent so the overlay stays visible.
+            const fs = document.fullscreenElement;
+            if (fs && fs.contains(vid) && !fs.contains(omtRoot)) {
+                fs.appendChild(omtRoot);
+                const cs = getComputedStyle(fs);
+                if (cs.position === 'static') fs.style.position = 'relative';
+            } else if (!fs && vid.isConnected) {
+                const anchor = site.findAnchor(vid);
+                if (anchor && omtRoot.parentElement !== anchor) {
+                    anchor.appendChild(omtRoot);
+                }
+            }
+        });
+        window.addEventListener('resize', () => updateCompactLayout());
     }
 
     function buildHTML() {
         return `
-<div id="omt-video-spacer"></div>
 <div id="match-timer">00:00</div>
 <div id="osd-message">MatchTimer</div>
 
@@ -584,6 +646,18 @@
                 <text x="138" y="25" fill="#00ff88" font-family="'Segoe UI',sans-serif" font-size="16" font-weight="800" letter-spacing="1">MATCHTIMER</text>
                 <text x="56" y="39" fill="#888" font-family="'Segoe UI',sans-serif" font-size="9" font-weight="600" letter-spacing="0.5">DEVELOPED BY VASCO OLIVEIRA</text>
             </svg>
+        </div>
+
+        <div class="control-group" id="omt-examino-settings" style="display:none;border:1px solid rgba(0,255,136,0.18);border-radius:6px;padding:8px 10px;background:rgba(0,255,136,0.04);">
+            <label style="font-size:11px;color:#aaa;display:block;margin-bottom:4px;">0. Source (Examino)</label>
+            <select id="omt-examino-source" style="width:100%;box-sizing:border-box;padding:6px;background:rgba(0,0,0,0.35);border:1px solid #444;color:white;border-radius:4px;font-size:12px;">
+                <option value="DVR">DVR</option>
+                <option value="VOD">VOD</option>
+            </select>
+            <label style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px;color:#ddd;margin-top:8px;">
+                <span>Auto-switch to VOD</span>
+                <input type="checkbox" id="omt-examino-auto-vod" checked>
+            </label>
         </div>
 
         <div class="control-group">
@@ -676,6 +750,7 @@
                 <button id="omt-live-btn" title="Go to Live Edge">
                     <span class="live-dot"></span> LIVE
                 </button>
+                <span class="omt-live-spacer" aria-hidden="true"></span>
                 <button class="handle-btn" id="omt-volume-icon-btn" title="Mute/Unmute" style="font-size:12px;padding:0 2px;">🔊</button>
                 <input type="range" id="omt-volume-range" min="0" max="1" step="0.05" value="1" style="-webkit-appearance: none; appearance: none; width: 60px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.2); outline: none; cursor: pointer;">
             </div>
@@ -841,7 +916,7 @@
                 volumeRange.value = vid.volume;
                 atualizarIconeVolume(vid.volume);
             }
-        }, { signal: vidAbortController.signal });
+        });
 
         // --- Timeline slider ---
         timelineSlider.addEventListener('input', function () {
@@ -853,14 +928,18 @@
             seekTo(t);
             isDraggingTimeline = false;
             this.blur();
-            resetControlsTimeout();
+            resetControlsTimeout(false);
         });
 
-        const signal = vidAbortController.signal;
+        // --- Video element events (AbortController so teardown detaches cleanly) ---
+        if (vidAbortController) {
+            try { vidAbortController.abort(); } catch (_) {}
+        }
+        vidAbortController = new AbortController();
+        const vsig = { signal: vidAbortController.signal };
 
-        // --- Video element events ---
-        vid.addEventListener('loadedmetadata', inicializarMetadadosTimeline, { signal });
-        vid.addEventListener('durationchange', inicializarMetadadosTimeline, { signal });
+        vid.addEventListener('loadedmetadata', inicializarMetadadosTimeline, vsig);
+        vid.addEventListener('durationchange', inicializarMetadadosTimeline, vsig);
 
         vid.addEventListener('timeupdate', () => {
             // Anti-live-snap: if HLS pushed us forward unexpectedly, pull back
@@ -883,49 +962,58 @@
                     }
                 }
             }
-        }, { signal });
+        }, vsig);
 
         vid.addEventListener('play', () => {
+            if (!btnMainPlay || !controlsPanel) return; // null-guard: UI may have been torn down
             btnMainPlay.innerHTML = '⏸ Pause';
             btnMainPlay.classList.add('playing');
             controlsPanel.classList.add('playing-state');
-            resetControlsTimeout();
-            // Fix #5: Suppress native control bars that can re-appear on play events
-            // (e.g. ShuttleXpress triggering play via vid.play() directly)
-            suppressNativeControlBarsOnPlayback();
-        }, { signal });
+            // Don't reveal the panel — ShuttleXpress triggers play() silently.
+            resetControlsTimeout(false);
+        }, vsig);
         vid.addEventListener('pause', () => {
+            if (!btnMainPlay || !controlsPanel) return; // null-guard: UI may have been torn down
             btnMainPlay.innerHTML = '⏯ Play';
             btnMainPlay.classList.remove('playing');
             controlsPanel.classList.remove('playing-state');
-            // Also suppress on pause — some platforms re-show controls when paused
-            suppressNativeControlBarsOnPlayback();
-        }, { signal });
+        }, vsig);
 
         // --- Drag system for both panels ---
         fazerArrastavel(setupPanel, q('setup-handle'));
         fazerArrastavel(controlsPanel, q('controls-handle'));
 
-        // --- Auto-hide controls on mouse inactivity ---
-        // FIX (Invisible Wall Bug): listen on document, not on vid/controlsPanel.
-        // #omt-root has z-index:999999999 and covers the full video element, so any
-        // listener attached to vid would never fire — the overlay intercepts first.
-        // Listening on document means ANY mouse movement anywhere on the page wakes
-        // up the controls, regardless of which element is on top.
-        document.addEventListener('mousemove', resetControlsTimeout);
-        resetControlsTimeout();
+        // --- Auto-hide controls: mouse move + clicks/keys/wheel on our UI ---
+        // Never hide while the pointer is over our interactive chrome.
+        vid.addEventListener('mousemove', () => resetControlsTimeout(true), vsig);
+        wireOmtUiActivityTracking();
+        resetControlsTimeout(false); // bootstrap: start timer, don't force-show
 
         // --- Keyboard shortcuts (capture phase, highest priority) ---
-        document.addEventListener('keydown', handleKeydown, true);
+        // Examino: persistent window listener installed at document_start.
+        // InplayIP: document capture listener (baseline behaviour).
+        if (site.id === 'examino') {
+            installExaminoHotkeys();
+            installExaminoClickToToggle();
+            wireExaminoSettingsUI();
+            // Only settle to live-edge after an explicit VOD→DVR switch — never on every bind.
+            if (examinoPendingDvrSettle) {
+                examinoPendingDvrSettle = false;
+                settleExaminoMediaAfterBind();
+            }
+        } else {
+            document.addEventListener('keydown', handleKeydown, true);
+        }
 
         // Auto-blur our own buttons after click (prevent shortcut hijack)
         omtRoot.addEventListener('click', function (e) {
+            noteOmtUiActivity(true);
             const el = e.target.closest('button');
             if (el) setTimeout(() => el.blur(), 50);
         });
 
-        // Show live button if it is a stream, hide if local file
-        liveBtn.style.display = isLocalVideo ? 'none' : 'flex';
+        // Show live button immediately (always a stream)
+        liveBtn.style.display = 'flex';
 
         // Click listener for interactive timer
         timerUI.addEventListener('click', iniciarEdicaoTimer);
@@ -942,10 +1030,23 @@
        Prevents the HLS player from auto-advancing the playhead
        back to the live edge after a user-initiated seek.
        ========================================================= */
+    function clampToSeekable(time) {
+        if (!vid || !vid.seekable || vid.seekable.length === 0) return time;
+        try {
+            const start = vid.seekable.start(0);
+            const end = vid.seekable.end(vid.seekable.length - 1);
+            if (!isFinite(start) || !isFinite(end)) return time;
+            return Math.min(Math.max(time, start), end);
+        } catch (_) {
+            return time;
+        }
+    }
+
     function seekTo(time) {
-        userIntendedTime = time;
+        const t = clampToSeekable(time);
+        userIntendedTime = t;
         seekLockUntil = Date.now() + 4000; // 4-second protection window
-        vid.currentTime = time;
+        vid.currentTime = t;
     }
 
     function antiLiveSnap() {
@@ -1036,7 +1137,10 @@
     }
 
     function inicializarMetadadosTimeline() {
-        if (vid.duration && isFinite(vid.duration)) {
+        const mediaDuration = site.effectiveDuration(vid);
+        // InplayIP path: only enters when duration is finite (effectiveDuration === vid.duration).
+        // Examino path: also accepts seekable-end when MSE reports Infinity.
+        if (mediaDuration && isFinite(mediaDuration)) {
             let minVal = 0;
             // Precision zoom: shrink slider to 15 min before kickoff1
             if (kickoff1 !== null) {
@@ -1046,15 +1150,15 @@
                 }
             }
             timelineSlider.min = minVal;
-            timelineSlider.max = vid.duration;
-            vTimeDuration.innerText = formatarTempoVideo(vid.duration);
+            timelineSlider.max = mediaDuration;
+            vTimeDuration.innerText = formatarTempoVideo(mediaDuration);
             timelineSlider.disabled = false;
             if (parseFloat(timelineSlider.value) < minVal) timelineSlider.value = minVal;
 
             // --- SE FOR DVR (REVIEW): Mostra os controlos (caso não tenham sido escondidos pelo H) ---
             if (controlsPanel && !isManuallyHidden) {
                 controlsPanel.style.display = ''; // Limpa o 'none' e usa o layout padrão do CSS
-                resetControlsTimeout();
+                resetControlsTimeout(false);
             }
         } else {
             timelineSlider.min = 0;
@@ -1134,7 +1238,16 @@
         atualizarMarcadores();
         atualizarRelogio();
         esconderSetup();
-        mostrarOSD('⏱ Timer Synced');
+        // Mark the button as permanently active (stays green until cleared).
+        // Class + inline style together beat any host-page CSS override.
+        const _kickoffBtn = q('omt-btn-set-kickoff');
+        _kickoffBtn.classList.add('kickoff-set');
+        _kickoffBtn.style.setProperty('background', '#00cc6a', 'important');
+        _kickoffBtn.style.setProperty('color', '#000', 'important');
+        _kickoffBtn.style.setProperty('opacity', '1', 'important');
+        _kickoffBtn.style.setProperty('box-shadow', '0 0 14px rgba(0,255,136,0.5)', 'important');
+        _kickoffBtn.style.setProperty('border', '1px solid rgba(0,255,136,0.4)', 'important');
+        mostrarOSD('\u23f1 Timer Synced');
     }
 
     function limparTimer() {
@@ -1164,7 +1277,15 @@
 
         inicializarMetadadosTimeline();
         atualizarMarcadores();
-        mostrarOSD('✕ Timer Cleared');
+        // Remove the active state from the kick-off button and clear inline overrides
+        const _kickoffBtnClear = q('omt-btn-set-kickoff');
+        _kickoffBtnClear.classList.remove('kickoff-set');
+        _kickoffBtnClear.style.removeProperty('background');
+        _kickoffBtnClear.style.removeProperty('color');
+        _kickoffBtnClear.style.removeProperty('opacity');
+        _kickoffBtnClear.style.removeProperty('box-shadow');
+        _kickoffBtnClear.style.removeProperty('border');
+        mostrarOSD('\u2715 Timer Cleared');
     }
 
     function atualizarRelogio() {
@@ -1432,7 +1553,7 @@
         if (!markerContainer) return;
         markerContainer.innerHTML = '';
 
-        const duration = vid.duration;
+        const duration = site.effectiveDuration(vid);
         if (!duration || !isFinite(duration)) {
             [btnK1, btnK2, btnKC1, btnKC2].forEach(b => { if (b) b.style.display = 'none'; });
             return;
@@ -1526,6 +1647,7 @@
     }
 
     function atualizarEstadoLive() {
+        if (!vid || !liveBtn) return; // null-guard: called from timeupdate, may fire after teardown
         let liveEdge = 0;
         if (vid.seekable && vid.seekable.length > 0) {
             liveEdge = vid.seekable.end(vid.seekable.length - 1);
@@ -1537,8 +1659,7 @@
     }
 
     function toggleFullScreen() {
-        const isLocal = window.location.protocol === 'file:';
-        const container = isLocal ? document.documentElement : (vid.closest('.video-js') || vid.closest('.vjs-player') || vid.parentElement);
+        const container = site.findFullscreenTarget(vid);
         if (!document.fullscreenElement) {
             (container || vid).requestFullscreen().catch(() => vid.requestFullscreen().catch(() => { }));
         } else {
@@ -1570,51 +1691,92 @@
        13. OSD NOTIFICATION
        ========================================================= */
     function mostrarOSD(texto) {
+        if (!osd) return; // null-guard: may be called after teardown (e.g. deferred OSD timeouts)
         osd.innerText = texto;
         osd.classList.remove('visible');
         void osd.offsetWidth; // reflow
         osd.classList.add('visible');
         clearTimeout(osdTimeout);
-        osdTimeout = setTimeout(() => osd.classList.remove('visible'), 1800);
+        osdTimeout = setTimeout(() => { if (osd) osd.classList.remove('visible'); }, 1800);
     }
 
     /* =========================================================
        13B. AUTO-HIDE CONTROLS
-       Uses a CSS class (.omt-hidden) rather than inline style.opacity
-       so the small-view layout enforcer (applySmallViewLayout) can never
-       fight over the same property — eliminating the ~1-second flicker loop.
        ========================================================= */
-    function resetControlsTimeout() {
+    // showPanel=true  → show the panel immediately (mouse hover path).
+    // showPanel=false → only reset/maintain the auto-hide countdown without
+    //                   making the panel visible (non-mouse paths: play event,
+    //                   loadedmetadata, timeline change, ShuttleXpress, etc.).
+    function isOmtInteractiveTarget(target) {
+        if (!target || !omtRoot) return false;
+        const el = target.nodeType === 1 ? target : target.parentElement;
+        if (!el || !omtRoot.contains(el)) return false;
+        return !!el.closest('.glass-panel, #match-timer, #osd-message, button, input, select, label, a, .timeline-container');
+    }
+
+    function noteOmtUiActivity(showPanel = true) {
+        resetControlsTimeout(showPanel);
+    }
+
+    function wireOmtUiActivityTracking() {
+        if (!omtRoot) return;
+        const activityEvents = ['mousemove', 'mousedown', 'pointerdown', 'click', 'wheel', 'keydown', 'touchstart'];
+        activityEvents.forEach((evName) => {
+            omtRoot.addEventListener(evName, (e) => {
+                if (isOmtInteractiveTarget(e.target)) {
+                    noteOmtUiActivity(true);
+                }
+            }, true);
+        });
+
+        const trackHover = (panel) => {
+            if (!panel) return;
+            panel.addEventListener('mouseenter', () => {
+                pointerOverOmtUi = true;
+                noteOmtUiActivity(true);
+            });
+            panel.addEventListener('mouseleave', () => {
+                pointerOverOmtUi = false;
+                // Restart idle timer once the pointer leaves, without forcing show.
+                resetControlsTimeout(false);
+            });
+        };
+        trackHover(controlsPanel);
+        trackHover(setupPanel);
+        if (timerUI) trackHover(timerUI);
+    }
+
+    function resetControlsTimeout(showPanel = true) {
         if (mouseMoveTimeout) {
             clearTimeout(mouseMoveTimeout);
             mouseMoveTimeout = null;
         }
 
-        // Manual hide always wins — don't touch anything.
         if (isManuallyHidden) return;
 
-        // On pure-live streams the panel is intentionally hidden — don't show it.
-        if (vid && (!vid.duration || !isFinite(vid.duration))) return;
+        // InplayIP: identical finite-duration gate. Examino: allow seekable MSE.
+        if (vid && !site.mediaReady(vid)) return;
 
-        // Show the panel (remove the hide class and clear any legacy inline opacity).
-        if (controlsPanel) {
-            controlsPanel.classList.remove('omt-hidden');
-            controlsPanel.style.opacity = '';
-            controlsPanel.style.pointerEvents = '';
+        if (showPanel && controlsPanel) {
+            controlsPanel.style.opacity = '1';
+            controlsPanel.style.pointerEvents = 'auto';
         }
 
-        // In docked mode OR small-view forced mode, the panel must always stay
-        // visible — never set a hide timeout. The layout enforcer owns visibility.
-        if (isDocked || isSmallViewForced) return;
+        // Only schedule the hide timer when the panel is already visible.
+        if (!controlsPanel || controlsPanel.style.opacity !== '1') return;
+
+        // While the pointer rests on our UI, keep the panel visible (clicking
+        // -2s repeatedly with a still mouse must not hide the bar).
+        if (pointerOverOmtUi) return;
 
         mouseMoveTimeout = setTimeout(() => {
-            if (isDraggingTimeline) {
-                resetControlsTimeout();
+            if (isDraggingTimeline || pointerOverOmtUi) {
+                resetControlsTimeout(false);
                 return;
             }
-            // Only hide if manual-hide and small-view are still inactive.
-            if (!isManuallyHidden && !isSmallViewForced && controlsPanel) {
-                controlsPanel.classList.add('omt-hidden');
+            if (controlsPanel) {
+                controlsPanel.style.opacity = '0';
+                controlsPanel.style.pointerEvents = 'none';
             }
         }, 2500);
     }
@@ -1622,19 +1784,32 @@
     /* =========================================================
        14. KEYBOARD SHORTCUTS (capture phase — intercepts Video.js)
        ========================================================= */
+    function isEditableKeyTarget(target) {
+        if (!target) return false;
+        if (target.isContentEditable) return true;
+        const el = target.nodeType === 1 ? target : target.parentElement;
+        if (!el) return false;
+        if (el.closest && el.closest('input, select, textarea, [contenteditable=""], [contenteditable="true"]')) {
+            return true;
+        }
+        const tag = (el.tagName || '').toUpperCase();
+        return tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA';
+    }
+
     function handleKeydown(e) {
-        // Don't intercept when user is typing in our own inputs
-        const tag = e.target.tagName;
-        if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+        // Don't intercept when user is typing in inputs / contenteditable
+        if (isEditableKeyTarget(e.target)) return;
 
         const key = e.key.toLowerCase();
         const controlled = ['arrowright', 'arrowleft', 'arrowup', 'arrowdown', ' ', 'z', 'c', 'x', 'h'];
         if (!controlled.includes(key)) return;
 
-        // Stop the event before Video.js or the browser handles it
+        // Stop the event before Video.js / OpenPlayer / Examino handles it
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
+
+        if (!vid) return;
 
         switch (key) {
             case 'arrowright':
@@ -1685,9 +1860,6 @@
                 if (controlsPanel) {
                     if (isManuallyHidden) {
                         isManuallyHidden = false;
-                        // Clear any legacy inline opacity that may still be set
-                        controlsPanel.style.opacity = '';
-                        controlsPanel.style.pointerEvents = '';
                         resetControlsTimeout();
                         mostrarOSD('🖥️ Controls Visible');
                     } else {
@@ -1696,10 +1868,8 @@
                             clearTimeout(mouseMoveTimeout);
                             mouseMoveTimeout = null;
                         }
-                        // Use class-based hide so it overrides any small-view enforcer
-                        controlsPanel.classList.add('omt-hidden');
-                        controlsPanel.style.opacity = '';
-                        controlsPanel.style.pointerEvents = '';
+                        controlsPanel.style.opacity = '0';
+                        controlsPanel.style.pointerEvents = 'none';
                         mostrarOSD('🙈 Controls Hidden');
                     }
                 }
@@ -1722,74 +1892,50 @@
 
     /* =========================================================
        15. PANEL DRAG SYSTEM
-       Exact port of the working fazerArrastavel() from OverlayMatchTimer.html.
-       Uses the classic delta-movement pattern with document.onmousemove so the
-       drag never drops even when the cursor moves faster than the panel repaints.
-       NOTE: CSS transitions on 'left' and 'transform' are suppressed for the
-       entire drag gesture and restored on mouseup — otherwise every style.left
-       update is animated over 0.25 s instead of being immediate, which causes
-       broken horizontal movement and a visible jump when transform is cleared.
        ========================================================= */
     function fazerArrastavel(panel, handle) {
         let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
 
         handle.onmousedown = function (e) {
-            // Guard: don't allow dragging controls panel when docked
-            if (isDocked && panel === controlsPanel) return;
-
             // Ignore clicks on interactive child elements
             if (e.target.closest('button, select, input')) return;
-
-            e = e || window.event;
             e.preventDefault();
 
-            // Snapshot the panel's current rendered position once and commit it
-            // as explicit top/left px so delta moves work predictably regardless
-            // of prior CSS (transform, bottom, %, etc.)
+            // Anchor the panel at its current rendered position before clearing transforms
             const rect = panel.getBoundingClientRect();
             const rootRect = omtRoot.getBoundingClientRect();
-
-            // Kill CSS transitions for the duration of the drag so that every
-            // style.left / style.top assignment takes effect immediately.
-            panel.style.transition = 'none';
-
-            panel.style.top       = (rect.top  - rootRect.top)  + 'px';
-            panel.style.left      = (rect.left - rootRect.left) + 'px';
+            panel.style.top = (rect.top - rootRect.top) + 'px';
+            panel.style.left = (rect.left - rootRect.left) + 'px';
             panel.style.transform = 'none';
-            panel.style.bottom    = 'auto';
+            panel.style.bottom = 'auto';
 
             pos3 = e.clientX;
             pos4 = e.clientY;
 
-            document.onmouseup   = stopDrag;
             document.onmousemove = drag;
+            document.onmouseup = stopDrag;
         };
 
         function drag(e) {
-            e = e || window.event;
             e.preventDefault();
-
-            // Delta from last known mouse position — no getBoundingClientRect here
             pos1 = pos3 - e.clientX;
             pos2 = pos4 - e.clientY;
             pos3 = e.clientX;
             pos4 = e.clientY;
 
-            let newTop  = panel.offsetTop  - pos2;
+            let newTop = panel.offsetTop - pos2;
             let newLeft = panel.offsetLeft - pos1;
 
-            newTop  = Math.max(0, Math.min(newTop,  window.innerHeight - panel.offsetHeight));
-            newLeft = Math.max(0, Math.min(newLeft, window.innerWidth  - panel.offsetWidth));
+            newTop = Math.max(0, Math.min(newTop, window.innerHeight - panel.offsetHeight));
+            newLeft = Math.max(0, Math.min(newLeft, window.innerWidth - panel.offsetWidth));
 
-            panel.style.top  = newTop  + 'px';
+            panel.style.top = newTop + 'px';
             panel.style.left = newLeft + 'px';
         }
 
         function stopDrag() {
-            document.onmouseup   = null;
+            document.onmouseup = null;
             document.onmousemove = null;
-            // Restore transitions after the drag ends
-            panel.style.transition = '';
         }
     }
 
@@ -1960,6 +2106,45 @@
         }
     }
 
+    /**
+     * If the document is currently in native fullscreen, exit it and wait
+     * until the browser has fully unwound the fullscreen layout before
+     * resolving. This is required so that browser-modal prompts (e.g. the
+     * WebHID device-picker) can open without glitching the UI.
+     *
+     * Resolution order:
+     *  1. The `fullscreenchange` event fires  → resolves immediately.
+     *  2. Fallback: 400 ms safety timeout     → resolves unconditionally.
+     */
+    function exitFullscreenSafely() {
+        return new Promise(resolve => {
+            if (!document.fullscreenElement) {
+                resolve();
+                return;
+            }
+
+            let settled = false;
+            const settle = () => {
+                if (settled) return;
+                settled = true;
+                document.removeEventListener('fullscreenchange', onChanged);
+                resolve();
+            };
+
+            const onChanged = () => settle();
+            document.addEventListener('fullscreenchange', onChanged, { once: true });
+
+            // Safety net: if fullscreenchange never fires, unblock after 400 ms.
+            setTimeout(settle, 400);
+
+            document.exitFullscreen().catch(() => {
+                // exitFullscreen can throw if the document is not the
+                // fullscreen owner (e.g. inside an iframe). Settle anyway.
+                settle();
+            });
+        });
+    }
+
     async function handleToggleChange() {
         if (shuttleToggle.checked) {
             localStorage.setItem('shuttleXpressEnabled', 'true');
@@ -1967,17 +2152,9 @@
                 const devices = await navigator.hid.getDevices();
                 let device = devices.find(d => d.vendorId === 0x0b33);
                 if (!device) {
-                    // Chrome blocks WebHID prompts in fullscreen. If in fullscreen, exit it first.
-                    if (document.fullscreenElement) {
-                        try {
-                            mostrarOSD('Exiting fullscreen to pair device...');
-                            await document.exitFullscreen();
-                            // Wait for the browser to transition out of fullscreen
-                            await new Promise(resolve => setTimeout(resolve, 300));
-                        } catch (fsErr) {
-                            console.error('[OMT] Failed to exit fullscreen for WebHID request:', fsErr);
-                        }
-                    }
+                    // Exit fullscreen first so the device-picker popup can
+                    // open cleanly without freezing or glitching the UI.
+                    await exitFullscreenSafely();
                     const requested = await navigator.hid.requestDevice({ filters: [{ vendorId: 0x0b33 }] });
                     if (requested && requested.length > 0) {
                         device = requested[0];
@@ -2026,182 +2203,6 @@
     }
 
     /* =========================================================
-       16C. EXAMINO DVR AUTOMATION MODULE
-       Runs only on examino.statsperform.io.
-       Waits 2.5 s after page load, opens the player settings,
-       then clicks the DVR source button after 600 ms.
-       ========================================================= */
-    /* =========================================================
-       EXAMINO FALLBACK DVR BUTTON
-       Injects an independent "📹 DVR" button directly into #omt-root
-       so we don't rely on Examino's fragile Svelte DOM structure at all.
-       The button is always visible and calls into the native player settings
-       programmatically. If the Svelte app has removed/hidden its own settings
-       button or its parent wrapper, our fallback is completely unaffected.
-    ========================================================= */
-    let examinoDvrFallbackInjected = false;
-
-    function injectExaminoDvrFallback() {
-        if (!isExamino) return;
-        if (examinoDvrFallbackInjected) return;
-        if (!omtRoot) return;
-        examinoDvrFallbackInjected = true;
-
-        const btn = document.createElement('button');
-        btn.id = 'omt-examino-dvr-fallback';
-        btn.title = 'Switch to DVR / Recording mode';
-        btn.innerText = '📹 DVR';
-        btn.style.cssText = [
-            'position:absolute',
-            'top:8px',
-            'right:8px',
-            'z-index:999999999',
-            'pointer-events:auto',
-            'background:rgba(255,80,0,0.18)',
-            'color:#ff8c42',
-            'border:1px solid rgba(255,80,0,0.4)',
-            'border-radius:5px',
-            'padding:4px 10px',
-            'font-size:11px',
-            'font-weight:bold',
-            'cursor:pointer',
-            'font-family:inherit',
-            'letter-spacing:0.4px',
-            'transition:background 0.2s,border-color 0.2s'
-        ].join(';');
-
-        btn.addEventListener('mouseenter', () => {
-            btn.style.background = 'rgba(255,80,0,0.35)';
-            btn.style.borderColor = 'rgba(255,80,0,0.7)';
-        });
-        btn.addEventListener('mouseleave', () => {
-            btn.style.background = 'rgba(255,80,0,0.18)';
-            btn.style.borderColor = 'rgba(255,80,0,0.4)';
-        });
-
-        btn.addEventListener('click', () => {
-            // Try the native settings button first (covers all DOM states)
-            const settingsBtn = document.querySelector('.op-button.op-setting-button');
-            if (settingsBtn) {
-                // Force it visible before clicking in case parent is hidden
-                const parent = settingsBtn.parentElement;
-                if (parent) {
-                    parent.style.setProperty('display', 'flex', 'important');
-                    parent.style.setProperty('visibility', 'visible', 'important');
-                    parent.style.setProperty('opacity', '1', 'important');
-                }
-                settingsBtn.style.setProperty('display', 'block', 'important');
-                settingsBtn.style.setProperty('visibility', 'visible', 'important');
-                settingsBtn.click();
-                console.log('[OMT] Examino DVR fallback: settings button clicked via fallback.');
-
-                // Click the DVR source after panel opens
-                setTimeout(() => {
-                    const dvrBtn = document.querySelector('div[op-data-value="1"]');
-                    if (dvrBtn) {
-                        dvrBtn.click();
-                        console.log('[OMT] Examino DVR fallback: DVR source clicked.');
-                        mostrarOSD('📹 DVR Mode Activated');
-                        // Hide the fallback button once successful
-                        btn.style.display = 'none';
-                    } else {
-                        // Panel may still be opening — retry once more
-                        setTimeout(() => {
-                            const dvrBtn2 = document.querySelector('div[op-data-value="1"]');
-                            if (dvrBtn2) {
-                                dvrBtn2.click();
-                                mostrarOSD('📹 DVR Mode Activated');
-                                btn.style.display = 'none';
-                            } else {
-                                mostrarOSD('⚠️ DVR panel not found — try manually');
-                            }
-                        }, 500);
-                    }
-                }, 700);
-            } else {
-                // Settings button entirely absent from DOM — try DVR button directly
-                const dvrBtn = document.querySelector('div[op-data-value="1"]');
-                if (dvrBtn) {
-                    dvrBtn.click();
-                    mostrarOSD('📹 DVR Mode Activated');
-                    btn.style.display = 'none';
-                } else {
-                    mostrarOSD('⚠️ Settings button not found in DOM');
-                    console.warn('[OMT] Examino DVR fallback: neither settings button nor DVR button found.');
-                }
-            }
-        });
-
-        omtRoot.appendChild(btn);
-        console.log('[OMT] Examino DVR fallback button injected.');
-    }
-
-    function forceDVR() {
-        // Guard: only run on Examino, and only once per page load.
-        if (!isExamino) return;
-        if (hasAutomatedDvr) return;
-        hasAutomatedDvr = true;
-
-        // Always inject the fallback button first — it is independent of the
-        // Svelte DOM and will work even if the native settings button is absent.
-        injectExaminoDvrFallback();
-
-        console.log('[OMT] Examino: Scheduling DVR automation (2.5 s delay)...');
-
-        setTimeout(() => {
-            // Step A — locate the settings button.
-            // If its parent container is hidden by Svelte, forcibly restore it.
-            const settingsBtn = document.querySelector('.op-button.op-setting-button');
-            if (!settingsBtn) {
-                console.warn('[OMT] Examino: .op-setting-button not found — DVR automation skipped. Fallback button is available.');
-                return;
-            }
-
-            // Ensure the parent wrapper is visible before clicking
-            const parent = settingsBtn.parentElement;
-            if (parent) {
-                parent.style.setProperty('display', 'flex', 'important');
-                parent.style.setProperty('visibility', 'visible', 'important');
-                parent.style.setProperty('opacity', '1', 'important');
-            }
-            settingsBtn.style.setProperty('display', 'block', 'important');
-            settingsBtn.style.setProperty('visibility', 'visible', 'important');
-
-            settingsBtn.click();
-            console.log('[OMT] Examino: Settings button clicked.');
-
-            let dvrRetries = 0;
-            const MAX_DVR_RETRIES = 4;
-            const DVR_RETRY_DELAY_MS = 500;
-
-            function attemptDvrClick() {
-                const dvrBtn = document.querySelector('div[op-data-value="1"]');
-
-                if (dvrBtn) {
-                    dvrBtn.click();
-                    console.log('[OMT] Examino: DVR source button clicked (op-data-value="1").');
-                    // Successfully automated — hide the fallback button
-                    const fb = document.getElementById('omt-examino-dvr-fallback');
-                    if (fb) fb.style.display = 'none';
-                } else if (dvrRetries < MAX_DVR_RETRIES) {
-                    dvrRetries++;
-                    console.warn(`[OMT] Examino: DVR button not found — retry ${dvrRetries}/${MAX_DVR_RETRIES} in ${DVR_RETRY_DELAY_MS}ms...`);
-                    setTimeout(attemptDvrClick, DVR_RETRY_DELAY_MS);
-                } else {
-                    console.warn('[OMT] Examino: DVR button not found after all retries. Fallback button remains for manual use.');
-                    // Close the panel gracefully
-                    settingsBtn.click();
-                }
-            }
-
-            setTimeout(attemptDvrClick, 700);
-        }, 2500);
-    }
-
-    // Alias kept for the existing call-site inside init()
-    function automateExaminoDvr() { forceDVR(); }
-
-    /* =========================================================
        17. RESTORE PERSISTED STATE AFTER PAGE LOAD
        ========================================================= */
     function restoreState() {
@@ -2229,303 +2230,774 @@
         if (savedCMin1) q('omt-custom-minute-c1').value = savedCMin1;
         if (savedCMin2) q('omt-custom-minute-c2').value = savedCMin2;
 
+        // Restore the permanent active state on the kick-off button
+        const _kickoffBtnRestore = q('omt-btn-set-kickoff');
+        _kickoffBtnRestore.classList.add('kickoff-set');
+        _kickoffBtnRestore.style.setProperty('background', '#00cc6a', 'important');
+        _kickoffBtnRestore.style.setProperty('color', '#000', 'important');
+        _kickoffBtnRestore.style.setProperty('opacity', '1', 'important');
+        _kickoffBtnRestore.style.setProperty('box-shadow', '0 0 14px rgba(0,255,136,0.5)', 'important');
+        _kickoffBtnRestore.style.setProperty('border', '1px solid rgba(0,255,136,0.4)', 'important');
         esconderSetup();
-        mostrarOSD('⏱ Timer Restored');
+        mostrarOSD('\u23f1 Timer Restored');
     }
 
     /* =========================================================
-       18. DOCKED LAYOUT ENGINE
+       18. EXAMINO — HOTKEYS, NATIVE CHROME, SETTINGS, AUTO-VOD
        ========================================================= */
-    const DOCK_THRESHOLD = 110; // Fixed value with safe margin
-
-    function computeBottomBlackBarHeight() {
-        if (!vid) return 0;
-
-        const vidRect = vid.getBoundingClientRect();
-        const containerHeight = vidRect.height;
-        const containerWidth  = vidRect.width;
-
-        if (containerHeight === 0 || containerWidth === 0) return 0;
-
-        // Native aspect ratio of the video content
-        let videoAspectRatio = 16 / 9; // safe default before metadata loads
-        if (vid.videoWidth && vid.videoHeight) {
-            videoAspectRatio = vid.videoWidth / vid.videoHeight;
-        }
-
-        // With object-fit: contain (enforced by omt-top-align), the rendered
-        // video image fits within the <video> element box, letter-boxed.
-        // The rendered image height = min(element height, element width / aspectRatio)
-        const renderedVideoHeight = Math.min(containerHeight, containerWidth / videoAspectRatio);
-
-        // Because omt-top-align forces object-position: top center, the image
-        // sits at the top, so ALL leftover space is at the bottom.
-        const blackBarHeight = containerHeight - renderedVideoHeight;
-        return Math.max(0, blackBarHeight);
+    function installExaminoHotkeys() {
+        if (examinoHotkeysInstalled) return;
+        examinoHotkeysInstalled = true;
+        // window + capture + earliest possible registration wins over OpenPlayer.
+        window.addEventListener('keydown', handleKeydown, true);
+        console.log('[OMT] Examino window capture hotkeys installed.');
     }
 
-    function applyDockedLayout(dock) {
-        if (!controlsPanel) return;
+    function isExaminoSettingsChrome(target) {
+        const el = target && (target.nodeType === 1 ? target : target.parentElement);
+        if (!el || !el.closest) return false;
+        return !!el.closest([
+            '.op-setting-panel',
+            '.omt-settings-raised',
+            '.setting-holder',
+            '.op-setting-button',
+            '.op-button.op-setting-button',
+            '.op-setting-item',
+            '[op-panel-type]',
+            '.op-setting-title',
+            '.op-setting-title-container',
+            '.op-setting-item-container'
+        ].join(','));
+    }
 
-        if (dock) {
-            // Always apply (not just when isDocked changes) so that re-entering
-            // docked mode after a resize or forced-small-view transition is reliable.
-            isDocked = true;
+    // IMPORTANT: only the video surface — never the whole .op-player tree.
+    // v1.2.1 used anchor.contains() and swallowed OpenPlayer settings clicks,
+    // which broke Source switching (native works with the extension disabled).
+    function isExaminoPlayerMediaTarget(target) {
+        if (!target) return false;
+        const el = target.nodeType === 1 ? target : target.parentElement;
+        if (!el) return false;
+        if (isOmtInteractiveTarget(el)) return false;
+        if (isExaminoSettingsChrome(el)) return false;
+        if (el.tagName === 'VIDEO') return true;
+        // Transparent hits on the media container (not buttons/chrome inside it)
+        if (el.classList && el.classList.contains('op-media-element-container')) return true;
+        return false;
+    }
 
-            // Clear all inline position overrides so the CSS .controls-docked
-            // class can take full ownership via flexbox flow.
-            controlsPanel.style.position  = '';
-            controlsPanel.style.top       = '';
-            controlsPanel.style.bottom    = '';
-            controlsPanel.style.left      = '';
-            controlsPanel.style.right     = '';
-            controlsPanel.style.transform = '';
-            controlsPanel.style.width     = '';
+    function resolveExaminoMedia(fromTarget) {
+        if (fromTarget && fromTarget.tagName === 'VIDEO') return fromTarget;
+        if (fromTarget && fromTarget.closest) {
+            const nested = fromTarget.closest('video');
+            if (nested) return nested;
+        }
+        return vid || site.findVideo();
+    }
 
-            // Ensure #omt-root is the flex column it needs to be for docking
-            if (omtRoot) {
-                omtRoot.style.display       = 'flex';
-                omtRoot.style.flexDirection = 'column';
-                omtRoot.style.alignItems    = 'stretch';
-            }
+    async function withClickToggleSuppressed(fn) {
+        examinoSuppressClickToggle++;
+        try {
+            return await fn();
+        } finally {
+            examinoSuppressClickToggle--;
+        }
+    }
 
-            controlsPanel.classList.add('controls-docked');
+    function handleExaminoClickArm(e) {
+        if (site.id !== 'examino') return;
+        if (examinoSuppressClickToggle > 0) {
+            examinoClickArmed = false;
+            return;
+        }
+        examinoClickArmed = isExaminoPlayerMediaTarget(e.target);
+    }
 
-            // Panel must be visible when docked — remove any hide class
-            if (!isManuallyHidden) {
-                controlsPanel.classList.remove('omt-hidden');
-                controlsPanel.style.opacity = '';
-                controlsPanel.style.pointerEvents = '';
-            }
-
-            console.log('[OMT] applyDockedLayout: docked=true, class added, inline styles cleared.');
+    function handleExaminoClickToggle(e) {
+        if (site.id !== 'examino') return;
+        if (examinoSuppressClickToggle > 0) return;
+        if (!examinoClickArmed) return;
+        examinoClickArmed = false;
+        if (!isExaminoPlayerMediaTarget(e.target)) return;
+        const media = resolveExaminoMedia(e.target);
+        if (!media) return;
+        vid = media;
+        // Own the click exclusively so OpenPlayer cannot also toggle (net no-op).
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        if (media.paused) {
+            media.play().catch(() => {});
+            mostrarOSD('▶ Play');
         } else {
-            isDocked = false;
-            controlsPanel.classList.remove('controls-docked');
-
-            // Restore default CSS-driven absolute positioning
-            controlsPanel.style.position  = '';
-            controlsPanel.style.top       = '';
-            controlsPanel.style.bottom    = '';
-            controlsPanel.style.left      = '';
-            controlsPanel.style.right     = '';
-            controlsPanel.style.transform = '';
-            controlsPanel.style.width     = '';
-
-            if (omtRoot) {
-                omtRoot.style.display       = '';
-                omtRoot.style.flexDirection = '';
-                omtRoot.style.alignItems    = '';
-            }
-
-            resetControlsTimeout();
-            console.log('[OMT] applyDockedLayout: docked=false, class removed.');
+            media.pause();
+            mostrarOSD('⏸ Pause');
         }
+        noteOmtUiActivity(false);
     }
 
-    function scheduleDockRecalc() {
-        if (dockDebounceTimer) {
-            clearTimeout(dockDebounceTimer);
-        }
-        dockDebounceTimer = setTimeout(() => {
-            dockDebounceTimer = null;
-
-            // Fullscreen — always overlay mode (never docked)
-            if (document.fullscreenElement) {
-                isSmallViewForced = false;
-                applyDockedLayout(false);
-                return;
-            }
-
-            // ── EXAMINO STRUCTURAL OVERRIDE ──────────────────────────────────────
-            // In small popup views the video metadata may not be ready yet, or the
-            // computed black-bar height never crosses the threshold because the
-            // container is too compact. Bypass the math entirely and force dock.
-            if (isExamino && window.innerHeight < 600) {
-                console.log('[OMT] Dock recalc — Examino small-view override active (force dock).');
-                applyDockedLayout(true);
-                applyExaminoFlexAlignment();
-                return;
-            }
-
-            const blackBarHeight = computeBottomBlackBarHeight();
-            const shouldDock = blackBarHeight >= DOCK_THRESHOLD;
-            console.log(`[OMT] Dock recalc — blackBar: ${blackBarHeight.toFixed(1)}px, threshold: ${DOCK_THRESHOLD}px, dock: ${shouldDock}`);
-
-            if (shouldDock) {
-                // CSS flexbox handles the position natively — no top recalc needed.
-                applyDockedLayout(true);
-            } else {
-                applyDockedLayout(false);
-            }
-        }, 100);
+    function installExaminoClickToToggle() {
+        if (examinoClickToggleInstalled) return;
+        examinoClickToggleInstalled = true;
+        window.addEventListener('pointerdown', handleExaminoClickArm, true);
+        window.addEventListener('mousedown', handleExaminoClickArm, true);
+        window.addEventListener('click', handleExaminoClickToggle, true);
+        console.log('[OMT] Examino click-to-toggle installed (video surface only).');
     }
 
-    /* =========================================================
-       FIX #1 & #2: UNIFIED SMALL-VIEW LAYOUT ENFORCER
-       Replaces the old applyXeatreSmallViewOpacity() which used
-       inline style.opacity — the root cause of the flickering loop.
+    function settleExaminoMediaAfterBind() {
+        if (site.id !== 'examino' || !vid) return;
+        // Only used after VOD→DVR. Clear seek-lock; clamp into DVR seekable once.
+        userIntendedTime = null;
+        seekLockUntil = 0;
+        let settled = false;
 
-       NEW APPROACH:
-       - Sets the module-level isSmallViewForced flag.
-       - Calls applyDockedLayout(true) to activate the docked CSS class.
-       - Cancels any pending hide timeout and removes .omt-hidden.
-       - NEVER writes inline style.opacity, so the auto-hide timeout
-         cannot enter a conflict loop with this function.
-       - When exiting forced mode, scheduleDockRecalc() re-evaluates
-         whether the panel should remain docked or revert to overlay.
-       ========================================================= */
-    function applySmallViewLayout() {
-        if (!controlsPanel) return;
-
-        const wasForced = isSmallViewForced;
-
-        // Determine whether small-view override should be active
-        const xeatreSmall = isXeatre && window.innerHeight < 550;
-        const examinoSmall = isExamino && window.innerHeight < 600;
-        isSmallViewForced = xeatreSmall || examinoSmall;
-
-        if (isSmallViewForced) {
-            // Force dock — class-based layout, no JS measurement needed
-            applyDockedLayout(true);
-
-            // If the user hasn't manually hidden the panel, ensure it is visible.
-            // We cancel any pending auto-hide timeout and remove the hide class.
-            // We do NOT write style.opacity here — the CSS class owns that.
-            if (!isManuallyHidden) {
-                if (mouseMoveTimeout) {
-                    clearTimeout(mouseMoveTimeout);
-                    mouseMoveTimeout = null;
-                }
-                controlsPanel.classList.remove('omt-hidden');
-            }
-        } else if (wasForced && !isSmallViewForced) {
-            // Transitioning out of forced mode — hand control back to the
-            // normal dock engine so it can re-evaluate based on measurements.
-            scheduleDockRecalc();
-        }
-
-        // Always keep Examino's container flex-aligned on small views
-        if (isExamino) applyExaminoFlexAlignment();
-    }
-
-    /* =========================================================
-       FIX #2: EXAMINO — SMALL-VIEW FLEX ALIGNMENT
-       In small popup views, Examino's .video-container centres
-       the video vertically, creating white bars and hiding the
-       panel. Force align-items:flex-start to snap it to the top.
-       Now also triggers on window.innerHeight regardless of
-       computed black-bar height (which can be 0 in small views).
-       Bound to resize (not rAF) per the CRITICAL PERFORMANCE RULE.
-       ========================================================= */
-    let examinoFlexStyle = null;
-
-    function applyExaminoFlexAlignment() {
-        if (!isExamino) return;
-
-        // Lazily create the <style> element once
-        if (!examinoFlexStyle) {
-            examinoFlexStyle = document.createElement('style');
-            examinoFlexStyle.id = 'omt-examino-flex-align';
-            (document.head || document.documentElement).appendChild(examinoFlexStyle);
-        }
-
-        // Use window.innerHeight as primary signal — computeBottomBlackBarHeight()
-        // may return 0 on small views before metadata is available.
-        const forceByHeight = window.innerHeight < 600;
-        const blackBarHeight = computeBottomBlackBarHeight();
-        const isSmallLayout = forceByHeight || blackBarHeight < DOCK_THRESHOLD;
-
-        if (isSmallLayout) {
-            // Snap video to top so the bottom space is freed for our panel
-            examinoFlexStyle.textContent =
-                '.video-container.svelte-iq8mv8 { align-items: flex-start !important; }';
-        } else {
-            examinoFlexStyle.textContent = '';
-        }
-    }
-
-    /* =========================================================
-       FIX #5: SUPPRESS NATIVE CONTROLS ON PLAY/PAUSE
-       Directly silences native control wrappers whenever the
-       HTML5 video element fires 'play' or 'pause'. This stops
-       ShuttleXpress-triggered playback from hijacking the UI.
-       Also called by the aggressive player observer on class mutations.
-       ========================================================= */
-    function suppressNativeControlBarsOnPlayback() {
-        const nativeSelectors = [
-            '.op-ui.op-clear',   // Examino controls wrapper only — NOT the player root
-            '.vjs-control-bar',  // Xeatre/Inplay Video.js control bar
-            '.button-bar'        // Examino button bar
-        ];
-        nativeSelectors.forEach(sel => {
+        const goLiveEdgeIfNeeded = () => {
+            if (!vid || settled) return;
             try {
-                document.querySelectorAll(sel).forEach(el => {
-                    // Guard: never hide the settings button even if a broad selector matches it.
-                    if (el.classList.contains('op-setting-button')) return;
-                    el.style.setProperty('display', 'none', 'important');
-                });
+                if (!vid.seekable || vid.seekable.length === 0) return;
+                const start = vid.seekable.start(0);
+                const end = vid.seekable.end(vid.seekable.length - 1);
+                if (!isFinite(start) || !isFinite(end)) return;
+                const ct = vid.currentTime;
+                if (ct > end || ct < start) {
+                    settled = true;
+                    vid.currentTime = Math.max(start, end - 2);
+                } else {
+                    settled = true;
+                }
             } catch (_) {}
-        });
-        // Belt-and-suspenders: ensure the settings button is never hidden on Examino.
-        restoreSettingsButton();
+        };
+
+        if (vidAbortController) {
+            vid.addEventListener('loadedmetadata', goLiveEdgeIfNeeded, {
+                once: true,
+                signal: vidAbortController.signal
+            });
+        } else {
+            vid.addEventListener('loadedmetadata', goLiveEdgeIfNeeded, { once: true });
+        }
+        setTimeout(goLiveEdgeIfNeeded, 300);
     }
 
-    function initDockedLayoutEngine() {
-        if (!vid) return;
+    function injectExaminoHideCSS() {
+        if (document.getElementById('omt-examino-hide-css')) return;
+        const style = document.createElement('style');
+        style.id = 'omt-examino-hide-css';
+        style.textContent = [
+            /* OpenPlayer built-in chrome */
+            '.op-controls,',
+            '.op-ui:not(.op-media-element-container),',
+            '.op-progressbar-container,',
+            '.op-player .button-bar,',
+            '.video-container > .button-bar,',
+            '.setting-holder,',
+            '.op-button.op-setting-button,',
+            /* Examino Svelte chrome from owner probe */
+            '.hamburger-menu,',
+            '.examino-bottom-controls,',
+            '.omt-examino-native-hidden {',
+            '  display: none !important;',
+            '  opacity: 0 !important;',
+            '  pointer-events: none !important;',
+            '  max-height: 0 !important;',
+            '  overflow: hidden !important;',
+            '  margin: 0 !important;',
+            '  padding: 0 !important;',
+            '}',
+            /* Give the video the space freed by the ~108px bottom bars */
+            '.main-container.svelte-iq8mv8,',
+            '.main-container {',
+            '  height: 100% !important;',
+            '  max-height: 100% !important;',
+            '}',
+            /* Fallback raised settings panel when proxying native gear */
+            '.op-setting-panel.omt-settings-raised {',
+            '  display: block !important;',
+            '  opacity: 1 !important;',
+            '  pointer-events: auto !important;',
+            '  z-index: 2147483647 !important;',
+            '  position: fixed !important;',
+            '  top: 48px !important;',
+            '  right: 12px !important;',
+            '}',
+            '.setting-holder.omt-settings-temp-visible,',
+            '.setting-holder.omt-settings-temp-visible .op-setting-button {',
+            '  display: block !important;',
+            '  opacity: 0 !important;',
+            '  pointer-events: auto !important;',
+            '  position: fixed !important;',
+            '  top: 0 !important;',
+            '  left: 0 !important;',
+            '  width: 1px !important;',
+            '  height: 1px !important;',
+            '}'
+        ].join('\n');
+        (document.head || document.documentElement).appendChild(style);
+    }
 
-        // 1. Create ResizeObserver — observe the <video> element directly since
-        //    computeBottomBlackBarHeight() uses vid.getBoundingClientRect().
-        //    Also observe the anchor as a backup for platforms where the video
-        //    element itself is fixed-size but the container changes.
-        if (window.ResizeObserver) {
-            dockResizeObserver = new ResizeObserver(() => {
-                scheduleDockRecalc();
+    function markNativeHidden(el) {
+        if (!el || el.id === 'omt-root' || (omtRoot && omtRoot.contains(el))) return;
+        el.classList.add('omt-examino-native-hidden');
+    }
+
+    function hideExaminoNativeChrome() {
+        injectExaminoHideCSS();
+
+        // Probe layout: main-container uses height calc(100% - 108px) for the
+        // three Examino button rows that sit as siblings under the same parent.
+        document.querySelectorAll('.main-container').forEach((main) => {
+            try {
+                main.style.setProperty('height', '100%', 'important');
+                main.style.setProperty('max-height', '100%', 'important');
+            } catch (_) {}
+            const parent = main.parentElement;
+            if (!parent) return;
+            Array.from(parent.children).forEach((child) => {
+                if (child === main) return;
+                markNativeHidden(child);
             });
-            dockResizeObserver.observe(vid);
-            if (omtAnchor && omtAnchor !== document.body) {
-                dockResizeObserver.observe(omtAnchor);
+        });
+
+        document.querySelectorAll('.hamburger-menu, .setting-holder, .examino-bottom-controls').forEach(markNativeHidden);
+
+        // Heuristic: hide compact control stacks that contain LIVE + FOCUS + seek labels.
+        document.querySelectorAll('div, section, nav, aside').forEach((el) => {
+            if (!el || el.closest('#omt-root')) return;
+            if (el.querySelector && el.querySelector('video, .op-player, .op-media-element-container, #omt-root')) return;
+            const text = (el.innerText || '').replace(/\s+/g, ' ').trim();
+            if (!text || text.length > 280) return;
+            const hasLiveFocus = /\bLIVE\b/i.test(text) && /\bFOCUS\b/i.test(text);
+            const hasSeeks = /(-|−)?\s*30\s*s/i.test(text) && /(7\s*s|2\s*s)/i.test(text);
+            const hasSpeeds = /0\.1\s*x/i.test(text) && /1\.5\s*x/i.test(text);
+            if ((hasLiveFocus && hasSeeks) || (hasSeeks && hasSpeeds) || (hasLiveFocus && hasSpeeds)) {
+                markNativeHidden(el);
             }
+        });
+
+        // Top-right clock / idle chrome inside .top (keep player media).
+        document.querySelectorAll('.top.svelte-iq8mv8, .top').forEach((top) => {
+            Array.from(top.children || []).forEach((child) => {
+                if (child.matches && child.matches('.op-player, .video-container, .op-media-element-container')) return;
+                if (child.querySelector && child.querySelector('video, .op-player, .op-media-element-container')) return;
+                if (child.classList && child.classList.contains('hamburger-menu')) {
+                    markNativeHidden(child);
+                    return;
+                }
+                const t = (child.innerText || '').trim();
+                // Clock-like short text (e.g. 12:34:56) or empty icon chrome
+                if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(t) || child.classList.contains('hamburger-menu')) {
+                    markNativeHidden(child);
+                }
+            });
+        });
+    }
+
+    function startExaminoNativeChromeObserver() {
+        if (nativeChromeObserver) return;
+        let scheduled = null;
+        nativeChromeObserver = new MutationObserver(() => {
+            if (scheduled) return;
+            scheduled = setTimeout(() => {
+                scheduled = null;
+                hideExaminoNativeChrome();
+            }, 50);
+        });
+        const root = document.documentElement || document.body;
+        if (root) {
+            nativeChromeObserver.observe(root, { childList: true, subtree: true });
+        }
+    }
+
+    function storageGetAutoVod() {
+        const v = localStorage.getItem('omtAutoSwitchVod');
+        if (v === null || v === undefined || v === '') return true; // default ON
+        return v === 'true';
+    }
+
+    function storageSetAutoVod(enabled) {
+        localStorage.setItem('omtAutoSwitchVod', enabled ? 'true' : 'false');
+        try {
+            window.postMessage({
+                source: 'omt-page',
+                type: 'OMT_STORAGE_SET',
+                key: 'omtAutoSwitchVod',
+                value: !!enabled
+            }, '*');
+        } catch (_) {}
+    }
+
+    function sleep(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    function revealNativeSettingsButton() {
+        const holder = document.querySelector('.setting-holder');
+        const btn = document.querySelector('.op-button.op-setting-button, .op-setting-button');
+        if (holder) holder.classList.add('omt-settings-temp-visible');
+        if (btn) btn.classList.add('omt-settings-temp-visible');
+        return btn;
+    }
+
+    function concealNativeSettingsButton() {
+        document.querySelectorAll('.omt-settings-temp-visible').forEach((el) => {
+            el.classList.remove('omt-settings-temp-visible');
+        });
+    }
+
+    function isOpSettingsPanelVisible(panel) {
+        if (!panel) return false;
+        if (panel.classList.contains('omt-settings-raised') || panel.classList.contains('open')) return true;
+        const cs = getComputedStyle(panel);
+        return cs.display !== 'none' && cs.visibility !== 'hidden' && Number(cs.opacity) > 0;
+    }
+
+    async function ensureOpSettingsOpen() {
+        return withClickToggleSuppressed(async () => {
+            revealNativeSettingsButton();
+            let panel = document.querySelector('.op-setting-panel');
+            if (panel && isOpSettingsPanelVisible(panel)) {
+                panel.classList.add('omt-settings-raised');
+                return panel;
+            }
+            const btn = revealNativeSettingsButton();
+            if (!btn) return null;
+            try { btn.click(); } catch (_) {}
+            for (let i = 0; i < 24; i++) {
+                await sleep(50);
+                panel = document.querySelector('.op-setting-panel');
+                if (panel && (isOpSettingsPanelVisible(panel) || panel.querySelector('.op-setting-item'))) {
+                    panel.classList.add('omt-settings-raised');
+                    return panel;
+                }
+            }
+            return null;
+        });
+    }
+
+    async function clickOpSettingBack() {
+        return withClickToggleSuppressed(async () => {
+            if (findOpSourceItem()) return;
+            const title = document.querySelector('.op-setting-panel .op-setting-title, .op-setting-panel .op-setting-title-title');
+            if (title) {
+                try { title.click(); } catch (_) {}
+                await sleep(120);
+            }
+            if (!findOpSourceItem()) {
+                await ensureOpSettingsOpen();
+            }
+        });
+    }
+
+    function findOpSourceItem() {
+        const items = document.querySelectorAll('.op-setting-panel .op-setting-item');
+        for (const el of items) {
+            const title = ((el.querySelector('.op-setting-item-title') || {}).textContent || '').trim();
+            const type = (el.getAttribute('op-panel-type') || '').toLowerCase();
+            if (title.toLowerCase() === 'source' || type === 'source') return el;
+        }
+        return null;
+    }
+
+    // Only exact DVR / VOD tokens — reject vod1/dvr2/quality mix-ins.
+    function normalizeSourceToken(raw) {
+        const s = String(raw || '').trim();
+        if (!s) return null;
+        if (/^dvr$/i.test(s)) return 'DVR';
+        if (/^vod$/i.test(s)) return 'VOD';
+        return null;
+    }
+
+    function detectCurrentSource(scrapedCurrent) {
+        const fromMenu = normalizeSourceToken(scrapedCurrent);
+        if (fromMenu) return fromMenu;
+        const path = location.pathname || '';
+        if (/\/play\/vod\b/i.test(path)) return 'VOD';
+        if (/\/play\/dvr\b/i.test(path)) return 'DVR';
+        if (typeof window.__omtMockSource === 'string') {
+            const mock = normalizeSourceToken(window.__omtMockSource);
+            if (mock) return mock;
+        }
+        if (vid) {
+            try {
+                if (vid.dataset && vid.dataset.omtSource) {
+                    const ds = normalizeSourceToken(vid.dataset.omtSource);
+                    if (ds) return ds;
+                }
+                if (isFinite(vid.duration) && vid.duration > 600) return 'VOD';
+                if (vid.seekable && vid.seekable.length > 0) {
+                    const span = vid.seekable.end(vid.seekable.length - 1) - vid.seekable.start(0);
+                    if (span > 0 && span <= 400) return 'DVR';
+                    if (span > 600) return 'VOD';
+                }
+            } catch (_) {}
+        }
+        return null;
+    }
+
+    function closeOpSettingsUi() {
+        concealNativeSettingsButton();
+        document.querySelectorAll('.op-setting-panel').forEach((p) => {
+            p.classList.remove('omt-settings-raised');
+            p.classList.remove('open');
+        });
+    }
+
+    async function scrapeOpSourceOptions() {
+        return withClickToggleSuppressed(async () => {
+            let panel = await ensureOpSettingsOpen();
+            if (!panel) {
+                return { current: detectCurrentSource(null), options: [], loading: true };
+            }
+
+            if (!findOpSourceItem()) {
+                await clickOpSettingBack();
+                panel = await ensureOpSettingsOpen();
+            }
+
+            const mainItem = findOpSourceItem();
+            let current = null;
+            if (mainItem) {
+                current = normalizeSourceToken(
+                    mainItem.getAttribute('op-data-value') ||
+                    ((mainItem.querySelector('.op-setting-item-value') || {}).textContent || '')
+                );
+                try { mainItem.click(); } catch (_) {}
+            } else {
+                closeOpSettingsUi();
+                return { current: detectCurrentSource(null), options: [], loading: true };
+            }
+
+            let options = [];
+            let submenuReady = false;
+            for (let i = 0; i < 16; i++) {
+                options = [];
+                // Submenu is ready when the root "Source" row with chevron is gone.
+                const stillOnRoot = !!findOpSourceItem();
+                document.querySelectorAll('.op-setting-panel .op-setting-item').forEach((el) => {
+                    if (el.querySelector('.op-setting-item-nexticon')) return;
+                    if (el.getAttribute('op-panel-type')) return; // still a root row
+                    const value = el.getAttribute('op-data-value');
+                    const label = ((el.querySelector('.op-setting-item-title') ||
+                        el.querySelector('.op-setting-item-value') || el).textContent || '').trim();
+                    const token = normalizeSourceToken(value) || normalizeSourceToken(label);
+                    if (!token) return;
+                    if (!options.some((o) => o.value === token)) {
+                        options.push({ value: token, label: token });
+                    }
+                });
+                if (!stillOnRoot && options.length >= 1) {
+                    submenuReady = true;
+                    break;
+                }
+                await sleep(40);
+            }
+
+            if (!submenuReady) {
+                closeOpSettingsUi();
+                return { current: detectCurrentSource(current), options: [], loading: true };
+            }
+
+            // Dedupe + ensure both choices once the real submenu is open
+            const deduped = [];
+            options.forEach((o) => {
+                if (!deduped.some((x) => x.value === o.value)) deduped.push(o);
+            });
+            ['DVR', 'VOD'].forEach((v) => {
+                if (!deduped.some((o) => o.value === v)) deduped.push({ value: v, label: v });
+            });
+
+            if (!findOpSourceItem()) {
+                await clickOpSettingBack();
+            }
+            closeOpSettingsUi();
+            return {
+                current: detectCurrentSource(current),
+                options: deduped,
+                loading: false
+            };
+        });
+    }
+
+    async function applyOpSource(value, { manual = true } = {}) {
+        if (!value) return false;
+        const wanted = normalizeSourceToken(value) || String(value).toUpperCase();
+        if (manual) {
+            examinoManualSourceChoice = wanted;
+            if (wanted === 'DVR') examinoAutoVodDone = true;
+        }
+        userIntendedTime = null;
+        seekLockUntil = 0;
+
+        return withClickToggleSuppressed(async () => {
+            let panel = await ensureOpSettingsOpen();
+            if (!panel) return false;
+            if (!findOpSourceItem()) {
+                await clickOpSettingBack();
+                panel = await ensureOpSettingsOpen();
+            }
+            const mainItem = findOpSourceItem();
+            if (!mainItem) {
+                closeOpSettingsUi();
+                return false;
+            }
+            try { mainItem.click(); } catch (_) {}
+
+            let option = null;
+            for (let i = 0; i < 16; i++) {
+                option = Array.from(document.querySelectorAll('.op-setting-panel .op-setting-item'))
+                    .find((el) => {
+                        if (el.querySelector('.op-setting-item-nexticon')) return false;
+                        if (el.getAttribute('op-panel-type')) return false;
+                        const v = normalizeSourceToken(el.getAttribute('op-data-value')) ||
+                            normalizeSourceToken(((el.querySelector('.op-setting-item-title') || {}).textContent || ''));
+                        return v === wanted;
+                    });
+                if (option) break;
+                await sleep(40);
+            }
+
+            if (!option) {
+                closeOpSettingsUi();
+                return false;
+            }
+
+            try { option.click(); } catch (_) {}
+            // Wait until the root Source row reflects the new value (or panel closes).
+            let confirmed = false;
+            for (let i = 0; i < 20; i++) {
+                await sleep(50);
+                const row = findOpSourceItem();
+                if (row) {
+                    const now = normalizeSourceToken(
+                        row.getAttribute('op-data-value') ||
+                        ((row.querySelector('.op-setting-item-value') || {}).textContent || '')
+                    );
+                    if (now === wanted) { confirmed = true; break; }
+                }
+                // Panel may close after a successful pick — treat as success if mock/path agrees soon.
+                if (!document.querySelector('.op-setting-panel.open, .op-setting-panel.omt-settings-raised')) {
+                    confirmed = true;
+                    break;
+                }
+            }
+            closeOpSettingsUi();
+
+            if (confirmed && wanted === 'DVR') {
+                examinoPendingDvrSettle = true;
+            }
+            return confirmed;
+        });
+    }
+
+    function fillSourceSelect(scraped) {
+        const selectEl = q('omt-examino-source');
+        if (!selectEl) return;
+        const { current, options, loading } = scraped || { current: null, options: [], loading: false };
+        selectEl.innerHTML = '';
+        if (loading && (!options || !options.length)) {
+            const opt = document.createElement('option');
+            opt.value = '';
+            opt.textContent = 'Loading…';
+            selectEl.appendChild(opt);
+            selectEl.disabled = true;
+            return;
+        }
+        const list = (options && options.length)
+            ? options
+            : [{ value: 'DVR', label: 'DVR' }, { value: 'VOD', label: 'VOD' }];
+        selectEl.disabled = false;
+        list.forEach((o) => {
+            const opt = document.createElement('option');
+            opt.value = o.value;
+            opt.textContent = o.label;
+            selectEl.appendChild(opt);
+        });
+        const cur = detectCurrentSource(current) || examinoManualSourceChoice;
+        const match = cur && list.find((o) => o.value === cur);
+        selectEl.value = match ? match.value : list[0].value;
+    }
+
+    async function refreshExaminoSourceSelect() {
+        if (site.id !== 'examino' || !omtRoot) return;
+        const section = q('omt-examino-settings');
+        if (section) section.style.display = 'block';
+        const source = await scrapeOpSourceOptions();
+        fillSourceSelect(source);
+        const autoBox = q('omt-examino-auto-vod');
+        if (autoBox) {
+            autoBox.checked = storageGetAutoVod() && examinoManualSourceChoice !== 'DVR';
+        }
+    }
+
+    function wireExaminoSettingsUI() {
+        const section = q('omt-examino-settings');
+        if (section) section.style.display = 'block';
+
+        const autoBox = q('omt-examino-auto-vod');
+        if (autoBox) {
+            autoBox.checked = storageGetAutoVod() && examinoManualSourceChoice !== 'DVR';
+            autoBox.addEventListener('change', () => {
+                storageSetAutoVod(!!autoBox.checked);
+                if (autoBox.checked) {
+                    examinoManualSourceChoice = null;
+                    examinoAutoVodDone = false;
+                    mostrarOSD('VOD auto-switch ON');
+                    maybeAutoSwitchToVod(0).catch(() => {});
+                } else {
+                    examinoManualSourceChoice = examinoManualSourceChoice || 'DVR';
+                    examinoAutoVodDone = true;
+                    mostrarOSD('VOD auto-switch OFF');
+                }
+            });
         }
 
-        // 2. Listen for fullscreen and window resize events
-        dockFullscreenHandler = () => {
-            scheduleDockRecalc();
-        };
-        document.addEventListener('fullscreenchange', dockFullscreenHandler);
-        window.addEventListener('resize', dockFullscreenHandler);
+        const sourceSel = q('omt-examino-source');
+        if (sourceSel) {
+            sourceSel.addEventListener('focus', () => {
+                refreshExaminoSourceSelect().catch(() => {});
+            });
+            sourceSel.addEventListener('mousedown', () => {
+                refreshExaminoSourceSelect().catch(() => {});
+            });
+            sourceSel.addEventListener('change', async () => {
+                const value = sourceSel.value;
+                if (!value) return;
+                const ok = await applyOpSource(value, { manual: true });
+                if (ok) {
+                    fillSourceSelect({
+                        current: normalizeSourceToken(value),
+                        options: [{ value: 'DVR', label: 'DVR' }, { value: 'VOD', label: 'VOD' }],
+                        loading: false
+                    });
+                    mostrarOSD('Source: ' + value);
+                    setTimeout(() => refreshExaminoSourceSelect().catch(() => {}), 900);
+                } else {
+                    mostrarOSD('Source change failed');
+                    refreshExaminoSourceSelect().catch(() => {});
+                }
+            });
+        }
 
-        // Responsive layout enforcer: bound to resize only — never in rAF.
-        // applySmallViewLayout() manages the isSmallViewForced flag and
-        // delegates opacity to CSS classes (never sets style.opacity).
-        layoutResizeHandler = () => {
-            if (responsiveFixDebounce) clearTimeout(responsiveFixDebounce);
-            responsiveFixDebounce = setTimeout(() => {
-                applySmallViewLayout();
-            }, 80);
-        };
-        window.addEventListener('resize', layoutResizeHandler);
+        // Lightweight placeholder until menus exist
+        fillSourceSelect({ current: detectCurrentSource(null), options: [], loading: true });
+        startAutoVodWatcher();
+    }
 
-        // Also run the enforcer on fullscreenchange (popup ↔ fullscreen transitions)
-        layoutFullscreenHandler = () => {
-            setTimeout(() => applySmallViewLayout(), 150);
-        };
-        document.addEventListener('fullscreenchange', layoutFullscreenHandler);
+    async function maybeAutoSwitchToVod(attempt = 0) {
+        if (site.id !== 'examino') return;
+        if (!storageGetAutoVod()) return;
+        if (examinoManualSourceChoice === 'DVR') return;
+        if (examinoAutoVodDone) return;
+        if (examinoAutoVodInFlight) return;
 
-        // 3. Run initial calculation (video metadata may not be ready yet;
-        //    also re-run when metadata loads so aspect ratio is accurate)
-        vid.addEventListener('loadedmetadata', scheduleDockRecalc, { signal: vidAbortController.signal });
-        scheduleDockRecalc();
+        examinoAutoVodInFlight = true;
+        try {
+            const already = detectCurrentSource(null);
+            if (already === 'VOD') {
+                examinoAutoVodDone = true;
+                fillSourceSelect({
+                    current: 'VOD',
+                    options: [{ value: 'DVR', label: 'DVR' }, { value: 'VOD', label: 'VOD' }],
+                    loading: false
+                });
+                return;
+            }
 
-        // Run the enforcer once on init (after a short settle delay)
-        setTimeout(() => {
-            applySmallViewLayout();
-        }, 200);
+            const source = await scrapeOpSourceOptions();
+            if (source.loading) {
+                if (attempt < 10) {
+                    setTimeout(() => maybeAutoSwitchToVod(attempt + 1).catch(() => {}), 300);
+                }
+                return;
+            }
+            const current = detectCurrentSource(source.current);
+            if (current === 'VOD') {
+                examinoAutoVodDone = true;
+                fillSourceSelect(source);
+                return;
+            }
+            const vod = source.options.find((o) => o.value === 'VOD');
+            if (!vod) {
+                if (attempt < 10) {
+                    setTimeout(() => maybeAutoSwitchToVod(attempt + 1).catch(() => {}), 300);
+                }
+                return;
+            }
+            console.log('[OMT] Auto-switching Examino source to VOD (attempt ' + attempt + ')');
+            const ok = await applyOpSource('VOD', { manual: false });
+            if (ok) {
+                examinoAutoVodDone = true;
+                fillSourceSelect({
+                    current: 'VOD',
+                    options: [{ value: 'DVR', label: 'DVR' }, { value: 'VOD', label: 'VOD' }],
+                    loading: false
+                });
+                mostrarOSD('Switched to VOD');
+                setTimeout(() => refreshExaminoSourceSelect().catch(() => {}), 800);
+            } else if (attempt < 10) {
+                setTimeout(() => maybeAutoSwitchToVod(attempt + 1).catch(() => {}), 400);
+            }
+        } catch (err) {
+            console.warn('[OMT] Auto-VOD failed:', err && err.message);
+            if (attempt < 10) {
+                setTimeout(() => maybeAutoSwitchToVod(attempt + 1).catch(() => {}), 400);
+            }
+        } finally {
+            examinoAutoVodInFlight = false;
+            closeOpSettingsUi();
+        }
+    }
+
+    function startAutoVodWatcher() {
+        if (site.id !== 'examino') return;
+        if (examinoManualSourceChoice === 'DVR' || examinoAutoVodDone) return;
+        if (!storageGetAutoVod()) return;
+
+        // Immediate attempt (no fixed 1.2s delay)
+        maybeAutoSwitchToVod(0).catch(() => {});
+
+        if (examinoAutoVodWatcher) return;
+        examinoAutoVodWatcher = new MutationObserver(() => {
+            if (examinoAutoVodDone || examinoManualSourceChoice === 'DVR' || !storageGetAutoVod()) {
+                if (examinoAutoVodWatcher) {
+                    examinoAutoVodWatcher.disconnect();
+                    examinoAutoVodWatcher = null;
+                }
+                return;
+            }
+            if (document.querySelector('.op-setting-button, .op-setting-panel, .setting-holder')) {
+                maybeAutoSwitchToVod(0).catch(() => {});
+            }
+        });
+        const root = document.documentElement || document.body;
+        if (root) {
+            examinoAutoVodWatcher.observe(root, { childList: true, subtree: true });
+        }
+    }
+
+    function initExaminoPlayerFeatures() {
+        installExaminoHotkeys();
+        installExaminoClickToToggle();
+        injectExaminoHideCSS();
+        hideExaminoNativeChrome();
+        startExaminoNativeChromeObserver();
+        if (examinoManualSourceChoice === 'DVR') return;
+        startAutoVodWatcher();
     }
 
     /* =========================================================
        ENTRY POINT
        ========================================================= */
+    if (site.id === 'examino') {
+        installExaminoHotkeys();
+        injectExaminoHideCSS();
+        // Hide chrome as soon as nodes appear, even before <video>.
+        if (document.documentElement) {
+            startExaminoNativeChromeObserver();
+            hideExaminoNativeChrome();
+        }
+    }
+
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', boot);
     } else {

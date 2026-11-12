@@ -1,46 +1,62 @@
 {
-
   "manifest_version": 3,
-
   "name": "Overlay MatchTimer",
-
-  "version": "1.0.0",
-
-  "description": "Professional match analysis overlay for Xeatre, Inplayip & Examino streams. Drift-proof timer, frame scrubbing, ShuttleXpress hardware support & smart docked controls.",
-
+  "version": "1.2.2",
+  "description": "Injects the Overlay MatchTimer UI over InplayIP and Examino DVR/VOD streams for professional match analysis.",
   "author": "Vasco Oliveira",
-
-
-
   "permissions": [
-
     "storage"
-
   ],
-
-
-
   "host_permissions": [
     "*://*.inplayip.tv/*",
-    "file:///*",
-    "*://statsperform.media.xeatre.cloud/*",
-    "*://examino.statsperform.io/play/dvr/*"
+    "*://examino.statsperform.io/*",
+    "http://127.0.0.1/*",
+    "http://localhost/*"
   ],
-
   "content_scripts": [
     {
       "matches": [
         "*://*.inplayip.tv/*",
-        "file:///*",
-        "*://statsperform.media.xeatre.cloud/*",
-        "*://examino.statsperform.io/play/dvr/*"
+        "http://127.0.0.1/*inplay*",
+        "http://localhost/*inplay*"
       ],
-      "js": ["content.js"],
-      "css": ["content.css"],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
       "run_at": "document_idle",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "*://examino.statsperform.io/play/dvr/*",
+        "*://examino.statsperform.io/play/vod/*",
+        "http://127.0.0.1/*examino*",
+        "http://localhost/*examino*"
+      ],
+      "js": [
+        "bridge.js"
+      ],
+      "run_at": "document_start",
+      "world": "ISOLATED"
+    },
+    {
+      "matches": [
+        "*://examino.statsperform.io/play/dvr/*",
+        "*://examino.statsperform.io/play/vod/*",
+        "http://127.0.0.1/*examino*",
+        "http://localhost/*examino*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "run_at": "document_start",
       "world": "MAIN"
     }
   ]
-
-} 
-
+}
