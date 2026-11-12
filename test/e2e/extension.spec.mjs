@@ -343,6 +343,60 @@ async function run() {
       detail: hotkey
     });
 
+    // K marks kick-off via existing iniciarTimer path
+    await page.evaluate(() => {
+      document.getElementById('omt-btn-clear-timer')?.click();
+      Object.keys(localStorage).forEach((k) => {
+        if (k.startsWith('matchTimer')) localStorage.removeItem(k);
+      });
+    });
+    await page.keyboard.press('KeyK');
+    await page.waitForTimeout(200);
+    const kickHotkey = await page.evaluate(() => {
+      const t = document.getElementById('match-timer');
+      const wrap = document.getElementById('match-timer-wrap');
+      const btn = document.getElementById('omt-btn-set-kickoff');
+      return {
+        ativo: localStorage.getItem('matchTimerAtivo') === 'true',
+        timerVisible: !!(t && (t.style.display === 'block' || (wrap && wrap.style.display === 'flex'))),
+        kickoffSet: !!(btn && btn.classList.contains('kickoff-set'))
+      };
+    });
+    results.push({
+      name: 'examino-k-marks-kickoff',
+      pass: kickHotkey.ativo && kickHotkey.timerVisible && kickHotkey.kickoffSet,
+      detail: kickHotkey
+    });
+
+    // L returns to live via existing irParaLive path
+    const liveHotkey = await page.evaluate(async () => {
+      const v = document.querySelector('video');
+      if (!v) return { ok: false, reason: 'no-video' };
+      window.__omtLiveSeekCalls = 0;
+      const before = v.currentTime;
+      // Seek behind live edge first
+      try { v.currentTime = Math.max(0, (v.seekable?.end?.(0) || v.duration || 100) - 40); } catch (_) {}
+      await new Promise((r) => setTimeout(r, 50));
+      return { before: v.currentTime, seekableEnd: v.seekable?.length ? v.seekable.end(v.seekable.length - 1) : null };
+    });
+    await page.keyboard.press('KeyL');
+    await page.waitForTimeout(250);
+    const afterLive = await page.evaluate(() => {
+      const v = document.querySelector('video');
+      const end = v?.seekable?.length ? v.seekable.end(v.seekable.length - 1) : null;
+      const ct = v ? v.currentTime : null;
+      return {
+        ct,
+        end,
+        nearLive: typeof ct === 'number' && typeof end === 'number' && Math.abs(end - 3 - ct) < 2.5
+      };
+    });
+    results.push({
+      name: 'examino-l-goes-live',
+      pass: afterLive.nearLive === true,
+      detail: { liveHotkey, afterLive }
+    });
+
     // Space must toggle via capture-phase (page hostile handler must not win)
     await page.evaluate(async () => {
       window.__omtHostileKeySeen = false;

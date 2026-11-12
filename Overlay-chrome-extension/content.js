@@ -1950,7 +1950,9 @@
         if (isEditableKeyTarget(e.target)) return;
 
         const key = e.key.toLowerCase();
-        const controlled = ['arrowright', 'arrowleft', 'arrowup', 'arrowdown', ' ', 'z', 'c', 'x', 'h'];
+        // L was free (not previously bound) — used for Go Live via irParaLive().
+        // K marks kick-off at the current frame via existing iniciarTimer().
+        const controlled = ['arrowright', 'arrowleft', 'arrowup', 'arrowdown', ' ', 'z', 'c', 'x', 'h', 'k', 'l'];
         if (!controlled.includes(key)) return;
 
         // Stop the event before Video.js / OpenPlayer / Examino handles it
@@ -2022,6 +2024,14 @@
                         mostrarOSD('Controls Hidden');
                     }
                 }
+                break;
+            case 'k':
+                // Same path as the Kick-off button (auto-captures current frame).
+                iniciarTimer();
+                break;
+            case 'l':
+                // Same path as the LIVE button.
+                irParaLive();
                 break;
 
         }
@@ -2589,7 +2599,8 @@
 
     function settleExaminoMediaAfterBind() {
         if (site.id !== 'examino' || !vid) return;
-        // Only used after VOD→DVR. Clear seek-lock; clamp into DVR seekable once.
+        // Only used after VOD→DVR (examinoPendingDvrSettle). Always snap once to the
+        // DVR live edge so a carried VOD playhead cannot leave playback frozen.
         userIntendedTime = null;
         seekLockUntil = 0;
         let settled = false;
@@ -2601,13 +2612,8 @@
                 const start = vid.seekable.start(0);
                 const end = vid.seekable.end(vid.seekable.length - 1);
                 if (!isFinite(start) || !isFinite(end)) return;
-                const ct = vid.currentTime;
-                if (ct > end || ct < start) {
-                    settled = true;
-                    vid.currentTime = Math.max(start, end - 2);
-                } else {
-                    settled = true;
-                }
+                settled = true;
+                vid.currentTime = Math.max(start, end - 2);
             } catch (_) {}
         };
 

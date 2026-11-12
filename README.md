@@ -18,7 +18,7 @@ The local companion app (`OverlayMatchTimer.html`) and the user guide (`Overlay 
 ## Key features
 
 * Kick-off sync with half / custom period selection and persistent `localStorage` state
-* Capture-phase hotkeys (Space, arrows, Z/C/X, H) that override host player shortcuts
+* Capture-phase hotkeys (Space, arrows, Z/C/X, H, **K** mark kick-off, **L** go live) that override host player shortcuts
 * Draggable glass setup + controls panels with auto-hide
 * HUD match clock with click-to-jump minute editing
 * Contour ShuttleXpress via WebHID
@@ -97,6 +97,8 @@ Fixtures live under `test/fixtures/`. Screenshots are written to `/opt/cursor/ar
 | Skip ±2m | `Ctrl` + `→` / `←` |
 | Next / previous frame | `↑` / `↓` |
 | Speed ±0.25× / reset | `C` / `Z` / `X` |
+| Mark kick-off (current frame) | `K` |
+| Go to Live | `L` |
 | Toggle controls visibility | `H` |
 
 ---
