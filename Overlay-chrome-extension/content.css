@@ -1,5 +1,5 @@
 /* ============================================================
-   Overlay MatchTimer — v1.4.0 UI (dark minimal)
+   Overlay MatchTimer — v1.4.1 UI (dark minimal)
    Floating draggable control panel (v1.2.2 structure) + bottom-only
    timeline. Accent orange: Stats Perform #F5831F. Live scrubber red.
    ============================================================ */
@@ -945,7 +945,16 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    gap: 3px;
     min-width: 36px;
+}
+.ctrl-btn .omt-btn-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    color: #ddd;
 }
 .ctrl-btn:hover {
     background: rgba(255, 255, 255, 0.12);

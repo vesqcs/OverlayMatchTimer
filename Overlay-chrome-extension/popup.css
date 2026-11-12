@@ -28,7 +28,21 @@ body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
   gap: 8px;
   text-align: center;
 }
-.omt-sp-logo { width: 40px; height: 40px; display: block; }
+.omt-sp-logo {
+  width: 52px;
+  height: auto;
+  /* Matches assets/stats-perform-mark.svg viewBox (padded official mark) */
+  aspect-ratio: 120 / 150;
+  display: block;
+  object-fit: contain;
+  object-position: center;
+  overflow: visible;
+  flex-shrink: 0;
+}
+.omt-popup-header,
+.omt-brand {
+  overflow: visible;
+}
 .omt-wordmark { font-size: 14px; font-weight: 700; letter-spacing: 0.02em; }
 .omt-tabs { display: flex; gap: 2px; background: rgba(255,255,255,0.04); border-radius: 6px; padding: 2px; }
 .omt-tab {

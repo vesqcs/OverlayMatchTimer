@@ -673,6 +673,20 @@ async function run() {
     });
     results.push({ name: 'examino-live-speed-no-overlap', pass: noOverlap.ok === true, detail: noOverlap });
 
+    // Skip buttons show amount labels (2s / 10s / 2m) while keeping tooltips
+    const skipLabels = await page.evaluate(() => {
+      const ids = ['omt-m120', 'omt-m10', 'omt-m2', 'omt-p2', 'omt-p10', 'omt-p120'];
+      const expected = ['2m', '10s', '2s', '2s', '10s', '2m'];
+      const rows = ids.map((id, i) => {
+        const el = document.getElementById(id);
+        const label = el?.querySelector('.omt-btn-label')?.textContent?.trim() || '';
+        const tip = el?.getAttribute('data-tip') || '';
+        return { id, label, tip, ok: label === expected[i] && tip.length > 0 };
+      });
+      return { ok: rows.every((r) => r.ok), rows };
+    });
+    results.push({ name: 'examino-skip-amount-labels', pass: skipLabels.ok === true, detail: skipLabels });
+
     // Expanded more panel with custom period + start-minute edit visible
     await page.evaluate(() => {
       const more = document.getElementById('omt-more-panel');
@@ -928,7 +942,17 @@ async function run() {
           noCredit: !document.querySelector('.omt-brand-credit'),
           noPersonalizar: !document.body.textContent.includes('Personalizar') &&
             !document.body.textContent.includes('Em breve'),
-          footOk: foot === 'v1.4.0',
+          footOk: foot === 'v1.4.1',
+          logoUncropped: (() => {
+            const logo = document.querySelector('.omt-sp-logo');
+            if (!logo) return false;
+            const cs = getComputedStyle(logo);
+            const box = logo.getBoundingClientRect();
+            const ar = box.width / Math.max(1, box.height);
+            // Official mark is taller than wide (~88/108); square crop was ~1.0
+            return box.height >= 48 && ar < 0.95 && ar > 0.7 &&
+              cs.objectFit === 'contain' && !/hidden/.test(cs.overflow);
+          })(),
           keyCaps: document.querySelectorAll('.shortcut-keys kbd').length >= 8
         };
       });
@@ -937,7 +961,7 @@ async function run() {
         pass: popupOk.hasWordmark && popupOk.hasLogo && popupOk.logoCount === 1 &&
           popupOk.hasCustomize && popupOk.soonOk && popupOk.noShuttle &&
           popupOk.noSwap && popupOk.noCredit && popupOk.noPersonalizar &&
-          popupOk.footOk && popupOk.keyCaps,
+          popupOk.footOk && popupOk.keyCaps && popupOk.logoUncropped,
         detail: popupOk
       });
       await popupPage.close();
