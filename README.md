@@ -2,7 +2,7 @@
 
 **Overlay MatchTimer** is a Chrome MV3 extension for professional football / sports match analysts. It injects a drift-aware match timer, HUD timeline, and playback controls over supported stream players.
 
-Supported by this extension build (**v1.2.0**):
+Supported by this extension build (**v1.2.1**):
 
 * **InplayIP** (`*.inplayip.tv`) — Video.js Review/DVR sessions (unchanged known-good behaviour)
 * **Examino** (`examino.statsperform.io/play/dvr/*` and `/play/vod/*`) — OpenPlayer DVR/VOD pages (no iframes / shadow roots)
@@ -29,8 +29,9 @@ The local companion app (`OverlayMatchTimer.html`) and the user guide (`Overlay 
 * Compact CSS mode for small popup players (~465×261)
 * Native OpenPlayer + Examino chrome hidden (3 bottom button rows, hamburger, gear, OpenPlayer bars); main player expands into the freed space
 * **Window capture-phase hotkeys** installed at `document_start` so OpenPlayer/Examino shortcuts never win
-* Setup panel **Examino Player** section mirrors OpenPlayer Source / Audio / Speed (clicks underlying `.op-setting-item` rows; fallback raises the native panel)
-* **Auto-switch to VOD** (chrome.storage via `bridge.js`, default ON) — DVR only seeks ~5.5 minutes; VOD has the full match. Kick-off sync survives `<video>` reload via `localStorage`
+* **Click-to-toggle** play/pause on the video (exclusive capture so OpenPlayer cannot double-toggle)
+* Setup panel keeps a compact **Source (DVR/VOD)** control + **Auto-switch to VOD** checkbox (chrome.storage via `bridge.js`, default ON). Manual DVR choice wins for the page session; VOD→DVR settles to the live edge (no out-of-window seek freeze)
+* Auto-hide treats clicks / wheel / keys on our UI as activity and never hides while the pointer is over the controls (InplayIP included)
 
 ---
 

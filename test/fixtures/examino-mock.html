@@ -253,19 +253,43 @@
         Object.defineProperty(video, 'currentTime', {
           configurable: true,
           get: () => _ct,
-          set: (v) => { _ct = Math.max(0, Math.min(dur, Number(v) || 0)); }
+          set: (v) => {
+            const next = Number(v) || 0;
+            // Seeking outside the DVR window freezes playback (real-world failure mode).
+            if (source === 'DVR' && (next > dur + 0.01 || next < -0.01)) {
+              window.__omtDvrFrozen = true;
+              _ct = Math.max(0, Math.min(dur, next));
+              try { video.pause(); } catch (_) {}
+              return;
+            }
+            window.__omtDvrFrozen = false;
+            _ct = Math.max(0, Math.min(dur, next));
+          }
         });
         video.dataset.omtSource = source;
+        // OpenPlayer-like: click plays when paused but does NOT pause when playing.
+        video.addEventListener('click', () => {
+          window.__omtNativeClickPlay = (window.__omtNativeClickPlay || 0) + 1;
+          if (video.paused) video.play().catch(() => {});
+        });
         video.play().catch(() => {});
         return video;
       }
 
       function replaceVideoForSource(source) {
+        const prev = document.querySelector('video');
+        const prevTime = prev ? prev.currentTime : 0;
         currentLabel = source === 'VOD' ? 'EXAMINO-VOD' : 'EXAMINO-DVR';
         host.innerHTML = '';
-        host.appendChild(makeVideo(currentLabel, source));
+        const next = makeVideo(currentLabel, source);
+        // Simulate player carrying VOD playhead into DVR (out-of-window) — extension must settle.
+        if (source === 'DVR' && prevTime > durationForSource.DVR) {
+          next.currentTime = prevTime;
+        }
+        host.appendChild(next);
         status.textContent = 'Source=' + source + ' — video replaced';
         window.__omtMockSource = source;
+        window.__omtDvrFrozen = !!window.__omtDvrFrozen;
       }
 
       // Late mount then one replacement (player init), then leave Source=DVR until extension/auto-VOD switches.

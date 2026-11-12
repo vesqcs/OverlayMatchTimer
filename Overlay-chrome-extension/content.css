@@ -61,10 +61,10 @@
     color: white;
 }
 
-/* Allow panels to receive pointer events */
+/* Allow panels / timer to receive pointer events.
+   OSD stays pointer-events:none so it never swallows video click-to-toggle. */
 #omt-root .glass-panel,
-#omt-root #match-timer,
-#omt-root #osd-message {
+#omt-root #match-timer {
     pointer-events: auto;
 }
 

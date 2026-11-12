@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Overlay MatchTimer",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Injects the Overlay MatchTimer UI over InplayIP and Examino DVR/VOD streams for professional match analysis.",
   "author": "Vasco Oliveira",
   "permissions": [
@@ -20,8 +20,12 @@
         "http://127.0.0.1/*inplay*",
         "http://localhost/*inplay*"
       ],
-      "js": ["content.js"],
-      "css": ["content.css"],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
       "run_at": "document_idle",
       "world": "MAIN"
     },
@@ -32,7 +36,9 @@
         "http://127.0.0.1/*examino*",
         "http://localhost/*examino*"
       ],
-      "js": ["bridge.js"],
+      "js": [
+        "bridge.js"
+      ],
       "run_at": "document_start",
       "world": "ISOLATED"
     },
@@ -43,8 +49,12 @@
         "http://127.0.0.1/*examino*",
         "http://localhost/*examino*"
       ],
-      "js": ["content.js"],
-      "css": ["content.css"],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
       "run_at": "document_start",
       "world": "MAIN"
     }

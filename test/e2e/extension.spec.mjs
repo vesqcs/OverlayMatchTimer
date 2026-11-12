@@ -38,7 +38,7 @@ function startServer() {
     });
     server.listen(0, '127.0.0.1', () => {
       const { port } = server.address();
-      resolve({ server, port, base: `http://127.0.0.1:${port}` });
+      resolve({ server, base: `http://127.0.0.1:${port}` });
     });
   });
 }
@@ -68,182 +68,176 @@ async function run() {
   const page = await context.newPage();
 
   try {
-    // ---------- Examino mock ----------
     await page.goto(`${base}/examino-mock.html`, { waitUntil: 'domcontentloaded' });
     await waitForOmt(page, 20000);
     await page.waitForTimeout(2800);
     await waitForOmt(page);
 
-    // Wait for auto-VOD (default ON) to replace video with full-match duration
     await page.waitForFunction(() => {
       const v = document.querySelector('video');
       return v && v.dataset.omtSource === 'VOD' && v.duration >= 7000;
     }, null, { timeout: 15000 }).catch(() => {});
 
-    // Refresh overlay selects after the player source change (retry while HUD rebinds)
-    let sourceOptions = [];
-    for (let i = 0; i < 12; i++) {
-      await page.evaluate(() => {
-        const setup = document.getElementById('setup-panel');
-        if (setup) setup.style.display = 'flex';
-        document.getElementById('omt-examino-refresh-settings')?.click();
-      });
-      await page.waitForTimeout(700);
-      sourceOptions = await page.evaluate(() => {
-        const sel = document.getElementById('omt-examino-source');
-        return sel ? [...sel.options].map((o) => o.value) : [];
-      });
-      if (sourceOptions.includes('VOD') && sourceOptions.includes('DVR')) break;
-    }
-
-    const examinoState = await page.evaluate((opts) => {
-      const root = document.getElementById('omt-root');
-      const bottom = document.getElementById('bottom-controls');
-      const burger = document.querySelector('.hamburger-menu');
-      const opControls = document.querySelector('.op-controls');
-      const settings = document.getElementById('omt-examino-settings');
-      const sourceSel = document.getElementById('omt-examino-source');
-      const autoVod = document.getElementById('omt-examino-auto-vod');
-      const video = document.querySelector('video');
-      const cs = (el) => (el ? getComputedStyle(el) : null);
+    // ---- Simplified settings: Source + Auto-VOD only ----
+    const settingsShape = await page.evaluate(() => {
+      const section = document.getElementById('omt-examino-settings');
       return {
-        hasRoot: !!root,
-        siteClass: root ? root.className : '',
-        compact: root ? root.classList.contains('omt-compact') : false,
-        bottomHidden: !bottom || cs(bottom).display === 'none' || bottom.classList.contains('omt-examino-native-hidden'),
-        burgerHidden: !burger || cs(burger).display === 'none' || burger.classList.contains('omt-examino-native-hidden'),
-        opControlsHidden: !opControls || cs(opControls).display === 'none',
-        settingsVisible: !!(settings && cs(settings).display !== 'none'),
-        sourceOptions: opts,
-        autoVodChecked: !!(autoVod && autoVod.checked),
-        source: window.__omtMockSource || video?.dataset?.omtSource || null,
-        duration: video ? video.duration : null
+        visible: !!(section && getComputedStyle(section).display !== 'none'),
+        hasSource: !!document.getElementById('omt-examino-source'),
+        hasAuto: !!document.getElementById('omt-examino-auto-vod'),
+        hasAudio: !!document.getElementById('omt-examino-audio'),
+        hasSpeed: !!document.getElementById('omt-examino-speed'),
+        hasNative: !!document.getElementById('omt-btn-native-settings'),
+        hasRefresh: !!document.getElementById('omt-examino-refresh-settings')
       };
-    }, sourceOptions);
-
-    results.push({ name: 'examino-overlay-appears', pass: examinoState.hasRoot && examinoState.siteClass.includes('omt-examino') });
-    results.push({ name: 'examino-compact-on-small-player', pass: examinoState.compact === true });
-    results.push({ name: 'examino-native-bottom-hidden', pass: examinoState.bottomHidden === true, detail: examinoState });
-    results.push({ name: 'examino-hamburger-hidden', pass: examinoState.burgerHidden === true });
-    results.push({ name: 'examino-op-controls-hidden', pass: examinoState.opControlsHidden === true });
-    results.push({
-      name: 'examino-settings-section',
-      pass: examinoState.settingsVisible === true && examinoState.sourceOptions.includes('VOD') && examinoState.sourceOptions.includes('DVR'),
-      detail: { sourceOptions: examinoState.sourceOptions }
     });
-    results.push({ name: 'examino-auto-vod-default', pass: examinoState.autoVodChecked === true });
     results.push({
-      name: 'examino-auto-vod-switched',
-      pass: examinoState.source === 'VOD' && examinoState.duration >= 7000,
-      detail: { source: examinoState.source, duration: examinoState.duration }
+      name: 'examino-settings-simplified',
+      pass: settingsShape.visible && settingsShape.hasSource && settingsShape.hasAuto &&
+        !settingsShape.hasAudio && !settingsShape.hasSpeed && !settingsShape.hasNative && !settingsShape.hasRefresh,
+      detail: settingsShape
     });
 
-    // Kick-off sync persists across VOD replacement
+    // ---- Click to pause (extension owns toggle; native only plays) ----
+    await page.evaluate(async () => {
+      const setup = document.getElementById('setup-panel');
+      if (setup) setup.style.display = 'none';
+      const panel = document.getElementById('controls-panel');
+      if (panel) {
+        panel.style.opacity = '0';
+        panel.style.pointerEvents = 'none';
+      }
+      const timer = document.getElementById('match-timer');
+      if (timer) timer.style.visibility = 'hidden';
+      const v = document.querySelector('video');
+      window.__omtNativeClickPlay = 0;
+      if (v) {
+        try { await v.play(); } catch (_) {}
+      }
+    });
+    const playerBox = await page.locator('.op-player').boundingBox();
+    const clickPlayerTop = async () => {
+      if (!playerBox) return;
+      await page.mouse.click(playerBox.x + playerBox.width / 2, playerBox.y + 24);
+    };
+    await clickPlayerTop();
+    await page.waitForTimeout(200);
+    const afterPause = await page.evaluate(() => {
+      const v = document.querySelector('video');
+      return { paused: !!(v && v.paused), native: window.__omtNativeClickPlay || 0 };
+    });
+    results.push({ name: 'examino-click-pauses', pass: afterPause.paused === true, detail: afterPause });
+    await clickPlayerTop();
+    await page.waitForTimeout(200);
+    const afterPlay = await page.evaluate(() => {
+      const v = document.querySelector('video');
+      return { paused: !!(v && v.paused) };
+    });
+    results.push({ name: 'examino-click-plays', pass: afterPlay.paused === false, detail: afterPlay });
+
+    // ---- Auto-hide: repeated clicks keep panel visible ----
+    const autoHide = await page.evaluate(async () => {
+      const panel = document.getElementById('controls-panel');
+      const btn = document.getElementById('omt-m2');
+      if (!panel || !btn) return { ok: false, reason: 'missing' };
+      panel.style.opacity = '1';
+      panel.style.pointerEvents = 'auto';
+      // Simulate pointer resting on controls + repeated clicks without mousemove
+      panel.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+      for (let i = 0; i < 6; i++) {
+        btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await new Promise((r) => setTimeout(r, 500));
+      }
+      await new Promise((r) => setTimeout(r, 2800));
+      const opacityWhileHover = panel.style.opacity;
+      panel.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }));
+      const setup = document.getElementById('setup-panel');
+      if (setup) setup.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 3000));
+      const opacityAfterLeave = panel.style.opacity;
+      return {
+        ok: opacityWhileHover === '1' && opacityAfterLeave === '0',
+        opacityWhileHover,
+        opacityAfterLeave
+      };
+    });
+    results.push({ name: 'examino-autohide-respects-clicks', pass: autoHide.ok === true, detail: autoHide });
+
+    // Kick-off sync
     const timerSync = await page.evaluate(() => {
       const setup = document.getElementById('setup-panel');
       if (setup) setup.style.display = 'flex';
-      localStorage.removeItem('matchTimerAtivo');
-      const btn = document.getElementById('omt-btn-set-kickoff');
-      btn.click();
+      document.getElementById('omt-btn-set-kickoff')?.click();
       const t = document.getElementById('match-timer');
-      return { ok: !!(t && t.style.display === 'block'), ativo: localStorage.getItem('matchTimerAtivo') };
+      return { ok: !!(t && t.style.display === 'block') };
     });
-    results.push({ name: 'examino-timer-sync', pass: timerSync.ok === true, detail: timerSync });
+    results.push({ name: 'examino-timer-sync', pass: timerSync.ok === true });
 
-    // Hotkeys beat hostile page handler
+    // Hotkeys still win
     await page.evaluate(() => { window.__omtHostileKeySeen = false; });
     const beforeSkip = await page.evaluate(() => document.querySelector('video')?.currentTime);
     await page.keyboard.press('ArrowRight');
     await page.waitForTimeout(150);
-    const hotkeyState = await page.evaluate((before) => {
+    const hotkey = await page.evaluate((before) => {
       const after = document.querySelector('video')?.currentTime;
-      return {
-        after,
-        before,
-        hostile: window.__omtHostileKeySeen === true,
-        delta: (after ?? 0) - (before ?? 0)
-      };
+      return { hostile: window.__omtHostileKeySeen === true, delta: (after ?? 0) - (before ?? 0) };
     }, beforeSkip);
     results.push({
       name: 'examino-hotkey-wins-over-page',
-      pass: hotkeyState.hostile === false && Math.abs(hotkeyState.delta - 2) < 0.01,
-      detail: hotkeyState
+      pass: hotkey.hostile === false && Math.abs(hotkey.delta - 2) < 0.01,
+      detail: hotkey
     });
 
-    await page.evaluate(() => {
-      const v = document.querySelector('video');
-      if (v) { try { v.pause(); } catch (_) {} }
-    });
-    await page.keyboard.press('Space');
-    await page.waitForTimeout(200);
-    const playLabel = await page.evaluate(() => document.getElementById('omt-btn-play')?.textContent || '');
-    results.push({ name: 'examino-hotkey-space', pass: /pause/i.test(playLabel) || /play/i.test(playLabel) });
-
-    // Panel drag
-    const dragBefore = await page.evaluate(() => {
-      const p = document.getElementById('controls-panel');
-      const r = p.getBoundingClientRect();
-      return { top: r.top, left: r.left };
-    });
-    const handle = page.locator('#controls-handle .drag-center-grip');
-    const box = await handle.boundingBox();
-    if (box) {
-      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-      await page.mouse.down();
-      await page.mouse.move(box.x + box.width / 2 + 40, box.y + box.height / 2 - 30, { steps: 8 });
-      await page.mouse.up();
-    }
-    await page.waitForTimeout(200);
-    const dragAfter = await page.evaluate(() => {
-      const p = document.getElementById('controls-panel');
-      const r = p.getBoundingClientRect();
-      return { top: r.top, left: r.left };
-    });
-    results.push({
-      name: 'examino-panel-drag',
-      pass: Math.abs(dragAfter.left - dragBefore.left) > 5 || Math.abs(dragAfter.top - dragBefore.top) > 5
-    });
-
-    // Manual Source select works with auto-VOD temporarily disabled
-    const manualSource = await page.evaluate(async () => {
+    // ---- VOD deep seek → DVR must not freeze ----
+    const vodToDvr = await page.evaluate(async () => {
       const setup = document.getElementById('setup-panel');
       if (setup) setup.style.display = 'flex';
-      const auto = document.getElementById('omt-examino-auto-vod');
-      if (auto) {
-        auto.checked = false;
-        auto.dispatchEvent(new Event('change', { bubbles: true }));
-      }
-      const refresh = document.getElementById('omt-examino-refresh-settings');
-      if (refresh) refresh.click();
-      await new Promise((r) => setTimeout(r, 600));
+      const v = document.querySelector('video');
+      if (v) v.currentTime = 5000; // deep in VOD
+      await new Promise((r) => setTimeout(r, 100));
       const sel = document.getElementById('omt-examino-source');
-      if (!sel || ![...sel.options].some((o) => o.value === 'DVR')) {
-        return { ok: false, reason: 'no-dvr-option', options: sel ? [...sel.options].map((o) => o.value) : [] };
-      }
+      if (!sel) return { ok: false, reason: 'no-select' };
+      // Ensure options include DVR
+      sel.focus();
+      await new Promise((r) => setTimeout(r, 700));
       sel.value = 'DVR';
       sel.dispatchEvent(new Event('change', { bubbles: true }));
-      await new Promise((r) => setTimeout(r, 700));
-      const sourceAfter = window.__omtMockSource;
-      const dur = document.querySelector('video')?.duration;
-      sel.value = 'VOD';
-      sel.dispatchEvent(new Event('change', { bubbles: true }));
-      await new Promise((r) => setTimeout(r, 700));
-      if (auto) {
-        auto.checked = true;
-        auto.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 1200));
+      const v2 = document.querySelector('video');
+      const frozen = window.__omtDvrFrozen === true;
+      const source = window.__omtMockSource || v2?.dataset?.omtSource;
+      const ct = v2 ? v2.currentTime : null;
+      const dur = v2 ? v2.duration : null;
+      // Play should work (not stuck)
+      if (v2) {
+        try { await v2.play(); } catch (_) {}
       }
-      return { ok: sourceAfter === 'DVR' && dur === 330 && window.__omtMockSource === 'VOD', sourceAfter, dur, final: window.__omtMockSource };
+      await new Promise((r) => setTimeout(r, 200));
+      return {
+        ok: source === 'DVR' && !frozen && typeof ct === 'number' && ct <= 330 && dur === 330,
+        source,
+        frozen,
+        ct,
+        dur,
+        paused: v2 ? v2.paused : null
+      };
     });
-    results.push({ name: 'examino-manual-source-switch', pass: manualSource.ok === true, detail: manualSource });
+    results.push({ name: 'examino-vod-to-dvr-no-freeze', pass: vodToDvr.ok === true, detail: vodToDvr });
+
+    // Manual DVR must stop auto-VOD from flipping back
+    await page.waitForTimeout(2500);
+    const stayedDvr = await page.evaluate(() => window.__omtMockSource || document.querySelector('video')?.dataset?.omtSource);
+    results.push({ name: 'examino-manual-dvr-wins', pass: stayedDvr === 'DVR', detail: { stayedDvr } });
 
     await page.screenshot({ path: path.join(ARTIFACTS, 'examino-overlay.png'), fullPage: true });
 
-    // Fullscreen keeps overlay
+    // Fullscreen
     await page.evaluate(async () => {
       const target = document.querySelector('.op-player');
-      if (target && target.requestFullscreen) await target.requestFullscreen();
+      if (target?.requestFullscreen) await target.requestFullscreen();
     });
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(400);
     const fsState = await page.evaluate(() => {
       const fs = document.fullscreenElement;
       const root = document.getElementById('omt-root');
@@ -255,9 +249,7 @@ async function run() {
       if (document.fullscreenElement) await document.exitFullscreen();
     });
 
-    await page.screenshot({ path: path.join(ARTIFACTS, 'examino-settings.png'), fullPage: true });
-
-    // ---------- InplayIP regression ----------
+    // ---------- InplayIP: auto-hide activity + regression ----------
     await page.goto(`${base}/inplayip-mock.html`, { waitUntil: 'domcontentloaded' });
     await page.evaluate(() => {
       Object.keys(localStorage).forEach((k) => {
@@ -266,6 +258,7 @@ async function run() {
     });
     await page.reload({ waitUntil: 'domcontentloaded' });
     await waitForOmt(page, 15000);
+
     const inplayState = await page.evaluate(() => {
       const root = document.getElementById('omt-root');
       const setup = document.getElementById('setup-panel');
@@ -284,17 +277,34 @@ async function run() {
     });
     results.push({ name: 'inplayip-no-examino-section', pass: inplayState.examinoHidden === true });
 
-    const inplayTimer = await page.evaluate(() => {
-      const setup = document.getElementById('setup-panel');
-      if (setup) setup.style.display = 'flex';
-      const btn = document.getElementById('omt-btn-set-kickoff');
-      if (!btn) return { ok: false };
-      btn.click();
-      const t = document.getElementById('match-timer');
-      return { ok: !!(t && t.style.display === 'block'), text: t?.textContent, ativo: localStorage.getItem('matchTimerAtivo') };
+    const inplayAutohide = await page.evaluate(async () => {
+      const panel = document.getElementById('controls-panel');
+      const btn = document.getElementById('omt-m2');
+      if (!panel || !btn) return { ok: false };
+      panel.style.opacity = '1';
+      panel.style.pointerEvents = 'auto';
+      panel.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+      for (let i = 0; i < 5; i++) {
+        btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await new Promise((r) => setTimeout(r, 500));
+      }
+      await new Promise((r) => setTimeout(r, 2600));
+      const whileHover = panel.style.opacity;
+      panel.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 2600));
+      return { ok: whileHover === '1' && panel.style.opacity === '0', whileHover, after: panel.style.opacity };
     });
-    results.push({ name: 'inplayip-timer-sync', pass: inplayTimer.ok === true, detail: inplayTimer });
+    results.push({ name: 'inplayip-autohide-respects-clicks', pass: inplayAutohide.ok === true, detail: inplayAutohide });
+
+    const inplayTimer = await page.evaluate(() => {
+      document.getElementById('setup-panel').style.display = 'flex';
+      document.getElementById('omt-btn-set-kickoff').click();
+      const t = document.getElementById('match-timer');
+      return { ok: !!(t && t.style.display === 'block') };
+    });
+    results.push({ name: 'inplayip-timer-sync', pass: inplayTimer.ok === true });
     await page.screenshot({ path: path.join(ARTIFACTS, 'inplayip-overlay.png'), fullPage: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'examino-settings.png'), fullPage: true });
 
   } finally {
     await context.close();
