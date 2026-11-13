@@ -887,6 +887,9 @@
     </div>
 </div>
 
+<!-- Portal tip lives outside .glass-panel so backdrop-filter cannot make it translucent. -->
+<div id="omt-control-tip" class="omt-control-tip" hidden></div>
+
 <!-- Floating control card (v1.7.2 layout): handle → more (middle) → transport/speeds. Grows UP via bottom anchor. -->
 <div id="controls-panel" class="glass-panel">
     <div class="drag-handle" id="controls-handle">
@@ -1077,6 +1080,28 @@
     }
 
     /**
+     * Ancestors with transform / filter / backdrop-filter become the containing
+     * block for position:fixed. Tips inside #controls-panel (.glass-panel) must
+     * use coordinates relative to that box, not the viewport.
+     */
+    function omtFixedContainingBlockOrigin(el) {
+        let node = el ? el.parentElement : null;
+        while (node && node !== document.documentElement) {
+            const cs = getComputedStyle(node);
+            const bf = cs.backdropFilter || cs.webkitBackdropFilter || 'none';
+            if ((cs.transform && cs.transform !== 'none') ||
+                (cs.filter && cs.filter !== 'none') ||
+                (cs.perspective && cs.perspective !== 'none') ||
+                (bf && bf !== 'none')) {
+                const r = node.getBoundingClientRect();
+                return { left: r.left, top: r.top, node: node };
+            }
+            node = node.parentElement;
+        }
+        return { left: 0, top: 0, node: null };
+    }
+
+    /**
      * Place a control tip with position:fixed so backdrop-filter on .glass-panel
      * cannot clip it. Clamp inside #omt-root (and prefer staying over the card).
      */
@@ -1094,6 +1119,10 @@
         const pad = 8;
         const flipBelow = !!(omtRoot.classList.contains('omt-tips-flip-below') ||
             (panel && panel.classList.contains('omt-tips-flip-below')));
+        // More-panel tips (Open file, Shuttle, Kick-off row, …) prefer BELOW so they
+        // don’t cover Period / Kick-off / neighbouring controls.
+        const inMore = !!el.closest('#omt-more-panel');
+        const preferBelow = flipBelow || inMore || el.id === 'omt-local-open-file';
         const inLeft = !!el.closest('.drag-side-left');
         const inRight = !!el.closest('.drag-side-right');
         let tipLeft;
@@ -1102,7 +1131,6 @@
         else tipLeft = rect.left + rect.width / 2 - tipW / 2;
         const minL = rootRect.left + pad;
         const maxR = rootRect.right - pad;
-        // Prefer keeping tips over the card so they don’t look detached.
         const preferL = Math.max(minL, panelRect.left + pad);
         const preferR = Math.min(maxR, panelRect.right - pad);
         if (tipLeft < preferL) tipLeft = preferL;
@@ -1110,22 +1138,51 @@
         if (tipLeft < minL) tipLeft = minL;
         if (tipLeft + tipW > maxR) tipLeft = maxR - tipW;
 
-        let tipTop = flipBelow ? (rect.bottom + 8) : (rect.top - tipH - 8);
+        let tipTop = preferBelow ? (rect.bottom + 8) : (rect.top - tipH - 8);
         if (tipTop < rootRect.top + pad) tipTop = rect.bottom + 8;
-        if (tipTop + tipH > rootRect.bottom - pad) tipTop = Math.max(rootRect.top + pad, rect.top - tipH - 8);
+        if (tipTop + tipH > rootRect.bottom - pad) {
+            tipTop = preferBelow
+                ? Math.max(rootRect.top + pad, rect.top - tipH - 8)
+                : Math.max(rootRect.top + pad, rect.bottom + 8);
+        }
 
-        el.classList.add('omt-tip-fixed');
-        el.style.setProperty('--omt-tip-left', Math.round(tipLeft) + 'px');
-        el.style.setProperty('--omt-tip-top', Math.round(tipTop) + 'px');
-        el.style.setProperty('--omt-tip-shift', '0px');
+        // Prefer the portal tip outside .glass-panel (opaque; true viewport fixed).
+        const portal = q('omt-control-tip');
+        if (portal) {
+            portal.hidden = false;
+            portal.textContent = text;
+            portal.style.left = Math.round(tipLeft) + 'px';
+            portal.style.top = Math.round(tipTop) + 'px';
+            portal.dataset.forId = el.id || '';
+            el.classList.add('omt-tip-portal');
+        } else {
+            // Fallback: ::after with containing-block-relative coords.
+            const origin = omtFixedContainingBlockOrigin(el);
+            el.classList.add('omt-tip-fixed', 'omt-tip-show');
+            el.style.setProperty('--omt-tip-left', Math.round(tipLeft - origin.left) + 'px');
+            el.style.setProperty('--omt-tip-top', Math.round(tipTop - origin.top) + 'px');
+            el.style.setProperty('--omt-tip-shift', '0px');
+        }
+        el.dataset.omtTipViewportTop = String(Math.round(tipTop));
+        el.dataset.omtTipViewportLeft = String(Math.round(tipLeft));
     }
 
     function clearOmtControlTip(el) {
         if (!el) return;
-        el.classList.remove('omt-tip-fixed');
+        // Tests / capture can freeze a tip through pointerleave races.
+        if (el.dataset.omtHold === '1') return;
+        el.classList.remove('omt-tip-fixed', 'omt-tip-show', 'omt-tip-portal');
         el.style.removeProperty('--omt-tip-left');
         el.style.removeProperty('--omt-tip-top');
         el.style.removeProperty('--omt-tip-shift');
+        delete el.dataset.omtTipViewportTop;
+        delete el.dataset.omtTipViewportLeft;
+        const portal = q('omt-control-tip');
+        if (portal && (!portal.dataset.forId || portal.dataset.forId === (el.id || '') || !el.id)) {
+            portal.hidden = true;
+            portal.textContent = '';
+            portal.removeAttribute('data-for-id');
+        }
     }
 
     function wireOmtTipEdgeClamp() {
@@ -2371,8 +2428,8 @@
         }
     }
 
-    /** Place the single tip above the scrubber; clamp horizontally inside #omt-root. */
-    function placeTimelineHoverTip(leftPx) {
+    /** Place the single tip above the scrubber (fixed; solid; never under the card). */
+    function placeTimelineHoverTip(leftPxInBar) {
         const tip = q('omt-timeline-hover-tip');
         const track = omtRoot ? omtRoot.querySelector('.omt-timeline-track') : null;
         const bar = q('omt-timeline-bar');
@@ -2381,28 +2438,37 @@
         const barRect = bar.getBoundingClientRect();
         const rootRect = omtRoot.getBoundingClientRect();
         tip.hidden = false;
+        tip.style.opacity = '1';
         bar.classList.add('is-timeline-hover');
-        // Lift bar above the floating card while the tip is shown.
         bar.style.zIndex = '55';
 
-        // Tip sits above the track (labels are below) — inside the bar’s top padding.
-        tip.style.bottom = (barRect.bottom - trackRect.top + 10) + 'px';
-        tip.style.top = 'auto';
-        tip.style.transform = 'translateX(-50%)';
-
-        // Horizontal clamp inside the player root.
-        tip.style.left = leftPx + 'px';
-        // Force layout then clamp.
-        const tipRect = tip.getBoundingClientRect();
+        // Measure after un-hiding.
+        const tipH = Math.max(22, tip.offsetHeight || 22);
+        const tipW = Math.max(48, tip.offsetWidth || 80);
+        let left = barRect.left + leftPxInBar - tipW / 2;
         const pad = 6;
-        let shift = 0;
-        if (tipRect.left < rootRect.left + pad) shift = (rootRect.left + pad) - tipRect.left;
-        if (tipRect.right + shift > rootRect.right - pad) {
-            shift = (rootRect.right - pad) - tipRect.right;
+        if (left < rootRect.left + pad) left = rootRect.left + pad;
+        if (left + tipW > rootRect.right - pad) left = rootRect.right - pad - tipW;
+
+        // Prefer the gap between the control card and the track.
+        let top = trackRect.top - tipH - 8;
+        if (controlsPanel) {
+            const pr = controlsPanel.getBoundingClientRect();
+            if (top < pr.bottom + 2) {
+                // Not enough room above the track under the card — sit just below the card
+                // if that still clears the track; else hug the track from above.
+                const belowCard = pr.bottom + 4;
+                top = (belowCard + tipH < trackRect.top - 2) ? belowCard : (trackRect.top - tipH - 4);
+            }
         }
-        if (shift) {
-            tip.style.left = (leftPx + shift) + 'px';
-        }
+        if (top < rootRect.top + pad) top = rootRect.top + pad;
+
+        tip.style.position = 'fixed';
+        tip.style.left = Math.round(left) + 'px';
+        tip.style.top = Math.round(top) + 'px';
+        tip.style.bottom = 'auto';
+        tip.style.transform = 'none';
+        tip.style.zIndex = '2147483645';
     }
 
     function clearPeriodTickSnap() {
@@ -2474,8 +2540,19 @@
 
     function hideTimelineHoverTip() {
         const tip = q('omt-timeline-hover-tip');
+        // Tests / capture can set data-omt-hold to freeze the tip through pointerleave races.
+        if (tip && tip.dataset.omtHold === '1') return;
         const bar = q('omt-timeline-bar');
-        if (tip) tip.hidden = true;
+        if (tip) {
+            tip.hidden = true;
+            tip.style.opacity = '';
+            tip.style.left = '';
+            tip.style.top = '';
+            tip.style.bottom = '';
+            tip.style.transform = '';
+            tip.style.position = '';
+            tip.style.zIndex = '';
+        }
         if (bar) {
             bar.style.zIndex = '';
             bar.classList.remove('is-timeline-hover');
