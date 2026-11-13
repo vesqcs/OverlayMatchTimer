@@ -1,8 +1,8 @@
 # Overlay MatchTimer — Tuesday manual test (~15 min)
 
-**Build:** v1.7.7 · **PC:** work machine · **Date:** ________ · **Tester:** ________
+**Build:** v1.7.8 · **PC:** work machine · **Date:** ________ · **Tester:** ________
 
-Install from the zip (`OverlayMatchTimer-v1.7.7.zip` → `Overlay-chrome-extension/`). Load unpacked in `chrome://extensions` (Developer mode). Do not use an old folder.
+Install from the zip (`OverlayMatchTimer-v1.7.8.zip` → `Overlay-chrome-extension/`). Load unpacked in `chrome://extensions` (Developer mode). Do not use an old folder.
 
 Mark each row: `[ ]` → `[x]` when pass. Use **Notes** for anything odd (screenshot path / console error).
 
@@ -12,9 +12,9 @@ Mark each row: `[ ]` → `[x]` when pass. Use **Notes** for anything odd (screen
 
 | # | Action | Expected | ✓ | Notes |
 |---|--------|----------|---|-------|
-| 0.1 | Load unpacked from zip’s `Overlay-chrome-extension` | Extension shows **1.7.7**, no errors on card | [ ] | |
+| 0.1 | Load unpacked from zip’s `Overlay-chrome-extension` | Extension shows **1.7.8**, no errors on card | [ ] | |
 | 0.2 | Check toolbar / extensions icon | Slash + **20:08** badge top-left (v2) on dark tile | [ ] | |
-| 0.3 | Open popup | Header: SP logo with **20:08** badge + OverlayMatchTimer; footer `v1.7.7` | [ ] | |
+| 0.3 | Open popup | Header: SP logo with **20:08** badge + OverlayMatchTimer; footer `v1.7.8` | [ ] | |
 | 0.4 | Customize tab | Sections: Match clock, Shortcuts, ShuttleXpress only — **no Kickoff sync** | [ ] | |
 
 ---

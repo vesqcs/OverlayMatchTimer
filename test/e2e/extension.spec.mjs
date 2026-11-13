@@ -892,7 +892,7 @@ async function run() {
     });
     results.push({ name: 'examino-live-speed-no-overlap', pass: noOverlap.ok === true, detail: noOverlap });
 
-    // Skip buttons show amount labels (2s / 10s / 2m) while keeping tooltips
+    // Skip buttons show amount labels (2s / 10s / 2m); no hover tips (self-explanatory)
     const skipLabels = await page.evaluate(() => {
       const ids = ['omt-m120', 'omt-m10', 'omt-m2', 'omt-p2', 'omt-p10', 'omt-p120'];
       const expected = ['2m', '10s', '2s', '2s', '10s', '2m'];
@@ -900,7 +900,7 @@ async function run() {
         const el = document.getElementById(id);
         const label = el?.querySelector('.omt-btn-label')?.textContent?.trim() || '';
         const tip = el?.getAttribute('data-tip') || '';
-        return { id, label, tip, ok: label === expected[i] && tip.length > 0 };
+        return { id, label, tip, ok: label === expected[i] && !tip };
       });
       return { ok: rows.every((r) => r.ok), rows };
     });
@@ -1524,17 +1524,39 @@ async function run() {
     await page.screenshot({ path: path.join(ARTIFACTS, 'examino-settings.png'), fullPage: true });
     await page.screenshot({ path: path.join(ARTIFACTS, 'ui_in_video_settings.png'), fullPage: true });
 
-    // Tooltip with shortcut (Play / Pause Space)
+    // Play / skip / speed-row: no hover tips (self-explanatory). Frame tips remain.
     const playBox = await page.locator('#omt-btn-play').boundingBox();
     if (playBox) {
       await page.mouse.move(playBox.x + playBox.width / 2, playBox.y + playBox.height / 2);
-      await page.waitForTimeout(120);
+      await page.waitForTimeout(140);
     }
-    const tipOk = await page.evaluate(() => {
-      const btn = document.getElementById('omt-btn-play');
-      return !!(btn && /Play \/ Pause \(Space\)/.test(btn.getAttribute('data-tip') || ''));
+    const playNoTip = await page.evaluate(() => {
+      const play = document.getElementById('omt-btn-play');
+      const portal = document.getElementById('omt-control-tip');
+      const chips = [...document.querySelectorAll('.omt-speed-chip')];
+      const skips = ['omt-m120', 'omt-m10', 'omt-m2', 'omt-p2', 'omt-p10', 'omt-p120']
+        .map((id) => document.getElementById(id));
+      const noPlayTip = !!(play && !play.hasAttribute('data-tip') && !play.classList.contains('omt-tip'));
+      const noSkipTips = skips.every((el) => el && !el.hasAttribute('data-tip') && !el.classList.contains('omt-tip'));
+      const noChipTips = chips.every((el) => !el.hasAttribute('data-tip') && !el.classList.contains('omt-tip'));
+      const portalHidden = !portal || portal.hidden === true || !(portal.textContent || '').trim();
+      const frameTipsOk =
+        /Previous frame/i.test(document.getElementById('omt-prev-frame')?.getAttribute('data-tip') || '') &&
+        /Next frame/i.test(document.getElementById('omt-next-frame')?.getAttribute('data-tip') || '');
+      return { ok: noPlayTip && noSkipTips && noChipTips && portalHidden && frameTipsOk, noPlayTip, noSkipTips, noChipTips, portalHidden, frameTipsOk };
     });
-    results.push({ name: 'examino-tooltip-has-shortcut', pass: tipOk === true });
+    results.push({ name: 'examino-transport-no-tips', pass: playNoTip.ok === true, detail: playNoTip });
+    if (playBox) {
+      await page.screenshot({
+        path: path.join(ARTIFACTS, 'v178_play_no_tooltip.png'),
+        clip: {
+          x: Math.max(0, playBox.x - 120),
+          y: Math.max(0, playBox.y - 40),
+          width: Math.min(420, playBox.width + 240),
+          height: Math.ceil(playBox.height + 80)
+        }
+      });
+    }
     await page.screenshot({ path: path.join(ARTIFACTS, 'examino_tooltip.png'), fullPage: true });
 
     // Hide-controls tooltip
@@ -2610,7 +2632,7 @@ async function run() {
           noCredit: !document.querySelector('.omt-brand-credit'),
           noPersonalizar: !document.body.textContent.includes('Personalizar') &&
             !document.body.textContent.includes('Em breve'),
-          footOk: foot === 'v1.7.7',
+          footOk: foot === 'v1.7.8',
           hasAutoPause: !!document.getElementById('omt-auto-pause-blur'),
           autoPauseDefaultOff: document.getElementById('omt-auto-pause-blur')
             ? document.getElementById('omt-auto-pause-blur').checked === false
