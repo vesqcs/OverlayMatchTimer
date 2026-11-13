@@ -58,5 +58,8 @@
             if (panel === controlsPanel && typeof anchorControlsPanelBottom === 'function') {
                 anchorControlsPanelBottom();
             }
+            if (panel === controlsPanel && typeof updateControlsTipFlip === 'function') {
+                updateControlsTipFlip();
+            }
         }
     }

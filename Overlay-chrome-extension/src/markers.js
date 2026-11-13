@@ -1,6 +1,6 @@
-/* Kick-off / period markers on the HUD timeline (redesign chrome). */
+/* Kick-off / period bookmarks on the HUD timeline (redesign chrome). */
     /* =========================================================
-       11. TIMELINE MARKERS + PERIOD HOVER
+       11. TIMELINE BOOKMARKS + PERIOD HOVER
        ========================================================= */
     function periodLabelForKey(key) {
         return ({
@@ -36,15 +36,71 @@
         return label;
     }
 
+    /**
+     * Redesign-only: match-clock mm:ss the on-video timer would show at video time t.
+     * Mirrors atualizarRelogio period/base selection; does not touch original hooks.
+     */
+    function matchClockAtVideoTime(t) {
+        if (!isFinite(t)) return { period: '', clock: '' };
+        const k1 = getVideoTimeForPdt(kickoff1);
+        const k2 = getVideoTimeForPdt(kickoff2);
+        const kC1 = getVideoTimeForPdt(kickoffC1);
+        const kC2 = getVideoTimeForPdt(kickoffC2);
+
+        if (k1 === null && k2 === null && kC1 === null && kC2 === null) {
+            return {
+                period: '',
+                clock: (typeof formatarTempoVideo === 'function') ? formatarTempoVideo(t) : ''
+            };
+        }
+
+        if (k1 !== null && t < k1) {
+            return {
+                period: '',
+                clock: 'Pre-match'
+            };
+        }
+
+        let kickoffUsar = k1;
+        let baseUsar = 0;
+        if (kC2 !== null && t >= kC2) {
+            kickoffUsar = kC2;
+            baseUsar = (parseInt(localStorage.getItem('matchTimerCustomMinC2'), 10) || 105) * 60;
+        } else if (kC1 !== null && t >= kC1) {
+            kickoffUsar = kC1;
+            baseUsar = (parseInt(localStorage.getItem('matchTimerCustomMinC1'), 10) || 90) * 60;
+        } else if (k2 !== null && t >= k2) {
+            kickoffUsar = k2;
+            baseUsar = 45 * 60;
+        } else if (k1 !== null) {
+            kickoffUsar = k1;
+            baseUsar = 0;
+        } else {
+            return {
+                period: '',
+                clock: (typeof formatarTempoVideo === 'function') ? formatarTempoVideo(t) : ''
+            };
+        }
+
+        const totalSeconds = (t - kickoffUsar) + baseUsar;
+        const mm = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+        const ss = Math.floor(totalSeconds % 60).toString().padStart(2, '0');
+        return {
+            period: resolvePeriodAtVideoTime(t),
+            clock: mm + ':' + ss
+        };
+    }
+
     function atualizarMarcadores() {
         const markerContainer = q('omt-timeline-markers');
+        const bookmarkContainer = q('omt-timeline-bookmarks');
         const btnK1 = q('omt-jump-k1');
         const btnK2 = q('omt-jump-k2');
         const btnKC1 = q('omt-jump-kc1');
         const btnKC2 = q('omt-jump-kc2');
 
-        if (!markerContainer) return;
-        markerContainer.innerHTML = '';
+        if (markerContainer) markerContainer.innerHTML = '';
+        if (bookmarkContainer) bookmarkContainer.innerHTML = '';
 
         const duration = site.effectiveDuration(vid);
         if (!duration || !isFinite(duration)) {
@@ -55,35 +111,35 @@
         const btnMap = { '1': btnK1, '2': btnK2, 'custom1': btnKC1, 'custom2': btnKC2 };
         Object.values(btnMap).forEach((b) => { if (b) b.style.display = 'none'; });
 
+        if (!bookmarkContainer || !timelineSlider) return;
+
         const minVal = parseFloat(timelineSlider.min) || 0;
         const maxVal = parseFloat(timelineSlider.max) || duration;
         const range = maxVal - minVal;
         if (range <= 0) return;
 
         const anchors = collectPeriodAnchors().filter((a) => a.val >= minVal && a.val <= maxVal);
-        const parts = [];
+        const icon = (typeof omtIcon === 'function') ? omtIcon('bookmark', 11) : '';
 
-        // Soft period bands between anchors (and to the end). Low-sat, dark UI.
-        for (let i = 0; i < anchors.length; i++) {
-            const start = anchors[i].val;
-            const end = (i + 1 < anchors.length) ? anchors[i + 1].val : maxVal;
-            const left = ((start - minVal) / range) * 100;
-            const width = Math.max(0, ((end - start) / range) * 100);
-            const tone = (i % 2 === 0) ? 'a' : 'b';
-            parts.push(
-                `<div class="timeline-period-seg tone-${tone}" style="left:${left}%;width:${width}%;" data-period="${periodLabelForKey(anchors[i].key)}"></div>`
-            );
-        }
-
-        // Thin boundary markers at each kickoff (single muted style — no rainbow blocks).
         anchors.forEach((a) => {
             const pct = ((a.val - minVal) / range) * 100;
-            parts.push(
-                `<div class="timeline-marker-tick" style="left:${pct}%;" data-period="${periodLabelForKey(a.key)}"></div>`
-            );
+            const label = periodLabelForKey(a.key);
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'omt-timeline-bookmark';
+            btn.style.left = pct + '%';
+            btn.setAttribute('data-period', label);
+            btn.setAttribute('data-half', a.key);
+            btn.setAttribute('aria-label', 'Seek to ' + label);
+            btn.innerHTML = icon + '<span class="omt-bm-label">' + label + '</span>';
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                jumpToKickoff(a.key);
+            });
+            bookmarkContainer.appendChild(btn);
         });
-
-        markerContainer.innerHTML = parts.join('');
+        bookmarkContainer.setAttribute('aria-hidden', anchors.length ? 'false' : 'true');
     }
 
     function jumpToKickoff(half) {
@@ -93,12 +149,20 @@
         if (raw == null) return;
         const t = getVideoTimeForPdt(raw);
         if (t !== null && t >= 0) {
+            if (typeof paintTimelineScrubberProgress === 'function' && timelineSlider) {
+                const min = parseFloat(timelineSlider.min) || 0;
+                const max = parseFloat(timelineSlider.max) || 0;
+                if (max > min) {
+                    timelineSlider.value = String(Math.max(min, Math.min(max, t)));
+                    paintTimelineScrubberProgress(true);
+                }
+            }
             seekTo(t);
             mostrarOSD('Jumped to ' + labels[half] + ' Kickoff');
         }
     }
 
-    /** Redesign-only: period + time tip under the pointer on the timeline. */
+    /** Redesign-only: period + match-clock tip under the pointer on the timeline. */
     function updateTimelineHoverTip(clientX) {
         const tip = q('omt-timeline-hover-tip');
         const track = omtRoot ? omtRoot.querySelector('.omt-timeline-track') : null;
@@ -111,10 +175,12 @@
         const min = parseFloat(timelineSlider.min) || 0;
         const max = parseFloat(timelineSlider.max) || 0;
         const t = min + ratio * (max - min);
-        const period = resolvePeriodAtVideoTime(t);
-        const timeStr = (typeof formatarTempoVideo === 'function') ? formatarTempoVideo(t) : '';
-        tip.textContent = period ? (period + ' · ' + timeStr) : timeStr;
+        const info = matchClockAtVideoTime(t);
+        if (info.period && info.clock) tip.textContent = info.period + ' · ' + info.clock;
+        else if (info.clock) tip.textContent = info.clock;
+        else tip.textContent = (typeof formatarTempoVideo === 'function') ? formatarTempoVideo(t) : '';
         tip.hidden = false;
+        bar.classList.add('is-timeline-hover');
         // Lift bar above the floating card while the tip is shown (tip is pointer-events:none).
         bar.style.zIndex = '55';
         const leftPx = (trackRect.left - barRect.left) + ratio * trackRect.width;
@@ -127,5 +193,8 @@
         const tip = q('omt-timeline-hover-tip');
         const bar = q('omt-timeline-bar');
         if (tip) tip.hidden = true;
-        if (bar) bar.style.zIndex = '';
+        if (bar) {
+            bar.style.zIndex = '';
+            bar.classList.remove('is-timeline-hover');
+        }
     }

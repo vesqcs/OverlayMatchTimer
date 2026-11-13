@@ -233,6 +233,40 @@
             }
         } else {
             document.addEventListener('keydown', handleKeydown, true);
+            // Click-to-play/pause on the <video> surface — same mechanism as
+            // OverlayMatchTimer.html (local dashboard). Examino uses its own
+            // capture-phase installer above. #omt-root is pointer-events:none so
+            // clicks reach <video>; our panels restore pointer-events:auto and
+            // never hit this handler (e.target !== vid).
+            // Regression: local player (v1.5.0+) never got this ported from the
+            // HTML dashboard, so video clicks did nothing.
+            // Capture + stop so host players (e.g. Video.js) cannot also toggle
+            // (would net to a no-op) — same exclusivity idea as Examino.
+            vid.addEventListener('click', function (e) {
+                if (e.target !== vid) return;
+                // Allow blob/http src and MediaStream (srcObject) — mocks / some hosts
+                // have empty currentSrc when only srcObject is set.
+                if (!vid.src && !vid.currentSrc && !vid.srcObject) return;
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                togglePlay();
+            }, { capture: true, signal: vidAbortController.signal });
+            vid.addEventListener('dblclick', function (e) {
+                if (e.target !== vid) return;
+                toggleFullScreen();
+            }, vsig);
+            // Click fires once before dblclick — reverse that toggle so
+            // play/pause is unchanged after going fullscreen (original HTML).
+            vid.addEventListener('dblclick', function (e) {
+                if (e.target !== vid) return;
+                if (!vid.src && !vid.currentSrc && !vid.srcObject) return;
+                if (vid.paused) {
+                    vid.play().catch(() => {});
+                } else {
+                    vid.pause();
+                }
+            }, vsig);
         }
 
         omtRoot.addEventListener('click', function (e) {
@@ -242,6 +276,11 @@
         });
 
         liveBtn.style.display = 'flex';
+
+        if (typeof updateControlsTipFlip === 'function') {
+            updateControlsTipFlip();
+            window.addEventListener('resize', updateControlsTipFlip, { passive: true });
+        }
 
         // Match-clock click-to-edit is wired in customize.js (omtInstallClockClickEdit).
         // Fixed presets only — no drag.

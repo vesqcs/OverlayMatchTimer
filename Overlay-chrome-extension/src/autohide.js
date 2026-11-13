@@ -27,7 +27,11 @@
         const timelineBar = omtRoot ? omtRoot.querySelector('#omt-timeline-bar') : null;
         if (timelineBar) {
             timelineBar.style.opacity = opacity;
-            timelineBar.style.pointerEvents = pe;
+            // Shell stays pointer-events:none (CSS); children hit when visible.
+            // Inline 'none' when hidden is a belt-and-braces for hosts that
+            // rewrite CSS — class disables interactive children.
+            timelineBar.style.pointerEvents = 'none';
+            timelineBar.classList.toggle('omt-chrome-hidden', !visible);
         }
     }
 
@@ -56,8 +60,13 @@
         };
         trackHover(controlsPanel);
         trackHover(setupPanel);
+        // Hover the interactive timeline pieces only — not the full-width
+        // padded bar shell (that was keeping auto-hide stuck ON in v1.7.4).
         const timelineBar = omtRoot.querySelector('#omt-timeline-bar');
-        trackHover(timelineBar);
+        if (timelineBar) {
+            trackHover(timelineBar.querySelector('.omt-timeline-track'));
+            trackHover(timelineBar.querySelector('.omt-timeline-times'));
+        }
         if (timerUI) trackHover(timerUI);
     }
 
