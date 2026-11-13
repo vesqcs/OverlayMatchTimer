@@ -2,7 +2,7 @@
 
 Chrome MV3 extension for Stats Perform / RunningBall match analysts. It injects a drift-aware match clock, HUD timeline, and playback controls over supported stream players, plus a local file player.
 
-**Current build: v1.7.7** — Customize + local player. Kickoff sync disabled. v1.7.7: opaque edge-safe tips; timeline tip/labels reliably visible on hover/snap. Keeps 1.7.6 ticks.
+**Current build: v1.7.8** — Customize + local player. Kickoff sync disabled. v1.7.8: no tips on play/skip/speed-row (self-explanatory). Keeps 1.7.7 opaque tips elsewhere.
 
 Supported surfaces:
 
