@@ -1,7 +1,7 @@
 ---
 title: Overlay MatchTimer — User Guideline
 product: Overlay MatchTimer
-version: 1.7.3
+version: 1.7.4
 status: editable-source
 supersedes_pdf: Overlay MatchTimer Guideline.pdf (1.0.0, 05 Jul 2026)
 security: Stats Perform internal — confirm classification before external share
@@ -9,7 +9,7 @@ security: Stats Perform internal — confirm classification before external shar
 
 # Overlay MatchTimer — User Guideline
 
-**Version:** 1.7.3  
+**Version:** 1.7.4  
 **Audience:** Stats Perform / RunningBall match analysts  
 **Primary product:** Chrome MV3 extension (`Overlay-chrome-extension/`)  
 **Legacy companion:** `OverlayMatchTimer.html` (local dashboard; still documented for Tier-12 / URL paste)
@@ -29,6 +29,7 @@ security: Stats Perform internal — confirm classification before external shar
 | 1.7.1 | Kickoff sync UI removed / feature flagged off; Guideline no longer documents sync as a current feature | Maintainers | 13 Nov 2026 |
 | 1.7.2 | Perf audit (redesign scrubber micro-opt only); General Shuttle diagram action labels without Btn 1–5 numbers | Maintainers | 13 Nov 2026 |
 | 1.7.3 | Shuttle hit areas; more-panel expands up (bar fixed); LIVE hidden on local; eye = Auto hide toggle | Maintainers | 13 Nov 2026 |
+| 1.7.4 | More-panel inside card (grows UP); timeline period bands + hover tip; instant scrub fill; no Seek label | Maintainers | 13 Nov 2026 |
 
 ### 1.2 Glossary
 
@@ -57,10 +58,10 @@ security: Stats Perform internal — confirm classification before external shar
 
 ## 2. Installing the Chrome extension
 
-1. Obtain the release zip (e.g. `OverlayMatchTimer-v1.7.3.zip`) and extract it.
+1. Obtain the release zip (e.g. `OverlayMatchTimer-v1.7.4.zip`) and extract it.
 2. Open `chrome://extensions` → enable **Developer mode**.
 3. **Load unpacked** → select `Overlay-chrome-extension/` (contains `manifest.json`).
-4. Confirm the card shows version **1.7.3** and no errors.
+4. Confirm the card shows version **1.7.4** and no errors.
 5. Pin the toolbar icon (slash + **20:08** badge).
 
 Chrome is the supported browser.

@@ -32,18 +32,31 @@
             pos3 = e.clientX;
             pos4 = e.clientY;
 
+            const rootRect = omtRoot ? omtRoot.getBoundingClientRect() : null;
+            const maxTop = rootRect
+                ? Math.max(0, rootRect.height - panel.offsetHeight)
+                : Math.max(0, window.innerHeight - panel.offsetHeight);
+            const maxLeft = rootRect
+                ? Math.max(0, rootRect.width - panel.offsetWidth)
+                : Math.max(0, window.innerWidth - panel.offsetWidth);
+
             let newTop = panel.offsetTop - pos2;
             let newLeft = panel.offsetLeft - pos1;
 
-            newTop = Math.max(0, Math.min(newTop, window.innerHeight - panel.offsetHeight));
-            newLeft = Math.max(0, Math.min(newLeft, window.innerWidth - panel.offsetWidth));
+            newTop = Math.max(0, Math.min(newTop, maxTop));
+            newLeft = Math.max(0, Math.min(newLeft, maxLeft));
 
             panel.style.top = newTop + 'px';
             panel.style.left = newLeft + 'px';
+            panel.style.bottom = 'auto';
         }
 
         function stopDrag() {
             document.onmouseup = null;
             document.onmousemove = null;
+            // Store as bottom-anchored so a later more-panel expand grows UP.
+            if (panel === controlsPanel && typeof anchorControlsPanelBottom === 'function') {
+                anchorControlsPanelBottom();
+            }
         }
     }

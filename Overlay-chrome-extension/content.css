@@ -708,14 +708,11 @@
     width: min(600px, calc(100% - 24px));
     display: flex;
     flex-direction: column;
-    /* Allow #omt-more-panel to paint above the bar without clipping */
-    overflow: visible;
     transition: opacity 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
     z-index: 50;
 }
-/* Main bar must not move when more opens (height stays handle + transport only) */
+/* Bottom-anchored: when more opens, card grows UP (transport stays put). */
 #controls-panel.omt-more-open {
-    bottom: 40px;
     top: auto;
 }
 
@@ -733,7 +730,8 @@
     box-sizing: border-box;
     transition: opacity 0.3s ease;
     background: linear-gradient(to top, rgba(0, 0, 0, 0.55) 0%, rgba(0, 0, 0, 0) 100%);
-    padding-top: 14px;
+    /* Extra top padding so the period hover tip stays inside this bar (not under the card). */
+    padding-top: 30px;
 }
 
 .omt-timeline-track {
@@ -758,16 +756,58 @@
     position: absolute;
     left: 0;
     right: 0;
-    height: 3px;
+    height: 10px;
     top: 50%;
     transform: translateY(-50%);
     pointer-events: none;
+    z-index: 1;
+    overflow: hidden;
+    border-radius: 2px;
+}
+
+/* Soft period bands — low-sat, dark/orange UI (not rainbow blocks). */
+.timeline-period-seg {
+    position: absolute;
+    top: 2px;
+    bottom: 2px;
+    border-radius: 1px;
+    pointer-events: none;
+}
+.timeline-period-seg.tone-a {
+    background: rgba(245, 131, 31, 0.22);
+}
+.timeline-period-seg.tone-b {
+    background: rgba(255, 255, 255, 0.09);
+}
+
+.omt-timeline-hover-tip {
+    position: absolute;
+    bottom: 22px;
+    transform: translateX(-50%);
+    z-index: 60;
+    pointer-events: none;
+    background: rgba(20, 20, 20, 0.96);
+    color: #f0f0f0;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    font-family: var(--omt-font);
+    line-height: 1.25;
+    white-space: nowrap;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+.omt-timeline-hover-tip[hidden] {
+    display: none !important;
 }
 
 /* Thin scrubber; thickens on hover. Red at live, grey when behind. */
 .timeline-slider {
     -webkit-appearance: none;
     appearance: none;
+    position: relative;
+    z-index: 2;
     width: 100%;
     height: 3px;
     border-radius: 1px;
@@ -822,32 +862,21 @@
     opacity: 0;
 }
 
-/*
- * Expandable match-controls: absolutely above the main bar so the bar never moves.
- * bottom:100% + justify-content:flex-end → opens upward, overlaying the video above.
- */
+/* Expandable match-controls group inside the floating card (v1.7.2 look — middle section). */
 .omt-more-panel {
-    position: absolute;
-    left: 10px;
-    right: 10px;
-    bottom: calc(100% + 8px); /* sit just above the glass bar */
     max-height: 0;
     opacity: 0;
     overflow: hidden;
     pointer-events: none;
-    margin: 0;
+    margin: 0 10px;
     padding: 0 8px;
     border: 1px solid transparent;
     border-radius: 6px;
     background: rgba(0, 0, 0, 0.35);
-    box-sizing: border-box;
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-end; /* grow/reveal toward the bar (upward) */
-    z-index: 2;
     transition:
         max-height 120ms ease,
         opacity 120ms ease,
+        margin 120ms ease,
         padding 120ms ease,
         border-color 120ms ease;
 }
@@ -855,6 +884,7 @@
     max-height: 240px;
     opacity: 1;
     pointer-events: auto;
+    margin: 8px 10px 0;
     padding: 8px;
     border-color: rgba(255, 255, 255, 0.1);
 }
@@ -1245,20 +1275,17 @@
     min-width: 36px;
 }
 
+/* Period boundaries: thin muted separators (same style for all halves). */
 .timeline-marker-tick {
     position: absolute;
     top: 0;
-    width: 2px;
+    width: 1px;
     height: 100%;
-    background: var(--omt-orange);
+    background: rgba(245, 131, 31, 0.75);
     transform: translateX(-50%);
-    opacity: 0.9;
+    opacity: 1;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
 }
-.timeline-marker-tick.k1 { background: var(--omt-orange); }
-.timeline-marker-tick.k2 { background: #66b3ff; }
-.timeline-marker-tick.kc1 { background: #c084fc; }
-.timeline-marker-tick.kc2 { background: #f472b6; }
-
 /* Compact Examino — keep corner insets; size/style classes still apply */
 #omt-root.omt-examino.omt-compact #match-timer-wrap.omt-clock-pos-top-left { top: 8px; left: 8px; }
 #omt-root.omt-examino.omt-compact #match-timer-wrap.omt-clock-pos-top-centre { top: 36px; left: 50%; transform: translateX(-50%); }
@@ -1288,10 +1315,8 @@
 #omt-root.omt-examino.omt-compact #omt-volume-range {
     width: 40px;
 }
-#omt-root.omt-examino.omt-compact .omt-more-panel {
-    left: 8px;
-    right: 8px;
-    bottom: calc(100% + 6px);
+#omt-root.omt-examino.omt-compact .omt-more-panel.is-open {
+    margin: 6px 8px 0;
 }
 
 /* Local player only: no live edge — hide LIVE pill + spacer (streams keep them). */

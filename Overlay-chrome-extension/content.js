@@ -873,9 +873,10 @@
 <!-- Timeline alone: full-width thin bar at the very bottom of the video -->
 <div id="omt-timeline-bar" class="omt-timeline-bar">
     <div class="omt-timeline-track">
-        <input type="range" id="omt-timeline-slider" class="timeline-slider omt-tip" min="0" max="100" value="0" step="0.01"${tip('Seek timeline')}>
-        <div id="omt-timeline-markers"></div>
+        <input type="range" id="omt-timeline-slider" class="timeline-slider" min="0" max="100" value="0" step="0.01" aria-label="Timeline">
+        <div id="omt-timeline-markers" aria-hidden="true"></div>
     </div>
+    <div id="omt-timeline-hover-tip" class="omt-timeline-hover-tip" hidden></div>
     <div class="omt-timeline-times">
         <span id="omt-v-time-current" class="omt-time-text omt-tip"${tip('Current video time')}>00:00:00</span>
         <span class="omt-time-sep" aria-hidden="true">/</span>
@@ -883,8 +884,39 @@
     </div>
 </div>
 
-<!-- Floating control panel: more-panel ABOVE handle+transport so it expands UP (bottom-anchored). -->
+<!-- Floating control card (v1.7.2 layout): handle → more (middle) → transport/speeds. Grows UP via bottom anchor. -->
 <div id="controls-panel" class="glass-panel">
+    <div class="drag-handle" id="controls-handle">
+        <div class="drag-side-left">
+            <button type="button" id="omt-more-toggle" class="omt-more-toggle handle-btn omt-tip" aria-expanded="false"${tip('Match controls')}>
+                <span class="omt-more-icon-collapsed">${omtIcon('chevrons-up', 16)}</span>
+                <span class="omt-more-icon-expanded" hidden>${omtIcon('chevrons-down', 16)}</span>
+            </button>
+            <select id="omt-speed-select" class="top-select omt-tip"${tip('Playback speed (Z / C / X)')}>
+                <option value="0.25">0.25x</option>
+                <option value="0.5">0.50x</option>
+                <option value="0.75">0.75x</option>
+                <option value="1.0" selected>1.00x</option>
+                <option value="1.25">1.25x</option>
+                <option value="1.5">1.50x</option>
+                <option value="2.0">2.00x</option>
+            </select>
+            <button type="button" id="omt-hide-panel" class="handle-btn omt-tip is-auto-hide-on" aria-pressed="true"${tip('Auto hide: on')}>
+                ${omtIcon('eye-off', 16)}
+            </button>
+        </div>
+        <div class="drag-center-grip" aria-hidden="true">${omtIcon('grip-horizontal', 16)}</div>
+        <div class="drag-side-right">
+            <button id="omt-live-btn" class="omt-tip" type="button"${tip('Go to live edge (L)')}>
+                <span class="live-dot"></span><span class="live-label">LIVE</span>
+            </button>
+            <span class="omt-live-spacer" aria-hidden="true"></span>
+            <button class="handle-btn omt-tip" id="omt-volume-icon-btn" type="button"${tip('Mute / Unmute')}>${omtIcon('volume-2', 16)}</button>
+            <input type="range" id="omt-volume-range" class="omt-tip" min="0" max="1" step="0.05" value="1"${tip('Volume')}>
+            <button class="handle-btn omt-tip" id="omt-btn-fullscreen" type="button"${tip('Fullscreen')}>${omtIcon('maximize', 16)}</button>
+        </div>
+    </div>
+
     <div id="omt-more-panel" class="omt-more-panel" aria-hidden="true">
         <div id="omt-kickoff-bar" class="omt-more-block">
             <label class="omt-more-label" for="omt-half-select">Period</label>
@@ -938,37 +970,6 @@
         </div>
     </div>
 
-    <div class="drag-handle" id="controls-handle">
-        <div class="drag-side-left">
-            <button type="button" id="omt-more-toggle" class="omt-more-toggle handle-btn omt-tip" aria-expanded="false"${tip('Match controls')}>
-                <span class="omt-more-icon-collapsed">${omtIcon('chevrons-up', 16)}</span>
-                <span class="omt-more-icon-expanded" hidden>${omtIcon('chevrons-down', 16)}</span>
-            </button>
-            <select id="omt-speed-select" class="top-select omt-tip"${tip('Playback speed (Z / C / X)')}>
-                <option value="0.25">0.25x</option>
-                <option value="0.5">0.50x</option>
-                <option value="0.75">0.75x</option>
-                <option value="1.0" selected>1.00x</option>
-                <option value="1.25">1.25x</option>
-                <option value="1.5">1.50x</option>
-                <option value="2.0">2.00x</option>
-            </select>
-            <button type="button" id="omt-hide-panel" class="handle-btn omt-tip is-auto-hide-on" aria-pressed="true"${tip('Auto hide: on')}>
-                ${omtIcon('eye-off', 16)}
-            </button>
-        </div>
-        <div class="drag-center-grip" aria-hidden="true">${omtIcon('grip-horizontal', 16)}</div>
-        <div class="drag-side-right">
-            <button id="omt-live-btn" class="omt-tip" type="button"${tip('Go to live edge (L)')}>
-                <span class="live-dot"></span><span class="live-label">LIVE</span>
-            </button>
-            <span class="omt-live-spacer" aria-hidden="true"></span>
-            <button class="handle-btn omt-tip" id="omt-volume-icon-btn" type="button"${tip('Mute / Unmute')}>${omtIcon('volume-2', 16)}</button>
-            <input type="range" id="omt-volume-range" class="omt-tip" min="0" max="1" step="0.05" value="1"${tip('Volume')}>
-            <button class="handle-btn omt-tip" id="omt-btn-fullscreen" type="button"${tip('Fullscreen')}>${omtIcon('maximize', 16)}</button>
-        </div>
-    </div>
-
     <div class="controls-content">
         <div class="omt-transport-seg" role="group" aria-label="Playback transport">
             <button class="ctrl-btn omt-tip" id="omt-m120" type="button"${tip('Skip −2 minutes (Ctrl + ←)')}>${omtIcon('rewind', 18)}<span class="omt-btn-label">2m</span></button>
@@ -1018,11 +1019,48 @@
         shuttleCheatsheet = q('omt-shuttle-cheatsheet');
     }
 
+    /** Keep card bottom-anchored so height changes grow UP; clamp so top stays on-screen. */
+    function anchorControlsPanelBottom(preserveBottomPx) {
+        if (!controlsPanel || !omtRoot) return;
+        const rootRect = omtRoot.getBoundingClientRect();
+        const before = controlsPanel.getBoundingClientRect();
+        const bottomPx = (preserveBottomPx != null)
+            ? preserveBottomPx
+            : Math.max(0, rootRect.bottom - before.bottom);
+
+        // Convert any drag `top` into `bottom` so expand/collapse never pushes transport down.
+        const leftPx = before.left - rootRect.left;
+        controlsPanel.style.bottom = bottomPx + 'px';
+        controlsPanel.style.top = 'auto';
+        // Preserve horizontal place after a drag (clear centering transform).
+        if (controlsPanel.style.transform === 'none' || controlsPanel.style.left) {
+            controlsPanel.style.left = leftPx + 'px';
+            controlsPanel.style.transform = 'none';
+        }
+
+        const after = controlsPanel.getBoundingClientRect();
+        if (after.top < rootRect.top) {
+            const overflow = rootRect.top - after.top;
+            controlsPanel.style.bottom = Math.max(0, bottomPx - overflow) + 'px';
+        }
+    }
+
     function setMorePanelOpen(open) {
         const panel = q('omt-more-panel');
         const btn = q('omt-more-toggle');
         if (!panel || !btn) return;
         const next = !!open;
+
+        // Snapshot bottom edge before height change (transport must stay put).
+        let bottomPx = null;
+        if (controlsPanel && omtRoot) {
+            const rootRect = omtRoot.getBoundingClientRect();
+            const rect = controlsPanel.getBoundingClientRect();
+            bottomPx = Math.max(0, rootRect.bottom - rect.bottom);
+            // If previously dragged with top-only, switch to bottom before opening.
+            anchorControlsPanelBottom(bottomPx);
+        }
+
         panel.classList.toggle('is-open', next);
         panel.setAttribute('aria-hidden', next ? 'false' : 'true');
         btn.setAttribute('aria-expanded', next ? 'true' : 'false');
@@ -1032,6 +1070,11 @@
         if (collapsedIcon) collapsedIcon.hidden = next;
         if (expandedIcon) expandedIcon.hidden = !next;
         if (controlsPanel) controlsPanel.classList.toggle('omt-more-open', next);
+
+        // After layout, re-assert bottom + clamp top of viewport.
+        requestAnimationFrame(() => {
+            anchorControlsPanelBottom(bottomPx);
+        });
     }
 
     function toggleMorePanel() {
@@ -1171,14 +1214,28 @@
         timelineSlider.addEventListener('input', function () {
             isDraggingTimeline = true;
             vTimeCurrent.innerText = formatarTempoVideo(parseFloat(this.value));
+            // Redesign only: keep fill glued to the thumb while dragging (no wait for timeupdate).
+            if (typeof paintTimelineScrubberProgress === 'function') paintTimelineScrubberProgress(true);
         });
         timelineSlider.addEventListener('change', function () {
             const t = parseFloat(this.value);
+            if (typeof paintTimelineScrubberProgress === 'function') paintTimelineScrubberProgress(true);
             seekTo(t);
             isDraggingTimeline = false;
             this.blur();
             resetControlsTimeout(false);
         });
+
+        // Period + time hover tip (redesign); no "Seek timeline" label on the slider.
+        const timelineTrack = omtRoot ? omtRoot.querySelector('.omt-timeline-track') : null;
+        if (timelineTrack) {
+            timelineTrack.addEventListener('pointermove', (e) => {
+                if (typeof updateTimelineHoverTip === 'function') updateTimelineHoverTip(e.clientX);
+            });
+            timelineTrack.addEventListener('pointerleave', () => {
+                if (typeof hideTimelineHoverTip === 'function') hideTimelineHoverTip();
+            });
+        }
 
         // --- Video element events (AbortController so teardown detaches cleanly) ---
         if (vidAbortController) {
@@ -1962,10 +2019,44 @@
         }, 200);
     }
 
-/* Kick-off markers on the HUD timeline. */
+/* Kick-off / period markers on the HUD timeline (redesign chrome). */
     /* =========================================================
-       11. TIMELINE MARKERS
+       11. TIMELINE MARKERS + PERIOD HOVER
        ========================================================= */
+    function periodLabelForKey(key) {
+        return ({
+            '1': '1st Half',
+            '2': '2nd Half',
+            'custom1': 'ET1',
+            'custom2': 'ET2'
+        })[key] || '';
+    }
+
+    /** Ordered kickoff anchors currently known (video time + period key). */
+    function collectPeriodAnchors() {
+        const raw = [
+            { key: '1', val: getVideoTimeForPdt(kickoff1) },
+            { key: '2', val: getVideoTimeForPdt(kickoff2) },
+            { key: 'custom1', val: getVideoTimeForPdt(kickoffC1) },
+            { key: 'custom2', val: getVideoTimeForPdt(kickoffC2) }
+        ];
+        return raw
+            .filter((a) => a.val !== null && isFinite(a.val))
+            .sort((a, b) => a.val - b.val);
+    }
+
+    /** Period name for a video time, or '' if before first kickoff / unknown. */
+    function resolvePeriodAtVideoTime(t) {
+        const anchors = collectPeriodAnchors();
+        if (!anchors.length || !isFinite(t)) return '';
+        let label = '';
+        for (let i = 0; i < anchors.length; i++) {
+            if (t + 0.001 >= anchors[i].val) label = periodLabelForKey(anchors[i].key);
+            else break;
+        }
+        return label;
+    }
+
     function atualizarMarcadores() {
         const markerContainer = q('omt-timeline-markers');
         const btnK1 = q('omt-jump-k1');
@@ -1982,31 +2073,38 @@
             return;
         }
 
-        const k1Val = getVideoTimeForPdt(kickoff1);
-        const k2Val = getVideoTimeForPdt(kickoff2);
-        const kC1Val = getVideoTimeForPdt(kickoffC1);
-        const kC2Val = getVideoTimeForPdt(kickoffC2);
-
-        const markers = [
-            { val: k1Val, btn: btnK1, cls: 'k1', label: '1st Half Kickoff' },
-            { val: k2Val, btn: btnK2, cls: 'k2', label: '2nd Half Kickoff' },
-            { val: kC1Val, btn: btnKC1, cls: 'kc1', label: 'Custom 1 Kickoff' },
-            { val: kC2Val, btn: btnKC2, cls: 'kc2', label: 'Custom 2 Kickoff' },
-        ];
+        const btnMap = { '1': btnK1, '2': btnK2, 'custom1': btnKC1, 'custom2': btnKC2 };
+        Object.values(btnMap).forEach((b) => { if (b) b.style.display = 'none'; });
 
         const minVal = parseFloat(timelineSlider.min) || 0;
         const maxVal = parseFloat(timelineSlider.max) || duration;
         const range = maxVal - minVal;
+        if (range <= 0) return;
 
-        markers.forEach(({ val, btn, cls, label }) => {
-            if (!btn) return;
-            // Jump targets stay wired but never shown as a chip row (period is top-right).
-            btn.style.display = 'none';
-            if (val !== null && val >= minVal && val <= maxVal && range > 0) {
-                const pct = ((val - minVal) / range) * 100;
-                markerContainer.innerHTML += `<div class="timeline-marker-tick ${cls}" style="left:${pct}%;" title="${label}"></div>`;
-            }
+        const anchors = collectPeriodAnchors().filter((a) => a.val >= minVal && a.val <= maxVal);
+        const parts = [];
+
+        // Soft period bands between anchors (and to the end). Low-sat, dark UI.
+        for (let i = 0; i < anchors.length; i++) {
+            const start = anchors[i].val;
+            const end = (i + 1 < anchors.length) ? anchors[i + 1].val : maxVal;
+            const left = ((start - minVal) / range) * 100;
+            const width = Math.max(0, ((end - start) / range) * 100);
+            const tone = (i % 2 === 0) ? 'a' : 'b';
+            parts.push(
+                `<div class="timeline-period-seg tone-${tone}" style="left:${left}%;width:${width}%;" data-period="${periodLabelForKey(anchors[i].key)}"></div>`
+            );
+        }
+
+        // Thin boundary markers at each kickoff (single muted style — no rainbow blocks).
+        anchors.forEach((a) => {
+            const pct = ((a.val - minVal) / range) * 100;
+            parts.push(
+                `<div class="timeline-marker-tick" style="left:${pct}%;" data-period="${periodLabelForKey(a.key)}"></div>`
+            );
         });
+
+        markerContainer.innerHTML = parts.join('');
     }
 
     function jumpToKickoff(half) {
@@ -2019,6 +2117,38 @@
             seekTo(t);
             mostrarOSD('Jumped to ' + labels[half] + ' Kickoff');
         }
+    }
+
+    /** Redesign-only: period + time tip under the pointer on the timeline. */
+    function updateTimelineHoverTip(clientX) {
+        const tip = q('omt-timeline-hover-tip');
+        const track = omtRoot ? omtRoot.querySelector('.omt-timeline-track') : null;
+        const bar = q('omt-timeline-bar');
+        if (!tip || !track || !timelineSlider || !bar) return;
+        const trackRect = track.getBoundingClientRect();
+        const barRect = bar.getBoundingClientRect();
+        if (trackRect.width <= 0) return;
+        const ratio = Math.max(0, Math.min(1, (clientX - trackRect.left) / trackRect.width));
+        const min = parseFloat(timelineSlider.min) || 0;
+        const max = parseFloat(timelineSlider.max) || 0;
+        const t = min + ratio * (max - min);
+        const period = resolvePeriodAtVideoTime(t);
+        const timeStr = (typeof formatarTempoVideo === 'function') ? formatarTempoVideo(t) : '';
+        tip.textContent = period ? (period + ' · ' + timeStr) : timeStr;
+        tip.hidden = false;
+        // Lift bar above the floating card while the tip is shown (tip is pointer-events:none).
+        bar.style.zIndex = '55';
+        const leftPx = (trackRect.left - barRect.left) + ratio * trackRect.width;
+        tip.style.left = leftPx + 'px';
+        tip.style.bottom = (barRect.bottom - trackRect.top + 6) + 'px';
+        tip.style.top = 'auto';
+    }
+
+    function hideTimelineHoverTip() {
+        const tip = q('omt-timeline-hover-tip');
+        const bar = q('omt-timeline-bar');
+        if (tip) tip.hidden = true;
+        if (bar) bar.style.zIndex = '';
     }
 
 /* Transport: seek, play/pause, frames, speed, LIVE, mute, fullscreen. */
@@ -2151,6 +2281,19 @@
     let _omtLiveUiAtLive = null;
     let _omtLiveUiProgressPct = null;
 
+    /** Paint fill from current slider value (optimistic on click/drag; reconcile on timeupdate). */
+    function paintTimelineScrubberProgress(force) {
+        if (!timelineSlider) return;
+        const min = parseFloat(timelineSlider.min) || 0;
+        const max = parseFloat(timelineSlider.max) || 0;
+        const val = parseFloat(timelineSlider.value) || 0;
+        const pct = max > min ? ((val - min) / (max - min)) * 100 : 0;
+        const rounded = Math.round(pct * 10) / 10;
+        if (!force && _omtLiveUiProgressPct === rounded) return;
+        _omtLiveUiProgressPct = rounded;
+        timelineSlider.style.setProperty('--omt-progress', Math.max(0, Math.min(100, rounded)) + '%');
+    }
+
     function atualizarEstadoLive() {
         if (!vid || !liveBtn) return; // null-guard: called from timeupdate, may fire after teardown
         let liveEdge = 0;
@@ -2169,17 +2312,8 @@
             if (timelineBar) timelineBar.classList.toggle('omt-at-live', atLive);
             if (controlsPanel) controlsPanel.classList.toggle('omt-at-live', atLive);
         }
-        if (timelineSlider) {
-            const min = parseFloat(timelineSlider.min) || 0;
-            const max = parseFloat(timelineSlider.max) || 0;
-            const val = parseFloat(timelineSlider.value) || 0;
-            const pct = max > min ? ((val - min) / (max - min)) * 100 : 0;
-            const rounded = Math.round(pct * 10) / 10;
-            if (_omtLiveUiProgressPct !== rounded) {
-                _omtLiveUiProgressPct = rounded;
-                timelineSlider.style.setProperty('--omt-progress', Math.max(0, Math.min(100, rounded)) + '%');
-            }
-        }
+        // While the user is scrubbing, input handler owns the fill (avoid fighting the thumb).
+        if (!isDraggingTimeline) paintTimelineScrubberProgress(false);
     }
 
     function toggleFullScreen() {
@@ -2496,19 +2630,32 @@
             pos3 = e.clientX;
             pos4 = e.clientY;
 
+            const rootRect = omtRoot ? omtRoot.getBoundingClientRect() : null;
+            const maxTop = rootRect
+                ? Math.max(0, rootRect.height - panel.offsetHeight)
+                : Math.max(0, window.innerHeight - panel.offsetHeight);
+            const maxLeft = rootRect
+                ? Math.max(0, rootRect.width - panel.offsetWidth)
+                : Math.max(0, window.innerWidth - panel.offsetWidth);
+
             let newTop = panel.offsetTop - pos2;
             let newLeft = panel.offsetLeft - pos1;
 
-            newTop = Math.max(0, Math.min(newTop, window.innerHeight - panel.offsetHeight));
-            newLeft = Math.max(0, Math.min(newLeft, window.innerWidth - panel.offsetWidth));
+            newTop = Math.max(0, Math.min(newTop, maxTop));
+            newLeft = Math.max(0, Math.min(newLeft, maxLeft));
 
             panel.style.top = newTop + 'px';
             panel.style.left = newLeft + 'px';
+            panel.style.bottom = 'auto';
         }
 
         function stopDrag() {
             document.onmouseup = null;
             document.onmousemove = null;
+            // Store as bottom-anchored so a later more-panel expand grows UP.
+            if (panel === controlsPanel && typeof anchorControlsPanelBottom === 'function') {
+                anchorControlsPanelBottom();
+            }
         }
     }
 
