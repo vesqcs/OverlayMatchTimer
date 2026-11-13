@@ -27,6 +27,9 @@
   "src/storage.js",
   "src/customize.js",
   "src/auto-pause.js",
+  "src/sync/config.js",
+  "src/sync/match-key.js",
+  "src/sync/hooks.js",
   "src/examino-features.js",
   "src/local-features.js",
   "src/entry.js"

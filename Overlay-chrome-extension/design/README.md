@@ -1,20 +1,16 @@
-# Design exploration (v1.6.4)
+# Design exploration
 
-Not wired into the shipped manifest. Owner picks before replacing production icons / header.
+## Shipped (v1.6.5+)
+
+- Toolbar / store icons: **v2** slash + **20:08** Box badge → `assets/icon-{16,32,48,128}.png`
+- Popup header: SP logo + CSS **20:08** chip (`.omt-header-clock`, `left: -6px`)
+
+Regenerate icons: `node scripts/generate-icons.mjs` (needs `sharp`; see root README).
 
 ## `header-chip/`
-- **Variant A** (currently in popup): `20:08` Box-style chip beside the Stats Perform logo  
-- **Variant B**: chip top-left of the header row  
-- See `variants-side-by-side.png`
+
+Exploration variants (A beside / B topleft). Variant B-style treatment informed the shipped CSS chip.
 
 ## `icon-exploration/`
-Toolbar distinguishability vs other SP slash icons. See `LEGIBILITY.md`, `contact_native.png`, `contact_8x.png`, `toolbar_mock_{dark,light}.png`.
 
-| Variant | Idea |
-|---------|------|
-| v1 | Current slash-only (shipped) |
-| v2 | Small 20:08 badge (48/128) |
-| v3 | Orange dial/dot badge (48/128) |
-| v4 | Slash top / 20:08 clock bar bottom |
-| v5 | Clock pill IS the icon + small slash |
-| v6a/b | 16px specials (bar strip / stopwatch) |
+Toolbar distinguishability study. See `LEGIBILITY.md`. Folders `v1_*` … `v6*` are historical candidates; **v2** was selected for ship.

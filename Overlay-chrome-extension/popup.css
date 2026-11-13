@@ -108,6 +108,9 @@ body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
 .omt-field { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--omt-muted); font-weight: 600; }
 .omt-field select,
 .omt-field input[type="number"],
+.omt-field input[type="url"],
+.omt-field input[type="password"],
+.omt-field input[type="text"],
 .omt-control,
 .omt-num-field input[type="number"] {
   box-sizing: border-box;
@@ -127,6 +130,35 @@ body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
   max-width: 100%;
   cursor: pointer;
 }
+.omt-field input[type="url"],
+.omt-field input[type="password"],
+.omt-field input[type="text"] {
+  cursor: text;
+  font-weight: 500;
+}
+.omt-field-optional {
+  font-weight: 500;
+  color: #777;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.omt-cust-summary-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.omt-cust-summary-icon {
+  display: inline-flex;
+  color: var(--omt-muted);
+  line-height: 0;
+}
+.omt-sync-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+#omt-sync-status:empty { display: none; }
 .omt-field input[type="number"],
 .omt-num-field input[type="number"] {
   -moz-appearance: textfield;

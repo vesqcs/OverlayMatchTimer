@@ -4,7 +4,7 @@ Use these texts in the Developer Dashboard when asked to justify each permission
 
 ## `storage` (API permission)
 
-**Justification:** Saves the user’s match-clock position/size/style, custom keyboard shortcuts, ShuttleXpress skip/Play-Pause preferences, and popup section open-state on this browser only. Required so settings persist between sessions without a remote account.
+**Justification:** Saves the user’s match-clock position/size/style, custom keyboard shortcuts, ShuttleXpress skip/Play-Pause preferences, popup section open-state, and (when the user opts in) kickoff-sync project URL / anon key / room id on this browser only. Required so settings persist between sessions without a remote account.
 
 ## Host permission: `*://*.inplayip.tv/*`
 
@@ -17,6 +17,10 @@ Use these texts in the Developer Dashboard when asked to justify each permission
 ## Host permission: `http://127.0.0.1/*` and `http://localhost/*`
 
 **Justification:** Used only for local development / QA fixtures and the extension’s local player workflows on loopback. Not used to access arbitrary LAN devices. See review notes for narrowing to path-specific patterns already used by content scripts.
+
+## Optional host permission: `https://*.supabase.co/*`
+
+**Justification:** Requested **only at runtime** when the user turns on **Kickoff sync** in Customize and enters their own Supabase project URL. Used solely so the service worker can call that project’s REST API to share kickoff / clock-reference values with colleagues. Default off — no Supabase traffic and no optional host grant when the toggle is off. Not required for core match-timer use.
 
 ## Optional APIs not requested
 

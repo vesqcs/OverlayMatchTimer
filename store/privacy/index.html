@@ -31,8 +31,9 @@
       <li>Custom keyboard shortcuts</li>
       <li>ShuttleXpress skips, Play/Pause assignment, jog/ring settings</li>
       <li>Popup section open-state and per-window Shuttle enable flag</li>
+      <li>Optional kickoff-sync settings (enable flag, project URL, anon key, room id) — off by default</li>
     </ul>
-    <p>This data stays on the machine/profile that installed the extension.</p>
+    <p>This data stays on the machine/profile that installed the extension unless you enable kickoff sync.</p>
 
     <h2>Data we do not collect</h2>
     <ul>
@@ -41,14 +42,14 @@
       <li>No transmission of video, keystrokes, or preferences to an Overlay MatchTimer server</li>
     </ul>
 
-    <h2>Cloud sync (future)</h2>
-    <p>If optional Supabase (or similar) sync is added later, it will be <strong>off by default</strong> and covered by an updated policy before enablement. It is not present in v1.6.6.</p>
+    <h2>Optional kickoff sync (default off)</h2>
+    <p>From v1.7.0, Customize may offer <strong>Kickoff sync</strong>. It stays <strong>off by default</strong>. While off, the extension makes no sync network requests. If you enable it and enter your own Supabase project URL and anon key, kickoff / clock-reference values for a match room may be sent to and read from that project. Optional host access to <code>https://*.supabase.co/*</code> is requested only when enabling.</p>
 
     <h2>Third parties</h2>
-    <p>Video comes from InplayIP / Examino / local files under your existing access. This extension does not share additional data with those services.</p>
+    <p>Video comes from InplayIP / Examino / local files under your existing access. This extension does not share additional data with those services. Optional sync talks only to the Supabase project URL you configure.</p>
 
     <h2>Host access</h2>
-    <p>Scripts inject only on declared hosts: InplayIP, Examino play URLs, and localhost/127.0.0.1 for local player / test pages.</p>
+    <p>Scripts inject on declared hosts: InplayIP, Examino play URLs, and localhost/127.0.0.1 for local player / test pages. Optional Supabase host permission is requested only when kickoff sync is turned on.</p>
 
     <h2>Changes</h2>
     <p>Material privacy changes will update this page and the date above.</p>

@@ -23,6 +23,7 @@
         }
         // Clean up ShuttleXpress
         cleanupShuttle();
+        if (typeof omtKickoffSyncStop === 'function') omtKickoffSyncStop();
         if (navigator.hid) {
             try {
                 navigator.hid.removeEventListener('disconnect', handleHidDisconnect);
@@ -221,6 +222,7 @@
         if (typeof omtApplyClockAppearance === 'function') omtApplyClockAppearance();
         startSPAMonitor();
         initShuttleXpress();
+        if (typeof omtKickoffSyncStart === 'function') omtKickoffSyncStart();
         if (site.id === 'examino') {
             initExaminoPlayerFeatures();
         }
