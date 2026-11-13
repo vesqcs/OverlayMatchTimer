@@ -747,6 +747,9 @@
         "chevrons-down": `<path d="m7 13 5 5 5-5" />
   <path d="m7 6 5 5 5-5" />`
 ,
+        "eye": `<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" />
+  <circle cx="12" cy="12" r="3" />`
+,
         "eye-off": `<path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49" />
   <path d="M14.084 14.158a3 3 0 0 1-4.242-4.242" />
   <path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143" />
@@ -880,39 +883,8 @@
     </div>
 </div>
 
-<!-- Floating draggable control panel (Option A transport + speed row) -->
+<!-- Floating control panel: more-panel ABOVE handle+transport so it expands UP (bottom-anchored). -->
 <div id="controls-panel" class="glass-panel">
-    <div class="drag-handle" id="controls-handle">
-        <div class="drag-side-left">
-            <button type="button" id="omt-more-toggle" class="omt-more-toggle handle-btn omt-tip" aria-expanded="false"${tip('Match controls')}>
-                <span class="omt-more-icon-collapsed">${omtIcon('chevrons-up', 16)}</span>
-                <span class="omt-more-icon-expanded" hidden>${omtIcon('chevrons-down', 16)}</span>
-            </button>
-            <select id="omt-speed-select" class="top-select omt-tip"${tip('Playback speed (Z / C / X)')}>
-                <option value="0.25">0.25x</option>
-                <option value="0.5">0.50x</option>
-                <option value="0.75">0.75x</option>
-                <option value="1.0" selected>1.00x</option>
-                <option value="1.25">1.25x</option>
-                <option value="1.5">1.50x</option>
-                <option value="2.0">2.00x</option>
-            </select>
-            <button type="button" id="omt-hide-panel" class="handle-btn omt-tip"${tip('Hide controls (H)')}>
-                ${omtIcon('eye-off', 16)}
-            </button>
-        </div>
-        <div class="drag-center-grip" aria-hidden="true">${omtIcon('grip-horizontal', 16)}</div>
-        <div class="drag-side-right">
-            <button id="omt-live-btn" class="omt-tip" type="button"${tip('Go to live edge (L)')}>
-                <span class="live-dot"></span><span class="live-label">LIVE</span>
-            </button>
-            <span class="omt-live-spacer" aria-hidden="true"></span>
-            <button class="handle-btn omt-tip" id="omt-volume-icon-btn" type="button"${tip('Mute / Unmute')}>${omtIcon('volume-2', 16)}</button>
-            <input type="range" id="omt-volume-range" class="omt-tip" min="0" max="1" step="0.05" value="1"${tip('Volume')}>
-            <button class="handle-btn omt-tip" id="omt-btn-fullscreen" type="button"${tip('Fullscreen')}>${omtIcon('maximize', 16)}</button>
-        </div>
-    </div>
-
     <div id="omt-more-panel" class="omt-more-panel" aria-hidden="true">
         <div id="omt-kickoff-bar" class="omt-more-block">
             <label class="omt-more-label" for="omt-half-select">Period</label>
@@ -963,6 +935,37 @@
                     <span class="omt-switch-slider"></span>
                 </label>
             </div>
+        </div>
+    </div>
+
+    <div class="drag-handle" id="controls-handle">
+        <div class="drag-side-left">
+            <button type="button" id="omt-more-toggle" class="omt-more-toggle handle-btn omt-tip" aria-expanded="false"${tip('Match controls')}>
+                <span class="omt-more-icon-collapsed">${omtIcon('chevrons-up', 16)}</span>
+                <span class="omt-more-icon-expanded" hidden>${omtIcon('chevrons-down', 16)}</span>
+            </button>
+            <select id="omt-speed-select" class="top-select omt-tip"${tip('Playback speed (Z / C / X)')}>
+                <option value="0.25">0.25x</option>
+                <option value="0.5">0.50x</option>
+                <option value="0.75">0.75x</option>
+                <option value="1.0" selected>1.00x</option>
+                <option value="1.25">1.25x</option>
+                <option value="1.5">1.50x</option>
+                <option value="2.0">2.00x</option>
+            </select>
+            <button type="button" id="omt-hide-panel" class="handle-btn omt-tip is-auto-hide-on" aria-pressed="true"${tip('Auto hide: on')}>
+                ${omtIcon('eye-off', 16)}
+            </button>
+        </div>
+        <div class="drag-center-grip" aria-hidden="true">${omtIcon('grip-horizontal', 16)}</div>
+        <div class="drag-side-right">
+            <button id="omt-live-btn" class="omt-tip" type="button"${tip('Go to live edge (L)')}>
+                <span class="live-dot"></span><span class="live-label">LIVE</span>
+            </button>
+            <span class="omt-live-spacer" aria-hidden="true"></span>
+            <button class="handle-btn omt-tip" id="omt-volume-icon-btn" type="button"${tip('Mute / Unmute')}>${omtIcon('volume-2', 16)}</button>
+            <input type="range" id="omt-volume-range" class="omt-tip" min="0" max="1" step="0.05" value="1"${tip('Volume')}>
+            <button class="handle-btn omt-tip" id="omt-btn-fullscreen" type="button"${tip('Fullscreen')}>${omtIcon('maximize', 16)}</button>
         </div>
     </div>
 
@@ -1121,12 +1124,13 @@
         });
         syncSpeedChips();
 
-        // --- Hide panel (same as H hotkey) ---
+        // --- Auto hide toggle (redesign eye button; H hotkey still hides completely) ---
         const hidePanelBtn = q('omt-hide-panel');
         if (hidePanelBtn) {
             hidePanelBtn.addEventListener('click', () => {
-                toggleManualControlsVisibility();
+                toggleAutoHideChrome();
             });
+            syncAutoHideChromeButton();
         }
 
         // --- Live button ---
@@ -2303,6 +2307,13 @@
         // InplayIP: identical finite-duration gate. Examino: allow seekable MSE.
         if (vid && !site.mediaReady(vid)) return;
 
+        // Redesign Auto-hide toggle: when OFF, keep chrome visible and skip idle fade.
+        // Original timer / activity paths below are unchanged when ON.
+        if (typeof storageGetAutoHideChrome === 'function' && !storageGetAutoHideChrome()) {
+            if (controlsPanel) setChromeVisible(true);
+            return;
+        }
+
         if (showPanel && controlsPanel) {
             setChromeVisible(true);
         }
@@ -2321,6 +2332,26 @@
             }
             setChromeVisible(false);
         }, 2500);
+    }
+
+    function syncAutoHideChromeButton() {
+        const btn = typeof q === 'function' ? q('omt-hide-panel') : null;
+        if (!btn) return;
+        const on = typeof storageGetAutoHideChrome === 'function' ? storageGetAutoHideChrome() : true;
+        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+        btn.setAttribute('data-tip', on ? 'Auto hide: on' : 'Auto hide: off');
+        btn.classList.toggle('is-auto-hide-on', on);
+        btn.classList.toggle('is-auto-hide-off', !on);
+        btn.innerHTML = on ? omtIcon('eye-off', 16) : omtIcon('eye', 16);
+    }
+
+    function toggleAutoHideChrome() {
+        const next = !(typeof storageGetAutoHideChrome === 'function' ? storageGetAutoHideChrome() : true);
+        if (typeof storageSetAutoHideChrome === 'function') storageSetAutoHideChrome(next);
+        syncAutoHideChromeButton();
+        // Never hide immediately — only gate future idle fades.
+        if (typeof resetControlsTimeout === 'function') resetControlsTimeout(true);
+        if (typeof mostrarOSD === 'function') mostrarOSD(next ? 'Auto hide on' : 'Auto hide off');
     }
 
 /* Capture-phase hotkeys (shared handler; Examino installs on window). */
@@ -2833,6 +2864,7 @@
         autoVod: 'omtAutoSwitchVod',
         shuttle: 'shuttleXpressEnabled',
         autoPauseOnBlur: 'omtAutoPauseOnBlur',
+        autoHideChrome: 'omtAutoHideChrome',
         clockPos: 'omtClockPosition',
         clockSize: 'omtClockSize',
         clockShape: 'omtClockShape',
@@ -2840,6 +2872,24 @@
         hotkeys: 'omtHotkeys',
         shuttlePrefs: 'omtShuttlePrefs'
     };
+
+    function storageGetAutoHideChrome() {
+        const v = localStorage.getItem(OMT_STORAGE_KEYS.autoHideChrome);
+        if (v === null || v === undefined || v === '') return true; // default ON (original idle fade)
+        return v === 'true';
+    }
+
+    function storageSetAutoHideChrome(enabled) {
+        localStorage.setItem(OMT_STORAGE_KEYS.autoHideChrome, enabled ? 'true' : 'false');
+        try {
+            window.postMessage({
+                source: 'omt-page',
+                type: 'OMT_STORAGE_SET',
+                key: OMT_STORAGE_KEYS.autoHideChrome,
+                value: !!enabled
+            }, '*');
+        } catch (_) {}
+    }
 
     function storageGetAutoPauseOnBlur() {
         const v = localStorage.getItem(OMT_STORAGE_KEYS.autoPauseOnBlur);
@@ -2963,6 +3013,16 @@
                     values[OMT_STORAGE_KEYS.autoPauseOnBlur] ? 'true' : 'false'
                 );
             } catch (_) {}
+        }
+        if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.autoHideChrome)) {
+            try {
+                localStorage.setItem(
+                    OMT_STORAGE_KEYS.autoHideChrome,
+                    values[OMT_STORAGE_KEYS.autoHideChrome] ? 'true' : 'false'
+                );
+            } catch (_) {}
+            if (typeof syncAutoHideChromeButton === 'function') syncAutoHideChromeButton();
+            if (typeof resetControlsTimeout === 'function') resetControlsTimeout(true);
         }
 
         let customizeTouched = false;

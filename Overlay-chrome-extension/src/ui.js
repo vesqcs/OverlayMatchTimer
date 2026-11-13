@@ -96,39 +96,8 @@
     </div>
 </div>
 
-<!-- Floating draggable control panel (Option A transport + speed row) -->
+<!-- Floating control panel: more-panel ABOVE handle+transport so it expands UP (bottom-anchored). -->
 <div id="controls-panel" class="glass-panel">
-    <div class="drag-handle" id="controls-handle">
-        <div class="drag-side-left">
-            <button type="button" id="omt-more-toggle" class="omt-more-toggle handle-btn omt-tip" aria-expanded="false"${tip('Match controls')}>
-                <span class="omt-more-icon-collapsed">${omtIcon('chevrons-up', 16)}</span>
-                <span class="omt-more-icon-expanded" hidden>${omtIcon('chevrons-down', 16)}</span>
-            </button>
-            <select id="omt-speed-select" class="top-select omt-tip"${tip('Playback speed (Z / C / X)')}>
-                <option value="0.25">0.25x</option>
-                <option value="0.5">0.50x</option>
-                <option value="0.75">0.75x</option>
-                <option value="1.0" selected>1.00x</option>
-                <option value="1.25">1.25x</option>
-                <option value="1.5">1.50x</option>
-                <option value="2.0">2.00x</option>
-            </select>
-            <button type="button" id="omt-hide-panel" class="handle-btn omt-tip"${tip('Hide controls (H)')}>
-                ${omtIcon('eye-off', 16)}
-            </button>
-        </div>
-        <div class="drag-center-grip" aria-hidden="true">${omtIcon('grip-horizontal', 16)}</div>
-        <div class="drag-side-right">
-            <button id="omt-live-btn" class="omt-tip" type="button"${tip('Go to live edge (L)')}>
-                <span class="live-dot"></span><span class="live-label">LIVE</span>
-            </button>
-            <span class="omt-live-spacer" aria-hidden="true"></span>
-            <button class="handle-btn omt-tip" id="omt-volume-icon-btn" type="button"${tip('Mute / Unmute')}>${omtIcon('volume-2', 16)}</button>
-            <input type="range" id="omt-volume-range" class="omt-tip" min="0" max="1" step="0.05" value="1"${tip('Volume')}>
-            <button class="handle-btn omt-tip" id="omt-btn-fullscreen" type="button"${tip('Fullscreen')}>${omtIcon('maximize', 16)}</button>
-        </div>
-    </div>
-
     <div id="omt-more-panel" class="omt-more-panel" aria-hidden="true">
         <div id="omt-kickoff-bar" class="omt-more-block">
             <label class="omt-more-label" for="omt-half-select">Period</label>
@@ -179,6 +148,37 @@
                     <span class="omt-switch-slider"></span>
                 </label>
             </div>
+        </div>
+    </div>
+
+    <div class="drag-handle" id="controls-handle">
+        <div class="drag-side-left">
+            <button type="button" id="omt-more-toggle" class="omt-more-toggle handle-btn omt-tip" aria-expanded="false"${tip('Match controls')}>
+                <span class="omt-more-icon-collapsed">${omtIcon('chevrons-up', 16)}</span>
+                <span class="omt-more-icon-expanded" hidden>${omtIcon('chevrons-down', 16)}</span>
+            </button>
+            <select id="omt-speed-select" class="top-select omt-tip"${tip('Playback speed (Z / C / X)')}>
+                <option value="0.25">0.25x</option>
+                <option value="0.5">0.50x</option>
+                <option value="0.75">0.75x</option>
+                <option value="1.0" selected>1.00x</option>
+                <option value="1.25">1.25x</option>
+                <option value="1.5">1.50x</option>
+                <option value="2.0">2.00x</option>
+            </select>
+            <button type="button" id="omt-hide-panel" class="handle-btn omt-tip is-auto-hide-on" aria-pressed="true"${tip('Auto hide: on')}>
+                ${omtIcon('eye-off', 16)}
+            </button>
+        </div>
+        <div class="drag-center-grip" aria-hidden="true">${omtIcon('grip-horizontal', 16)}</div>
+        <div class="drag-side-right">
+            <button id="omt-live-btn" class="omt-tip" type="button"${tip('Go to live edge (L)')}>
+                <span class="live-dot"></span><span class="live-label">LIVE</span>
+            </button>
+            <span class="omt-live-spacer" aria-hidden="true"></span>
+            <button class="handle-btn omt-tip" id="omt-volume-icon-btn" type="button"${tip('Mute / Unmute')}>${omtIcon('volume-2', 16)}</button>
+            <input type="range" id="omt-volume-range" class="omt-tip" min="0" max="1" step="0.05" value="1"${tip('Volume')}>
+            <button class="handle-btn omt-tip" id="omt-btn-fullscreen" type="button"${tip('Fullscreen')}>${omtIcon('maximize', 16)}</button>
         </div>
     </div>
 

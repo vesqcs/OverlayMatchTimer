@@ -6,6 +6,7 @@
         autoVod: 'omtAutoSwitchVod',
         shuttle: 'shuttleXpressEnabled',
         autoPauseOnBlur: 'omtAutoPauseOnBlur',
+        autoHideChrome: 'omtAutoHideChrome',
         clockPos: 'omtClockPosition',
         clockSize: 'omtClockSize',
         clockShape: 'omtClockShape',
@@ -13,6 +14,24 @@
         hotkeys: 'omtHotkeys',
         shuttlePrefs: 'omtShuttlePrefs'
     };
+
+    function storageGetAutoHideChrome() {
+        const v = localStorage.getItem(OMT_STORAGE_KEYS.autoHideChrome);
+        if (v === null || v === undefined || v === '') return true; // default ON (original idle fade)
+        return v === 'true';
+    }
+
+    function storageSetAutoHideChrome(enabled) {
+        localStorage.setItem(OMT_STORAGE_KEYS.autoHideChrome, enabled ? 'true' : 'false');
+        try {
+            window.postMessage({
+                source: 'omt-page',
+                type: 'OMT_STORAGE_SET',
+                key: OMT_STORAGE_KEYS.autoHideChrome,
+                value: !!enabled
+            }, '*');
+        } catch (_) {}
+    }
 
     function storageGetAutoPauseOnBlur() {
         const v = localStorage.getItem(OMT_STORAGE_KEYS.autoPauseOnBlur);
@@ -136,6 +155,16 @@
                     values[OMT_STORAGE_KEYS.autoPauseOnBlur] ? 'true' : 'false'
                 );
             } catch (_) {}
+        }
+        if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.autoHideChrome)) {
+            try {
+                localStorage.setItem(
+                    OMT_STORAGE_KEYS.autoHideChrome,
+                    values[OMT_STORAGE_KEYS.autoHideChrome] ? 'true' : 'false'
+                );
+            } catch (_) {}
+            if (typeof syncAutoHideChromeButton === 'function') syncAutoHideChromeButton();
+            if (typeof resetControlsTimeout === 'function') resetControlsTimeout(true);
         }
 
         let customizeTouched = false;

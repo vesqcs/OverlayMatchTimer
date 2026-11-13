@@ -82,12 +82,13 @@
         });
         syncSpeedChips();
 
-        // --- Hide panel (same as H hotkey) ---
+        // --- Auto hide toggle (redesign eye button; H hotkey still hides completely) ---
         const hidePanelBtn = q('omt-hide-panel');
         if (hidePanelBtn) {
             hidePanelBtn.addEventListener('click', () => {
-                toggleManualControlsVisibility();
+                toggleAutoHideChrome();
             });
+            syncAutoHideChromeButton();
         }
 
         // --- Live button ---

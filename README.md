@@ -2,7 +2,7 @@
 
 Chrome MV3 extension for Stats Perform / RunningBall match analysts. It injects a drift-aware match clock, HUD timeline, and playback controls over supported stream players, plus a local file player.
 
-**Current build: v1.7.2** — Customize (clock / shortcuts / ShuttleXpress) and local player. Kickoff sync remains **disabled**. Perf audit notes in `PERFORMANCE.md`; General Shuttle diagram shows action labels only (Btn numbers stay in Customize).
+**Current build: v1.7.3** — Customize + local player. Kickoff sync remains **disabled**. v1.7.3: Shuttle hit areas, more-panel expands up (bar fixed), LIVE hidden on local only, eye = Auto hide toggle (H still hides completely).
 
 Supported surfaces:
 

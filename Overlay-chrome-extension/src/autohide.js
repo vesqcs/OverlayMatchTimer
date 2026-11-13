@@ -72,6 +72,13 @@
         // InplayIP: identical finite-duration gate. Examino: allow seekable MSE.
         if (vid && !site.mediaReady(vid)) return;
 
+        // Redesign Auto-hide toggle: when OFF, keep chrome visible and skip idle fade.
+        // Original timer / activity paths below are unchanged when ON.
+        if (typeof storageGetAutoHideChrome === 'function' && !storageGetAutoHideChrome()) {
+            if (controlsPanel) setChromeVisible(true);
+            return;
+        }
+
         if (showPanel && controlsPanel) {
             setChromeVisible(true);
         }
@@ -90,4 +97,24 @@
             }
             setChromeVisible(false);
         }, 2500);
+    }
+
+    function syncAutoHideChromeButton() {
+        const btn = typeof q === 'function' ? q('omt-hide-panel') : null;
+        if (!btn) return;
+        const on = typeof storageGetAutoHideChrome === 'function' ? storageGetAutoHideChrome() : true;
+        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+        btn.setAttribute('data-tip', on ? 'Auto hide: on' : 'Auto hide: off');
+        btn.classList.toggle('is-auto-hide-on', on);
+        btn.classList.toggle('is-auto-hide-off', !on);
+        btn.innerHTML = on ? omtIcon('eye-off', 16) : omtIcon('eye', 16);
+    }
+
+    function toggleAutoHideChrome() {
+        const next = !(typeof storageGetAutoHideChrome === 'function' ? storageGetAutoHideChrome() : true);
+        if (typeof storageSetAutoHideChrome === 'function') storageSetAutoHideChrome(next);
+        syncAutoHideChromeButton();
+        // Never hide immediately — only gate future idle fades.
+        if (typeof resetControlsTimeout === 'function') resetControlsTimeout(true);
+        if (typeof mostrarOSD === 'function') mostrarOSD(next ? 'Auto hide on' : 'Auto hide off');
     }

@@ -918,7 +918,8 @@
   const diagramWrap = document.getElementById('omt-shuttle-diagram-wrap');
   if (diagramWrap) {
     diagramWrap.addEventListener('click', (e) => {
-      const hit = e.target.closest('[data-part]');
+      // Prefer the interactive shape (.omt-sx-part), never labels/nums.
+      const hit = e.target.closest('.omt-sx-part[data-part]');
       if (!hit || !diagramWrap.contains(hit)) return;
       const part = hit.getAttribute('data-part');
       if (!part || !/^(btn[1-5]|jog|ring)$/.test(part)) return;
@@ -932,6 +933,9 @@
     diagramWrap.addEventListener('mouseout', (e) => {
       const hit = e.target.closest('.omt-sx-part[data-part]');
       if (!hit || !diagramWrap.contains(hit)) return;
+      // Leaving into a child of the same part should not clear hover.
+      const related = e.relatedTarget;
+      if (related && hit.contains(related)) return;
       setShuttleHover(null);
     });
   }
