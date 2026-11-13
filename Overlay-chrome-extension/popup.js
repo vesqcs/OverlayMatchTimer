@@ -43,9 +43,11 @@
   const SHUTTLE_DEFAULTS = {
     skipBtn1: 120,
     skipBtn2: 10,
+    skipBtn3: 120,
     skipBtn4: 10,
     skipBtn5: 120,
     playPauseBtn: 3,
+    centreSkipSign: 1, // +1 / −1 when centre (btn 3) holds a skip
     jogStep: 0.04,
     shuttleScale: 1
   };
@@ -54,13 +56,12 @@
   <!-- v1.6.3 outline: Vasco foto.png — centred btn3, mirrored 2/4 & 1/5, dimple at 12 o'clock -->
   <g class="omt-sx-root">
     <circle class="omt-sx-body" cx="100" cy="100" r="80"/>
-    <g class="omt-sx-part" data-part="ring" tabindex="-1" role="button" aria-label="Shuttle ring">
-      <circle cx="100" cy="100" r="49"/>
-      <circle cx="100" cy="100" r="31"/>
+    <g class="omt-sx-part" data-part="ring" tabindex="-1" role="button" aria-label="Shuttle ring" fill-rule="evenodd">
+      <path class="omt-sx-ring-disk" d="M100,51 A49,49 0 1,1 99.99,51 Z M100,69 A31,31 0 1,0 100.01,69 Z"/>
       <g class="omt-sx-ticks"><line x1="100.0" y1="67.2" x2="100.0" y2="52.8"/><line x1="104.6" y1="67.5" x2="106.6" y2="53.3"/><line x1="109.0" y1="68.5" x2="113.0" y2="54.6"/><line x1="113.3" y1="70.0" x2="119.2" y2="56.9"/><line x1="117.4" y1="72.2" x2="125.0" y2="60.0"/><line x1="121.1" y1="74.9" x2="130.3" y2="63.8"/><line x1="124.4" y1="78.1" x2="135.1" y2="68.4"/><line x1="127.2" y1="81.7" x2="139.1" y2="73.6"/><line x1="129.5" y1="85.6" x2="142.4" y2="79.3"/><line x1="131.2" y1="89.9" x2="144.9" y2="85.4"/><line x1="132.3" y1="94.3" x2="146.5" y2="91.8"/><line x1="132.8" y1="98.9" x2="147.2" y2="98.4"/><line x1="132.6" y1="103.4" x2="146.9" y2="104.9"/><line x1="131.8" y1="107.9" x2="145.8" y2="111.4"/><line x1="130.4" y1="112.3" x2="143.8" y2="117.7"/><line x1="128.4" y1="116.4" x2="140.9" y2="123.6"/><line x1="125.8" y1="120.2" x2="137.2" y2="129.1"/><line x1="122.8" y1="123.6" x2="132.8" y2="134.0"/><line x1="119.3" y1="126.5" x2="127.7" y2="138.2"/><line x1="115.4" y1="129.0" x2="122.2" y2="141.7"/><line x1="111.2" y1="130.8" x2="116.1" y2="144.4"/><line x1="106.8" y1="132.1" x2="109.8" y2="146.2"/><line x1="102.3" y1="132.7" x2="103.3" y2="147.1"/><line x1="97.7" y1="132.7" x2="96.7" y2="147.1"/><line x1="93.2" y1="132.1" x2="90.2" y2="146.2"/><line x1="88.8" y1="130.8" x2="83.9" y2="144.4"/><line x1="84.6" y1="129.0" x2="77.8" y2="141.7"/><line x1="80.7" y1="126.5" x2="72.3" y2="138.2"/><line x1="77.2" y1="123.6" x2="67.2" y2="134.0"/><line x1="74.2" y1="120.2" x2="62.8" y2="129.1"/><line x1="71.6" y1="116.4" x2="59.1" y2="123.6"/><line x1="69.6" y1="112.3" x2="56.2" y2="117.7"/><line x1="68.2" y1="107.9" x2="54.2" y2="111.4"/><line x1="67.4" y1="103.4" x2="53.1" y2="104.9"/><line x1="67.2" y1="98.9" x2="52.8" y2="98.4"/><line x1="67.7" y1="94.3" x2="53.5" y2="91.8"/><line x1="68.8" y1="89.9" x2="55.1" y2="85.4"/><line x1="70.5" y1="85.6" x2="57.6" y2="79.3"/><line x1="72.8" y1="81.7" x2="60.9" y2="73.6"/><line x1="75.6" y1="78.1" x2="64.9" y2="68.4"/><line x1="78.9" y1="74.9" x2="69.7" y2="63.8"/><line x1="82.6" y1="72.2" x2="75.0" y2="60.0"/><line x1="86.7" y1="70.0" x2="80.8" y2="56.9"/><line x1="91.0" y1="68.5" x2="87.0" y2="54.6"/><line x1="95.4" y1="67.5" x2="93.4" y2="53.3"/></g>
     </g>
     <g class="omt-sx-part" data-part="jog" tabindex="-1" role="button" aria-label="Jog">
-      <circle cx="100" cy="100" r="27.5"/>
+      <circle class="omt-sx-jog-disk" cx="100" cy="100" r="27.5"/>
       <circle class="omt-sx-dimple" cx="100" cy="84.0" r="4.2"/>
     </g>
     <path class="omt-sx-part omt-sx-btn" data-part="btn1" tabindex="-1" role="button" aria-label="Button 1" d="M32.28,134.50 A76,76 0 0,1 32.28,65.50 L52.78,75.94 A53,53 0 0,0 52.78,124.06 Z"/>
@@ -133,20 +134,59 @@
     return out;
   }
 
+  function positionalSkipSign(btn) {
+    if (btn === 1 || btn === 2) return -1;
+    if (btn === 4 || btn === 5) return 1;
+    return 1;
+  }
+
+  function skipSignForButton(btn, prefs) {
+    if (btn === 3) {
+      const s = Number(prefs && prefs.centreSkipSign);
+      return s < 0 ? -1 : 1;
+    }
+    return positionalSkipSign(btn);
+  }
+
   function mergeShuttle(stored) {
     const out = Object.assign({}, SHUTTLE_DEFAULTS);
     if (!stored || typeof stored !== 'object') return out;
-    ['skipBtn1', 'skipBtn2', 'skipBtn4', 'skipBtn5'].forEach((k) => {
+    ['skipBtn1', 'skipBtn2', 'skipBtn3', 'skipBtn4', 'skipBtn5'].forEach((k) => {
       const n = Number(stored[k]);
       if (Number.isFinite(n) && n > 0 && n <= 600) out[k] = n;
     });
     const pp = Number(stored.playPauseBtn);
     if ([1, 2, 3, 4, 5].includes(pp)) out.playPauseBtn = pp;
+    const cSign = Number(stored.centreSkipSign);
+    if (cSign === -1 || cSign === 1) out.centreSkipSign = cSign;
     const jog = Number(stored.jogStep);
     if (Number.isFinite(jog) && jog > 0 && jog <= 1) out.jogStep = jog;
     const scale = Number(stored.shuttleScale);
     if (Number.isFinite(scale) && scale > 0 && scale <= 4) out.shuttleScale = scale;
+    // Migrate pre-1.6.4: no skipBtn3 stored while PP was moved off centre → seed centre skip
+    if (stored.skipBtn3 == null && out.playPauseBtn !== 3) {
+      out.skipBtn3 = SHUTTLE_DEFAULTS.skipBtn3;
+      out.centreSkipSign = positionalSkipSign(out.playPauseBtn);
+    }
     return out;
+  }
+
+  /** Move Play/Pause to newBtn, giving the destination's skip to the previous PP button. */
+  function swapPlayPauseTo(newBtn) {
+    if (!shuttlePrefs) return;
+    const dest = Number(newBtn);
+    if (![1, 2, 3, 4, 5].includes(dest)) return;
+    const old = shuttlePrefs.playPauseBtn;
+    if (dest === old) return;
+    const movingSkip = Number(shuttlePrefs['skipBtn' + dest]);
+    const secs = Number.isFinite(movingSkip) && movingSkip > 0
+      ? movingSkip
+      : SHUTTLE_DEFAULTS['skipBtn' + dest];
+    shuttlePrefs['skipBtn' + old] = secs;
+    if (old === 3) {
+      shuttlePrefs.centreSkipSign = positionalSkipSign(dest);
+    }
+    shuttlePrefs.playPauseBtn = dest;
   }
 
   function formatBinding(b) {
@@ -231,10 +271,9 @@
   function buttonActionLabel(btn) {
     if (!shuttlePrefs) return '—';
     if (btn === shuttlePrefs.playPauseBtn) return 'Play/Pause';
-    const key = 'skipBtn' + btn;
-    const secs = shuttlePrefs[key];
+    const secs = shuttlePrefs['skipBtn' + btn];
     if (!Number.isFinite(secs)) return '—';
-    const sign = (btn === 1 || btn === 2) ? '−' : '+';
+    const sign = skipSignForButton(btn, shuttlePrefs) < 0 ? '−' : '+';
     return sign + formatSkipLabel(secs);
   }
 
@@ -298,52 +337,82 @@
   function renderGeneralShuttle() {
     mountShuttleDiagrams();
     updateShuttleDiagramLabels();
-    const host = document.getElementById('omt-shuttle-summary-list');
-    if (!host || !shuttlePrefs) return;
-    const pp = shuttlePrefs.playPauseBtn;
-    const rows = [];
-    for (let i = 1; i <= 5; i++) {
-      if (i === pp) {
-        rows.push(['Btn ' + i, 'Play / Pause']);
-      } else {
-        const key = 'skipBtn' + i;
-        const secs = shuttlePrefs[key];
-        const sign = (i === 1 || i === 2) ? '−' : '+';
-        rows.push(['Btn ' + i, 'Skip ' + sign + formatSkipLabel(secs)]);
-      }
-    }
-    rows.push(['Jog', shuttlePrefs.jogStep + 's / tick (frame by frame)']);
-    rows.push(['Shuttle ring', shuttlePrefs.shuttleScale + '× scrub (speed, 7 steps)']);
-    host.innerHTML = rows.map(([a, b]) =>
-      '<div class="shortcut-item"><span class="shortcut-label">' + a +
-      '</span><span class="shortcut-keys">' + b + '</span></div>'
-    ).join('');
+    // General: diagram + note only (no text list).
   }
 
-  function resolveShuttlePartFromRow(row) {
-    if (!row) return null;
-    if (row.querySelector('#omt-sx-playpause')) {
-      return 'btn' + (shuttlePrefs ? shuttlePrefs.playPauseBtn : 3);
+  function numFieldHtml(id, value) {
+    return '<span class="omt-num-field">'
+      + '<input type="number" id="' + id + '" class="omt-control" min="1" max="600" step="1" value="' + value + '" />'
+      + '<span class="omt-num-chevrons" aria-hidden="true">'
+      + '<button type="button" class="omt-chev" data-step="1" data-for="' + id + '" tabindex="-1" aria-label="Increase"></button>'
+      + '<button type="button" class="omt-chev" data-step="-1" data-for="' + id + '" tabindex="-1" aria-label="Decrease"></button>'
+      + '</span></span><span class="omt-unit">s</span>';
+  }
+
+  function renderShuttleEditor() {
+    const host = document.getElementById('omt-shuttle-edit-list');
+    if (!host || !shuttlePrefs) return;
+    const pp = shuttlePrefs.playPauseBtn;
+    const keepPart = selectedShuttlePart;
+    let html = '';
+    for (let i = 1; i <= 5; i++) {
+      const part = 'btn' + i;
+      const isPp = i === pp;
+      const sign = skipSignForButton(i, shuttlePrefs) < 0 ? '−' : '+';
+      const label = isPp ? ('Btn ' + i) : ('Btn ' + i + ' (' + sign + ')');
+      let control;
+      if (isPp) {
+        control = '<select id="omt-sx-playpause" class="omt-control" aria-label="Play / Pause button">'
+          + [1, 2, 3, 4, 5].map((n) => {
+            const def = n === 3 ? ' (default)' : '';
+            return '<option value="' + n + '"' + (n === pp ? ' selected' : '') + '>Play / Pause · Btn ' + n + def + '</option>';
+          }).join('')
+          + '</select>';
+      } else {
+        control = numFieldHtml('omt-sx-skip' + i, shuttlePrefs['skipBtn' + i]);
+      }
+      const resetKey = isPp ? 'playPauseBtn' : ('skipBtn' + i);
+      html += '<div class="omt-shuttle-row' + (isPp ? ' omt-shuttle-row--playpause' : '') + '" data-part="' + part + '">'
+        + '<span class="omt-shuttle-label">' + label + '</span>'
+        + '<span class="omt-shuttle-control">' + control + '</span>'
+        + '<button type="button" class="omt-btn-icon" data-reset="' + resetKey + '" title="Reset to default" aria-label="Reset to default">'
+        + ICON_RESET + '</button></div>';
     }
-    return row.getAttribute('data-part');
+    html += '<div class="omt-shuttle-row" data-part="jog">'
+      + '<span class="omt-shuttle-label" title="Frame by frame">Jog</span>'
+      + '<span class="omt-shuttle-control"><select id="omt-sx-jog" class="omt-control">'
+      + '<option value="0.02">0.02s fine</option>'
+      + '<option value="0.04">0.04s ≈1f</option>'
+      + '<option value="0.08">0.08s</option>'
+      + '<option value="0.12">0.12s</option>'
+      + '</select></span>'
+      + '<button type="button" class="omt-btn-icon" data-reset="jogStep" title="Reset to default" aria-label="Reset to default">'
+      + ICON_RESET + '</button></div>';
+    html += '<div class="omt-shuttle-row" data-part="ring">'
+      + '<span class="omt-shuttle-label" title="Speed">Shuttle ring</span>'
+      + '<span class="omt-shuttle-control"><select id="omt-sx-scale" class="omt-control">'
+      + '<option value="0.5">0.5×</option>'
+      + '<option value="1">1× (default)</option>'
+      + '<option value="1.5">1.5×</option>'
+      + '<option value="2">2×</option>'
+      + '</select></span>'
+      + '<button type="button" class="omt-btn-icon" data-reset="shuttleScale" title="Reset to default" aria-label="Reset to default">'
+      + ICON_RESET + '</button></div>';
+    host.innerHTML = html;
+    const jog = document.getElementById('omt-sx-jog');
+    const scale = document.getElementById('omt-sx-scale');
+    if (jog) jog.value = String(shuttlePrefs.jogStep);
+    if (scale) scale.value = String(shuttlePrefs.shuttleScale);
+    updateShuttleResetVisibility();
+    if (keepPart) setShuttleHighlight(keepPart);
   }
 
   function focusShuttlePart(part) {
     if (!part) return;
     setShuttleHighlight(part);
-    let row = null;
-    if (/^btn[1-5]$/.test(part)) {
-      const n = Number(part.slice(3));
-      if (shuttlePrefs && n === shuttlePrefs.playPauseBtn) {
-        row = document.querySelector('#omt-sx-playpause') &&
-          document.querySelector('#omt-sx-playpause').closest('.omt-shuttle-row');
-      } else {
-        row = document.querySelector('.omt-shuttle-row[data-part="' + part + '"]');
-      }
-    } else {
-      row = document.querySelector('.omt-shuttle-row[data-part="' + part + '"]');
-    }
+    const row = document.querySelector('#omt-shuttle-edit-list .omt-shuttle-row[data-part="' + part + '"]');
     if (!row) return;
+    row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     const focusable = row.querySelector('input, select');
     if (focusable) focusable.focus({ preventScroll: true });
   }
@@ -385,52 +454,58 @@
     if (!shuttlePrefs) return;
     document.querySelectorAll('#omt-shuttle-edit-list [data-reset]').forEach((btn) => {
       const key = btn.getAttribute('data-reset');
-      const dirty = shuttlePrefs[key] !== SHUTTLE_DEFAULTS[key];
+      let dirty = false;
+      if (key === 'playPauseBtn') {
+        dirty = shuttlePrefs.playPauseBtn !== SHUTTLE_DEFAULTS.playPauseBtn
+          || shuttlePrefs.centreSkipSign !== SHUTTLE_DEFAULTS.centreSkipSign
+          || [1, 2, 3, 4, 5].some((n) => shuttlePrefs['skipBtn' + n] !== SHUTTLE_DEFAULTS['skipBtn' + n]);
+      } else {
+        dirty = shuttlePrefs[key] !== SHUTTLE_DEFAULTS[key];
+      }
       btn.classList.toggle('is-dirty', dirty);
     });
   }
 
   function fillShuttleForm() {
-    if (!shuttlePrefs) return;
-    const s1 = document.getElementById('omt-sx-skip1');
-    const s2 = document.getElementById('omt-sx-skip2');
-    const s4 = document.getElementById('omt-sx-skip4');
-    const s5 = document.getElementById('omt-sx-skip5');
-    const pp = document.getElementById('omt-sx-playpause');
-    const jog = document.getElementById('omt-sx-jog');
-    const scale = document.getElementById('omt-sx-scale');
-    if (s1) s1.value = shuttlePrefs.skipBtn1;
-    if (s2) s2.value = shuttlePrefs.skipBtn2;
-    if (s4) s4.value = shuttlePrefs.skipBtn4;
-    if (s5) s5.value = shuttlePrefs.skipBtn5;
-    if (pp) pp.value = String(shuttlePrefs.playPauseBtn);
-    if (jog) jog.value = String(shuttlePrefs.jogStep);
-    if (scale) scale.value = String(shuttlePrefs.shuttleScale);
-    updateShuttleResetVisibility();
+    renderShuttleEditor();
+  }
+
+  function editDiagramRoot() {
+    return document.getElementById('omt-shuttle-diagram-wrap');
   }
 
   function setShuttleHighlight(part) {
-    // Single-select: clear every prior highlight, then activate one part/row.
+    // Exactly one active part shared by edit diagram + settings rows.
     selectedShuttlePart = part || null;
-    document.querySelectorAll('.omt-sx-part.is-active, .omt-sx-num.is-active, .omt-sx-label.is-active, .omt-shuttle-row.is-active')
-      .forEach((el) => el.classList.remove('is-active'));
-    document.querySelectorAll('.omt-sx-part, .omt-sx-num, .omt-sx-label').forEach((el) => {
+    document.querySelectorAll(
+      '.omt-sx-part.is-active, .omt-sx-num.is-active, .omt-sx-label.is-active, .omt-shuttle-row.is-active, .omt-sx-part.is-hover, .omt-sx-num.is-hover, .omt-sx-label.is-hover'
+    ).forEach((el) => {
+      el.classList.remove('is-active');
       el.classList.remove('is-hover');
-      if (selectedShuttlePart && el.getAttribute('data-part') === selectedShuttlePart) {
-        el.classList.add('is-active');
-      }
     });
-    document.querySelectorAll('.omt-shuttle-row').forEach((row) => {
-      const rowPart = resolveShuttlePartFromRow(row);
-      if (selectedShuttlePart && rowPart === selectedShuttlePart) row.classList.add('is-active');
+    const wrap = editDiagramRoot();
+    if (wrap && selectedShuttlePart) {
+      wrap.querySelectorAll('.omt-sx-part, .omt-sx-num, .omt-sx-label').forEach((el) => {
+        if (el.getAttribute('data-part') === selectedShuttlePart) el.classList.add('is-active');
+      });
+    }
+    document.querySelectorAll('#omt-shuttle-edit-list .omt-shuttle-row').forEach((row) => {
+      if (selectedShuttlePart && row.getAttribute('data-part') === selectedShuttlePart) {
+        row.classList.add('is-active');
+      }
     });
   }
 
   function setShuttleHover(part) {
-    document.querySelectorAll('.omt-sx-part, .omt-sx-num, .omt-sx-label').forEach((el) => {
+    const wrap = editDiagramRoot();
+    if (!wrap) return;
+    wrap.querySelectorAll('.omt-sx-part, .omt-sx-num, .omt-sx-label').forEach((el) => {
       const match = !!part && el.getAttribute('data-part') === part;
-      if (!el.classList.contains('is-active')) el.classList.toggle('is-hover', match);
-      else el.classList.remove('is-hover');
+      if (el.classList.contains('is-active')) {
+        el.classList.remove('is-hover');
+      } else {
+        el.classList.toggle('is-hover', match);
+      }
     });
   }
 
@@ -579,20 +654,36 @@
     refreshAll();
   });
 
-  function readShuttleFromForm() {
-    shuttlePrefs = mergeShuttle({
-      skipBtn1: Number(document.getElementById('omt-sx-skip1').value),
-      skipBtn2: Number(document.getElementById('omt-sx-skip2').value),
-      skipBtn4: Number(document.getElementById('omt-sx-skip4').value),
-      skipBtn5: Number(document.getElementById('omt-sx-skip5').value),
-      playPauseBtn: Number(document.getElementById('omt-sx-playpause').value),
-      jogStep: Number(document.getElementById('omt-sx-jog').value),
-      shuttleScale: Number(document.getElementById('omt-sx-scale').value)
-    });
+  function readShuttleSkipsAndMetaFromForm() {
+    if (!shuttlePrefs) return;
+    for (let i = 1; i <= 5; i++) {
+      if (i === shuttlePrefs.playPauseBtn) continue;
+      const el = document.getElementById('omt-sx-skip' + i);
+      if (!el) continue;
+      const n = Number(el.value);
+      if (Number.isFinite(n) && n > 0 && n <= 600) shuttlePrefs['skipBtn' + i] = n;
+    }
+    const jog = document.getElementById('omt-sx-jog');
+    const scale = document.getElementById('omt-sx-scale');
+    if (jog) {
+      const j = Number(jog.value);
+      if (Number.isFinite(j) && j > 0) shuttlePrefs.jogStep = j;
+    }
+    if (scale) {
+      const s = Number(scale.value);
+      if (Number.isFinite(s) && s > 0) shuttlePrefs.shuttleScale = s;
+    }
+  }
+
+  function persistShuttleUi(opts) {
+    const rebuild = !!(opts && opts.rebuild);
+    const highlight = opts && opts.highlight;
     saveShuttle();
     renderGeneralShuttle();
     updateShuttleDiagramLabels();
-    updateShuttleResetVisibility();
+    if (rebuild) renderShuttleEditor();
+    else updateShuttleResetVisibility();
+    if (highlight) setShuttleHighlight(highlight);
   }
 
   document.getElementById('omt-shuttle-edit-list').addEventListener('click', (e) => {
@@ -609,44 +700,56 @@
       const cur = Number(input.value);
       const next = Math.min(max, Math.max(min, (Number.isFinite(cur) ? cur : min) + step));
       input.value = String(next);
-      readShuttleFromForm();
-      updateShuttleResetVisibility();
+      readShuttleSkipsAndMetaFromForm();
       const row = chev.closest('.omt-shuttle-row');
-      if (row) setShuttleHighlight(resolveShuttlePartFromRow(row));
+      persistShuttleUi({ highlight: row ? row.getAttribute('data-part') : null });
       return;
     }
     const resetBtn = e.target.closest('[data-reset]');
     if (resetBtn) {
       const key = resetBtn.getAttribute('data-reset');
-      shuttlePrefs[key] = SHUTTLE_DEFAULTS[key];
-      fillShuttleForm();
-      saveShuttle();
-      renderGeneralShuttle();
-      updateShuttleDiagramLabels();
+      if (key === 'playPauseBtn') {
+        shuttlePrefs.playPauseBtn = SHUTTLE_DEFAULTS.playPauseBtn;
+        shuttlePrefs.centreSkipSign = SHUTTLE_DEFAULTS.centreSkipSign;
+        for (let i = 1; i <= 5; i++) shuttlePrefs['skipBtn' + i] = SHUTTLE_DEFAULTS['skipBtn' + i];
+      } else if (key && Object.prototype.hasOwnProperty.call(SHUTTLE_DEFAULTS, key)) {
+        shuttlePrefs[key] = SHUTTLE_DEFAULTS[key];
+      }
       const partMap = {
-        skipBtn1: 'btn1', skipBtn2: 'btn2', skipBtn4: 'btn4', skipBtn5: 'btn5',
+        skipBtn1: 'btn1', skipBtn2: 'btn2', skipBtn3: 'btn3', skipBtn4: 'btn4', skipBtn5: 'btn5',
         playPauseBtn: 'btn' + shuttlePrefs.playPauseBtn,
         jogStep: 'jog', shuttleScale: 'ring'
       };
-      setShuttleHighlight(partMap[key] || null);
+      persistShuttleUi({ rebuild: true, highlight: partMap[key] || null });
       return;
     }
     const row = e.target.closest('.omt-shuttle-row');
-    if (row) setShuttleHighlight(resolveShuttlePartFromRow(row));
+    if (row) setShuttleHighlight(row.getAttribute('data-part'));
   });
   document.getElementById('omt-shuttle-edit-list').addEventListener('change', (e) => {
-    if (e.target.matches('input, select')) readShuttleFromForm();
+    if (!e.target.matches('input, select')) return;
+    if (e.target.id === 'omt-sx-playpause') {
+      swapPlayPauseTo(Number(e.target.value));
+      persistShuttleUi({ rebuild: true, highlight: 'btn' + shuttlePrefs.playPauseBtn });
+      return;
+    }
+    readShuttleSkipsAndMetaFromForm();
+    const row = e.target.closest('.omt-shuttle-row');
+    persistShuttleUi({ highlight: row ? row.getAttribute('data-part') : null });
   });
   document.getElementById('omt-shuttle-edit-list').addEventListener('input', (e) => {
-    if (e.target.matches('input[type="number"]')) readShuttleFromForm();
+    if (!e.target.matches('input[type="number"]')) return;
+    readShuttleSkipsAndMetaFromForm();
+    const row = e.target.closest('.omt-shuttle-row');
+    persistShuttleUi({ highlight: row ? row.getAttribute('data-part') : null });
   });
   document.getElementById('omt-shuttle-edit-list').addEventListener('focusin', (e) => {
     const row = e.target.closest('.omt-shuttle-row');
-    if (row) setShuttleHighlight(resolveShuttlePartFromRow(row));
+    if (row) setShuttleHighlight(row.getAttribute('data-part'));
   });
   document.getElementById('omt-shuttle-edit-list').addEventListener('mouseover', (e) => {
     const row = e.target.closest('.omt-shuttle-row');
-    if (row) setShuttleHover(resolveShuttlePartFromRow(row));
+    if (row) setShuttleHover(row.getAttribute('data-part'));
   });
   document.getElementById('omt-shuttle-edit-list').addEventListener('mouseout', (e) => {
     const row = e.target.closest('.omt-shuttle-row');

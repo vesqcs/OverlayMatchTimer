@@ -46,13 +46,11 @@
             }
             return;
         }
-        let secs = 0;
-        let sign = 1;
-        if (btn === 1) { secs = prefs.skipBtn1; sign = -1; }
-        else if (btn === 2) { secs = prefs.skipBtn2; sign = -1; }
-        else if (btn === 4) { secs = prefs.skipBtn4; sign = 1; }
-        else if (btn === 5) { secs = prefs.skipBtn5; sign = 1; }
-        else return;
+        const secs = Number(prefs['skipBtn' + btn]);
+        if (!Number.isFinite(secs) || secs <= 0) return;
+        const sign = (typeof omtSkipSignForButton === 'function')
+            ? omtSkipSignForButton(btn, prefs)
+            : ((btn === 1 || btn === 2) ? -1 : 1);
         const delta = sign * secs;
         vid.currentTime = Math.max(0, (vid.currentTime || 0) + delta);
         const label = Math.abs(delta) >= 60
@@ -111,7 +109,7 @@
 
         const prefs = (typeof omtGetShuttlePrefs === 'function')
             ? omtGetShuttlePrefs()
-            : { skipBtn1: 120, skipBtn2: 10, skipBtn4: 10, skipBtn5: 120, playPauseBtn: 3, jogStep: 0.04, shuttleScale: 1 };
+            : { skipBtn1: 120, skipBtn2: 10, skipBtn3: 120, skipBtn4: 10, skipBtn5: 120, playPauseBtn: 3, centreSkipSign: 1, jogStep: 0.04, shuttleScale: 1 };
 
         // A) 5 Buttons edge detection (play/pause button configurable)
         for (let btn = 1; btn <= 5; btn++) {

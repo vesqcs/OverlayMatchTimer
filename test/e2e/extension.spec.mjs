@@ -1537,7 +1537,7 @@ async function run() {
           noCredit: !document.querySelector('.omt-brand-credit'),
           noPersonalizar: !document.body.textContent.includes('Personalizar') &&
             !document.body.textContent.includes('Em breve'),
-          footOk: foot === 'v1.6.3',
+          footOk: foot === 'v1.6.4',
           hasAutoPause: !!document.getElementById('omt-auto-pause-blur'),
           autoPauseDefaultOff: document.getElementById('omt-auto-pause-blur')
             ? document.getElementById('omt-auto-pause-blur').checked === false
@@ -1563,6 +1563,9 @@ async function run() {
             shuttleOpen: !!document.getElementById('omt-gen-shuttle-details')?.open
           },
           shuttleSummaryRows: document.querySelectorAll('#omt-shuttle-summary-list .shortcut-item').length,
+          noGeneralShuttleList: !document.getElementById('omt-shuttle-summary-list')
+            || document.querySelectorAll('#omt-shuttle-summary-list .shortcut-item').length === 0,
+          headerClock: (document.querySelector('.omt-header-clock')?.textContent || '').trim(),
           generalDiagram: (() => {
             const host = document.getElementById('omt-shuttle-summary-diagram');
             const svg = host?.querySelector('.omt-shuttle-svg');
@@ -1616,6 +1619,10 @@ async function run() {
         path: path.join(ARTIFACTS, 'popup_shuttle_general_diagram.png'),
         fullPage: true
       });
+      await popupPage.screenshot({
+        path: path.join(ARTIFACTS, 'popup_general_shuttle_open.png'),
+        fullPage: true
+      });
       results.push({
         name: 'popup-branding-and-personalizar',
         pass: popupOk.hasWordmark && popupOk.hasLogo && popupOk.logoCount === 1 &&
@@ -1626,14 +1633,16 @@ async function run() {
           popupOk.hasOpenLocal && popupOk.openLocalLabel === 'Open local player' &&
           /stats-perform-logo-dark\.png/i.test(popupOk.logoSrc || '') &&
           popupOk.hasShuttleSummary &&
+          popupOk.noGeneralShuttleList === true &&
+          popupOk.headerClock === '20:08' &&
           popupOk.generalDiagram.ok === true &&
           popupOk.toggleKnob.ok === true,
         detail: popupOk
       });
       results.push({
-        name: 'popup-shuttle-general-diagram-labels',
-        pass: popupOk.generalDiagram.ok === true,
-        detail: popupOk.generalDiagram
+        name: 'popup-shuttle-general-diagram-only',
+        pass: popupOk.generalDiagram.ok === true && popupOk.noGeneralShuttleList === true,
+        detail: { diagram: popupOk.generalDiagram, noList: popupOk.noGeneralShuttleList }
       });
 
       // ---------- Customize tab (v1.6.2) ----------
@@ -1762,32 +1771,51 @@ async function run() {
       await popupPage.click('#omt-hotkeys-reset-all');
       await popupPage.waitForTimeout(80);
 
-      // Shuttle highlight: single-select only
+      // Shuttle highlight: exactly one active part (SVG ↔ row)
       await popupPage.evaluate(() => {
         const d = document.getElementById('omt-shuttle-details');
         if (d) d.open = true;
       });
+      await popupPage.waitForTimeout(60);
       await popupPage.focus('#omt-sx-skip1');
       await popupPage.waitForTimeout(40);
+      const highlightBtn1 = await popupPage.evaluate(() => {
+        const wrap = document.getElementById('omt-shuttle-diagram-wrap');
+        const parts = Array.from(wrap?.querySelectorAll('.omt-sx-part.is-active') || [])
+          .map((el) => el.getAttribute('data-part'));
+        const rows = Array.from(document.querySelectorAll('#omt-shuttle-edit-list .omt-shuttle-row.is-active'))
+          .map((el) => el.getAttribute('data-part'));
+        const jogActive = !!wrap?.querySelector('.omt-sx-part[data-part="jog"].is-active');
+        const ringActive = !!wrap?.querySelector('.omt-sx-part[data-part="ring"].is-active');
+        return { parts, rows, jogActive, ringActive };
+      });
+      await popupPage.screenshot({
+        path: path.join(ARTIFACTS, 'popup_shuttle_row_focus_btn.png'),
+        fullPage: true
+      });
       // Click diagram part via DOM (SVG hit-testing is flaky in headless).
       await popupPage.evaluate(() => {
         const el = document.querySelector('#omt-shuttle-diagram-wrap .omt-sx-part[data-part="btn5"]');
         el?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
       });
-      await popupPage.waitForTimeout(60);
+      await popupPage.waitForTimeout(80);
       const highlight = await popupPage.evaluate(() => {
         const wrap = document.getElementById('omt-shuttle-diagram-wrap');
         const actives = Array.from(wrap?.querySelectorAll('.omt-sx-part.is-active') || [])
           .map((el) => el.getAttribute('data-part'));
-        const activeRows = Array.from(document.querySelectorAll('.omt-shuttle-row.is-active'))
+        const activeRows = Array.from(document.querySelectorAll('#omt-shuttle-edit-list .omt-shuttle-row.is-active'))
           .map((el) => el.getAttribute('data-part'));
         const label = wrap?.querySelector('.omt-sx-label[data-part="btn5"]');
         const dimple = wrap?.querySelector('.omt-sx-dimple');
+        const jogActive = !!wrap?.querySelector('.omt-sx-part[data-part="jog"].is-active');
+        const ringActive = !!wrap?.querySelector('.omt-sx-part[data-part="ring"].is-active');
         return {
           activeParts: actives,
           activeRows,
           singlePart: actives.length === 1 && actives[0] === 'btn5',
           singleRow: activeRows.length === 1 && activeRows[0] === 'btn5',
+          jogActive,
+          ringActive,
           label: (label?.textContent || '').trim(),
           hasLabels: (wrap?.querySelectorAll('.omt-sx-label[data-part]') || []).length >= 7,
           dimpleCy: dimple ? Number(dimple.getAttribute('cy')) : null,
@@ -1804,28 +1832,101 @@ async function run() {
         fullPage: true
       });
       await popupPage.screenshot({
+        path: path.join(ARTIFACTS, 'popup_shuttle_svg_btn5.png'),
+        fullPage: true
+      });
+      await popupPage.screenshot({
         path: path.join(ARTIFACTS, 'popup_shuttle_single_select.png'),
         fullPage: true
       });
+
+      // Focus Jog select → only jog active
+      await popupPage.focus('#omt-sx-jog');
+      await popupPage.waitForTimeout(40);
+      const highlightJog = await popupPage.evaluate(() => {
+        const wrap = document.getElementById('omt-shuttle-diagram-wrap');
+        const parts = Array.from(wrap?.querySelectorAll('.omt-sx-part.is-active') || [])
+          .map((el) => el.getAttribute('data-part'));
+        const rows = Array.from(document.querySelectorAll('#omt-shuttle-edit-list .omt-shuttle-row.is-active'))
+          .map((el) => el.getAttribute('data-part'));
+        return { parts, rows };
+      });
+      await popupPage.screenshot({
+        path: path.join(ARTIFACTS, 'popup_shuttle_row_focus_jog.png'),
+        fullPage: true
+      });
+
       results.push({
         name: 'customize-shuttle-diagram-highlight',
-        pass: highlight.singlePart === true &&
+        pass: highlightBtn1.parts.length === 1 && highlightBtn1.parts[0] === 'btn1' &&
+          highlightBtn1.rows.length === 1 && highlightBtn1.rows[0] === 'btn1' &&
+          highlightBtn1.jogActive === false && highlightBtn1.ringActive === false &&
+          highlight.singlePart === true &&
           highlight.singleRow === true &&
+          highlight.jogActive === false &&
+          highlight.ringActive === false &&
+          highlightJog.parts.length === 1 && highlightJog.parts[0] === 'jog' &&
+          highlightJog.rows.length === 1 && highlightJog.rows[0] === 'jog' &&
           shuttleCollapsed.hasSvg === true &&
           highlight.hasLabels === true &&
           /^[−+\-]/.test(highlight.label || '') &&
           highlight.dimpleCy != null && highlight.dimpleCy >= 82 &&
           highlight.hasChevrons === true &&
           highlight.noStepperBtns === true,
-        detail: { highlight, shuttleCollapsed }
+        detail: { highlightBtn1, highlight, highlightJog, shuttleCollapsed }
       });
 
-      // Change shuttle skip + play button + persist
+      // Change shuttle skip + Play/Pause SWAP to Btn 5 (Btn 3 inherits +2m)
       await popupPage.fill('#omt-sx-skip1', '90');
-      await popupPage.selectOption('#omt-sx-playpause', '2');
+      await popupPage.selectOption('#omt-sx-playpause', '5');
+      await popupPage.waitForTimeout(80);
+      const swapTo5 = await popupPage.evaluate(() => {
+        const wrap = document.getElementById('omt-shuttle-diagram-wrap');
+        const map = {};
+        wrap?.querySelectorAll('.omt-sx-label[data-part]').forEach((el) => {
+          map[el.getAttribute('data-part')] = (el.textContent || '').trim();
+        });
+        const rows = Array.from(document.querySelectorAll('#omt-shuttle-edit-list .omt-shuttle-row')).map((row) => ({
+          part: row.getAttribute('data-part'),
+          label: (row.querySelector('.omt-shuttle-label')?.textContent || '').trim(),
+          hasNum: !!row.querySelector('input[type="number"]'),
+          hasPp: !!row.querySelector('#omt-sx-playpause')
+        }));
+        return { map, rows };
+      });
+      await popupPage.screenshot({
+        path: path.join(ARTIFACTS, 'popup_shuttle_playpause_swap_btn5.png'),
+        fullPage: true
+      });
+      // Also sync General diagram labels
+      await popupPage.click('.omt-tab[data-tab="general"]');
+      await popupPage.evaluate(() => {
+        const sh = document.getElementById('omt-gen-shuttle-details');
+        if (sh) sh.open = true;
+        sh?.scrollIntoView({ block: 'center' });
+      });
+      await popupPage.waitForTimeout(80);
+      const generalAfterSwap = await popupPage.evaluate(() => {
+        const host = document.getElementById('omt-shuttle-summary-diagram');
+        const map = {};
+        host?.querySelectorAll('.omt-sx-label[data-part]').forEach((el) => {
+          map[el.getAttribute('data-part')] = (el.textContent || '').trim();
+        });
+        return map;
+      });
+      await popupPage.screenshot({
+        path: path.join(ARTIFACTS, 'popup_general_playpause_swap_btn5.png'),
+        fullPage: true
+      });
+      await popupPage.click('.omt-tab[data-tab="customize"]');
+      await popupPage.evaluate(() => {
+        const d = document.getElementById('omt-shuttle-details');
+        if (d) d.open = true;
+      });
+      await popupPage.waitForTimeout(40);
       await popupPage.selectOption('#omt-sx-jog', '0.08');
       await popupPage.selectOption('#omt-sx-scale', '2');
-      await popupPage.waitForTimeout(100);
+      await popupPage.waitForTimeout(80);
       const liveLabels = await popupPage.evaluate(() => {
         const wrap = document.getElementById('omt-shuttle-diagram-wrap');
         const map = {};
@@ -1850,8 +1951,19 @@ async function run() {
         };
       });
       results.push({
+        name: 'customize-shuttle-playpause-swap',
+        pass: /Play\/Pause/i.test(swapTo5.map.btn5 || '') &&
+          /\+2m|\+120/.test(swapTo5.map.btn3 || '') &&
+          swapTo5.rows.find((r) => r.part === 'btn5')?.hasPp === true &&
+          swapTo5.rows.find((r) => r.part === 'btn5')?.hasNum === false &&
+          swapTo5.rows.find((r) => r.part === 'btn3')?.hasNum === true &&
+          /Play\/Pause/i.test(generalAfterSwap.btn5 || '') &&
+          /\+2m|\+120/.test(generalAfterSwap.btn3 || ''),
+        detail: { swapTo5, generalAfterSwap }
+      });
+      results.push({
         name: 'customize-shuttle-diagram-live-labels',
-        pass: /Play\/Pause/i.test(liveLabels.map.btn2 || '') &&
+        pass: /Play\/Pause/i.test(liveLabels.map.btn5 || '') &&
           /90s|−90s|−90/.test(liveLabels.map.btn1 || '') &&
           liveLabels.map.ring === 'Shuttle ring' &&
           liveLabels.map.jog === 'Jog',
@@ -1875,7 +1987,9 @@ async function run() {
           shuttleStored.omtClockSize === 'large' &&
           shuttleStored.omtClockShape === 'pill' &&
           shuttleStored.omtShuttlePrefs?.skipBtn1 === 90 &&
-          shuttleStored.omtShuttlePrefs?.playPauseBtn === 2 &&
+          shuttleStored.omtShuttlePrefs?.playPauseBtn === 5 &&
+          shuttleStored.omtShuttlePrefs?.skipBtn3 === 120 &&
+          shuttleStored.omtShuttlePrefs?.centreSkipSign === 1 &&
           shuttleStored.omtShuttlePrefs?.jogStep === 0.08 &&
           shuttleStored.omtShuttlePrefs?.shuttleScale === 2,
         detail: shuttleStored

@@ -26,9 +26,11 @@
     const OMT_SHUTTLE_DEFAULTS = {
         skipBtn1: 120,   // outer left (−)
         skipBtn2: 10,    // inner left (−)
+        skipBtn3: 120,   // centre skip when Play/Pause moved away
         skipBtn4: 10,    // inner right (+)
         skipBtn5: 120,   // outer right (+)
         playPauseBtn: 3, // centre button (1–5)
+        centreSkipSign: 1, // +1 / −1 when btn 3 holds a skip
         jogStep: 0.04,   // seconds per jog tick (~1 frame @25fps)
         shuttleScale: 1  // multiplies ring scrub factors
     };
@@ -201,19 +203,39 @@
         });
     }
 
+    function omtPositionalSkipSign(btn) {
+        if (btn === 1 || btn === 2) return -1;
+        if (btn === 4 || btn === 5) return 1;
+        return 1;
+    }
+
+    function omtSkipSignForButton(btn, prefs) {
+        if (btn === 3) {
+            const s = Number(prefs && prefs.centreSkipSign);
+            return s < 0 ? -1 : 1;
+        }
+        return omtPositionalSkipSign(btn);
+    }
+
     function omtMergeShuttlePrefs(stored) {
         const out = Object.assign({}, OMT_SHUTTLE_DEFAULTS);
         if (!stored || typeof stored !== 'object') return out;
-        ['skipBtn1', 'skipBtn2', 'skipBtn4', 'skipBtn5'].forEach((k) => {
+        ['skipBtn1', 'skipBtn2', 'skipBtn3', 'skipBtn4', 'skipBtn5'].forEach((k) => {
             const n = Number(stored[k]);
             if (Number.isFinite(n) && n > 0 && n <= 600) out[k] = n;
         });
         const pp = Number(stored.playPauseBtn);
         if ([1, 2, 3, 4, 5].includes(pp)) out.playPauseBtn = pp;
+        const cSign = Number(stored.centreSkipSign);
+        if (cSign === -1 || cSign === 1) out.centreSkipSign = cSign;
         const jog = Number(stored.jogStep);
         if (Number.isFinite(jog) && jog > 0 && jog <= 1) out.jogStep = jog;
         const scale = Number(stored.shuttleScale);
         if (Number.isFinite(scale) && scale > 0 && scale <= 4) out.shuttleScale = scale;
+        if (stored.skipBtn3 == null && out.playPauseBtn !== 3) {
+            out.skipBtn3 = OMT_SHUTTLE_DEFAULTS.skipBtn3;
+            out.centreSkipSign = omtPositionalSkipSign(out.playPauseBtn);
+        }
         return out;
     }
 

@@ -40,6 +40,66 @@ body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
   justify-content: center;
   gap: 8px;
   text-align: center;
+  position: relative;
+}
+/* v1.6.4 design: 20:08 chip beside logo (Box clock style). Variant A = default in popup. */
+.omt-header-clock {
+  font-family: var(--omt-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  font-size: 13px;
+  letter-spacing: 0.03em;
+  line-height: 1;
+  color: #f3f3f3;
+  background: rgba(0, 0, 0, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+  padding: 4px 7px;
+  user-select: none;
+  flex-shrink: 0;
+}
+.omt-brand--chip-beside {
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  justify-content: center;
+  column-gap: 10px;
+  row-gap: 8px;
+}
+.omt-brand--chip-beside .omt-header-clock {
+  grid-column: 1;
+  grid-row: 1;
+  align-self: center;
+}
+.omt-brand--chip-beside .omt-sp-logo {
+  grid-column: 2;
+  grid-row: 1;
+}
+.omt-brand--chip-beside .omt-wordmark {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  text-align: center;
+}
+/* Variant B (design exploration): chip top-left over brand row — applied via design mock only */
+.omt-brand--chip-topleft {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.omt-brand--chip-topleft .omt-brand-logo-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  position: relative;
+}
+.omt-brand--chip-topleft .omt-header-clock {
+  position: absolute;
+  left: 0;
+  top: 0;
 }
 .omt-sp-logo {
   /* Official Stats Perform logo (mark + wordmark) — assets/stats-perform-logo-dark.png 240×63 */
@@ -471,6 +531,29 @@ body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
 .omt-sx-part {
   transition: fill 0.12s ease, stroke 0.12s ease, color 0.12s ease;
   cursor: default;
+  fill: none;
+  stroke: currentColor;
+}
+.omt-sx-ring-disk,
+.omt-sx-jog-disk {
+  fill: none;
+  stroke: #d4d4d4;
+}
+.omt-sx-dimple {
+  fill: none !important;
+  /* Always neutral unless the Jog group itself is active/hover */
+  stroke: #d4d4d4 !important;
+}
+/* Neutral unless this part is the single active / hover target */
+.omt-sx-part:not(.is-active):not(.is-hover) {
+  stroke: #d4d4d4 !important;
+  fill: none !important;
+}
+.omt-sx-part:not(.is-active):not(.is-hover) .omt-sx-ring-disk,
+.omt-sx-part:not(.is-active):not(.is-hover) .omt-sx-jog-disk,
+.omt-sx-part:not(.is-active):not(.is-hover) .omt-sx-dimple {
+  stroke: #d4d4d4 !important;
+  fill: none !important;
 }
 .omt-shuttle-diagram-wrap--edit .omt-sx-part {
   cursor: pointer;
@@ -482,6 +565,19 @@ body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
 .omt-sx-part.is-active {
   stroke: #F5831F !important;
   fill: rgba(245, 131, 31, 0.24) !important;
+}
+.omt-sx-part.is-active .omt-sx-ring-disk,
+.omt-sx-part.is-active .omt-sx-jog-disk,
+.omt-sx-part.is-hover .omt-sx-ring-disk,
+.omt-sx-part.is-hover .omt-sx-jog-disk {
+  stroke: inherit !important;
+}
+.omt-sx-part[data-part="jog"].is-active .omt-sx-dimple,
+.omt-sx-part[data-part="jog"].is-hover .omt-sx-dimple {
+  stroke: #F5831F !important;
+}
+.omt-shuttle-row--playpause .omt-shuttle-control {
+  grid-template-columns: minmax(0, 1fr);
 }
 .omt-sx-num {
   fill: #e6e6e6;
@@ -545,11 +641,11 @@ body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
   column-gap: 6px;
   min-width: 0;
 }
-.omt-shuttle-row[data-part="btn3"] .omt-shuttle-control,
 .omt-shuttle-row[data-part="jog"] .omt-shuttle-control,
 .omt-shuttle-row[data-part="ring"] .omt-shuttle-control {
   grid-template-columns: minmax(0, 1fr);
 }
+.omt-shuttle-summary-list { display: none !important; }
 .omt-unit {
   font-size: 10px;
   color: var(--omt-muted);

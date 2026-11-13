@@ -2524,13 +2524,11 @@
             }
             return;
         }
-        let secs = 0;
-        let sign = 1;
-        if (btn === 1) { secs = prefs.skipBtn1; sign = -1; }
-        else if (btn === 2) { secs = prefs.skipBtn2; sign = -1; }
-        else if (btn === 4) { secs = prefs.skipBtn4; sign = 1; }
-        else if (btn === 5) { secs = prefs.skipBtn5; sign = 1; }
-        else return;
+        const secs = Number(prefs['skipBtn' + btn]);
+        if (!Number.isFinite(secs) || secs <= 0) return;
+        const sign = (typeof omtSkipSignForButton === 'function')
+            ? omtSkipSignForButton(btn, prefs)
+            : ((btn === 1 || btn === 2) ? -1 : 1);
         const delta = sign * secs;
         vid.currentTime = Math.max(0, (vid.currentTime || 0) + delta);
         const label = Math.abs(delta) >= 60
@@ -2589,7 +2587,7 @@
 
         const prefs = (typeof omtGetShuttlePrefs === 'function')
             ? omtGetShuttlePrefs()
-            : { skipBtn1: 120, skipBtn2: 10, skipBtn4: 10, skipBtn5: 120, playPauseBtn: 3, jogStep: 0.04, shuttleScale: 1 };
+            : { skipBtn1: 120, skipBtn2: 10, skipBtn3: 120, skipBtn4: 10, skipBtn5: 120, playPauseBtn: 3, centreSkipSign: 1, jogStep: 0.04, shuttleScale: 1 };
 
         // A) 5 Buttons edge detection (play/pause button configurable)
         for (let btn = 1; btn <= 5; btn++) {
@@ -3005,9 +3003,11 @@
     const OMT_SHUTTLE_DEFAULTS = {
         skipBtn1: 120,   // outer left (−)
         skipBtn2: 10,    // inner left (−)
+        skipBtn3: 120,   // centre skip when Play/Pause moved away
         skipBtn4: 10,    // inner right (+)
         skipBtn5: 120,   // outer right (+)
         playPauseBtn: 3, // centre button (1–5)
+        centreSkipSign: 1, // +1 / −1 when btn 3 holds a skip
         jogStep: 0.04,   // seconds per jog tick (~1 frame @25fps)
         shuttleScale: 1  // multiplies ring scrub factors
     };
@@ -3180,19 +3180,39 @@
         });
     }
 
+    function omtPositionalSkipSign(btn) {
+        if (btn === 1 || btn === 2) return -1;
+        if (btn === 4 || btn === 5) return 1;
+        return 1;
+    }
+
+    function omtSkipSignForButton(btn, prefs) {
+        if (btn === 3) {
+            const s = Number(prefs && prefs.centreSkipSign);
+            return s < 0 ? -1 : 1;
+        }
+        return omtPositionalSkipSign(btn);
+    }
+
     function omtMergeShuttlePrefs(stored) {
         const out = Object.assign({}, OMT_SHUTTLE_DEFAULTS);
         if (!stored || typeof stored !== 'object') return out;
-        ['skipBtn1', 'skipBtn2', 'skipBtn4', 'skipBtn5'].forEach((k) => {
+        ['skipBtn1', 'skipBtn2', 'skipBtn3', 'skipBtn4', 'skipBtn5'].forEach((k) => {
             const n = Number(stored[k]);
             if (Number.isFinite(n) && n > 0 && n <= 600) out[k] = n;
         });
         const pp = Number(stored.playPauseBtn);
         if ([1, 2, 3, 4, 5].includes(pp)) out.playPauseBtn = pp;
+        const cSign = Number(stored.centreSkipSign);
+        if (cSign === -1 || cSign === 1) out.centreSkipSign = cSign;
         const jog = Number(stored.jogStep);
         if (Number.isFinite(jog) && jog > 0 && jog <= 1) out.jogStep = jog;
         const scale = Number(stored.shuttleScale);
         if (Number.isFinite(scale) && scale > 0 && scale <= 4) out.shuttleScale = scale;
+        if (stored.skipBtn3 == null && out.playPauseBtn !== 3) {
+            out.skipBtn3 = OMT_SHUTTLE_DEFAULTS.skipBtn3;
+            out.centreSkipSign = omtPositionalSkipSign(out.playPauseBtn);
+        }
         return out;
     }
 
