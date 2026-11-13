@@ -1,8 +1,8 @@
 # Overlay MatchTimer — Tuesday manual test (~15 min)
 
-**Build:** v1.6.5 · **PC:** work machine · **Date:** ________ · **Tester:** ________
+**Build:** v1.6.6 · **PC:** work machine · **Date:** ________ · **Tester:** ________
 
-Install from the zip (`OverlayMatchTimer-v1.6.5.zip` → `Overlay-chrome-extension/`). Load unpacked in `chrome://extensions` (Developer mode). Do not use an old folder.
+Install from the zip (`OverlayMatchTimer-v1.6.6.zip` → `Overlay-chrome-extension/`). Load unpacked in `chrome://extensions` (Developer mode). Do not use an old folder.
 
 Mark each row: `[ ]` → `[x]` when pass. Use **Notes** for anything odd (screenshot path / console error).
 
@@ -12,9 +12,9 @@ Mark each row: `[ ]` → `[x]` when pass. Use **Notes** for anything odd (screen
 
 | # | Action | Expected | ✓ | Notes |
 |---|--------|----------|---|-------|
-| 0.1 | Load unpacked from zip’s `Overlay-chrome-extension` | Extension shows **1.6.5**, no errors on card | [ ] | |
+| 0.1 | Load unpacked from zip’s `Overlay-chrome-extension` | Extension shows **1.6.6**, no errors on card | [ ] | |
 | 0.2 | Check toolbar / extensions icon | Slash + **20:08** badge top-left (v2) on dark tile | [ ] | |
-| 0.3 | Open popup | Header: SP logo with **20:08** badge over the mark + OverlayMatchTimer; footer `v1.6.5` | [ ] | |
+| 0.3 | Open popup | Header: SP logo with **20:08** badge over the mark (same offset as icon-128) + OverlayMatchTimer; footer `v1.6.6` | [ ] | |
 
 ---
 

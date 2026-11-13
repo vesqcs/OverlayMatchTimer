@@ -51,21 +51,25 @@ body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
 }
 .omt-header-clock {
   position: absolute;
-  /* Sit over the slash mark (left of the 240×63 logo), proportioned like v2 @48 */
-  left: 0;
+  /*
+   * Match icon-128 v2: badge starts slightly left of the slash mark
+   * (icon badge≈x8, slash≈x21 → −13px @128 ≈ −15% of slash width).
+   * Logo slash begins at x=0 of the 168px logo (~37.8px wide) → left ≈ −6px.
+   */
+  left: -6px;
   top: -2px;
   z-index: 1;
   font-family: var(--omt-mono);
   font-variant-numeric: tabular-nums;
   font-weight: 650;
-  font-size: 9px;
+  font-size: 8px;
   letter-spacing: 0.02em;
   line-height: 1;
   color: #f3f3f3;
   background: rgba(0, 0, 0, 0.72);
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 2px;
-  padding: 2px 4px;
+  padding: 2px 3px;
   user-select: none;
   pointer-events: none;
   white-space: nowrap;

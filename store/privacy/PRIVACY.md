@@ -29,7 +29,7 @@ This data stays on the machine/profile that installed the extension.
 
 ## Cloud sync (future)
 
-If a optional Supabase (or similar) sync feature is added later, it will be **off by default**, clearly labelled, and covered by an updated privacy policy before enablement. It is **not** present in v1.6.5.
+If a optional Supabase (or similar) sync feature is added later, it will be **off by default**, clearly labelled, and covered by an updated privacy policy before enablement. It is **not** present in v1.6.6.
 
 ## Third parties
 

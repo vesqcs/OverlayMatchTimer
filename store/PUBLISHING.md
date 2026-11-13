@@ -4,7 +4,7 @@ This package prepares the listing; **you** create the developer account, pay the
 
 ## Before you start
 
-1. Build folder to upload: use `OverlayMatchTimer-v1.6.5.zip` → inside it, the `Overlay-chrome-extension/` directory is what Chrome needs (or zip **only** that folder’s contents as the store package).
+1. Build folder to upload: use `OverlayMatchTimer-v1.6.6.zip` → inside it, the `Overlay-chrome-extension/` directory is what Chrome needs (or zip **only** that folder’s contents as the store package).
 2. Host the privacy page somewhere public the Store can link to (e.g. GitHub Pages from `store/privacy/index.html`), or paste `PRIVACY.md` into an internal doc and publish a stable HTTPS URL.
 3. Keep listing **Unlisted** (only people with the link can install).
 
