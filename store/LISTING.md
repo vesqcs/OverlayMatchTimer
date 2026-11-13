@@ -25,11 +25,11 @@ Overlay MatchTimer is a Stats Perform operations tool for match video review. It
 Internal Stats Perform / RunningBall workflows that already use InplayIP and Examino. This listing is intended to be **Unlisted** (link-only), not a public consumer product.
 
 **Privacy**
-The extension does not collect, sell, or transmit personal data to a developer backend. Preferences stay in Chrome’s local extension storage on your machine. See the privacy policy included with this package.
+The extension does not collect, sell, or transmit personal data to a developer backend. Preferences stay in Chrome’s local extension storage on your machine. See the privacy policy included with this package. (No cloud kickoff sync in the current build.)
 
 **Permissions (summary)**
 - `storage` — save clock, shortcut, and Shuttle preferences on this browser
-- Host access only to InplayIP, Examino, and local test URLs so the overlay can run on those pages
+- Host access to InplayIP, Examino, and local test URLs so the overlay can run on those pages
 
 ## Single purpose statement
 ```

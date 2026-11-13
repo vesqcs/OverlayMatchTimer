@@ -18,6 +18,8 @@ Use these texts in the Developer Dashboard when asked to justify each permission
 
 **Justification:** Used only for local development / QA fixtures and the extension’s local player workflows on loopback. Not used to access arbitrary LAN devices. See review notes for narrowing to path-specific patterns already used by content scripts.
 
-## Optional APIs not requested
+## Optional APIs / hosts not requested (v1.7.1)
 
-The extension does **not** request `tabs`, `webRequest`, `cookies`, `history`, `identity`, or remote code. ShuttleXpress uses the **WebHID** API from the page context after the user enables it; WebHID is not a manifest permission but requires a user gesture / device chooser.
+The extension does **not** request `tabs`, `webRequest`, `cookies`, `history`, `identity`, remote code, or Supabase / cloud host permissions in this build. ShuttleXpress uses the **WebHID** API from the page context after the user enables it; WebHID is not a manifest permission but requires a user gesture / device chooser.
+
+> If Kickoff sync is enabled in a future release, add a fixed host permission for that single project origin and a matching justification — see `supabase/SETUP.md` and `ARCHITECTURE.md`. Do not re-add a `*.supabase.co` wildcard for the planned always-on design without owner review.

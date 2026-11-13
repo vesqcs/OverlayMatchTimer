@@ -1,6 +1,8 @@
 (function () {
   'use strict';
 
+  const SYNC_FEATURE = (typeof OMT_SYNC_FEATURE_ENABLED !== 'undefined') && !!OMT_SYNC_FEATURE_ENABLED;
+
   const KEYS = {
     clockPos: 'omtClockPosition',
     clockSize: 'omtClockSize',
@@ -9,7 +11,11 @@
     hotkeys: 'omtHotkeys',
     shuttlePrefs: 'omtShuttlePrefs',
     autoPauseOnBlur: 'omtAutoPauseOnBlur',
-    custSections: 'omtCustSectionsOpen'
+    custSections: 'omtCustSectionsOpen',
+    syncEnabled: 'omtKickoffSyncEnabled',
+    syncUrl: 'omtKickoffSyncUrl',
+    syncAnon: 'omtKickoffSyncAnonKey',
+    syncRoom: 'omtKickoffSyncRoom'
   };
 
   const CUST_SECTION_DEFAULTS = {
@@ -18,6 +24,7 @@
     // General (v1.6.3) — actions open; reference lists collapsed
     genActions: true, genShortcuts: false, genShuttle: false
   };
+  if (SYNC_FEATURE) CUST_SECTION_DEFAULTS.sync = false;
 
   let selectedShuttlePart = null;
 
@@ -286,6 +293,8 @@
       if (svg) {
         svg.classList.add('omt-shuttle-svg--readonly');
         svg.removeAttribute('id');
+        // General: action labels only — no Btn 1..5 numbers around the ring.
+        svg.querySelectorAll('.omt-sx-num').forEach((el) => el.remove());
       }
     }
     if (edit && !edit.querySelector('.omt-shuttle-svg')) {
@@ -294,6 +303,7 @@
       if (svg) {
         svg.id = 'omt-shuttle-svg';
         svg.classList.add('omt-shuttle-svg--edit');
+        // Customize keeps Btn 1..5 numbers (editor rows refer to them).
       }
     }
   }
@@ -546,17 +556,159 @@
     el.addEventListener('toggle', persistCustSections);
   });
 
-  chrome.storage.local.get(
-    {
-      [KEYS.clockPos]: 'top-left',
-      [KEYS.clockSize]: 'medium',
-      [KEYS.clockShape]: 'rounded',
-      [KEYS.hotkeys]: null,
-      [KEYS.shuttlePrefs]: null,
-      [KEYS.autoPauseOnBlur]: false,
-      [KEYS.custSections]: null
-    },
-    (result) => {
+  // Kickoff sync Customize UI — only when internal feature flag is on (v1.7.1: off).
+  let syncEnable = null;
+  let syncUrl = null;
+  let syncAnon = null;
+  let syncRoom = null;
+  let syncStatus = null;
+
+  function wireSyncUi() {
+    if (!SYNC_FEATURE) return;
+    syncEnable = document.getElementById('omt-kickoff-sync-enable');
+    syncUrl = document.getElementById('omt-sync-url');
+    syncAnon = document.getElementById('omt-sync-anon');
+    syncRoom = document.getElementById('omt-sync-room');
+    syncStatus = document.getElementById('omt-sync-status');
+
+    function syncOriginPattern(urlStr) {
+      try {
+        const u = new URL(String(urlStr || '').trim());
+        if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
+        return u.origin + '/*';
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function setSyncStatus(text, isError) {
+      if (!syncStatus) return;
+      syncStatus.textContent = text || '';
+      syncStatus.style.color = isError ? '#f87171' : 'var(--omt-muted)';
+    }
+
+    function persistSyncPrefs(extra) {
+      const payload = Object.assign({
+        [KEYS.syncEnabled]: !!(syncEnable && syncEnable.checked),
+        [KEYS.syncUrl]: syncUrl ? String(syncUrl.value || '').trim() : '',
+        [KEYS.syncAnon]: syncAnon ? String(syncAnon.value || '').trim() : '',
+        [KEYS.syncRoom]: syncRoom ? String(syncRoom.value || '').trim() : ''
+      }, extra || {});
+      chrome.storage.local.set(payload);
+    }
+
+    function requestSyncHostPermission(urlStr) {
+      return new Promise((resolve) => {
+        const origin = syncOriginPattern(urlStr);
+        if (!origin) {
+          resolve({ ok: false, error: 'Enter a valid Project URL first.' });
+          return;
+        }
+        try {
+          chrome.permissions.request({ origins: [origin] }, (granted) => {
+            if (chrome.runtime.lastError) {
+              resolve({ ok: false, error: chrome.runtime.lastError.message || 'Permission request failed.' });
+              return;
+            }
+            resolve({ ok: !!granted, origin: origin });
+          });
+        } catch (err) {
+          resolve({ ok: false, error: (err && err.message) || 'Permission request failed.' });
+        }
+      });
+    }
+
+    if (syncEnable) {
+      syncEnable.addEventListener('change', async () => {
+        if (syncEnable.checked) {
+          const url = syncUrl ? String(syncUrl.value || '').trim() : '';
+          const key = syncAnon ? String(syncAnon.value || '').trim() : '';
+          if (!url || !key) {
+            syncEnable.checked = false;
+            setSyncStatus('Add Project URL and anon key before enabling.', true);
+            const details = document.getElementById('omt-sync-details');
+            if (details) details.open = true;
+            return;
+          }
+          const perm = await requestSyncHostPermission(url);
+          if (!perm.ok) {
+            syncEnable.checked = false;
+            setSyncStatus(perm.error || 'Host permission was not granted.', true);
+            return;
+          }
+          persistSyncPrefs({ [KEYS.syncEnabled]: true });
+          setSyncStatus('Sync on — kickoffs share for this project.', false);
+        } else {
+          persistSyncPrefs({ [KEYS.syncEnabled]: false });
+          setSyncStatus('Sync off — no network requests.', false);
+          try {
+            chrome.runtime.sendMessage({ type: 'OMT_SYNC_STOP_POLL' }, () => {
+              void chrome.runtime.lastError;
+            });
+          } catch (_) {}
+        }
+      });
+    }
+
+    function onSyncFieldBlur() {
+      persistSyncPrefs();
+      if (syncEnable && syncEnable.checked) {
+        setSyncStatus('Saved. Host permission was already requested when enabling.', false);
+      }
+    }
+    if (syncUrl) syncUrl.addEventListener('change', onSyncFieldBlur);
+    if (syncAnon) syncAnon.addEventListener('change', onSyncFieldBlur);
+    if (syncRoom) syncRoom.addEventListener('change', onSyncFieldBlur);
+  }
+
+  function ensureSyncSectionThenWire(done) {
+    if (!SYNC_FEATURE) {
+      done();
+      return;
+    }
+    if (document.getElementById('omt-sync-details')) {
+      wireSyncUi();
+      done();
+      return;
+    }
+    // Insert prototype markup from popup-sync-section.html before the foot actions.
+    fetch(chrome.runtime.getURL('popup-sync-section.html'))
+      .then((r) => r.text())
+      .then((html) => {
+        const foot = document.querySelector('.omt-cust-actions--foot');
+        const pane = document.querySelector('.omt-pane[data-pane="customize"]');
+        if (pane && foot) {
+          const wrap = document.createElement('div');
+          wrap.innerHTML = html.replace(/<!--[\s\S]*?-->/g, '').trim();
+          while (wrap.firstChild) pane.insertBefore(wrap.firstChild, foot);
+        }
+        wireSyncUi();
+        done();
+      })
+      .catch(() => {
+        wireSyncUi();
+        done();
+      });
+  }
+
+  const storageDefaults = {
+    [KEYS.clockPos]: 'top-left',
+    [KEYS.clockSize]: 'medium',
+    [KEYS.clockShape]: 'rounded',
+    [KEYS.hotkeys]: null,
+    [KEYS.shuttlePrefs]: null,
+    [KEYS.autoPauseOnBlur]: false,
+    [KEYS.custSections]: null
+  };
+  if (SYNC_FEATURE) {
+    storageDefaults[KEYS.syncEnabled] = false;
+    storageDefaults[KEYS.syncUrl] = '';
+    storageDefaults[KEYS.syncAnon] = '';
+    storageDefaults[KEYS.syncRoom] = '';
+  }
+
+  ensureSyncSectionThenWire(() => {
+    chrome.storage.local.get(storageDefaults, (result) => {
       clockPos.value = result[KEYS.clockPos] || 'top-left';
       clockSize.value = result[KEYS.clockSize] || 'medium';
       clockShape.value = result[KEYS.clockShape] || 'rounded';
@@ -564,9 +716,15 @@
       hotkeys = mergeHotkeys(result[KEYS.hotkeys]);
       shuttlePrefs = mergeShuttle(result[KEYS.shuttlePrefs]);
       applyCustSections(result[KEYS.custSections]);
+      if (SYNC_FEATURE) {
+        if (syncUrl) syncUrl.value = result[KEYS.syncUrl] || '';
+        if (syncAnon) syncAnon.value = result[KEYS.syncAnon] || '';
+        if (syncRoom) syncRoom.value = result[KEYS.syncRoom] || '';
+        if (syncEnable) syncEnable.checked = !!result[KEYS.syncEnabled];
+      }
       refreshAll();
-    }
-  );
+    });
+  });
 
   if (autoPause) {
     autoPause.addEventListener('change', () => {
@@ -794,14 +952,31 @@
     clockShape.value = 'rounded';
     hotkeys = mergeHotkeys(null);
     shuttlePrefs = mergeShuttle(null);
-    chrome.storage.local.set({
+    const resetPayload = {
       [KEYS.clockPos]: 'top-left',
       [KEYS.clockSize]: 'medium',
       [KEYS.clockShape]: 'rounded',
       [KEYS.clockCustom]: null,
       [KEYS.hotkeys]: null,
       [KEYS.shuttlePrefs]: null
-    });
+    };
+    if (SYNC_FEATURE) {
+      if (syncEnable) syncEnable.checked = false;
+      if (syncUrl) syncUrl.value = '';
+      if (syncAnon) syncAnon.value = '';
+      if (syncRoom) syncRoom.value = '';
+      if (syncStatus) syncStatus.textContent = '';
+      resetPayload[KEYS.syncEnabled] = false;
+      resetPayload[KEYS.syncUrl] = '';
+      resetPayload[KEYS.syncAnon] = '';
+      resetPayload[KEYS.syncRoom] = '';
+      try {
+        chrome.runtime.sendMessage({ type: 'OMT_SYNC_STOP_POLL' }, () => {
+          void chrome.runtime.lastError;
+        });
+      } catch (_) {}
+    }
+    chrome.storage.local.set(resetPayload);
     refreshAll();
     setShuttleHighlight(null);
   });

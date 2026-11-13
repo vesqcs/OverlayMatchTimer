@@ -123,6 +123,11 @@
         liveBtn.blur();
     }
 
+    // Redesign scrubber chrome only: skip redundant omt-at-live / --omt-progress
+    // writes when presentation has not changed. Original is-live toggle is untouched.
+    let _omtLiveUiAtLive = null;
+    let _omtLiveUiProgressPct = null;
+
     function atualizarEstadoLive() {
         if (!vid || !liveBtn) return; // null-guard: called from timeupdate, may fire after teardown
         let liveEdge = 0;
@@ -134,16 +139,23 @@
         const dist = liveEdge - vid.currentTime;
         const atLive = liveEdge > 0 && dist <= 8;
         liveBtn.classList.toggle('is-live', atLive);
-        // Presentation only: drive scrubber colour (red at live / grey behind)
-        const timelineBar = omtRoot ? omtRoot.querySelector('#omt-timeline-bar') : null;
-        if (timelineBar) timelineBar.classList.toggle('omt-at-live', atLive);
-        if (controlsPanel) controlsPanel.classList.toggle('omt-at-live', atLive);
+        // Presentation only (redesign): drive scrubber colour (red at live / grey behind)
+        if (_omtLiveUiAtLive !== atLive) {
+            _omtLiveUiAtLive = atLive;
+            const timelineBar = omtRoot ? omtRoot.querySelector('#omt-timeline-bar') : null;
+            if (timelineBar) timelineBar.classList.toggle('omt-at-live', atLive);
+            if (controlsPanel) controlsPanel.classList.toggle('omt-at-live', atLive);
+        }
         if (timelineSlider) {
             const min = parseFloat(timelineSlider.min) || 0;
             const max = parseFloat(timelineSlider.max) || 0;
             const val = parseFloat(timelineSlider.value) || 0;
             const pct = max > min ? ((val - min) / (max - min)) * 100 : 0;
-            timelineSlider.style.setProperty('--omt-progress', Math.max(0, Math.min(100, pct)) + '%');
+            const rounded = Math.round(pct * 10) / 10;
+            if (_omtLiveUiProgressPct !== rounded) {
+                _omtLiveUiProgressPct = rounded;
+                timelineSlider.style.setProperty('--omt-progress', Math.max(0, Math.min(100, rounded)) + '%');
+            }
         }
     }
 

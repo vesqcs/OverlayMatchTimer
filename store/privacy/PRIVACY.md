@@ -27,9 +27,11 @@ This data stays on the machine/profile that installed the extension.
 - No account login to a developer backend
 - No transmission of match video, keystrokes, or preferences to a remote Overlay MatchTimer server
 
-## Cloud sync (future)
+## Cloud / Kickoff sync
 
-If a optional Supabase (or similar) sync feature is added later, it will be **off by default**, clearly labelled, and covered by an updated privacy policy before enablement. It is **not** present in v1.6.6.
+**Not active in the current build (v1.7.1).** No Supabase (or similar) host permission is declared, and the extension does not send kickoff data to a remote project.
+
+If a future release enables shared kickoff sync, the privacy policy will be updated **before** enablement to describe what is sent, where it is stored, and retention. Until then, treat the product as local-only.
 
 ## Third parties
 

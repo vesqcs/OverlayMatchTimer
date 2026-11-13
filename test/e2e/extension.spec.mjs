@@ -43,6 +43,64 @@ function startServer() {
   });
 }
 
+/** Minimal PostgREST-shaped mock for kickoff_sync (e2e only — not a real Supabase project). */
+function startMockSupabase() {
+  const store = new Map();
+  const log = [];
+  return new Promise((resolve) => {
+    const server = http.createServer((req, res) => {
+      const raw = req.url || '/';
+      const u = new URL(raw, 'http://127.0.0.1');
+      log.push({ method: req.method, path: u.pathname + u.search, t: Date.now() });
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Headers', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+      if (u.pathname !== '/rest/v1/kickoff_sync') {
+        res.writeHead(404);
+        res.end('not found');
+        return;
+      }
+      const eqMatch = u.search.match(/match_key=eq\.([^&]+)/);
+      const matchKey = eqMatch ? decodeURIComponent(eqMatch[1]) : null;
+      if (req.method === 'GET') {
+        const row = matchKey && store.has(matchKey) ? [store.get(matchKey)] : [];
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(row));
+        return;
+      }
+      if (req.method === 'POST') {
+        let body = '';
+        req.on('data', (c) => { body += c; });
+        req.on('end', () => {
+          let row = {};
+          try { row = JSON.parse(body || '{}'); } catch (_) { row = {}; }
+          if (row.match_key) store.set(row.match_key, row);
+          res.writeHead(201, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify([row]));
+        });
+        return;
+      }
+      res.writeHead(405);
+      res.end('method');
+    });
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address();
+      resolve({
+        server,
+        base: `http://127.0.0.1:${port}`,
+        store,
+        log,
+        reset() { store.clear(); log.length = 0; }
+      });
+    });
+  });
+}
+
 async function waitForOmt(page, timeout = 20000) {
   await page.waitForFunction(() => !!document.getElementById('omt-root'), null, { timeout });
 }
@@ -105,6 +163,7 @@ async function captureUiFingerprint(page) {
 async function run() {
   fs.mkdirSync(ARTIFACTS, { recursive: true });
   const { server, base } = await startServer();
+  const mockSb = await startMockSupabase();
   const userDataDir = fs.mkdtempSync(path.join('/tmp', 'omt-ext-'));
 
   const context = await chromium.launchPersistentContext(userDataDir, {
@@ -120,6 +179,11 @@ async function run() {
   });
 
   const results = [];
+  const syncNetworkLog = [];
+  context.on('request', (req) => {
+    const u = req.url();
+    if (/kickoff_sync|supabase\.co/i.test(u)) syncNetworkLog.push({ url: u, method: req.method() });
+  });
   const page = await context.newPage();
 
   try {
@@ -1537,7 +1601,7 @@ async function run() {
           noCredit: !document.querySelector('.omt-brand-credit'),
           noPersonalizar: !document.body.textContent.includes('Personalizar') &&
             !document.body.textContent.includes('Em breve'),
-          footOk: foot === 'v1.6.6',
+          footOk: foot === 'v1.7.2',
           hasAutoPause: !!document.getElementById('omt-auto-pause-blur'),
           autoPauseDefaultOff: document.getElementById('omt-auto-pause-blur')
             ? document.getElementById('omt-auto-pause-blur').checked === false
@@ -1572,11 +1636,16 @@ async function run() {
             const labels = Array.from(host?.querySelectorAll('.omt-sx-label[data-part]') || [])
               .map((el) => [el.getAttribute('data-part'), (el.textContent || '').trim()]);
             const map = Object.fromEntries(labels);
+            const nums = Array.from(host?.querySelectorAll('.omt-sx-num') || [])
+              .map((el) => (el.textContent || '').trim());
             return {
               hasSvg: !!svg,
               outline: !!host?.querySelector('.omt-sx-body') && !host?.querySelector('pattern'),
               map,
+              nums,
+              noBtnNumbers: nums.length === 0,
               ok: !!svg &&
+                nums.length === 0 &&
                 /Play\/Pause/i.test(map.btn3 || '') &&
                 /^[−+\-]/.test(map.btn1 || '') &&
                 /^[−+\-]/.test(map.btn2 || '') &&
@@ -1653,12 +1722,16 @@ async function run() {
         const hotkeys = document.getElementById('omt-hotkeys-details');
         const shuttle = document.getElementById('omt-shuttle-details');
         const posOpts = Array.from(document.querySelectorAll('#clock-pos option')).map((o) => o.value);
+        const bodyText = document.body.innerText || '';
         return {
           clockOpen: !!clock?.open,
           hotkeysOpen: !!hotkeys?.open,
           shuttleOpen: !!shuttle?.open,
+          noSyncSection: !document.getElementById('omt-sync-details'),
+          noSyncToggle: !document.getElementById('omt-kickoff-sync-enable'),
+          noSyncLabel: !/Kickoff sync/i.test(bodyText),
           noResetPos: !document.getElementById('omt-clock-reset-pos'),
-          noDragHint: !/drag the clock/i.test(document.body.innerText || ''),
+          noDragHint: !/drag the clock/i.test(bodyText),
           posOpts
         };
       });
@@ -1667,12 +1740,80 @@ async function run() {
         pass: sectionsDefault.clockOpen === true &&
           sectionsDefault.hotkeysOpen === false &&
           sectionsDefault.shuttleOpen === false &&
+          sectionsDefault.noSyncSection === true &&
+          sectionsDefault.noSyncToggle === true &&
+          sectionsDefault.noSyncLabel === true &&
           sectionsDefault.noResetPos === true &&
           sectionsDefault.noDragHint === true &&
           posOptsInclude(sectionsDefault.posOpts),
         detail: sectionsDefault
       });
       await popupPage.screenshot({ path: path.join(ARTIFACTS, 'popup_customize.png'), fullPage: true });
+      await popupPage.screenshot({
+        path: path.join(ARTIFACTS, 'popup_customize_no_sync.png'),
+        fullPage: true
+      });
+      results.push({
+        name: 'customize-no-kickoff-sync-ui',
+        pass: sectionsDefault.noSyncSection === true &&
+          sectionsDefault.noSyncToggle === true &&
+          sectionsDefault.noSyncLabel === true,
+        detail: {
+          noSyncSection: sectionsDefault.noSyncSection,
+          noSyncToggle: sectionsDefault.noSyncToggle,
+          noSyncLabel: sectionsDefault.noSyncLabel
+        }
+      });
+
+      // Feature flag off → zero sync network even if page tries e2e harness messages
+      mockSb.reset();
+      syncNetworkLog.length = 0;
+      await page.evaluate(() => {
+        window.postMessage({ source: 'omt-e2e', type: 'OMT_E2E_SYNC_START' }, '*');
+        window.postMessage({ source: 'omt-e2e', type: 'OMT_E2E_SYNC_PUBLISH' }, '*');
+        window.postMessage({
+          source: 'omt-e2e',
+          type: 'OMT_E2E_SYNC_PUSH_ROW',
+          row: {
+            match_key: 'room:e2e-room',
+            kickoff1: 12.5,
+            updated_at: new Date().toISOString(),
+            client_id: 'e2e-flag-off'
+          }
+        }, '*');
+        window.postMessage({
+          source: 'omt-page',
+          type: 'OMT_SYNC_PUSH',
+          payload: { row: { match_key: 'room:e2e-room', kickoff1: 99 } }
+        }, '*');
+        document.getElementById('omt-btn-set-kickoff')?.click();
+      });
+      await page.waitForTimeout(1000);
+      const manifestHasOptionalSb = await popupPage.evaluate(async () => {
+        try {
+          const m = await fetch(chrome.runtime.getURL('manifest.json')).then((r) => r.json());
+          const opt = m.optional_host_permissions || [];
+          const hosts = m.host_permissions || [];
+          return {
+            optionalHasSupabase: opt.some((p) => /supabase/i.test(p)),
+            hostHasSupabase: hosts.some((p) => /supabase/i.test(p))
+          };
+        } catch (e) {
+          return { optionalHasSupabase: true, hostHasSupabase: true, err: String(e) };
+        }
+      });
+      results.push({
+        name: 'kickoff-sync-feature-off-zero-requests',
+        pass: syncNetworkLog.length === 0 &&
+          mockSb.log.length === 0 &&
+          manifestHasOptionalSb.optionalHasSupabase === false &&
+          manifestHasOptionalSb.hostHasSupabase === false,
+        detail: {
+          syncNetworkLog: syncNetworkLog.slice(),
+          mockLog: mockSb.log.slice(),
+          manifestHasOptionalSb
+        }
+      });
 
       // Shuttle section collapsed screenshot
       const shuttleCollapsed = await popupPage.evaluate(() => {
@@ -1809,6 +1950,10 @@ async function run() {
         const dimple = wrap?.querySelector('.omt-sx-dimple');
         const jogActive = !!wrap?.querySelector('.omt-sx-part[data-part="jog"].is-active');
         const ringActive = !!wrap?.querySelector('.omt-sx-part[data-part="ring"].is-active');
+        const nums = Array.from(wrap?.querySelectorAll('.omt-sx-num') || [])
+          .map((el) => (el.textContent || '').trim())
+          .sort()
+          .join(',');
         return {
           activeParts: actives,
           activeRows,
@@ -1818,6 +1963,8 @@ async function run() {
           ringActive,
           label: (label?.textContent || '').trim(),
           hasLabels: (wrap?.querySelectorAll('.omt-sx-label[data-part]') || []).length >= 7,
+          btnNumbers: nums,
+          hasBtnNumbers: nums === '1,2,3,4,5',
           dimpleCy: dimple ? Number(dimple.getAttribute('cy')) : null,
           hasChevrons: document.querySelectorAll('.omt-num-chevrons .omt-chev').length >= 8,
           noStepperBtns: document.querySelectorAll('.omt-stepper-btn').length === 0
@@ -1869,6 +2016,7 @@ async function run() {
           highlightJog.rows.length === 1 && highlightJog.rows[0] === 'jog' &&
           shuttleCollapsed.hasSvg === true &&
           highlight.hasLabels === true &&
+          highlight.hasBtnNumbers === true &&
           /^[−+\-]/.test(highlight.label || '') &&
           highlight.dimpleCy != null && highlight.dimpleCy >= 82 &&
           highlight.hasChevrons === true &&
@@ -2888,6 +3036,7 @@ async function run() {
   } finally {
     await context.close();
     server.close();
+    try { mockSb.server.close(); } catch (_) {}
   }
 
   const failed = results.filter((r) => !r.pass);

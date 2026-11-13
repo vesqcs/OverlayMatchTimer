@@ -98,6 +98,30 @@ Each adapter is a plain object:
 - **LIVE button behaviour / time logic** stays as in v1.2.2 (`irParaLive` / `atualizarEstadoLive` untouched in intent).
 
 
-## Toolbar popup (v1.4.0)
+## Toolbar popup (v1.4.0+)
 
-Branding, Shuttle toggle, shortcuts reference, and the prepared **Personalizar** section live in `popup.html` (Chrome `action.default_popup`). Values sync through `chrome.storage.local` via `bridge.js` (now also injected on InplayIP). In-video UI stays limited to transport, timeline, LIVE, match clock + offset nudge, kick-off, and Examino Source.
+Branding, shortcuts reference, Customize (clock / shortcuts / ShuttleXpress), and General actions live in `popup.html`. Values sync through `chrome.storage.local` via `bridge.js`. In-video UI stays limited to transport, timeline, LIVE, match clock + offset nudge, kick-off, and Examino Source.
+
+## Kickoff sync (planned — disabled in v1.7.1)
+
+**Status:** Code and SQL remain in the repo (`src/sync/`, `background.js` gated paths, `supabase/`) but are **inert**. Gate: `Overlay-chrome-extension/sync-feature-flag.js` → `OMT_SYNC_FEATURE_ENABLED = false`. No Customize UI, no message handlers, no network, no Supabase host permission in the manifest while the flag is off.
+
+Prototype (v1.7.0) used per-user URL/anon key/room fields + optional host permission. **That UX is abandoned.** Do not ship it.
+
+### Future product design (owner decision — not implemented)
+
+Always on for analysts; **zero configuration** in the popup.
+
+| Topic | Planned behaviour |
+|-------|-------------------|
+| Config | One shared Supabase project **bundled** in extension config (project URL + **anon** key only — never service-role). Not user-entered. |
+| Match key | Derived automatically from the match page (Examino play id / Inplay path). No Room id field. |
+| UX | First analyst who sets the timer on a match publishes the kickoff row; colleagues on the same match see it appear (poll or equivalent). No Customize toggle. |
+| Host permission | **Fixed** `host_permissions` (or equivalent) for that **one** project origin only — not `https://*.supabase.co/*` wildcard. |
+| Conflict rule | **Latest write wins** (row `updated_at` / upsert). First writer seeds the match; later Set Kick-off / nudge overwrites. *(Documented alternative rejected for now: first-write-wins lock.)* |
+| RLS | Tight policies: `SELECT`/`INSERT`/`UPDATE` only for the requested `match_key`; **no `DELETE`** for anon; prefer Postgres RPC or constrained upsert so clients cannot list all matches. Rate-limit writes (DB function / edge constraint). |
+| Privacy (when enabled) | Update `store/privacy/` before ship: disclose that kickoff / clock-reference values for the current match are sent to the Stats Perform–operated (or designated) Supabase project; no video, no keystrokes, no personal profiles; data retained only as needed for live analysis rooms. **Owner / Stats Perform must confirm** wording and retention. |
+
+Re-enable checklist for an **internal** prototype build of the old per-user UI (not the future design): see comments in `sync-feature-flag.js`. Future always-on work should replace that UI, not turn the flag on as-is.
+
+Details and SQL notes: `supabase/SETUP.md`.

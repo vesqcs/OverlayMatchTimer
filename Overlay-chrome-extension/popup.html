@@ -120,12 +120,17 @@
       </div>
     </details>
 
+    <!-- Kickoff sync UI removed while OMT_SYNC_FEATURE_ENABLED is false (v1.7.1).
+         Prototype markup kept in popup-sync-section.html for internal re-enable only.
+         Planned always-on design: ARCHITECTURE.md / supabase/SETUP.md (not shipped). -->
+
     <div class="omt-cust-actions omt-cust-actions--foot">
       <button type="button" id="omt-reset-all-custom" class="omt-btn-secondary">Reset all customizations</button>
     </div>
   </section>
 
-  <footer class="omt-popup-foot">v1.6.6</footer>
+  <footer class="omt-popup-foot">v1.7.2</footer>
+  <script src="sync-feature-flag.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>
