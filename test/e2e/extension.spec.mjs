@@ -1528,7 +1528,7 @@ async function run() {
           noCredit: !document.querySelector('.omt-brand-credit'),
           noPersonalizar: !document.body.textContent.includes('Personalizar') &&
             !document.body.textContent.includes('Em breve'),
-          footOk: foot === 'v1.6.1',
+          footOk: foot === 'v1.6.2',
           hasAutoPause: !!document.getElementById('omt-auto-pause-blur'),
           autoPauseDefaultOff: document.getElementById('omt-auto-pause-blur')
             ? document.getElementById('omt-auto-pause-blur').checked === false
@@ -1565,8 +1565,8 @@ async function run() {
                 /^[−+\-]/.test(map.btn2 || '') &&
                 /^[−+\-]/.test(map.btn4 || '') &&
                 /^[−+\-]/.test(map.btn5 || '') &&
-                map.ring === 'Speed' &&
-                map.jog === 'Frame'
+                map.ring === 'Shuttle ring' &&
+                map.jog === 'Jog'
             };
           })(),
           toggleKnob: knob
@@ -1600,7 +1600,7 @@ async function run() {
         detail: popupOk.generalDiagram
       });
 
-      // ---------- Customize tab (v1.6.1) ----------
+      // ---------- Customize tab (v1.6.2) ----------
       await popupPage.click('[data-tab="customize"]');
       await popupPage.waitForTimeout(150);
       await popupPage.screenshot({ path: path.join(ARTIFACTS, 'popup_customize.png'), fullPage: true });
@@ -1753,8 +1753,8 @@ async function run() {
         name: 'customize-shuttle-diagram-live-labels',
         pass: /Play\/Pause/i.test(liveLabels.map.btn2 || '') &&
           /90s|−90s|−90/.test(liveLabels.map.btn1 || '') &&
-          liveLabels.map.ring === 'Speed' &&
-          liveLabels.map.jog === 'Frame',
+          liveLabels.map.ring === 'Shuttle ring' &&
+          liveLabels.map.jog === 'Jog',
         detail: liveLabels.map
       });
       results.push({

@@ -41,40 +41,35 @@
   };
 
   const SHUTTLE_DIAGRAM_SVG = `<svg class="omt-shuttle-svg" viewBox="0 0 200 200" role="img" aria-label="Contour ShuttleXpress">
-  <!-- Hand-built outline from Vasco foto.png — 2 tall sides + 3 top-arc -->
+  <!-- v1.6.2 outline: Vasco foto.png — centred btn3, mirrored 2/4 & 1/5, dimple at 12 o'clock -->
   <g class="omt-sx-root">
-    <circle class="omt-sx-body" cx="100" cy="100" r="88"/>
-    <g class="omt-sx-part" data-part="ring" tabindex="-1" role="button" aria-label="Ring">
-      <circle cx="100" cy="100" r="53"/>
-      <circle cx="100" cy="100" r="33"/>
-      <g class="omt-sx-ticks"><line x1="100.0" y1="65.0" x2="100.0" y2="49.0"/><line x1="104.9" y1="65.3" x2="107.1" y2="49.5"/><line x1="109.6" y1="66.4" x2="114.1" y2="51.0"/><line x1="114.2" y1="68.0" x2="120.7" y2="53.4"/><line x1="118.5" y1="70.3" x2="127.0" y2="56.7"/><line x1="122.5" y1="73.2" x2="132.8" y2="60.9"/><line x1="126.0" y1="76.6" x2="137.9" y2="65.9"/><line x1="129.0" y1="80.4" x2="142.3" y2="71.5"/><line x1="131.5" y1="84.7" x2="145.8" y2="77.6"/><line x1="133.3" y1="89.2" x2="148.5" y2="84.2"/><line x1="134.5" y1="93.9" x2="150.2" y2="91.1"/><line x1="135.0" y1="98.8" x2="151.0" y2="98.2"/><line x1="134.8" y1="103.7" x2="150.7" y2="105.3"/><line x1="134.0" y1="108.5" x2="149.5" y2="112.3"/><line x1="132.5" y1="113.1" x2="147.3" y2="119.1"/><line x1="130.3" y1="117.5" x2="144.2" y2="125.5"/><line x1="127.6" y1="121.5" x2="140.2" y2="131.4"/><line x1="124.3" y1="125.2" x2="135.4" y2="136.7"/><line x1="120.6" y1="128.3" x2="130.0" y2="141.3"/><line x1="116.4" y1="130.9" x2="123.9" y2="145.0"/><line x1="112.0" y1="132.9" x2="117.4" y2="147.9"/><line x1="107.3" y1="134.2" x2="110.6" y2="149.9"/><line x1="102.4" y1="134.9" x2="103.6" y2="150.9"/><line x1="97.6" y1="134.9" x2="96.4" y2="150.9"/><line x1="92.7" y1="134.2" x2="89.4" y2="149.9"/><line x1="88.0" y1="132.9" x2="82.6" y2="147.9"/><line x1="83.6" y1="130.9" x2="76.1" y2="145.0"/><line x1="79.4" y1="128.3" x2="70.0" y2="141.3"/><line x1="75.7" y1="125.2" x2="64.6" y2="136.7"/><line x1="72.4" y1="121.5" x2="59.8" y2="131.4"/><line x1="69.7" y1="117.5" x2="55.8" y2="125.5"/><line x1="67.5" y1="113.1" x2="52.7" y2="119.1"/><line x1="66.0" y1="108.5" x2="50.5" y2="112.3"/><line x1="65.2" y1="103.7" x2="49.3" y2="105.3"/><line x1="65.0" y1="98.8" x2="49.0" y2="98.2"/><line x1="65.5" y1="93.9" x2="49.8" y2="91.1"/><line x1="66.7" y1="89.2" x2="51.5" y2="84.2"/><line x1="68.5" y1="84.7" x2="54.2" y2="77.6"/><line x1="71.0" y1="80.4" x2="57.7" y2="71.5"/><line x1="74.0" y1="76.6" x2="62.1" y2="65.9"/><line x1="77.5" y1="73.2" x2="67.2" y2="60.9"/><line x1="81.5" y1="70.3" x2="73.0" y2="56.7"/><line x1="85.8" y1="68.0" x2="79.3" y2="53.4"/><line x1="90.4" y1="66.4" x2="85.9" y2="51.0"/><line x1="95.1" y1="65.3" x2="92.9" y2="49.5"/></g>
+    <circle class="omt-sx-body" cx="100" cy="100" r="80"/>
+    <g class="omt-sx-part" data-part="ring" tabindex="-1" role="button" aria-label="Shuttle ring">
+      <circle cx="100" cy="100" r="49"/>
+      <circle cx="100" cy="100" r="31"/>
+      <g class="omt-sx-ticks"><line x1="100.0" y1="67.2" x2="100.0" y2="52.8"/><line x1="104.6" y1="67.5" x2="106.6" y2="53.3"/><line x1="109.0" y1="68.5" x2="113.0" y2="54.6"/><line x1="113.3" y1="70.0" x2="119.2" y2="56.9"/><line x1="117.4" y1="72.2" x2="125.0" y2="60.0"/><line x1="121.1" y1="74.9" x2="130.3" y2="63.8"/><line x1="124.4" y1="78.1" x2="135.1" y2="68.4"/><line x1="127.2" y1="81.7" x2="139.1" y2="73.6"/><line x1="129.5" y1="85.6" x2="142.4" y2="79.3"/><line x1="131.2" y1="89.9" x2="144.9" y2="85.4"/><line x1="132.3" y1="94.3" x2="146.5" y2="91.8"/><line x1="132.8" y1="98.9" x2="147.2" y2="98.4"/><line x1="132.6" y1="103.4" x2="146.9" y2="104.9"/><line x1="131.8" y1="107.9" x2="145.8" y2="111.4"/><line x1="130.4" y1="112.3" x2="143.8" y2="117.7"/><line x1="128.4" y1="116.4" x2="140.9" y2="123.6"/><line x1="125.8" y1="120.2" x2="137.2" y2="129.1"/><line x1="122.8" y1="123.6" x2="132.8" y2="134.0"/><line x1="119.3" y1="126.5" x2="127.7" y2="138.2"/><line x1="115.4" y1="129.0" x2="122.2" y2="141.7"/><line x1="111.2" y1="130.8" x2="116.1" y2="144.4"/><line x1="106.8" y1="132.1" x2="109.8" y2="146.2"/><line x1="102.3" y1="132.7" x2="103.3" y2="147.1"/><line x1="97.7" y1="132.7" x2="96.7" y2="147.1"/><line x1="93.2" y1="132.1" x2="90.2" y2="146.2"/><line x1="88.8" y1="130.8" x2="83.9" y2="144.4"/><line x1="84.6" y1="129.0" x2="77.8" y2="141.7"/><line x1="80.7" y1="126.5" x2="72.3" y2="138.2"/><line x1="77.2" y1="123.6" x2="67.2" y2="134.0"/><line x1="74.2" y1="120.2" x2="62.8" y2="129.1"/><line x1="71.6" y1="116.4" x2="59.1" y2="123.6"/><line x1="69.6" y1="112.3" x2="56.2" y2="117.7"/><line x1="68.2" y1="107.9" x2="54.2" y2="111.4"/><line x1="67.4" y1="103.4" x2="53.1" y2="104.9"/><line x1="67.2" y1="98.9" x2="52.8" y2="98.4"/><line x1="67.7" y1="94.3" x2="53.5" y2="91.8"/><line x1="68.8" y1="89.9" x2="55.1" y2="85.4"/><line x1="70.5" y1="85.6" x2="57.6" y2="79.3"/><line x1="72.8" y1="81.7" x2="60.9" y2="73.6"/><line x1="75.6" y1="78.1" x2="64.9" y2="68.4"/><line x1="78.9" y1="74.9" x2="69.7" y2="63.8"/><line x1="82.6" y1="72.2" x2="75.0" y2="60.0"/><line x1="86.7" y1="70.0" x2="80.8" y2="56.9"/><line x1="91.0" y1="68.5" x2="87.0" y2="54.6"/><line x1="95.4" y1="67.5" x2="93.4" y2="53.3"/></g>
     </g>
     <g class="omt-sx-part" data-part="jog" tabindex="-1" role="button" aria-label="Jog">
-      <circle cx="100" cy="100" r="29.5"/>
-      <circle class="omt-sx-dimple" cx="90.0" cy="94.2" r="4.6"/>
+      <circle cx="100" cy="100" r="27.5"/>
+      <circle class="omt-sx-dimple" cx="100" cy="78.0" r="4.2"/>
     </g>
-    <path class="omt-sx-part omt-sx-btn" data-part="btn1" tabindex="-1" role="button" aria-label="Button 1" d="M33.81,151.72 A84,84 0 0,1 27.25,58.00 L50.64,71.50 A57,57 0 0,0 55.08,135.09 Z"/>
-    <path class="omt-sx-part omt-sx-btn" data-part="btn2" tabindex="-1" role="button" aria-label="Button 2" d="M33.81,48.28 A84,84 0 0,1 65.83,23.26 L76.82,47.93 A57,57 0 0,0 55.08,64.91 Z"/>
-    <path class="omt-sx-part omt-sx-btn" data-part="btn3" tabindex="-1" role="button" aria-label="Button 3" d="M74.04,20.11 A84,84 0 0,1 125.96,20.11 L117.61,45.79 A57,57 0 0,0 82.39,45.79 Z"/>
-    <path class="omt-sx-part omt-sx-btn" data-part="btn4" tabindex="-1" role="button" aria-label="Button 4" d="M146.97,30.36 A84,84 0 0,1 174.17,60.56 L150.33,73.24 A57,57 0 0,0 131.87,52.74 Z"/>
-    <path class="omt-sx-part omt-sx-btn" data-part="btn5" tabindex="-1" role="button" aria-label="Button 5" d="M172.75,58.00 A84,84 0 0,1 166.19,151.72 L144.92,135.09 A57,57 0 0,0 149.36,71.50 Z"/>
-    <circle class="omt-sx-badge" data-part="btn1" cx="22.2" cy="105.4" r="4.4"/>
-    <text class="omt-sx-num" data-part="btn1" x="22.2" y="105.4" text-anchor="middle" dominant-baseline="central">1</text>
-    <circle class="omt-sx-badge" data-part="btn2" cx="52.0" cy="38.5" r="4.4"/>
-    <text class="omt-sx-num" data-part="btn2" x="52.0" y="38.5" text-anchor="middle" dominant-baseline="central">2</text>
-    <circle class="omt-sx-badge" data-part="btn3" cx="100.0" cy="22.0" r="4.4"/>
-    <text class="omt-sx-num" data-part="btn3" x="100.0" y="22.0" text-anchor="middle" dominant-baseline="central">3</text>
-    <circle class="omt-sx-badge" data-part="btn4" cx="158.0" cy="47.8" r="4.4"/>
-    <text class="omt-sx-num" data-part="btn4" x="158.0" y="47.8" text-anchor="middle" dominant-baseline="central">4</text>
-    <circle class="omt-sx-badge" data-part="btn5" cx="177.8" cy="105.4" r="4.4"/>
-    <text class="omt-sx-num" data-part="btn5" x="177.8" y="105.4" text-anchor="middle" dominant-baseline="central">5</text>
-    <text class="omt-sx-label" data-part="btn1" x="34.7" y="104.6" text-anchor="middle" dominant-baseline="central">—</text>
-    <text class="omt-sx-label" data-part="btn2" x="59.7" y="48.4" text-anchor="middle" dominant-baseline="central">—</text>
-    <text class="omt-sx-label" data-part="btn3" x="100.0" y="34.5" text-anchor="middle" dominant-baseline="central">—</text>
-    <text class="omt-sx-label" data-part="btn4" x="148.7" y="56.2" text-anchor="middle" dominant-baseline="central">—</text>
-    <text class="omt-sx-label" data-part="btn5" x="165.3" y="104.6" text-anchor="middle" dominant-baseline="central">—</text>
-    <text class="omt-sx-label" data-part="ring" x="100.0" y="143.0" text-anchor="middle" dominant-baseline="central">Speed</text>
-    <text class="omt-sx-label" data-part="jog" x="100" y="101" text-anchor="middle" dominant-baseline="central">Frame</text>
+    <path class="omt-sx-part omt-sx-btn" data-part="btn1" tabindex="-1" role="button" aria-label="Button 1" d="M32.28,134.50 A76,76 0 0,1 32.28,65.50 L52.78,75.94 A53,53 0 0,0 52.78,124.06 Z"/>
+    <path class="omt-sx-part omt-sx-btn" data-part="btn2" tabindex="-1" role="button" aria-label="Button 2" d="M38.51,55.33 A76,76 0 0,1 66.68,31.69 L76.77,52.36 A53,53 0 0,0 57.12,68.85 Z"/>
+    <path class="omt-sx-part omt-sx-btn" data-part="btn3" tabindex="-1" role="button" aria-label="Button 3" d="M77.78,27.32 A76,76 0 0,1 122.22,27.32 L115.50,49.32 A53,53 0 0,0 84.50,49.32 Z"/>
+    <path class="omt-sx-part omt-sx-btn" data-part="btn4" tabindex="-1" role="button" aria-label="Button 4" d="M133.32,31.69 A76,76 0 0,1 161.49,55.33 L142.88,68.85 A53,53 0 0,0 123.23,52.36 Z"/>
+    <path class="omt-sx-part omt-sx-btn" data-part="btn5" tabindex="-1" role="button" aria-label="Button 5" d="M167.72,65.50 A76,76 0 0,1 167.72,134.50 L147.22,124.06 A53,53 0 0,0 147.22,75.94 Z"/>
+    <text class="omt-sx-label" data-part="btn1" x="35.5" y="100.0" text-anchor="middle" dominant-baseline="central">—</text>
+    <text class="omt-sx-label" data-part="btn2" x="58.5" y="50.6" text-anchor="middle" dominant-baseline="central">—</text>
+    <text class="omt-sx-label" data-part="btn3" x="100.0" y="35.5" text-anchor="middle" dominant-baseline="central">—</text>
+    <text class="omt-sx-label" data-part="btn4" x="141.5" y="50.6" text-anchor="middle" dominant-baseline="central">—</text>
+    <text class="omt-sx-label" data-part="btn5" x="164.5" y="100.0" text-anchor="middle" dominant-baseline="central">—</text>
+    <text class="omt-sx-label omt-sx-label--ring" data-part="ring" x="100.0" y="140.0" text-anchor="middle" dominant-baseline="central">Shuttle ring</text>
+    <text class="omt-sx-label" data-part="jog" x="100" y="103" text-anchor="middle" dominant-baseline="central">Jog</text>
+    <text class="omt-sx-num" data-part="btn1" x="9.0" y="100.0" text-anchor="middle" dominant-baseline="central">1</text>
+    <text class="omt-sx-num" data-part="btn2" x="41.5" y="30.3" text-anchor="middle" dominant-baseline="central">2</text>
+    <text class="omt-sx-num" data-part="btn3" x="100.0" y="9.0" text-anchor="middle" dominant-baseline="central">3</text>
+    <text class="omt-sx-num" data-part="btn4" x="158.5" y="30.3" text-anchor="middle" dominant-baseline="central">4</text>
+    <text class="omt-sx-num" data-part="btn5" x="191.0" y="100.0" text-anchor="middle" dominant-baseline="central">5</text>
   </g>
 </svg>`;
 
@@ -281,8 +276,8 @@
       btn3: buttonActionLabel(3),
       btn4: buttonActionLabel(4),
       btn5: buttonActionLabel(5),
-      ring: 'Speed',
-      jog: 'Frame'
+      ring: 'Shuttle ring',
+      jog: 'Jog'
     };
     document.querySelectorAll('.omt-sx-label[data-part]').forEach((el) => {
       const part = el.getAttribute('data-part');
@@ -307,8 +302,8 @@
         rows.push(['Btn ' + i, 'Skip ' + sign + formatSkipLabel(secs)]);
       }
     }
-    rows.push(['Jog', shuttlePrefs.jogStep + 's / tick']);
-    rows.push(['Ring', shuttlePrefs.shuttleScale + '× scrub (7 steps)']);
+    rows.push(['Jog', shuttlePrefs.jogStep + 's / tick (frame by frame)']);
+    rows.push(['Shuttle ring', shuttlePrefs.shuttleScale + '× scrub (speed, 7 steps)']);
     host.innerHTML = rows.map(([a, b]) =>
       '<div class="shortcut-item"><span class="shortcut-label">' + a +
       '</span><span class="shortcut-keys">' + b + '</span></div>'
@@ -405,7 +400,7 @@
   }
 
   function setShuttleHighlight(part) {
-    document.querySelectorAll('.omt-sx-part, .omt-sx-num, .omt-sx-label, .omt-sx-badge').forEach((el) => {
+    document.querySelectorAll('.omt-sx-part, .omt-sx-num, .omt-sx-label').forEach((el) => {
       const match = !!part && el.getAttribute('data-part') === part;
       el.classList.toggle('is-active', match);
       el.classList.toggle('is-hover', false);
@@ -417,7 +412,7 @@
   }
 
   function setShuttleHover(part) {
-    document.querySelectorAll('.omt-sx-part, .omt-sx-num, .omt-sx-label, .omt-sx-badge').forEach((el) => {
+    document.querySelectorAll('.omt-sx-part, .omt-sx-num, .omt-sx-label').forEach((el) => {
       const match = !!part && el.getAttribute('data-part') === part;
       if (!el.classList.contains('is-active')) el.classList.toggle('is-hover', match);
     });

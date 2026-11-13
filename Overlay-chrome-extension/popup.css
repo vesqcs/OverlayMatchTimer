@@ -455,36 +455,26 @@ body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
   stroke: #F5831F !important;
   fill: rgba(245, 131, 31, 0.24) !important;
 }
-.omt-sx-badge {
-  fill: rgba(255,255,255,0.10);
-  stroke: rgba(255,255,255,0.28);
-  stroke-width: 0.8;
-  pointer-events: none;
-}
-.omt-sx-badge.is-active,
-.omt-sx-badge.is-hover {
-  fill: rgba(245,131,31,0.35);
-  stroke: #F5831F;
-}
 .omt-sx-num {
-  fill: #cfcfcf;
+  fill: #e6e6e6;
   stroke: none;
-  font-size: 5.5px;
+  font-size: 8px;
   font-family: var(--omt-font);
   font-weight: 700;
   pointer-events: none;
 }
 .omt-sx-num.is-active,
-.omt-sx-num.is-hover { fill: #fff; }
+.omt-sx-num.is-hover { fill: #F5831F; }
 .omt-sx-label {
   fill: #f4f4f4;
   stroke: none;
-  font-size: 8.6px;
+  font-size: 8.4px;
   font-family: var(--omt-font);
   font-weight: 700;
   letter-spacing: -0.02em;
   pointer-events: none;
 }
+.omt-sx-label--ring { font-size: 6.4px; }
 .omt-sx-label.is-active,
 .omt-sx-label.is-hover { fill: #fff; }
 .omt-shuttle-edit-list { display: flex; flex-direction: column; gap: 6px; }
