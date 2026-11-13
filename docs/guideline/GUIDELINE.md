@@ -1,7 +1,7 @@
 ---
 title: Overlay MatchTimer — User Guideline
 product: Overlay MatchTimer
-version: 1.7.8
+version: 2.0.0
 status: editable-source
 supersedes_pdf: Overlay MatchTimer Guideline.pdf (1.0.0, 05 Jul 2026)
 security: Stats Perform internal — confirm classification before external share
@@ -9,7 +9,7 @@ security: Stats Perform internal — confirm classification before external shar
 
 # Overlay MatchTimer — User Guideline
 
-**Version:** 1.7.8  
+**Version:** 2.0.0  
 **Audience:** Stats Perform / RunningBall match analysts  
 **Primary product:** Chrome MV3 extension (`Overlay-chrome-extension/`)  
 **Legacy companion:** `OverlayMatchTimer.html` (local dashboard; still documented for Tier-12 / URL paste)
@@ -34,6 +34,7 @@ security: Stats Perform internal — confirm classification before external shar
 | 1.7.6 | Hover period ticks + short labels; snap tip/seek; edge-clamped tips; Clear timer tip | Maintainers | 13 Nov 2026 |
 | 1.7.7 | Opaque tips; Open-file tip below; timeline tip fixed + labels visible; screenshot polish | Maintainers | 13 Nov 2026 |
 | 1.7.8 | Remove hover tips from play / skip / speed-row (self-explanatory); keep all other tips | Maintainers | 13 Nov 2026 |
+| 2.0.0 | Release rename of 1.7.8; semver going forward (2.0.x fixes, 2.1.0+ features) | Maintainers | 13 Nov 2026 |
 
 ### 1.2 Glossary
 
@@ -62,10 +63,10 @@ security: Stats Perform internal — confirm classification before external shar
 
 ## 2. Installing the Chrome extension
 
-1. Obtain the release zip (e.g. `OverlayMatchTimer-v1.7.8.zip`) and extract it.
+1. Obtain the release zip (e.g. `OverlayMatchTimer-v2.0.0.zip`) and extract it.
 2. Open `chrome://extensions` → enable **Developer mode**.
 3. **Load unpacked** → select `Overlay-chrome-extension/` (contains `manifest.json`).
-4. Confirm the card shows version **1.7.8** and no errors.
+4. Confirm the card shows version **2.0.0** and no errors.
 5. Pin the toolbar icon (slash + **20:08** badge).
 
 Chrome is the supported browser.
