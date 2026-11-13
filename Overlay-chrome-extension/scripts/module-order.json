@@ -27,6 +27,7 @@
   "src/storage.js",
   "src/customize.js",
   "src/auto-pause.js",
+  "sync-feature-flag.js",
   "src/sync/config.js",
   "src/sync/match-key.js",
   "src/sync/hooks.js",

@@ -16,9 +16,9 @@ Overlay MatchTimer is an internal analysis aid: a Chrome extension that overlays
 
 You may use the extension only for authorised match-analysis workflows on systems you are allowed to access. You must not use it to circumvent access controls, exfiltrate confidential material beyond your role, or redistribute builds to unauthorised parties.
 
-## 4. Optional Kickoff sync
+## 4. Cloud / Kickoff sync
 
-Kickoff sync is **off by default**. If you enable it, you supply a Supabase project URL and anon key that you (or your team) control. You are responsible for that project’s access control, key rotation, and any data you sync (kickoff / clock-reference values for match rooms). Do not paste service-role keys into the extension. Do not share anon keys outside the intended team.
+Not active in the current build. If a future release enables shared kickoff sync, these terms and the privacy policy will be updated before enablement. Do not paste service-role keys into the extension.
 
 ## 5. No warranty
 

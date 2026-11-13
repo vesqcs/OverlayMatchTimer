@@ -1,6 +1,7 @@
 /* MAIN-world kickoff sync hooks.
- * When disabled: zero postMessages for sync, zero network (SW also no-ops).
- * When enabled: ask bridge → background to upsert/fetch via Supabase REST.
+ * Fully inert when OMT_SYNC_FEATURE_ENABLED is false (no listeners, no posts).
+ * Prototype user-config path remains for internal flag-on builds only.
+ * Planned always-on design: see ARCHITECTURE.md / supabase/SETUP.md (not implemented).
  */
     let _omtSyncStarted = false;
     let _omtSyncApplying = false;
@@ -8,6 +9,7 @@
     let _omtSyncClientId = null;
 
     function omtSyncClientId() {
+        if (!omtSyncFeatureOn()) return 'c_off';
         if (_omtSyncClientId) return _omtSyncClientId;
         try {
             let id = sessionStorage.getItem('omtSyncClientId');
@@ -23,6 +25,7 @@
     }
 
     function omtSyncPostToBridge(type, payload) {
+        if (!omtSyncFeatureOn()) return;
         if (typeof omtSyncIsEnabled !== 'function' || !omtSyncIsEnabled()) return;
         if (typeof omtSyncHasCredentials === 'function' && !omtSyncHasCredentials()) return;
         try {
@@ -53,6 +56,7 @@
     }
 
     function omtSyncPublishKickoffs() {
+        if (!omtSyncFeatureOn()) return;
         if (_omtSyncApplying) return;
         if (typeof omtSyncIsEnabled !== 'function' || !omtSyncIsEnabled()) return;
         if (typeof omtSyncHasCredentials === 'function' && !omtSyncHasCredentials()) return;
@@ -62,6 +66,7 @@
     }
 
     function omtSyncApplyRemote(row) {
+        if (!omtSyncFeatureOn()) return;
         if (!row || typeof row !== 'object') return;
         if (row.client_id && row.client_id === omtSyncClientId()) return;
         const remoteAt = row.updated_at ? Date.parse(row.updated_at) : 0;
@@ -109,7 +114,6 @@
                 if (halfEl) halfEl.value = String(row.half);
             }
 
-            // If we have a kickoff for the active half and timer was inactive, seed offset.
             const parte = previousHalf || (typeof q === 'function' && q('omt-half-select') && q('omt-half-select').value) || '1';
             const map = { '1': kickoff1, '2': kickoff2, 'custom1': kickoffC1, 'custom2': kickoffC2 };
             const activeKo = map[parte];
@@ -138,6 +142,7 @@
     }
 
     function omtKickoffSyncStart() {
+        if (!omtSyncFeatureOn()) return;
         if (typeof omtSyncIsEnabled !== 'function' || !omtSyncIsEnabled()) {
             omtKickoffSyncStop();
             return;
@@ -150,14 +155,13 @@
         const matchKey = omtSyncMatchKey();
         omtSyncPostToBridge('OMT_SYNC_PULL', { matchKey: matchKey });
         omtSyncPostToBridge('OMT_SYNC_START_POLL', { matchKey: matchKey, intervalMs: 4000 });
-        // Push local state once so a newly enabled client seeds the room.
         omtSyncPublishKickoffs();
     }
 
     function omtKickoffSyncStop() {
-        if (!_omtSyncStarted && !(typeof omtSyncIsEnabled === 'function' && omtSyncIsEnabled())) {
-            // Still tell SW to stop if we ever started; cheap no-op message only when
-            // we had been started.
+        if (!omtSyncFeatureOn()) {
+            _omtSyncStarted = false;
+            return;
         }
         if (_omtSyncStarted) {
             try {
@@ -167,55 +171,55 @@
         _omtSyncStarted = false;
     }
 
-    // E2E / page harness — same MAIN world, but callers outside the IIFE.
-    window.addEventListener('message', (event) => {
-        if (event.source !== window) return;
-        const data = event.data;
-        if (!data || data.source !== 'omt-e2e') return;
-        if (data.type === 'OMT_E2E_SYNC_START') {
-            omtKickoffSyncStart();
-            return;
-        }
-        if (data.type === 'OMT_E2E_SYNC_PUBLISH') {
-            omtSyncPublishKickoffs();
-            return;
-        }
-        if (data.type === 'OMT_E2E_SYNC_PUSH_ROW' && data.row) {
-            // Still respects enabled+credentials gates inside omtSyncPostToBridge.
-            if (typeof omtSyncIsEnabled !== 'function' || !omtSyncIsEnabled()) return;
-            if (typeof omtSyncHasCredentials === 'function' && !omtSyncHasCredentials()) return;
-            omtSyncPostToBridge('OMT_SYNC_PUSH', { row: data.row });
-        }
-    });
-
-    // Bridge → page: remote rows + storage mirror for sync prefs
-    window.addEventListener('message', (event) => {
-        if (event.source !== window) return;
-        const data = event.data;
-        if (!data || data.source !== 'omt-bridge') return;
-
-        if (data.type === 'OMT_SYNC_REMOTE') {
-            if (typeof omtSyncIsEnabled !== 'function' || !omtSyncIsEnabled()) return;
-            omtSyncApplyRemote(data.row);
-            return;
-        }
-
-        if (data.type !== 'OMT_STORAGE_SYNC') return;
-        const values = data.values || {};
-        let touched = false;
-        Object.keys(OMT_SYNC_KEYS).forEach((k) => {
-            const storageKey = OMT_SYNC_KEYS[k];
-            if (!Object.prototype.hasOwnProperty.call(values, storageKey)) return;
-            touched = true;
-            try {
-                const v = values[storageKey];
-                if (v == null || v === '') localStorage.removeItem(storageKey);
-                else if (typeof v === 'boolean') localStorage.setItem(storageKey, v ? 'true' : 'false');
-                else localStorage.setItem(storageKey, String(v));
-            } catch (_) {}
+    // Listeners only when the internal feature flag is on.
+    if (omtSyncFeatureOn()) {
+        window.addEventListener('message', (event) => {
+            if (event.source !== window) return;
+            const data = event.data;
+            if (!data || data.source !== 'omt-e2e') return;
+            if (data.type === 'OMT_E2E_SYNC_START') {
+                omtKickoffSyncStart();
+                return;
+            }
+            if (data.type === 'OMT_E2E_SYNC_PUBLISH') {
+                omtSyncPublishKickoffs();
+                return;
+            }
+            if (data.type === 'OMT_E2E_SYNC_PUSH_ROW' && data.row) {
+                if (typeof omtSyncIsEnabled !== 'function' || !omtSyncIsEnabled()) return;
+                if (typeof omtSyncHasCredentials === 'function' && !omtSyncHasCredentials()) return;
+                omtSyncPostToBridge('OMT_SYNC_PUSH', { row: data.row });
+            }
         });
-        if (touched) {
-            if (omtSyncIsEnabled() && omtSyncHasCredentials()) omtKickoffSyncStart();
-            else omtKickoffSyncStop();
-        }
-    });
+
+        window.addEventListener('message', (event) => {
+            if (event.source !== window) return;
+            const data = event.data;
+            if (!data || data.source !== 'omt-bridge') return;
+
+            if (data.type === 'OMT_SYNC_REMOTE') {
+                if (typeof omtSyncIsEnabled !== 'function' || !omtSyncIsEnabled()) return;
+                omtSyncApplyRemote(data.row);
+                return;
+            }
+
+            if (data.type !== 'OMT_STORAGE_SYNC') return;
+            const values = data.values || {};
+            let touched = false;
+            Object.keys(OMT_SYNC_KEYS).forEach((k) => {
+                const storageKey = OMT_SYNC_KEYS[k];
+                if (!Object.prototype.hasOwnProperty.call(values, storageKey)) return;
+                touched = true;
+                try {
+                    const v = values[storageKey];
+                    if (v == null || v === '') localStorage.removeItem(storageKey);
+                    else if (typeof v === 'boolean') localStorage.setItem(storageKey, v ? 'true' : 'false');
+                    else localStorage.setItem(storageKey, String(v));
+                } catch (_) {}
+            });
+            if (touched) {
+                if (omtSyncIsEnabled() && omtSyncHasCredentials()) omtKickoffSyncStart();
+                else omtKickoffSyncStop();
+            }
+        });
+    }

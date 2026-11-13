@@ -3,10 +3,12 @@
    MAIN-world content.js cannot touch chrome.storage; this script
    mirrors chrome.storage.local <-> localStorage + postMessage.
    Also used by the toolbar popup (writes) so in-page UI stays in sync.
-   Relays optional kickoff-sync messages to the service worker (no-op when off).
+   Kickoff-sync relay is active ONLY when OMT_SYNC_FEATURE_ENABLED.
    ============================================================ */
 (function () {
   'use strict';
+
+  const SYNC_FEATURE = (typeof OMT_SYNC_FEATURE_ENABLED !== 'undefined') && !!OMT_SYNC_FEATURE_ENABLED;
 
   const KEY_AUTO_VOD = 'omtAutoSwitchVod';
   const KEY_SHUTTLE = 'shuttleXpressEnabled';
@@ -64,12 +66,14 @@
       [KEY_CLOCK_CUSTOM, KEY_HOTKEYS, KEY_SHUTTLE_PREFS].forEach((k) => {
         if (Object.prototype.hasOwnProperty.call(values, k)) writeLocal(k, values[k]);
       });
-      if (Object.prototype.hasOwnProperty.call(values, KEY_SYNC_ENABLED)) {
-        writeLocal(KEY_SYNC_ENABLED, !!values[KEY_SYNC_ENABLED]);
+      if (SYNC_FEATURE) {
+        if (Object.prototype.hasOwnProperty.call(values, KEY_SYNC_ENABLED)) {
+          writeLocal(KEY_SYNC_ENABLED, !!values[KEY_SYNC_ENABLED]);
+        }
+        [KEY_SYNC_URL, KEY_SYNC_ANON, KEY_SYNC_ROOM].forEach((k) => {
+          if (Object.prototype.hasOwnProperty.call(values, k)) writeLocal(k, values[k]);
+        });
       }
-      [KEY_SYNC_URL, KEY_SYNC_ANON, KEY_SYNC_ROOM].forEach((k) => {
-        if (Object.prototype.hasOwnProperty.call(values, k)) writeLocal(k, values[k]);
-      });
     } catch (_) {}
     try {
       window.postMessage({ source: 'omt-bridge', type: 'OMT_STORAGE_SYNC', values }, '*');
@@ -100,6 +104,7 @@
   } catch (_) {}
 
   function sendToSw(message) {
+    if (!SYNC_FEATURE) return;
     try {
       chrome.runtime.sendMessage(message, () => {
         void chrome.runtime.lastError;
@@ -123,7 +128,8 @@
       return;
     }
 
-    // Kickoff sync relay — only when page already decided it is enabled.
+    if (!SYNC_FEATURE) return;
+
     if (data.type === 'OMT_SYNC_PUSH') {
       const row = (data.payload && data.payload.row) || null;
       if (!row) return;
@@ -152,12 +158,14 @@
     }
   });
 
-  try {
-    chrome.runtime.onMessage.addListener((msg) => {
-      if (!msg || msg.type !== 'OMT_SYNC_REMOTE') return;
-      try {
-        window.postMessage({ source: 'omt-bridge', type: 'OMT_SYNC_REMOTE', row: msg.row }, '*');
-      } catch (_) {}
-    });
-  } catch (_) {}
+  if (SYNC_FEATURE) {
+    try {
+      chrome.runtime.onMessage.addListener((msg) => {
+        if (!msg || msg.type !== 'OMT_SYNC_REMOTE') return;
+        try {
+          window.postMessage({ source: 'omt-bridge', type: 'OMT_SYNC_REMOTE', row: msg.row }, '*');
+        } catch (_) {}
+      });
+    } catch (_) {}
+  }
 })();

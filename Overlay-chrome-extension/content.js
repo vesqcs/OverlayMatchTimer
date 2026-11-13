@@ -3338,9 +3338,39 @@
         window.addEventListener('focus', onWindowFocus);
     }
 
-/* Kickoff sync config — MAIN world reads mirrored prefs only.
- * Network lives in the service worker. When disabled this module is a pure no-op.
+/* ============================================================
+   Kickoff sync — INTERNAL FEATURE FLAG (v1.7.1+)
+   ============================================================
+   Keep OMT_SYNC_FEATURE_ENABLED = false for shipped / QA builds.
+   When false the feature is fully inert:
+     - no Customize UI (section not in popup.html)
+     - no sync message handlers / poll in SW or bridge
+     - no network
+     - manifest must NOT declare Supabase host / optional_host_permissions
+
+   Planned PRODUCT design (always-on, zero config, bundled project) is
+   documented in ARCHITECTURE.md and supabase/SETUP.md — do NOT implement
+   by flipping this flag. The flag only resurrects the old per-user URL/key UI.
+
+   To resurrect the v1.7.0 prototype UI for an internal lab build only:
+     1. Set OMT_SYNC_FEATURE_ENABLED = true below
+     2. Re-add to Overlay-chrome-extension/manifest.json:
+          "optional_host_permissions": [ "https://*.supabase.co/*" ]
+        (Future always-on design should use a FIXED single-project host
+         permission instead — see supabase/SETUP.md.)
+     3. Rebuild: node scripts/build-content.mjs
+     4. Load unpacked; Customize injects popup-sync-section.html
+   ============================================================ */
+var OMT_SYNC_FEATURE_ENABLED = false;
+
+/* Kickoff sync config — MAIN world.
+ * Gated by OMT_SYNC_FEATURE_ENABLED (sync-feature-flag.js). When the flag is
+ * false every helper returns inert values and callers must no-op.
  */
+    function omtSyncFeatureOn() {
+        return (typeof OMT_SYNC_FEATURE_ENABLED !== 'undefined') && !!OMT_SYNC_FEATURE_ENABLED;
+    }
+
     const OMT_SYNC_KEYS = {
         enabled: 'omtKickoffSyncEnabled',
         url: 'omtKickoffSyncUrl',
@@ -3349,6 +3379,7 @@
     };
 
     function omtSyncIsEnabled() {
+        if (!omtSyncFeatureOn()) return false;
         try {
             const v = localStorage.getItem(OMT_SYNC_KEYS.enabled);
             return v === 'true';
@@ -3358,6 +3389,9 @@
     }
 
     function omtSyncGetConfig() {
+        if (!omtSyncFeatureOn()) {
+            return { enabled: false, url: '', anonKey: '', room: '' };
+        }
         try {
             return {
                 enabled: omtSyncIsEnabled(),
@@ -3371,6 +3405,7 @@
     }
 
     function omtSyncHasCredentials() {
+        if (!omtSyncFeatureOn()) return false;
         const c = omtSyncGetConfig();
         return !!(c.url && c.anonKey);
     }
@@ -3402,8 +3437,9 @@
     }
 
 /* MAIN-world kickoff sync hooks.
- * When disabled: zero postMessages for sync, zero network (SW also no-ops).
- * When enabled: ask bridge → background to upsert/fetch via Supabase REST.
+ * Fully inert when OMT_SYNC_FEATURE_ENABLED is false (no listeners, no posts).
+ * Prototype user-config path remains for internal flag-on builds only.
+ * Planned always-on design: see ARCHITECTURE.md / supabase/SETUP.md (not implemented).
  */
     let _omtSyncStarted = false;
     let _omtSyncApplying = false;
@@ -3411,6 +3447,7 @@
     let _omtSyncClientId = null;
 
     function omtSyncClientId() {
+        if (!omtSyncFeatureOn()) return 'c_off';
         if (_omtSyncClientId) return _omtSyncClientId;
         try {
             let id = sessionStorage.getItem('omtSyncClientId');
@@ -3426,6 +3463,7 @@
     }
 
     function omtSyncPostToBridge(type, payload) {
+        if (!omtSyncFeatureOn()) return;
         if (typeof omtSyncIsEnabled !== 'function' || !omtSyncIsEnabled()) return;
         if (typeof omtSyncHasCredentials === 'function' && !omtSyncHasCredentials()) return;
         try {
@@ -3456,6 +3494,7 @@
     }
 
     function omtSyncPublishKickoffs() {
+        if (!omtSyncFeatureOn()) return;
         if (_omtSyncApplying) return;
         if (typeof omtSyncIsEnabled !== 'function' || !omtSyncIsEnabled()) return;
         if (typeof omtSyncHasCredentials === 'function' && !omtSyncHasCredentials()) return;
@@ -3465,6 +3504,7 @@
     }
 
     function omtSyncApplyRemote(row) {
+        if (!omtSyncFeatureOn()) return;
         if (!row || typeof row !== 'object') return;
         if (row.client_id && row.client_id === omtSyncClientId()) return;
         const remoteAt = row.updated_at ? Date.parse(row.updated_at) : 0;
@@ -3512,7 +3552,6 @@
                 if (halfEl) halfEl.value = String(row.half);
             }
 
-            // If we have a kickoff for the active half and timer was inactive, seed offset.
             const parte = previousHalf || (typeof q === 'function' && q('omt-half-select') && q('omt-half-select').value) || '1';
             const map = { '1': kickoff1, '2': kickoff2, 'custom1': kickoffC1, 'custom2': kickoffC2 };
             const activeKo = map[parte];
@@ -3541,6 +3580,7 @@
     }
 
     function omtKickoffSyncStart() {
+        if (!omtSyncFeatureOn()) return;
         if (typeof omtSyncIsEnabled !== 'function' || !omtSyncIsEnabled()) {
             omtKickoffSyncStop();
             return;
@@ -3553,14 +3593,13 @@
         const matchKey = omtSyncMatchKey();
         omtSyncPostToBridge('OMT_SYNC_PULL', { matchKey: matchKey });
         omtSyncPostToBridge('OMT_SYNC_START_POLL', { matchKey: matchKey, intervalMs: 4000 });
-        // Push local state once so a newly enabled client seeds the room.
         omtSyncPublishKickoffs();
     }
 
     function omtKickoffSyncStop() {
-        if (!_omtSyncStarted && !(typeof omtSyncIsEnabled === 'function' && omtSyncIsEnabled())) {
-            // Still tell SW to stop if we ever started; cheap no-op message only when
-            // we had been started.
+        if (!omtSyncFeatureOn()) {
+            _omtSyncStarted = false;
+            return;
         }
         if (_omtSyncStarted) {
             try {
@@ -3570,58 +3609,58 @@
         _omtSyncStarted = false;
     }
 
-    // E2E / page harness — same MAIN world, but callers outside the IIFE.
-    window.addEventListener('message', (event) => {
-        if (event.source !== window) return;
-        const data = event.data;
-        if (!data || data.source !== 'omt-e2e') return;
-        if (data.type === 'OMT_E2E_SYNC_START') {
-            omtKickoffSyncStart();
-            return;
-        }
-        if (data.type === 'OMT_E2E_SYNC_PUBLISH') {
-            omtSyncPublishKickoffs();
-            return;
-        }
-        if (data.type === 'OMT_E2E_SYNC_PUSH_ROW' && data.row) {
-            // Still respects enabled+credentials gates inside omtSyncPostToBridge.
-            if (typeof omtSyncIsEnabled !== 'function' || !omtSyncIsEnabled()) return;
-            if (typeof omtSyncHasCredentials === 'function' && !omtSyncHasCredentials()) return;
-            omtSyncPostToBridge('OMT_SYNC_PUSH', { row: data.row });
-        }
-    });
-
-    // Bridge → page: remote rows + storage mirror for sync prefs
-    window.addEventListener('message', (event) => {
-        if (event.source !== window) return;
-        const data = event.data;
-        if (!data || data.source !== 'omt-bridge') return;
-
-        if (data.type === 'OMT_SYNC_REMOTE') {
-            if (typeof omtSyncIsEnabled !== 'function' || !omtSyncIsEnabled()) return;
-            omtSyncApplyRemote(data.row);
-            return;
-        }
-
-        if (data.type !== 'OMT_STORAGE_SYNC') return;
-        const values = data.values || {};
-        let touched = false;
-        Object.keys(OMT_SYNC_KEYS).forEach((k) => {
-            const storageKey = OMT_SYNC_KEYS[k];
-            if (!Object.prototype.hasOwnProperty.call(values, storageKey)) return;
-            touched = true;
-            try {
-                const v = values[storageKey];
-                if (v == null || v === '') localStorage.removeItem(storageKey);
-                else if (typeof v === 'boolean') localStorage.setItem(storageKey, v ? 'true' : 'false');
-                else localStorage.setItem(storageKey, String(v));
-            } catch (_) {}
+    // Listeners only when the internal feature flag is on.
+    if (omtSyncFeatureOn()) {
+        window.addEventListener('message', (event) => {
+            if (event.source !== window) return;
+            const data = event.data;
+            if (!data || data.source !== 'omt-e2e') return;
+            if (data.type === 'OMT_E2E_SYNC_START') {
+                omtKickoffSyncStart();
+                return;
+            }
+            if (data.type === 'OMT_E2E_SYNC_PUBLISH') {
+                omtSyncPublishKickoffs();
+                return;
+            }
+            if (data.type === 'OMT_E2E_SYNC_PUSH_ROW' && data.row) {
+                if (typeof omtSyncIsEnabled !== 'function' || !omtSyncIsEnabled()) return;
+                if (typeof omtSyncHasCredentials === 'function' && !omtSyncHasCredentials()) return;
+                omtSyncPostToBridge('OMT_SYNC_PUSH', { row: data.row });
+            }
         });
-        if (touched) {
-            if (omtSyncIsEnabled() && omtSyncHasCredentials()) omtKickoffSyncStart();
-            else omtKickoffSyncStop();
-        }
-    });
+
+        window.addEventListener('message', (event) => {
+            if (event.source !== window) return;
+            const data = event.data;
+            if (!data || data.source !== 'omt-bridge') return;
+
+            if (data.type === 'OMT_SYNC_REMOTE') {
+                if (typeof omtSyncIsEnabled !== 'function' || !omtSyncIsEnabled()) return;
+                omtSyncApplyRemote(data.row);
+                return;
+            }
+
+            if (data.type !== 'OMT_STORAGE_SYNC') return;
+            const values = data.values || {};
+            let touched = false;
+            Object.keys(OMT_SYNC_KEYS).forEach((k) => {
+                const storageKey = OMT_SYNC_KEYS[k];
+                if (!Object.prototype.hasOwnProperty.call(values, storageKey)) return;
+                touched = true;
+                try {
+                    const v = values[storageKey];
+                    if (v == null || v === '') localStorage.removeItem(storageKey);
+                    else if (typeof v === 'boolean') localStorage.setItem(storageKey, v ? 'true' : 'false');
+                    else localStorage.setItem(storageKey, String(v));
+                } catch (_) {}
+            });
+            if (touched) {
+                if (omtSyncIsEnabled() && omtSyncHasCredentials()) omtKickoffSyncStart();
+                else omtKickoffSyncStop();
+            }
+        });
+    }
 
 /* Examino-only: hotkeys install, click-to-toggle, hide native chrome,
  * Source DVR/VOD scrape/apply, auto-VOD, chrome.storage bridge client.

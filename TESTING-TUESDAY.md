@@ -1,8 +1,8 @@
 # Overlay MatchTimer — Tuesday manual test (~15 min)
 
-**Build:** v1.7.0 · **PC:** work machine · **Date:** ________ · **Tester:** ________
+**Build:** v1.7.1 · **PC:** work machine · **Date:** ________ · **Tester:** ________
 
-Install from the zip (`OverlayMatchTimer-v1.7.0.zip` → `Overlay-chrome-extension/`). Load unpacked in `chrome://extensions` (Developer mode). Do not use an old folder.
+Install from the zip (`OverlayMatchTimer-v1.7.1.zip` → `Overlay-chrome-extension/`). Load unpacked in `chrome://extensions` (Developer mode). Do not use an old folder.
 
 Mark each row: `[ ]` → `[x]` when pass. Use **Notes** for anything odd (screenshot path / console error).
 
@@ -12,9 +12,10 @@ Mark each row: `[ ]` → `[x]` when pass. Use **Notes** for anything odd (screen
 
 | # | Action | Expected | ✓ | Notes |
 |---|--------|----------|---|-------|
-| 0.1 | Load unpacked from zip’s `Overlay-chrome-extension` | Extension shows **1.7.0**, no errors on card | [ ] | |
+| 0.1 | Load unpacked from zip’s `Overlay-chrome-extension` | Extension shows **1.7.1**, no errors on card | [ ] | |
 | 0.2 | Check toolbar / extensions icon | Slash + **20:08** badge top-left (v2) on dark tile | [ ] | |
-| 0.3 | Open popup | Header: SP logo with **20:08** badge over the mark (same offset as icon-128) + OverlayMatchTimer; footer `v1.7.0` | [ ] | |
+| 0.3 | Open popup | Header: SP logo with **20:08** badge + OverlayMatchTimer; footer `v1.7.1` | [ ] | |
+| 0.4 | Customize tab | Sections: Match clock, Shortcuts, ShuttleXpress only — **no Kickoff sync** | [ ] | |
 
 ---
 
@@ -90,21 +91,7 @@ Open a live/VOD InplayIP match page with the overlay injected.
 |---|--------|----------|---|-------|
 | 6.1 | Default General | Actions open; Shortcuts + Shuttle **collapsed** | [ ] | |
 | 6.2 | Open ShuttleXpress | **Diagram only** (live labels); no Btn 1…5 text list | [ ] | |
-| 6.3 | **Reset all customizations** | Clock, shortcuts, Shuttle, kickoff sync back to defaults (sync **off**) | [ ] | |
-
----
-
-## 7. Kickoff sync (optional, default off)
-
-Skip unless testing team sync. Do **not** use a production Supabase project with real keys in a shared zip.
-
-| # | Action | Expected | ✓ | Notes |
-|---|--------|----------|---|-------|
-| 7.1 | Customize → Kickoff sync section | **Collapsed** by default; toggle **off** | [ ] | |
-| 7.2 | Leave sync off; use Kick-off / nudge on a match | No sync network traffic; clock works as before | [ ] | |
-| 7.3 | Enter test project URL + anon key; turn sync **On** | Chrome asks for host permission; status says sync on | [ ] | |
-| 7.4 | Set Kick-off on machine A; open same match (or same Room id) on B with sync on | B picks up kickoff within a few seconds | [ ] | |
-| 7.5 | Turn sync **Off** | Status / behaviour: no further sync requests | [ ] | |
+| 6.3 | **Reset all customizations** | Clock, shortcuts, Shuttle back to defaults | [ ] | |
 
 ---
 

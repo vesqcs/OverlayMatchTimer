@@ -1601,7 +1601,7 @@ async function run() {
           noCredit: !document.querySelector('.omt-brand-credit'),
           noPersonalizar: !document.body.textContent.includes('Personalizar') &&
             !document.body.textContent.includes('Em breve'),
-          footOk: foot === 'v1.7.0',
+          footOk: foot === 'v1.7.1',
           hasAutoPause: !!document.getElementById('omt-auto-pause-blur'),
           autoPauseDefaultOff: document.getElementById('omt-auto-pause-blur')
             ? document.getElementById('omt-auto-pause-blur').checked === false
@@ -1716,19 +1716,17 @@ async function run() {
         const clock = document.getElementById('omt-clock-details');
         const hotkeys = document.getElementById('omt-hotkeys-details');
         const shuttle = document.getElementById('omt-shuttle-details');
-        const sync = document.getElementById('omt-sync-details');
-        const syncToggle = document.getElementById('omt-kickoff-sync-enable');
         const posOpts = Array.from(document.querySelectorAll('#clock-pos option')).map((o) => o.value);
+        const bodyText = document.body.innerText || '';
         return {
           clockOpen: !!clock?.open,
           hotkeysOpen: !!hotkeys?.open,
           shuttleOpen: !!shuttle?.open,
-          syncOpen: !!sync?.open,
-          syncDefaultOff: syncToggle ? syncToggle.checked === false : false,
-          hasSyncUrl: !!document.getElementById('omt-sync-url'),
-          hasSyncAnon: !!document.getElementById('omt-sync-anon'),
+          noSyncSection: !document.getElementById('omt-sync-details'),
+          noSyncToggle: !document.getElementById('omt-kickoff-sync-enable'),
+          noSyncLabel: !/Kickoff sync/i.test(bodyText),
           noResetPos: !document.getElementById('omt-clock-reset-pos'),
-          noDragHint: !/drag the clock/i.test(document.body.innerText || ''),
+          noDragHint: !/drag the clock/i.test(bodyText),
           posOpts
         };
       });
@@ -1737,56 +1735,35 @@ async function run() {
         pass: sectionsDefault.clockOpen === true &&
           sectionsDefault.hotkeysOpen === false &&
           sectionsDefault.shuttleOpen === false &&
-          sectionsDefault.syncOpen === false &&
-          sectionsDefault.syncDefaultOff === true &&
-          sectionsDefault.hasSyncUrl === true &&
-          sectionsDefault.hasSyncAnon === true &&
+          sectionsDefault.noSyncSection === true &&
+          sectionsDefault.noSyncToggle === true &&
+          sectionsDefault.noSyncLabel === true &&
           sectionsDefault.noResetPos === true &&
           sectionsDefault.noDragHint === true &&
           posOptsInclude(sectionsDefault.posOpts),
         detail: sectionsDefault
       });
       await popupPage.screenshot({ path: path.join(ARTIFACTS, 'popup_customize.png'), fullPage: true });
-
-      // Kickoff sync section (collapsed default → expand for screenshot)
-      await popupPage.evaluate(() => {
-        const d = document.getElementById('omt-sync-details');
-        if (d) d.open = true;
-        d?.scrollIntoView({ block: 'start' });
-      });
-      await popupPage.waitForTimeout(120);
       await popupPage.screenshot({
-        path: path.join(ARTIFACTS, 'popup_kickoff_sync.png'),
+        path: path.join(ARTIFACTS, 'popup_customize_no_sync.png'),
         fullPage: true
       });
-      const syncUi = await popupPage.evaluate(() => {
-        const d = document.getElementById('omt-sync-details');
-        return {
-          open: !!d?.open,
-          toggleOff: document.getElementById('omt-kickoff-sync-enable')?.checked === false,
-          label: (d?.querySelector('.omt-cust-summary')?.textContent || '').trim()
-        };
-      });
       results.push({
-        name: 'customize-kickoff-sync-ui',
-        pass: syncUi.open === true && syncUi.toggleOff === true && /Kickoff sync/i.test(syncUi.label),
-        detail: syncUi
+        name: 'customize-no-kickoff-sync-ui',
+        pass: sectionsDefault.noSyncSection === true &&
+          sectionsDefault.noSyncToggle === true &&
+          sectionsDefault.noSyncLabel === true,
+        detail: {
+          noSyncSection: sectionsDefault.noSyncSection,
+          noSyncToggle: sectionsDefault.noSyncToggle,
+          noSyncLabel: sectionsDefault.noSyncLabel
+        }
       });
 
-      // ---- Kickoff sync network: OFF → zero requests ----
+      // Feature flag off → zero sync network even if page tries e2e harness messages
       mockSb.reset();
       syncNetworkLog.length = 0;
-      await popupPage.evaluate(() => new Promise((resolve) => {
-        chrome.storage.local.set({
-          omtKickoffSyncEnabled: false,
-          omtKickoffSyncUrl: '',
-          omtKickoffSyncAnonKey: '',
-          omtKickoffSyncRoom: ''
-        }, resolve);
-      }));
-      await page.waitForTimeout(400);
       await page.evaluate(() => {
-        localStorage.setItem('omtKickoffSyncEnabled', 'false');
         window.postMessage({ source: 'omt-e2e', type: 'OMT_E2E_SYNC_START' }, '*');
         window.postMessage({ source: 'omt-e2e', type: 'OMT_E2E_SYNC_PUBLISH' }, '*');
         window.postMessage({
@@ -1795,86 +1772,43 @@ async function run() {
           row: {
             match_key: 'room:e2e-room',
             kickoff1: 12.5,
-            kickoff2: null,
-            kickoff_c1: null,
-            kickoff_c2: null,
             updated_at: new Date().toISOString(),
-            client_id: 'e2e-off'
+            client_id: 'e2e-flag-off'
           }
+        }, '*');
+        window.postMessage({
+          source: 'omt-page',
+          type: 'OMT_SYNC_PUSH',
+          payload: { row: { match_key: 'room:e2e-room', kickoff1: 99 } }
         }, '*');
         document.getElementById('omt-btn-set-kickoff')?.click();
       });
       await page.waitForTimeout(1000);
-      results.push({
-        name: 'kickoff-sync-off-zero-requests',
-        pass: syncNetworkLog.length === 0 && mockSb.log.length === 0,
-        detail: { syncNetworkLog: syncNetworkLog.slice(), mockLog: mockSb.log.slice() }
-      });
-
-      // ---- Kickoff sync network: ON + mocked endpoint → upsert ----
-      mockSb.reset();
-      syncNetworkLog.length = 0;
-      const mockBase = mockSb.base;
-      await popupPage.evaluate(({ url }) => new Promise((resolve) => {
-        chrome.storage.local.set({
-          omtKickoffSyncEnabled: true,
-          omtKickoffSyncUrl: url,
-          omtKickoffSyncAnonKey: 'e2e-anon-key-not-secret',
-          omtKickoffSyncRoom: 'e2e-room'
-        }, resolve);
-      }), { url: mockBase });
-      await page.waitForFunction(() => localStorage.getItem('omtKickoffSyncEnabled') === 'true', null, { timeout: 5000 });
-      await page.evaluate((url) => {
-        localStorage.setItem('omtKickoffSyncUrl', url);
-        localStorage.setItem('omtKickoffSyncAnonKey', 'e2e-anon-key-not-secret');
-        localStorage.setItem('omtKickoffSyncRoom', 'e2e-room');
-        localStorage.setItem('omtKickoffSyncEnabled', 'true');
-        window.postMessage({ source: 'omt-e2e', type: 'OMT_E2E_SYNC_START' }, '*');
-        window.postMessage({
-          source: 'omt-e2e',
-          type: 'OMT_E2E_SYNC_PUSH_ROW',
-          row: {
-            match_key: 'room:e2e-room',
-            kickoff1: 42.5,
-            kickoff2: null,
-            kickoff_c1: null,
-            kickoff_c2: null,
-            custom_min_c1: null,
-            custom_min_c2: null,
-            half: '1',
-            updated_at: new Date().toISOString(),
-            client_id: 'e2e-on'
-          }
-        }, '*');
-      }, mockBase);
-      let synced = false;
-      for (let i = 0; i < 24; i++) {
-        await page.waitForTimeout(250);
-        if (mockSb.store.has('room:e2e-room') || mockSb.log.some((e) => e.method === 'POST')) {
-          synced = true;
-          break;
+      const manifestHasOptionalSb = await popupPage.evaluate(async () => {
+        try {
+          const m = await fetch(chrome.runtime.getURL('manifest.json')).then((r) => r.json());
+          const opt = m.optional_host_permissions || [];
+          const hosts = m.host_permissions || [];
+          return {
+            optionalHasSupabase: opt.some((p) => /supabase/i.test(p)),
+            hostHasSupabase: hosts.some((p) => /supabase/i.test(p))
+          };
+        } catch (e) {
+          return { optionalHasSupabase: true, hostHasSupabase: true, err: String(e) };
         }
-      }
-      const stored = mockSb.store.get('room:e2e-room');
+      });
       results.push({
-        name: 'kickoff-sync-on-mocked-upsert',
-        pass: synced === true &&
-          !!stored &&
-          Number(stored.kickoff1) === 42.5 &&
-          (syncNetworkLog.some((r) => /kickoff_sync/i.test(r.url)) || mockSb.log.length > 0),
+        name: 'kickoff-sync-feature-off-zero-requests',
+        pass: syncNetworkLog.length === 0 &&
+          mockSb.log.length === 0 &&
+          manifestHasOptionalSb.optionalHasSupabase === false &&
+          manifestHasOptionalSb.hostHasSupabase === false,
         detail: {
-          synced,
-          stored,
-          mockLog: mockSb.log.slice(0, 8),
-          syncNetworkLog: syncNetworkLog.slice(0, 8)
+          syncNetworkLog: syncNetworkLog.slice(),
+          mockLog: mockSb.log.slice(),
+          manifestHasOptionalSb
         }
       });
-
-      // Turn sync back off for remaining tests
-      await popupPage.evaluate(() => new Promise((resolve) => {
-        chrome.storage.local.set({ omtKickoffSyncEnabled: false }, resolve);
-      }));
-      await page.waitForTimeout(200);
 
       // Shuttle section collapsed screenshot
       const shuttleCollapsed = await popupPage.evaluate(() => {

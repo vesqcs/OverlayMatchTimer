@@ -17,36 +17,29 @@ The extension may store the following in **Chrome local extension storage** (`ch
 - ShuttleXpress button skip values, Play/Pause assignment, jog/ring settings
 - Popup UI preferences (which sections are expanded)
 - Per-window Shuttle enable flag (page localStorage)
-- Optional kickoff-sync settings (enable flag, project URL, anon key, optional room id) — **off by default**
 
-This data stays on the machine/profile that installed the extension unless you enable kickoff sync (below).
+This data stays on the machine/profile that installed the extension.
 
 ## Data we do not collect
 
 - No analytics SDKs
 - No advertising identifiers
 - No account login to a developer backend
-- No transmission of match video or keystrokes to a remote Overlay MatchTimer server
+- No transmission of match video, keystrokes, or preferences to a remote Overlay MatchTimer server
 
-## Optional kickoff sync (v1.7.0+, default off)
+## Cloud / Kickoff sync
 
-When **Kickoff sync** is left off (the default), the extension makes **no** network requests related to sync and does not use optional Supabase host access.
+**Not active in the current build (v1.7.1).** No Supabase (or similar) host permission is declared, and the extension does not send kickoff data to a remote project.
 
-If you turn it on in Customize and enter a Supabase project URL + anon key that you control:
-
-- The extension requests optional host permission for that project origin at enable time only
-- Kickoff / clock-reference values for the current match room may be sent to and read from your project’s `kickoff_sync` table
-- No service-role keys are used; credentials are stored only in `chrome.storage.local` on your device
-
-Turn sync off at any time to stop further sync traffic.
+If a future release enables shared kickoff sync, the privacy policy will be updated **before** enablement to describe what is sent, where it is stored, and retention. Until then, treat the product as local-only.
 
 ## Third parties
 
-Video is provided by InplayIP / Examino / local files under your existing access. This extension does not share data with those services beyond what the browser already does when you visit those pages. Optional sync talks only to the Supabase project URL you configure.
+Video is provided by InplayIP / Examino / local files under your existing access. This extension does not share data with those services beyond what the browser already does when you visit those pages.
 
 ## Host access
 
-The extension injects scripts on declared hosts (InplayIP, Examino play URLs, and localhost/127.0.0.1 for local player / test pages). Optional access to `https://*.supabase.co/*` is requested only when kickoff sync is enabled.
+The extension only injects scripts on declared hosts (InplayIP, Examino play URLs, and localhost/127.0.0.1 for local player / test pages).
 
 ## Changes
 

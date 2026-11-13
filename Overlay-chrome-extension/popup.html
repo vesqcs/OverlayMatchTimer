@@ -120,45 +120,17 @@
       </div>
     </details>
 
-    <details class="omt-cust-details" id="omt-sync-details" data-section="sync">
-      <summary class="omt-cust-summary">
-        <span class="omt-cust-summary-row">
-          <span class="omt-cust-summary-icon" aria-hidden="true">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>
-          </span>
-          <span>Kickoff sync</span>
-        </span>
-      </summary>
-      <div class="omt-cust-details-body">
-        <label class="omt-toggle-row" for="omt-kickoff-sync-enable">
-          <span class="omt-toggle-label">Share kickoff with team</span>
-          <span class="omt-switch">
-            <input type="checkbox" id="omt-kickoff-sync-enable" />
-            <span class="omt-switch-slider"></span>
-          </span>
-        </label>
-        <p class="omt-note">Off by default. No network calls until you turn this on. Uses your own Supabase project (URL + anon key). Chrome will ask for host access to that project only when enabling.</p>
-        <div id="omt-sync-fields" class="omt-sync-fields">
-          <label class="omt-field">Project URL
-            <input type="url" id="omt-sync-url" class="omt-control" placeholder="https://xxxx.supabase.co" autocomplete="off" spellcheck="false" />
-          </label>
-          <label class="omt-field">Anon key
-            <input type="password" id="omt-sync-anon" class="omt-control" placeholder="eyJ…" autocomplete="off" spellcheck="false" />
-          </label>
-          <label class="omt-field">Room id <span class="omt-field-optional">(optional)</span>
-            <input type="text" id="omt-sync-room" class="omt-control" placeholder="Same match page URL if empty" autocomplete="off" spellcheck="false" />
-          </label>
-          <p class="omt-note" id="omt-sync-status" role="status"></p>
-        </div>
-      </div>
-    </details>
+    <!-- Kickoff sync UI removed while OMT_SYNC_FEATURE_ENABLED is false (v1.7.1).
+         Prototype markup kept in popup-sync-section.html for internal re-enable only.
+         Planned always-on design: ARCHITECTURE.md / supabase/SETUP.md (not shipped). -->
 
     <div class="omt-cust-actions omt-cust-actions--foot">
       <button type="button" id="omt-reset-all-custom" class="omt-btn-secondary">Reset all customizations</button>
     </div>
   </section>
 
-  <footer class="omt-popup-foot">v1.7.0</footer>
+  <footer class="omt-popup-foot">v1.7.1</footer>
+  <script src="sync-feature-flag.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>
