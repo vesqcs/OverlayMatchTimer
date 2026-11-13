@@ -179,8 +179,8 @@
         }
     }
 
-    /** Place the single tip above the scrubber; clamp horizontally inside #omt-root. */
-    function placeTimelineHoverTip(leftPx) {
+    /** Place the single tip above the scrubber (fixed; solid; never under the card). */
+    function placeTimelineHoverTip(leftPxInBar) {
         const tip = q('omt-timeline-hover-tip');
         const track = omtRoot ? omtRoot.querySelector('.omt-timeline-track') : null;
         const bar = q('omt-timeline-bar');
@@ -189,28 +189,37 @@
         const barRect = bar.getBoundingClientRect();
         const rootRect = omtRoot.getBoundingClientRect();
         tip.hidden = false;
+        tip.style.opacity = '1';
         bar.classList.add('is-timeline-hover');
-        // Lift bar above the floating card while the tip is shown.
         bar.style.zIndex = '55';
 
-        // Tip sits above the track (labels are below) — inside the bar’s top padding.
-        tip.style.bottom = (barRect.bottom - trackRect.top + 10) + 'px';
-        tip.style.top = 'auto';
-        tip.style.transform = 'translateX(-50%)';
-
-        // Horizontal clamp inside the player root.
-        tip.style.left = leftPx + 'px';
-        // Force layout then clamp.
-        const tipRect = tip.getBoundingClientRect();
+        // Measure after un-hiding.
+        const tipH = Math.max(22, tip.offsetHeight || 22);
+        const tipW = Math.max(48, tip.offsetWidth || 80);
+        let left = barRect.left + leftPxInBar - tipW / 2;
         const pad = 6;
-        let shift = 0;
-        if (tipRect.left < rootRect.left + pad) shift = (rootRect.left + pad) - tipRect.left;
-        if (tipRect.right + shift > rootRect.right - pad) {
-            shift = (rootRect.right - pad) - tipRect.right;
+        if (left < rootRect.left + pad) left = rootRect.left + pad;
+        if (left + tipW > rootRect.right - pad) left = rootRect.right - pad - tipW;
+
+        // Prefer the gap between the control card and the track.
+        let top = trackRect.top - tipH - 8;
+        if (controlsPanel) {
+            const pr = controlsPanel.getBoundingClientRect();
+            if (top < pr.bottom + 2) {
+                // Not enough room above the track under the card — sit just below the card
+                // if that still clears the track; else hug the track from above.
+                const belowCard = pr.bottom + 4;
+                top = (belowCard + tipH < trackRect.top - 2) ? belowCard : (trackRect.top - tipH - 4);
+            }
         }
-        if (shift) {
-            tip.style.left = (leftPx + shift) + 'px';
-        }
+        if (top < rootRect.top + pad) top = rootRect.top + pad;
+
+        tip.style.position = 'fixed';
+        tip.style.left = Math.round(left) + 'px';
+        tip.style.top = Math.round(top) + 'px';
+        tip.style.bottom = 'auto';
+        tip.style.transform = 'none';
+        tip.style.zIndex = '2147483645';
     }
 
     function clearPeriodTickSnap() {
@@ -282,8 +291,19 @@
 
     function hideTimelineHoverTip() {
         const tip = q('omt-timeline-hover-tip');
+        // Tests / capture can set data-omt-hold to freeze the tip through pointerleave races.
+        if (tip && tip.dataset.omtHold === '1') return;
         const bar = q('omt-timeline-bar');
-        if (tip) tip.hidden = true;
+        if (tip) {
+            tip.hidden = true;
+            tip.style.opacity = '';
+            tip.style.left = '';
+            tip.style.top = '';
+            tip.style.bottom = '';
+            tip.style.transform = '';
+            tip.style.position = '';
+            tip.style.zIndex = '';
+        }
         if (bar) {
             bar.style.zIndex = '';
             bar.classList.remove('is-timeline-hover');
