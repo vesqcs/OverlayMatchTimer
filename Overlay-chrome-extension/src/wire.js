@@ -129,14 +129,28 @@
         timelineSlider.addEventListener('input', function () {
             isDraggingTimeline = true;
             vTimeCurrent.innerText = formatarTempoVideo(parseFloat(this.value));
+            // Redesign only: keep fill glued to the thumb while dragging (no wait for timeupdate).
+            if (typeof paintTimelineScrubberProgress === 'function') paintTimelineScrubberProgress(true);
         });
         timelineSlider.addEventListener('change', function () {
             const t = parseFloat(this.value);
+            if (typeof paintTimelineScrubberProgress === 'function') paintTimelineScrubberProgress(true);
             seekTo(t);
             isDraggingTimeline = false;
             this.blur();
             resetControlsTimeout(false);
         });
+
+        // Period + time hover tip (redesign); no "Seek timeline" label on the slider.
+        const timelineTrack = omtRoot ? omtRoot.querySelector('.omt-timeline-track') : null;
+        if (timelineTrack) {
+            timelineTrack.addEventListener('pointermove', (e) => {
+                if (typeof updateTimelineHoverTip === 'function') updateTimelineHoverTip(e.clientX);
+            });
+            timelineTrack.addEventListener('pointerleave', () => {
+                if (typeof hideTimelineHoverTip === 'function') hideTimelineHoverTip();
+            });
+        }
 
         // --- Video element events (AbortController so teardown detaches cleanly) ---
         if (vidAbortController) {

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Overlay MatchTimer",
-  "version": "1.7.3",
+  "version": "1.7.4",
   "description": "Injects the Overlay MatchTimer UI over InplayIP and Examino DVR/VOD streams, plus a local file player for offline / NAS analysis.",
   "author": "Vasco Oliveira",
   "icons": {

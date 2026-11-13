@@ -86,9 +86,10 @@
 <!-- Timeline alone: full-width thin bar at the very bottom of the video -->
 <div id="omt-timeline-bar" class="omt-timeline-bar">
     <div class="omt-timeline-track">
-        <input type="range" id="omt-timeline-slider" class="timeline-slider omt-tip" min="0" max="100" value="0" step="0.01"${tip('Seek timeline')}>
-        <div id="omt-timeline-markers"></div>
+        <input type="range" id="omt-timeline-slider" class="timeline-slider" min="0" max="100" value="0" step="0.01" aria-label="Timeline">
+        <div id="omt-timeline-markers" aria-hidden="true"></div>
     </div>
+    <div id="omt-timeline-hover-tip" class="omt-timeline-hover-tip" hidden></div>
     <div class="omt-timeline-times">
         <span id="omt-v-time-current" class="omt-time-text omt-tip"${tip('Current video time')}>00:00:00</span>
         <span class="omt-time-sep" aria-hidden="true">/</span>
@@ -96,8 +97,39 @@
     </div>
 </div>
 
-<!-- Floating control panel: more-panel ABOVE handle+transport so it expands UP (bottom-anchored). -->
+<!-- Floating control card (v1.7.2 layout): handle → more (middle) → transport/speeds. Grows UP via bottom anchor. -->
 <div id="controls-panel" class="glass-panel">
+    <div class="drag-handle" id="controls-handle">
+        <div class="drag-side-left">
+            <button type="button" id="omt-more-toggle" class="omt-more-toggle handle-btn omt-tip" aria-expanded="false"${tip('Match controls')}>
+                <span class="omt-more-icon-collapsed">${omtIcon('chevrons-up', 16)}</span>
+                <span class="omt-more-icon-expanded" hidden>${omtIcon('chevrons-down', 16)}</span>
+            </button>
+            <select id="omt-speed-select" class="top-select omt-tip"${tip('Playback speed (Z / C / X)')}>
+                <option value="0.25">0.25x</option>
+                <option value="0.5">0.50x</option>
+                <option value="0.75">0.75x</option>
+                <option value="1.0" selected>1.00x</option>
+                <option value="1.25">1.25x</option>
+                <option value="1.5">1.50x</option>
+                <option value="2.0">2.00x</option>
+            </select>
+            <button type="button" id="omt-hide-panel" class="handle-btn omt-tip is-auto-hide-on" aria-pressed="true"${tip('Auto hide: on')}>
+                ${omtIcon('eye-off', 16)}
+            </button>
+        </div>
+        <div class="drag-center-grip" aria-hidden="true">${omtIcon('grip-horizontal', 16)}</div>
+        <div class="drag-side-right">
+            <button id="omt-live-btn" class="omt-tip" type="button"${tip('Go to live edge (L)')}>
+                <span class="live-dot"></span><span class="live-label">LIVE</span>
+            </button>
+            <span class="omt-live-spacer" aria-hidden="true"></span>
+            <button class="handle-btn omt-tip" id="omt-volume-icon-btn" type="button"${tip('Mute / Unmute')}>${omtIcon('volume-2', 16)}</button>
+            <input type="range" id="omt-volume-range" class="omt-tip" min="0" max="1" step="0.05" value="1"${tip('Volume')}>
+            <button class="handle-btn omt-tip" id="omt-btn-fullscreen" type="button"${tip('Fullscreen')}>${omtIcon('maximize', 16)}</button>
+        </div>
+    </div>
+
     <div id="omt-more-panel" class="omt-more-panel" aria-hidden="true">
         <div id="omt-kickoff-bar" class="omt-more-block">
             <label class="omt-more-label" for="omt-half-select">Period</label>
@@ -151,37 +183,6 @@
         </div>
     </div>
 
-    <div class="drag-handle" id="controls-handle">
-        <div class="drag-side-left">
-            <button type="button" id="omt-more-toggle" class="omt-more-toggle handle-btn omt-tip" aria-expanded="false"${tip('Match controls')}>
-                <span class="omt-more-icon-collapsed">${omtIcon('chevrons-up', 16)}</span>
-                <span class="omt-more-icon-expanded" hidden>${omtIcon('chevrons-down', 16)}</span>
-            </button>
-            <select id="omt-speed-select" class="top-select omt-tip"${tip('Playback speed (Z / C / X)')}>
-                <option value="0.25">0.25x</option>
-                <option value="0.5">0.50x</option>
-                <option value="0.75">0.75x</option>
-                <option value="1.0" selected>1.00x</option>
-                <option value="1.25">1.25x</option>
-                <option value="1.5">1.50x</option>
-                <option value="2.0">2.00x</option>
-            </select>
-            <button type="button" id="omt-hide-panel" class="handle-btn omt-tip is-auto-hide-on" aria-pressed="true"${tip('Auto hide: on')}>
-                ${omtIcon('eye-off', 16)}
-            </button>
-        </div>
-        <div class="drag-center-grip" aria-hidden="true">${omtIcon('grip-horizontal', 16)}</div>
-        <div class="drag-side-right">
-            <button id="omt-live-btn" class="omt-tip" type="button"${tip('Go to live edge (L)')}>
-                <span class="live-dot"></span><span class="live-label">LIVE</span>
-            </button>
-            <span class="omt-live-spacer" aria-hidden="true"></span>
-            <button class="handle-btn omt-tip" id="omt-volume-icon-btn" type="button"${tip('Mute / Unmute')}>${omtIcon('volume-2', 16)}</button>
-            <input type="range" id="omt-volume-range" class="omt-tip" min="0" max="1" step="0.05" value="1"${tip('Volume')}>
-            <button class="handle-btn omt-tip" id="omt-btn-fullscreen" type="button"${tip('Fullscreen')}>${omtIcon('maximize', 16)}</button>
-        </div>
-    </div>
-
     <div class="controls-content">
         <div class="omt-transport-seg" role="group" aria-label="Playback transport">
             <button class="ctrl-btn omt-tip" id="omt-m120" type="button"${tip('Skip −2 minutes (Ctrl + ←)')}>${omtIcon('rewind', 18)}<span class="omt-btn-label">2m</span></button>
@@ -231,11 +232,48 @@
         shuttleCheatsheet = q('omt-shuttle-cheatsheet');
     }
 
+    /** Keep card bottom-anchored so height changes grow UP; clamp so top stays on-screen. */
+    function anchorControlsPanelBottom(preserveBottomPx) {
+        if (!controlsPanel || !omtRoot) return;
+        const rootRect = omtRoot.getBoundingClientRect();
+        const before = controlsPanel.getBoundingClientRect();
+        const bottomPx = (preserveBottomPx != null)
+            ? preserveBottomPx
+            : Math.max(0, rootRect.bottom - before.bottom);
+
+        // Convert any drag `top` into `bottom` so expand/collapse never pushes transport down.
+        const leftPx = before.left - rootRect.left;
+        controlsPanel.style.bottom = bottomPx + 'px';
+        controlsPanel.style.top = 'auto';
+        // Preserve horizontal place after a drag (clear centering transform).
+        if (controlsPanel.style.transform === 'none' || controlsPanel.style.left) {
+            controlsPanel.style.left = leftPx + 'px';
+            controlsPanel.style.transform = 'none';
+        }
+
+        const after = controlsPanel.getBoundingClientRect();
+        if (after.top < rootRect.top) {
+            const overflow = rootRect.top - after.top;
+            controlsPanel.style.bottom = Math.max(0, bottomPx - overflow) + 'px';
+        }
+    }
+
     function setMorePanelOpen(open) {
         const panel = q('omt-more-panel');
         const btn = q('omt-more-toggle');
         if (!panel || !btn) return;
         const next = !!open;
+
+        // Snapshot bottom edge before height change (transport must stay put).
+        let bottomPx = null;
+        if (controlsPanel && omtRoot) {
+            const rootRect = omtRoot.getBoundingClientRect();
+            const rect = controlsPanel.getBoundingClientRect();
+            bottomPx = Math.max(0, rootRect.bottom - rect.bottom);
+            // If previously dragged with top-only, switch to bottom before opening.
+            anchorControlsPanelBottom(bottomPx);
+        }
+
         panel.classList.toggle('is-open', next);
         panel.setAttribute('aria-hidden', next ? 'false' : 'true');
         btn.setAttribute('aria-expanded', next ? 'true' : 'false');
@@ -245,6 +283,11 @@
         if (collapsedIcon) collapsedIcon.hidden = next;
         if (expandedIcon) expandedIcon.hidden = !next;
         if (controlsPanel) controlsPanel.classList.toggle('omt-more-open', next);
+
+        // After layout, re-assert bottom + clamp top of viewport.
+        requestAnimationFrame(() => {
+            anchorControlsPanelBottom(bottomPx);
+        });
     }
 
     function toggleMorePanel() {
