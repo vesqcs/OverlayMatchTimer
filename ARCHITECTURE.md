@@ -26,7 +26,8 @@ Users do **not** need to run the build — `content.js` is committed. `bridge.js
 | `src/adapters/interface.js` | Documented site-adapter contract |
 | `src/adapters/inplayip.js` | InplayIP Video.js adapter |
 | `src/adapters/examino.js` | Examino OpenPlayer adapter |
-| `src/adapters/xeatre.js` | Xeatre **stub** (`stub: true` → script idles) |
+| `src/adapters/local.js` | Extension local player (`player.html`) |
+| `src/adapters/xeatre.js` | Xeatre **stub** (`stub: true` → script idles; waits for Vasco material) |
 | `src/adapters/detect.js` | Host/path/`data-omt-site` → adapter |
 | `src/boot.js` | `teardown` / `boot` / SPA monitor / `init` |
 | `src/hls.js` | hls.js / VHS discovery + DVR anti-snap patch |
@@ -45,8 +46,10 @@ Users do **not** need to run the build — `content.js` is committed. `bridge.js
 | `src/setup-visibility.js` | Setup panel show/hide |
 | `src/shuttle.js` | ShuttleXpress WebHID |
 | `src/restore.js` | localStorage kick-off restore |
-| `src/storage.js` | Auto-VOD preference ↔ `bridge.js` (localStorage + postMessage) |
+| `src/storage.js` | Prefs ↔ `bridge.js`; local player Shuttle uses sessionStorage (per-window) |
+| `src/auto-pause.js` | Auto pause on Alt+Tab / tab hide |
 | `src/examino-features.js` | Click-to-toggle, hide native bars, Source DVR/VOD, auto-VOD |
+| `src/local-features.js` | Local file picker, drag-and-drop, Open file control |
 | `src/entry.js` | Entry: early Examino hooks, then `boot()` |
 
 Concat order is `Overlay-chrome-extension/scripts/module-order.json`.
@@ -57,7 +60,7 @@ Each adapter is a plain object:
 
 ```js
 {
-  id: 'inplayip' | 'examino' | 'xeatre',
+  id: 'inplayip' | 'examino' | 'local' | 'xeatre',
   rootClass: string,
   findVideo(): HTMLVideoElement | null,
   findAnchor(videoEl): Element | null,

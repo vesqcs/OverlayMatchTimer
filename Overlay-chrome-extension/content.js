@@ -230,6 +230,54 @@
         }
     };
 
+/* Local player page (chrome-extension://…/player.html) — file / NAS mapped drive. */
+    const SITE_LOCAL = {
+        id: 'local',
+        rootClass: 'omt-local',
+
+        findVideo() {
+            return document.getElementById('omt-local-video') ||
+                document.querySelector('#omt-local-stage video') ||
+                document.querySelector('video');
+        },
+
+        findAnchor(videoEl) {
+            return document.getElementById('omt-local-stage') ||
+                videoEl.parentElement ||
+                document.body;
+        },
+
+        findFullscreenTarget(videoEl) {
+            return document.getElementById('omt-local-stage') ||
+                videoEl.parentElement ||
+                videoEl;
+        },
+
+        isReviewStream() { return true; },
+        isLiveStream() { return false; },
+
+        suppressHostControls() {
+            // Standalone page — no host chrome to hide.
+        },
+
+        mediaReady(videoEl) {
+            // Allow auto-hide / activity even before a file is chosen so the
+            // empty-state drop zone + HUD stay interactive.
+            return !!videoEl;
+        },
+
+        effectiveDuration(videoEl) {
+            if (!videoEl) return NaN;
+            if (videoEl.duration && isFinite(videoEl.duration)) return videoEl.duration;
+            try {
+                if (videoEl.seekable && videoEl.seekable.length > 0) {
+                    return videoEl.seekable.end(videoEl.seekable.length - 1);
+                }
+            } catch (_) {}
+            return NaN;
+        }
+    };
+
 /* Xeatre stub — out of scope for injection; URL paste stays in the HTML companion. */
     // Xeatre works differently (URL paste into the HTML app). Out of scope —
     // leave a stub so a future adapter can plug in without another rewrite.
@@ -253,11 +301,21 @@
         const host = (location.hostname || '').toLowerCase();
         const path = location.pathname || '';
         const forced = (document.documentElement.dataset.omtSite || '').toLowerCase();
+        const proto = (location.protocol || '').toLowerCase();
+
+        // Extension local player page (chrome-extension://…/player.html)
+        if (
+            forced === 'local' ||
+            /\/player\.html$/i.test(path) ||
+            (proto === 'chrome-extension:' && /player\.html/i.test(path))
+        ) {
+            return SITE_LOCAL;
+        }
 
         if (forced === 'examino' || host.includes('examino') || /examino/i.test(path)) {
             return SITE_EXAMINO;
         }
-        // TODO(xeatre): enable when bringing Xeatre injection back
+        // TODO(xeatre): enable when Vasco provides material
         if (forced === 'xeatre' || host.includes('xeatre')) {
             return SITE_XEATRE;
         }
@@ -268,6 +326,7 @@
         if (host === 'localhost' || host === '127.0.0.1') {
             if (/examino/i.test(path)) return SITE_EXAMINO;
             if (/inplay/i.test(path)) return SITE_INPLAYIP;
+            if (/player\.html/i.test(path) || forced === 'local') return SITE_LOCAL;
         }
         return null;
     }
@@ -506,7 +565,10 @@
         if (site.id === 'examino') {
             initExaminoPlayerFeatures();
         }
-        console.log('[OMT] Overlay MatchTimer active — Review/DVR mode.');
+        if (site.id === 'local') {
+            installLocalPlayerFeatures();
+        }
+        console.log('[OMT] Overlay MatchTimer active — ' + (site.id === 'local' ? 'local player' : 'Review/DVR') + ' mode.');
     }
 
 /* Locate hls.js / VHS and soften live-edge snap for DVR. */
@@ -684,6 +746,8 @@
   <path d="M14.084 14.158a3 3 0 0 1-4.242-4.242" />
   <path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143" />
   <path d="m2 2 20 20" />`
+,
+        "folder-open": `<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" />`
     };
 
     function omtIcon(name, size = 16, extraClass = '') {
@@ -2349,7 +2413,11 @@
         prevBytes4 = 0;
 
         updateToggleUI(false);
-        localStorage.setItem('shuttleXpressEnabled', 'false');
+        if (typeof storageSetShuttleEnabled === 'function') {
+            storageSetShuttleEnabled(false);
+        } else {
+            try { localStorage.setItem('shuttleXpressEnabled', 'false'); } catch (_) {}
+        }
         showShuttleCheatsheet(false);
     }
 
@@ -2542,7 +2610,10 @@
 
         navigator.hid.addEventListener('disconnect', handleHidDisconnect);
 
-        if (localStorage.getItem('shuttleXpressEnabled') === 'true') {
+        const shuttleOn = (typeof storageGetShuttleEnabled === 'function')
+            ? storageGetShuttleEnabled()
+            : (localStorage.getItem('shuttleXpressEnabled') === 'true');
+        if (shuttleOn) {
             try {
                 const devices = await navigator.hid.getDevices();
                 const device = devices.find(d => d.vendorId === 0x0b33);
@@ -2644,12 +2715,27 @@
     }
 
     function storageGetShuttleEnabled() {
+        // Local player windows must not share Shuttle enablement (upper shared
+        // monitor vs personal file window). sessionStorage is per-window.
+        if (site && site.id === 'local') {
+            try {
+                return sessionStorage.getItem('omtLocalShuttleEnabled') === 'true';
+            } catch (_) {
+                return false;
+            }
+        }
         const v = localStorage.getItem(OMT_STORAGE_KEYS.shuttle);
         if (v === null || v === undefined || v === '') return false;
         return v === 'true';
     }
 
     function storageSetShuttleEnabled(enabled) {
+        if (site && site.id === 'local') {
+            try {
+                sessionStorage.setItem('omtLocalShuttleEnabled', enabled ? 'true' : 'false');
+            } catch (_) {}
+            return;
+        }
         localStorage.setItem(OMT_STORAGE_KEYS.shuttle, enabled ? 'true' : 'false');
         try {
             window.postMessage({
@@ -2667,7 +2753,7 @@
         shuttleToggle.checked = on;
         // Reuse existing Shuttle wiring without changing behaviour.
         try {
-            if (typeof updateToggleUI === 'function') updateToggleUI();
+            if (typeof updateToggleUI === 'function') updateToggleUI(on);
         } catch (_) {}
     }
 
@@ -2678,14 +2764,19 @@
         if (!data || data.source !== 'omt-bridge' || data.type !== 'OMT_STORAGE_SYNC') return;
         const values = data.values || {};
         if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.shuttle)) {
-            try {
-                localStorage.setItem(OMT_STORAGE_KEYS.shuttle, values[OMT_STORAGE_KEYS.shuttle] ? 'true' : 'false');
-            } catch (_) {}
-            syncShuttleToggleFromStorage();
-            if (values[OMT_STORAGE_KEYS.shuttle] && typeof initShuttleXpress === 'function') {
-                initShuttleXpress().catch(() => {});
-            } else if (!values[OMT_STORAGE_KEYS.shuttle] && typeof cleanupShuttle === 'function') {
-                cleanupShuttle();
+            // Never let shared chrome.storage shuttle prefs override a local player window.
+            if (site && site.id === 'local') {
+                // ignore
+            } else {
+                try {
+                    localStorage.setItem(OMT_STORAGE_KEYS.shuttle, values[OMT_STORAGE_KEYS.shuttle] ? 'true' : 'false');
+                } catch (_) {}
+                syncShuttleToggleFromStorage();
+                if (values[OMT_STORAGE_KEYS.shuttle] && typeof initShuttleXpress === 'function') {
+                    initShuttleXpress().catch(() => {});
+                } else if (!values[OMT_STORAGE_KEYS.shuttle] && typeof cleanupShuttle === 'function') {
+                    cleanupShuttle();
+                }
             }
         }
         if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.autoVod)) {
@@ -3522,6 +3613,136 @@
         startExaminoNativeChromeObserver();
         if (examinoManualSourceChoice === 'DVR') return;
         startAutoVodWatcher();
+    }
+
+/* Local player: file picker, drag-and-drop, per-window open-file control. */
+    let localObjectUrl = null;
+    let localFeaturesInstalled = false;
+
+    function revokeLocalObjectUrl() {
+        if (localObjectUrl) {
+            try { URL.revokeObjectURL(localObjectUrl); } catch (_) {}
+            localObjectUrl = null;
+        }
+    }
+
+    function setLocalDropVisible(visible) {
+        const drop = document.getElementById('omt-local-drop');
+        if (drop) drop.hidden = !visible;
+        const stage = document.getElementById('omt-local-stage');
+        if (stage) stage.classList.toggle('omt-has-media', !visible);
+    }
+
+    function loadLocalVideoFile(file) {
+        if (!file || (!/^video\//i.test(file.type) && !/\.(mp4|webm|mkv|mov|m4v|avi)$/i.test(file.name || ''))) {
+            mostrarOSD('Unsupported file');
+            return;
+        }
+        if (!ensureLiveVideo()) return;
+        revokeLocalObjectUrl();
+        localObjectUrl = URL.createObjectURL(file);
+        try { vid.pause(); } catch (_) {}
+        vid.src = localObjectUrl;
+        vid.load();
+        setLocalDropVisible(false);
+        const nameEl = document.getElementById('omt-local-filename');
+        if (nameEl) nameEl.textContent = file.name || 'Local video';
+        mostrarOSD('Loaded: ' + (file.name || 'video'));
+        const playPromise = vid.play();
+        if (playPromise && typeof playPromise.catch === 'function') {
+            playPromise.catch(() => {});
+        }
+        // Refresh timeline bounds once metadata is ready.
+        const onMeta = () => {
+            try {
+                if (typeof inicializarMetadadosTimeline === 'function') inicializarMetadadosTimeline();
+            } catch (_) {}
+            syncPlayButtonFromVideo();
+            noteOmtUiActivity(true);
+        };
+        vid.addEventListener('loadedmetadata', onMeta, { once: true });
+        vid.addEventListener('durationchange', onMeta, { once: true });
+    }
+
+    function openLocalFilePicker() {
+        const input = document.getElementById('omt-local-file-input');
+        if (input) input.click();
+    }
+
+    function ensureLocalOpenFileControl() {
+        if (!omtRoot || site.id !== 'local') return;
+        const more = omtRoot.querySelector('#omt-more-panel');
+        if (!more || more.querySelector('#omt-local-open-file')) return;
+        const block = document.createElement('div');
+        block.className = 'omt-more-block omt-local-file-block';
+        block.innerHTML =
+            '<button type="button" id="omt-local-open-file" class="btn-sync omt-tip" data-tip="Open a local or NAS-mapped video file">' +
+            omtIcon('folder-open', 14) +
+            '<span class="omt-btn-label">Open file</span></button>' +
+            '<span id="omt-local-filename" class="omt-local-filename">No file loaded</span>';
+        const shuttle = more.querySelector('.omt-shuttle-block');
+        if (shuttle) more.insertBefore(block, shuttle);
+        else more.appendChild(block);
+        block.querySelector('#omt-local-open-file').addEventListener('click', () => {
+            openLocalFilePicker();
+            noteOmtUiActivity(true);
+        });
+    }
+
+    function installLocalPlayerFeatures() {
+        if (localFeaturesInstalled || site.id !== 'local') return;
+        localFeaturesInstalled = true;
+
+        ensureLocalOpenFileControl();
+
+        const input = document.getElementById('omt-local-file-input');
+        if (input) {
+            input.addEventListener('change', () => {
+                const file = input.files && input.files[0];
+                if (file) loadLocalVideoFile(file);
+                input.value = '';
+            });
+        }
+
+        const drop = document.getElementById('omt-local-drop');
+        const stage = document.getElementById('omt-local-stage');
+        const target = drop || stage;
+        if (target) {
+            const onDrag = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (drop) drop.classList.add('is-dragover');
+            };
+            const onLeave = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (drop) drop.classList.remove('is-dragover');
+            };
+            ['dragenter', 'dragover'].forEach((ev) => target.addEventListener(ev, onDrag));
+            ['dragleave', 'dragend'].forEach((ev) => target.addEventListener(ev, onLeave));
+            target.addEventListener('drop', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (drop) drop.classList.remove('is-dragover');
+                const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+                if (file) loadLocalVideoFile(file);
+            });
+        }
+        if (drop) {
+            drop.addEventListener('click', (e) => {
+                if (e.target.closest('button, input, a, label')) return;
+                openLocalFilePicker();
+            });
+            const browse = drop.querySelector('#omt-local-browse');
+            if (browse) browse.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                openLocalFilePicker();
+            });
+        }
+
+        setLocalDropVisible(!(vid && vid.src));
+        console.log('[OMT] Local player file/dnd installed.');
     }
 
 /* Content-script entry: early Examino hooks, then boot. */

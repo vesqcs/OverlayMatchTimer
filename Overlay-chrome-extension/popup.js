@@ -35,6 +35,14 @@
     });
   }
 
+  const openLocal = document.getElementById('omt-open-local-player');
+  if (openLocal) {
+    openLocal.addEventListener('click', () => {
+      const url = chrome.runtime.getURL('player.html');
+      chrome.tabs.create({ url });
+    });
+  }
+
   // Customize controls are disabled (coming soon) — values are still read for future wiring.
   document.querySelectorAll('.omt-tab').forEach((tab) => {
     tab.addEventListener('click', () => {

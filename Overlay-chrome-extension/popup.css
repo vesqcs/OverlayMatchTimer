@@ -112,6 +112,25 @@ body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
   border-radius: 6px;
   padding: 10px;
 }
+.omt-local-open-btn {
+  width: 100%;
+  border: 1px solid rgba(245, 131, 31, 0.55);
+  background: rgba(245, 131, 31, 0.16);
+  color: var(--omt-orange);
+  font-weight: 700;
+  font-size: 12px;
+  font-family: inherit;
+  border-radius: 6px;
+  padding: 9px 12px;
+  cursor: pointer;
+}
+.omt-local-open-btn:hover {
+  background: rgba(245, 131, 31, 0.26);
+}
+.omt-local-open-btn:focus-visible {
+  outline: 2px solid var(--omt-orange);
+  outline-offset: 2px;
+}
 .omt-toggle-row {
   display: flex;
   align-items: center;

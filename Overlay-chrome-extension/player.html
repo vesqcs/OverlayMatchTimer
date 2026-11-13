@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en" data-omt-site="local">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Overlay MatchTimer — Local player</title>
+  <link rel="stylesheet" href="content.css" />
+  <link rel="stylesheet" href="player.css" />
+</head>
+<body class="omt-local-page">
+  <div id="omt-local-stage">
+    <video id="omt-local-video" playsinline></video>
+    <div id="omt-local-drop" class="omt-local-drop">
+      <div class="omt-local-drop-inner">
+        <div class="omt-local-drop-title">OverlayMatchTimer</div>
+        <p class="omt-local-drop-copy">Drop a recorded match video here, or browse a local / NAS-mapped file.</p>
+        <button type="button" id="omt-local-browse" class="omt-local-browse">Open file</button>
+        <p class="omt-local-drop-hint">Multiple player windows are supported — enable ShuttleXpress only in the window that should own the device.</p>
+      </div>
+    </div>
+    <input type="file" id="omt-local-file-input" accept="video/*,.mp4,.webm,.mkv,.mov,.m4v,.avi" hidden />
+  </div>
+  <script src="bridge.js"></script>
+  <script src="content.js"></script>
+</body>
+</html>

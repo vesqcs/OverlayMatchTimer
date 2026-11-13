@@ -56,7 +56,11 @@
         prevBytes4 = 0;
 
         updateToggleUI(false);
-        localStorage.setItem('shuttleXpressEnabled', 'false');
+        if (typeof storageSetShuttleEnabled === 'function') {
+            storageSetShuttleEnabled(false);
+        } else {
+            try { localStorage.setItem('shuttleXpressEnabled', 'false'); } catch (_) {}
+        }
         showShuttleCheatsheet(false);
     }
 
@@ -249,7 +253,10 @@
 
         navigator.hid.addEventListener('disconnect', handleHidDisconnect);
 
-        if (localStorage.getItem('shuttleXpressEnabled') === 'true') {
+        const shuttleOn = (typeof storageGetShuttleEnabled === 'function')
+            ? storageGetShuttleEnabled()
+            : (localStorage.getItem('shuttleXpressEnabled') === 'true');
+        if (shuttleOn) {
             try {
                 const devices = await navigator.hid.getDevices();
                 const device = devices.find(d => d.vendorId === 0x0b33);

@@ -221,5 +221,8 @@
         if (site.id === 'examino') {
             initExaminoPlayerFeatures();
         }
-        console.log('[OMT] Overlay MatchTimer active — Review/DVR mode.');
+        if (site.id === 'local') {
+            installLocalPlayerFeatures();
+        }
+        console.log('[OMT] Overlay MatchTimer active — ' + (site.id === 'local' ? 'local player' : 'Review/DVR') + ' mode.');
     }

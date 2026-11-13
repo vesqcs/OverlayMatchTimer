@@ -49,12 +49,27 @@
     }
 
     function storageGetShuttleEnabled() {
+        // Local player windows must not share Shuttle enablement (upper shared
+        // monitor vs personal file window). sessionStorage is per-window.
+        if (site && site.id === 'local') {
+            try {
+                return sessionStorage.getItem('omtLocalShuttleEnabled') === 'true';
+            } catch (_) {
+                return false;
+            }
+        }
         const v = localStorage.getItem(OMT_STORAGE_KEYS.shuttle);
         if (v === null || v === undefined || v === '') return false;
         return v === 'true';
     }
 
     function storageSetShuttleEnabled(enabled) {
+        if (site && site.id === 'local') {
+            try {
+                sessionStorage.setItem('omtLocalShuttleEnabled', enabled ? 'true' : 'false');
+            } catch (_) {}
+            return;
+        }
         localStorage.setItem(OMT_STORAGE_KEYS.shuttle, enabled ? 'true' : 'false');
         try {
             window.postMessage({
@@ -72,7 +87,7 @@
         shuttleToggle.checked = on;
         // Reuse existing Shuttle wiring without changing behaviour.
         try {
-            if (typeof updateToggleUI === 'function') updateToggleUI();
+            if (typeof updateToggleUI === 'function') updateToggleUI(on);
         } catch (_) {}
     }
 
@@ -83,14 +98,19 @@
         if (!data || data.source !== 'omt-bridge' || data.type !== 'OMT_STORAGE_SYNC') return;
         const values = data.values || {};
         if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.shuttle)) {
-            try {
-                localStorage.setItem(OMT_STORAGE_KEYS.shuttle, values[OMT_STORAGE_KEYS.shuttle] ? 'true' : 'false');
-            } catch (_) {}
-            syncShuttleToggleFromStorage();
-            if (values[OMT_STORAGE_KEYS.shuttle] && typeof initShuttleXpress === 'function') {
-                initShuttleXpress().catch(() => {});
-            } else if (!values[OMT_STORAGE_KEYS.shuttle] && typeof cleanupShuttle === 'function') {
-                cleanupShuttle();
+            // Never let shared chrome.storage shuttle prefs override a local player window.
+            if (site && site.id === 'local') {
+                // ignore
+            } else {
+                try {
+                    localStorage.setItem(OMT_STORAGE_KEYS.shuttle, values[OMT_STORAGE_KEYS.shuttle] ? 'true' : 'false');
+                } catch (_) {}
+                syncShuttleToggleFromStorage();
+                if (values[OMT_STORAGE_KEYS.shuttle] && typeof initShuttleXpress === 'function') {
+                    initShuttleXpress().catch(() => {});
+                } else if (!values[OMT_STORAGE_KEYS.shuttle] && typeof cleanupShuttle === 'function') {
+                    cleanupShuttle();
+                }
             }
         }
         if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.autoVod)) {

@@ -47,6 +47,52 @@ async function waitForOmt(page, timeout = 20000) {
   await page.waitForFunction(() => !!document.getElementById('omt-root'), null, { timeout });
 }
 
+/** Shared v1.4.x HUD fingerprint for InPlay / Examino / local parity. */
+async function captureUiFingerprint(page) {
+  return page.evaluate(() => {
+    const root = document.getElementById('omt-root');
+    const seg = document.querySelector('#controls-panel .omt-transport-seg');
+    const buttons = seg ? Array.from(seg.querySelectorAll('.ctrl-btn')) : [];
+    const ids = buttons.map((b) => b.id);
+    const expected = ['omt-m120', 'omt-m10', 'omt-m2', 'omt-prev-frame', 'omt-btn-play', 'omt-next-frame', 'omt-p2', 'omt-p10', 'omt-p120'];
+    const chips = Array.from(document.querySelectorAll('.omt-speed-chip')).map((c) => (c.textContent || '').trim());
+    const half = document.getElementById('omt-half-select');
+    const halfOpts = half ? Array.from(half.options).map((o) => o.value) : [];
+    return {
+      hasRoot: !!root,
+      siteClass: root ? root.className : '',
+      optionAOrder: ids.join(','),
+      optionAOk: ids.join(',') === expected.join(','),
+      speedChips: chips.join(','),
+      speedOk: chips.join(',') === '0.25x,0.5x,0.75x,1x,1.25x,1.5x,2x',
+      hasHide: !!document.getElementById('omt-hide-panel'),
+      hideTip: document.getElementById('omt-hide-panel')?.getAttribute('data-tip') || '',
+      hasTimeline: !!document.getElementById('omt-timeline-bar') && !!document.getElementById('omt-timeline-slider'),
+      hasKickoff: !!document.getElementById('omt-btn-set-kickoff'),
+      hasPeriod: !!half,
+      halfOpts,
+      hasCustom1: !!document.getElementById('omt-custom-minute-c1'),
+      hasCustom2: !!document.getElementById('omt-custom-minute-c2'),
+      hasOffsetNudge: !!document.getElementById('omt-offset-m1') && !!document.getElementById('omt-offset-p1') &&
+        !!document.getElementById('omt-offset-m5') && !!document.getElementById('omt-offset-p5'),
+      hasShuttle: !!document.getElementById('omt-shuttle-enable-toggle'),
+      hasOsd: !!document.getElementById('osd-message'),
+      hasLive: !!document.getElementById('omt-live-btn'),
+      hasMore: !!document.getElementById('omt-more-toggle') && !!document.getElementById('omt-more-panel'),
+      examinoHidden: (() => {
+        const s = document.getElementById('omt-examino-settings');
+        return !s || getComputedStyle(s).display === 'none';
+      })(),
+      timelineAtBottom: (() => {
+        const bar = document.getElementById('omt-timeline-bar');
+        const r = root?.getBoundingClientRect();
+        const b = bar?.getBoundingClientRect();
+        return !!(r && b && Math.abs(b.bottom - r.bottom) < 10);
+      })()
+    };
+  });
+}
+
 async function run() {
   fs.mkdirSync(ARTIFACTS, { recursive: true });
   const { server, base } = await startServer();
@@ -1086,17 +1132,35 @@ async function run() {
       localStorage.setItem('omtAutoPauseOnBlur', 'true');
       localStorage.setItem('shuttleXpressEnabled', 'true');
       const v = document.querySelector('video');
-      if (!v) return { ok: false };
-      try { await v.play(); } catch (_) {}
-      await new Promise((r) => setTimeout(r, 30));
-      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
-      document.dispatchEvent(new Event('visibilitychange'));
+      if (!v) return { ok: false, reason: 'no-video' };
+      v.muted = true;
+      try { await v.play(); } catch (e) { return { ok: false, reason: 'play-failed', err: String(e) }; }
       await new Promise((r) => setTimeout(r, 40));
+      if (v.paused) return { ok: false, reason: 'still-paused-before-hide' };
+      // Clear stale OSD from the previous auto-pause case (toast lasts ~1.1s).
+      const osdEl = document.getElementById('osd-message');
+      if (osdEl) {
+        osdEl.innerText = '';
+        osdEl.classList.remove('visible');
+      }
+      // Re-assert shuttle flag immediately before the hide event (bridge may sync prefs).
+      localStorage.setItem('shuttleXpressEnabled', 'true');
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+      document.dispatchEvent(new Event('visibilitychange'));
+      await new Promise((r) => setTimeout(r, 60));
       const paused = v.paused;
+      const osd = (osdEl?.innerText || '');
       Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
       document.dispatchEvent(new Event('visibilitychange'));
       localStorage.setItem('shuttleXpressEnabled', 'false');
-      return { ok: paused === false, paused };
+      return {
+        ok: paused === false && !/Auto paused/i.test(osd),
+        paused,
+        osd,
+        shuttleFlag: localStorage.getItem('shuttleXpressEnabled')
+      };
     });
     results.push({
       name: 'examino-auto-pause-shuttle-skips',
@@ -1317,6 +1381,23 @@ async function run() {
       return { ok: !!(t && (t.style.display === 'block' || (wrap && wrap.style.display === 'flex'))) };
     });
     results.push({ name: 'inplayip-timer-sync', pass: inplayTimer.ok === true });
+
+    // Confirm v1.4.x UI is identical on InPlay (same Option A / speed / kickoff / shuttle chrome)
+    const inplayUi = await captureUiFingerprint(page);
+    results.push({
+      name: 'inplayip-v14-ui-identical',
+      pass: inplayUi.optionAOk && inplayUi.speedOk && inplayUi.hasHide &&
+        /Hide controls \(H\)/.test(inplayUi.hideTip) &&
+        inplayUi.hasTimeline && inplayUi.hasKickoff && inplayUi.hasPeriod &&
+        inplayUi.halfOpts.includes('1') && inplayUi.halfOpts.includes('2') &&
+        inplayUi.halfOpts.includes('custom1') && inplayUi.halfOpts.includes('custom2') &&
+        inplayUi.hasCustom1 && inplayUi.hasCustom2 && inplayUi.hasOffsetNudge &&
+        inplayUi.hasShuttle && inplayUi.hasOsd && inplayUi.hasLive && inplayUi.hasMore &&
+        inplayUi.examinoHidden && inplayUi.timelineAtBottom &&
+        inplayUi.siteClass.includes('omt-inplayip'),
+      detail: inplayUi
+    });
+
     await page.evaluate(() => {
       const panel = document.getElementById('controls-panel');
       const timelineBar = document.getElementById('omt-timeline-bar');
@@ -1430,11 +1511,13 @@ async function run() {
           noCredit: !document.querySelector('.omt-brand-credit'),
           noPersonalizar: !document.body.textContent.includes('Personalizar') &&
             !document.body.textContent.includes('Em breve'),
-          footOk: foot === 'v1.4.3',
+          footOk: foot === 'v1.5.0',
           hasAutoPause: !!document.getElementById('omt-auto-pause-blur'),
           autoPauseDefaultOff: document.getElementById('omt-auto-pause-blur')
             ? document.getElementById('omt-auto-pause-blur').checked === false
             : false,
+          hasOpenLocal: !!document.getElementById('omt-open-local-player'),
+          openLocalLabel: (document.getElementById('omt-open-local-player')?.textContent || '').trim(),
           logoUncropped: (() => {
             const logo = document.querySelector('.omt-sp-logo');
             if (!logo) return false;
@@ -1454,12 +1537,416 @@ async function run() {
           popupOk.hasCustomize && popupOk.soonOk && popupOk.noShuttle &&
           popupOk.noSwap && popupOk.noCredit && popupOk.noPersonalizar &&
           popupOk.footOk && popupOk.keyCaps && popupOk.logoUncropped &&
-          popupOk.hasAutoPause && popupOk.autoPauseDefaultOff,
+          popupOk.hasAutoPause && popupOk.autoPauseDefaultOff &&
+          popupOk.hasOpenLocal && popupOk.openLocalLabel === 'Open local player',
         detail: popupOk
       });
       await popupPage.close();
     } else {
       results.push({ name: 'popup-branding-and-personalizar', pass: false, detail: { reason: 'no-extension-id' } });
+    }
+
+    // ---------- Local player (v1.5.0) — full UI feature matrix ----------
+    if (extId) {
+      const sampleMp4 = path.join(FIXTURES, 'sample-match.mp4');
+      const localPage = await context.newPage();
+      await localPage.goto(`chrome-extension://${extId}/player.html`, { waitUntil: 'domcontentloaded' });
+      await waitForOmt(localPage, 15000);
+
+      const localBoot = await localPage.evaluate(() => {
+        const root = document.getElementById('omt-root');
+        const drop = document.getElementById('omt-local-drop');
+        const video = document.getElementById('omt-local-video');
+        return {
+          siteClass: root ? root.className : '',
+          dropVisible: !!(drop && !drop.hidden),
+          hasVideo: !!video,
+          hasFileInput: !!document.getElementById('omt-local-file-input'),
+          hasBrowse: !!document.getElementById('omt-local-browse')
+        };
+      });
+      results.push({
+        name: 'local-player-boots',
+        pass: localBoot.siteClass.includes('omt-local') && localBoot.dropVisible &&
+          localBoot.hasVideo && localBoot.hasFileInput && localBoot.hasBrowse,
+        detail: localBoot
+      });
+
+      await localPage.screenshot({ path: path.join(ARTIFACTS, 'local_player_empty.png'), fullPage: true });
+
+      await localPage.setInputFiles('#omt-local-file-input', sampleMp4);
+      await localPage.waitForFunction(() => {
+        const v = document.getElementById('omt-local-video');
+        const drop = document.getElementById('omt-local-drop');
+        return v && v.src && drop && drop.hidden && v.readyState >= 1;
+      }, null, { timeout: 15000 });
+
+      // Force HUD visible for screenshots / interaction
+      await localPage.evaluate(() => {
+        const panel = document.getElementById('controls-panel');
+        const timelineBar = document.getElementById('omt-timeline-bar');
+        [panel, timelineBar].forEach((el) => {
+          if (!el) return;
+          el.style.opacity = '1';
+          el.style.pointerEvents = 'auto';
+        });
+        const more = document.getElementById('omt-more-panel');
+        if (more && !more.classList.contains('is-open')) {
+          document.getElementById('omt-more-toggle')?.click();
+        }
+      });
+      await localPage.waitForTimeout(200);
+
+      const localUi = await captureUiFingerprint(localPage);
+      results.push({
+        name: 'local-ui-matches-v14',
+        pass: localUi.optionAOk && localUi.speedOk && localUi.hasHide &&
+          /Hide controls \(H\)/.test(localUi.hideTip) &&
+          localUi.hasTimeline && localUi.hasKickoff && localUi.hasPeriod &&
+          localUi.halfOpts.includes('custom1') && localUi.halfOpts.includes('custom2') &&
+          localUi.hasCustom1 && localUi.hasCustom2 && localUi.hasOffsetNudge &&
+          localUi.hasShuttle && localUi.hasOsd && localUi.hasLive && localUi.hasMore &&
+          localUi.examinoHidden && localUi.siteClass.includes('omt-local'),
+        detail: localUi
+      });
+
+      const localOpenFile = await localPage.evaluate(() => {
+        const btn = document.getElementById('omt-local-open-file');
+        const name = document.getElementById('omt-local-filename');
+        return {
+          hasBtn: !!btn,
+          name: (name?.textContent || '').trim(),
+          dropHidden: !!(document.getElementById('omt-local-drop')?.hidden)
+        };
+      });
+      results.push({
+        name: 'local-file-loaded',
+        pass: localOpenFile.hasBtn && /sample-match\.mp4/i.test(localOpenFile.name) && localOpenFile.dropHidden,
+        detail: localOpenFile
+      });
+
+      // Space / seek / speed / kickoff / period / custom / OSD / timeline / hide / LIVE
+      await localPage.evaluate(() => {
+        if (window.__omtPlaybackRateStubbed) return;
+        const desc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'playbackRate');
+        if (!desc || !desc.configurable) return;
+        let forced = 1;
+        Object.defineProperty(HTMLMediaElement.prototype, 'playbackRate', {
+          configurable: true,
+          get() { return forced; },
+          set(n) {
+            forced = Number(n);
+            try { desc.set.call(this, n); } catch (_) {}
+          }
+        });
+        window.__omtPlaybackRateStubbed = true;
+      });
+
+      const localPlayPause = await localPage.evaluate(async () => {
+        const v = document.getElementById('omt-local-video');
+        try { await v.play(); } catch (_) {}
+        await new Promise((r) => setTimeout(r, 80));
+        const playing = !v.paused;
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true, cancelable: true }));
+        await new Promise((r) => setTimeout(r, 80));
+        const afterSpace = v.paused;
+        const osd = (document.getElementById('osd-message')?.innerText || '');
+        return { playing, afterSpace, osd };
+      });
+      results.push({
+        name: 'local-hotkey-space',
+        pass: localPlayPause.playing === true && localPlayPause.afterSpace === true,
+        detail: localPlayPause
+      });
+
+      const localSeek = await localPage.evaluate(async () => {
+        const v = document.getElementById('omt-local-video');
+        // Short fixture (~8s): exercise ±2s and Shift ±2s without clamping past duration.
+        try { v.currentTime = 3; } catch (_) {}
+        const before = v.currentTime;
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', code: 'ArrowRight', bubbles: true, cancelable: true }));
+        await new Promise((r) => setTimeout(r, 60));
+        const after2 = v.currentTime;
+        document.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'ArrowLeft', code: 'ArrowLeft', shiftKey: true, bubbles: true, cancelable: true
+        }));
+        await new Promise((r) => setTimeout(r, 60));
+        const afterShift = v.currentTime;
+        return {
+          ok: after2 >= before + 1.5 && afterShift <= Math.max(0, after2 - 9) + 0.5,
+          before, after2, afterShift
+        };
+      });
+      results.push({ name: 'local-hotkey-seek', pass: localSeek.ok === true, detail: localSeek });
+
+      const localSpeed = await localPage.evaluate(async () => {
+        const v = document.getElementById('omt-local-video');
+        const chip = document.querySelector('.omt-speed-chip[data-speed="2.0"]');
+        chip?.click();
+        await new Promise((r) => setTimeout(r, 40));
+        const rateAfterChip = v?.playbackRate;
+        const active = document.querySelector('.omt-speed-chip.is-active');
+        const selAfter = document.getElementById('omt-speed-select')?.value;
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'x', code: 'KeyX', bubbles: true, cancelable: true }));
+        await new Promise((r) => setTimeout(r, 40));
+        const afterX = document.querySelector('.omt-speed-chip.is-active');
+        const rateAfterX = v?.playbackRate;
+        return {
+          chipOk: active?.getAttribute('data-speed') === '2.0' && Math.abs((rateAfterChip || 0) - 2) < 0.01,
+          selectOk: selAfter === '2' || selAfter === '2.0',
+          resetOk: (afterX?.getAttribute('data-speed') === '1.0' || afterX?.getAttribute('data-speed') === '1') &&
+            Math.abs((rateAfterX || 0) - 1) < 0.01,
+          rateAfterChip,
+          rateAfterX,
+          active: active?.getAttribute('data-speed'),
+          afterX: afterX?.getAttribute('data-speed'),
+          selAfter
+        };
+      });
+      results.push({
+        name: 'local-speed-row-sync',
+        pass: localSpeed.chipOk && localSpeed.resetOk,
+        detail: localSpeed
+      });
+
+      const localKickoff = await localPage.evaluate(async () => {
+        Object.keys(localStorage).forEach((k) => {
+          if (k.startsWith('matchTimer')) localStorage.removeItem(k);
+        });
+        const half = document.getElementById('omt-half-select');
+        if (half) half.value = '1';
+        document.getElementById('omt-btn-set-kickoff')?.click();
+        await new Promise((r) => setTimeout(r, 40));
+        const t = document.getElementById('match-timer');
+        const wrap = document.getElementById('match-timer-wrap');
+        const osd = (document.getElementById('osd-message')?.innerText || '');
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', code: 'KeyK', bubbles: true, cancelable: true }));
+        await new Promise((r) => setTimeout(r, 40));
+        return {
+          timerVisible: !!(t && (t.style.display === 'block' || (wrap && (wrap.style.display === 'flex' || getComputedStyle(wrap).display === 'flex')))),
+          ativo: localStorage.getItem('matchTimerAtivo') === 'true',
+          hasKickoff1: localStorage.getItem('matchTimerKickoff1') != null,
+          osd
+        };
+      });
+      results.push({
+        name: 'local-kickoff-period',
+        pass: localKickoff.timerVisible && localKickoff.ativo && localKickoff.hasKickoff1,
+        detail: localKickoff
+      });
+
+      const localCustoms = await localPage.evaluate(async () => {
+        const half = document.getElementById('omt-half-select');
+        half.value = 'custom1';
+        half.dispatchEvent(new Event('change', { bubbles: true }));
+        await new Promise((r) => setTimeout(r, 40));
+        const c1 = document.getElementById('omt-custom-minute-c1');
+        const c1wrap = document.getElementById('omt-custom-c1');
+        if (c1) {
+          c1.value = '90';
+          c1.dispatchEvent(new Event('input', { bubbles: true }));
+          c1.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        document.getElementById('omt-btn-set-kickoff')?.click();
+        await new Promise((r) => setTimeout(r, 40));
+        half.value = 'custom2';
+        half.dispatchEvent(new Event('change', { bubbles: true }));
+        await new Promise((r) => setTimeout(r, 40));
+        const c2 = document.getElementById('omt-custom-minute-c2');
+        const c2wrap = document.getElementById('omt-custom-c2');
+        if (c2) {
+          c2.value = '105';
+          c2.dispatchEvent(new Event('input', { bubbles: true }));
+          c2.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        document.getElementById('omt-btn-set-kickoff')?.click();
+        await new Promise((r) => setTimeout(r, 40));
+        return {
+          c1Visible: !!(c1wrap && c1wrap.style.display !== 'none'),
+          c2Visible: !!(c2wrap && c2wrap.style.display !== 'none'),
+          hasC1: localStorage.getItem('matchTimerKickoffC1') != null,
+          hasC2: localStorage.getItem('matchTimerKickoffC2') != null,
+          minC1: localStorage.getItem('matchTimerCustomMinC1'),
+          minC2: localStorage.getItem('matchTimerCustomMinC2')
+        };
+      });
+      results.push({
+        name: 'local-custom-periods',
+        pass: localCustoms.hasC1 && localCustoms.hasC2,
+        detail: localCustoms
+      });
+
+      const localTimeline = await localPage.evaluate(async () => {
+        const v = document.getElementById('omt-local-video');
+        const slider = document.getElementById('omt-timeline-slider');
+        const cur = document.getElementById('omt-v-time-current');
+        const dur = document.getElementById('omt-v-time-duration');
+        if (!v || !slider) return { ok: false, reason: 'missing' };
+        const end = v.duration || (v.seekable?.length ? v.seekable.end(v.seekable.length - 1) : NaN);
+        const target = Math.max(1, (end || 8) * 0.4);
+        try { v.currentTime = target; } catch (_) {}
+        slider.value = String(target);
+        slider.dispatchEvent(new Event('input', { bubbles: true }));
+        await new Promise((r) => setTimeout(r, 80));
+        return {
+          ok: Math.abs(v.currentTime - target) < 1.5 && !!cur && !!dur,
+          currentTime: v.currentTime,
+          target,
+          curText: cur?.innerText || '',
+          durText: dur?.innerText || ''
+        };
+      });
+      results.push({ name: 'local-timeline-seek', pass: localTimeline.ok === true, detail: localTimeline });
+
+      const localLive = await localPage.evaluate(async () => {
+        const v = document.getElementById('omt-local-video');
+        try { v.currentTime = 1; } catch (_) {}
+        document.getElementById('omt-live-btn')?.click();
+        await new Promise((r) => setTimeout(r, 80));
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'l', code: 'KeyL', bubbles: true, cancelable: true }));
+        await new Promise((r) => setTimeout(r, 80));
+        const end = v.duration || (v.seekable?.length ? v.seekable.end(v.seekable.length - 1) : NaN);
+        return {
+          ok: typeof end === 'number' && isFinite(end) && v.currentTime >= end - 3,
+          currentTime: v.currentTime,
+          end
+        };
+      });
+      results.push({ name: 'local-live-and-l-hotkey', pass: localLive.ok === true, detail: localLive });
+
+      const localHide = await localPage.evaluate(async () => {
+        const panel = document.getElementById('controls-panel');
+        const timeline = document.getElementById('omt-timeline-bar');
+        const read = () => ({
+          panelOp: panel ? panel.style.opacity : null,
+          panelPe: panel ? panel.style.pointerEvents : null,
+          timelineOp: timeline ? timeline.style.opacity : null
+        });
+        const before = read();
+        document.getElementById('omt-hide-panel')?.click();
+        await new Promise((r) => setTimeout(r, 100));
+        const afterHide = read();
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'h', code: 'KeyH', bubbles: true, cancelable: true }));
+        await new Promise((r) => setTimeout(r, 100));
+        const afterShow = read();
+        const osd = (document.getElementById('osd-message')?.innerText || '');
+        return {
+          before,
+          afterHide,
+          afterShow,
+          osd,
+          hidden: afterHide.panelOp === '0' || afterHide.panelPe === 'none',
+          shown: afterShow.panelOp === '1' || afterShow.panelPe === 'auto'
+        };
+      });
+      results.push({
+        name: 'local-hide-controls',
+        pass: localHide.hidden === true && localHide.shown === true,
+        detail: localHide
+      });
+
+      const localOsd = await localPage.evaluate(async () => {
+        document.getElementById('omt-p2')?.click();
+        await new Promise((r) => setTimeout(r, 60));
+        const el = document.getElementById('osd-message');
+        const text = (el?.innerText || '');
+        const visible = !!(el && getComputedStyle(el).opacity !== '0' && el.style.display !== 'none');
+        return { ok: /\+2s|Skip/i.test(text) && visible, text, visible };
+      });
+      results.push({ name: 'local-osd', pass: localOsd.ok === true, detail: localOsd });
+
+      // ShuttleXpress toggle is per-window (sessionStorage), not shared chrome.storage.
+      // Mock WebHID so the toggle path can "connect" without a physical device.
+      const localShuttleA = await localPage.evaluate(async () => {
+        const fakeDevice = {
+          vendorId: 0x0b33,
+          productName: 'Fake ShuttleXpress',
+          opened: true,
+          open: async function () { this.opened = true; },
+          close: async function () { this.opened = false; },
+          addEventListener() {},
+          removeEventListener() {}
+        };
+        try {
+          Object.defineProperty(navigator, 'hid', {
+            configurable: true,
+            value: {
+              getDevices: async () => [fakeDevice],
+              requestDevice: async () => [fakeDevice],
+              addEventListener() {},
+              removeEventListener() {}
+            }
+          });
+        } catch (_) {
+          navigator.hid = {
+            getDevices: async () => [fakeDevice],
+            requestDevice: async () => [fakeDevice],
+            addEventListener() {},
+            removeEventListener() {}
+          };
+        }
+        const toggle = document.getElementById('omt-shuttle-enable-toggle');
+        if (!toggle) return { ok: false, reason: 'missing-toggle' };
+        toggle.disabled = false;
+        toggle.checked = true;
+        toggle.dispatchEvent(new Event('change', { bubbles: true }));
+        await new Promise((r) => setTimeout(r, 120));
+        return {
+          session: sessionStorage.getItem('omtLocalShuttleEnabled'),
+          local: localStorage.getItem('shuttleXpressEnabled'),
+          checked: toggle.checked
+        };
+      });
+      results.push({
+        name: 'local-shuttle-session-storage',
+        pass: localShuttleA.session === 'true',
+        detail: localShuttleA
+      });
+
+      const localPageB = await context.newPage();
+      await localPageB.goto(`chrome-extension://${extId}/player.html`, { waitUntil: 'domcontentloaded' });
+      await waitForOmt(localPageB, 15000);
+      await localPageB.evaluate(() => {
+        const more = document.getElementById('omt-more-panel');
+        if (more && !more.classList.contains('is-open')) {
+          document.getElementById('omt-more-toggle')?.click();
+        }
+      });
+      await localPageB.waitForTimeout(100);
+      const localShuttleB = await localPageB.evaluate(() => {
+        const toggle = document.getElementById('omt-shuttle-enable-toggle');
+        return {
+          session: sessionStorage.getItem('omtLocalShuttleEnabled'),
+          checked: !!(toggle && toggle.checked)
+        };
+      });
+      results.push({
+        name: 'local-shuttle-per-window',
+        pass: localShuttleB.session !== 'true' && localShuttleB.checked === false,
+        detail: { a: localShuttleA, b: localShuttleB }
+      });
+
+      await localPage.screenshot({ path: path.join(ARTIFACTS, 'local_player_loaded.png'), fullPage: true });
+      await localPage.screenshot({ path: path.join(ARTIFACTS, 'local_player_expanded.png'), fullPage: true });
+      await localPageB.close();
+      await localPage.close();
+    } else {
+      [
+        'local-player-boots',
+        'local-ui-matches-v14',
+        'local-file-loaded',
+        'local-hotkey-space',
+        'local-hotkey-seek',
+        'local-speed-row-sync',
+        'local-kickoff-period',
+        'local-custom-periods',
+        'local-timeline-seek',
+        'local-live-and-l-hotkey',
+        'local-hide-controls',
+        'local-osd',
+        'local-shuttle-session-storage',
+        'local-shuttle-per-window'
+      ].forEach((name) => results.push({ name, pass: false, detail: { reason: 'no-extension-id' } }));
     }
 
   } finally {
