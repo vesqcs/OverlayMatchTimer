@@ -1528,7 +1528,7 @@ async function run() {
           noCredit: !document.querySelector('.omt-brand-credit'),
           noPersonalizar: !document.body.textContent.includes('Personalizar') &&
             !document.body.textContent.includes('Em breve'),
-          footOk: foot === 'v1.6.0',
+          footOk: foot === 'v1.6.1',
           hasAutoPause: !!document.getElementById('omt-auto-pause-blur'),
           autoPauseDefaultOff: document.getElementById('omt-auto-pause-blur')
             ? document.getElementById('omt-auto-pause-blur').checked === false
@@ -1600,7 +1600,7 @@ async function run() {
         detail: popupOk.generalDiagram
       });
 
-      // ---------- Customize tab (v1.6.0) ----------
+      // ---------- Customize tab (v1.6.1) ----------
       await popupPage.click('[data-tab="customize"]');
       await popupPage.waitForTimeout(150);
       await popupPage.screenshot({ path: path.join(ARTIFACTS, 'popup_customize.png'), fullPage: true });
@@ -1733,14 +1733,36 @@ async function run() {
         wrap?.querySelectorAll('.omt-sx-label[data-part]').forEach((el) => {
           map[el.getAttribute('data-part')] = (el.textContent || '').trim();
         });
-        return map;
+        const skip1Reset = document.querySelector('[data-reset="skipBtn1"]');
+        const hkEditor = document.getElementById('omt-hotkey-editor');
+        const hkCs = hkEditor ? getComputedStyle(hkEditor) : null;
+        const sxReset = document.getElementById('omt-sx-reset-all');
+        const sxCs = sxReset ? getComputedStyle(sxReset) : null;
+        const svg = wrap?.querySelector('.omt-shuttle-svg');
+        const svgBox = svg?.getBoundingClientRect();
+        return {
+          map,
+          dirtyReset: !!skip1Reset?.classList.contains('is-dirty'),
+          noInnerScroll: !!hkCs && (hkCs.maxHeight === 'none' || hkCs.maxHeight === '') &&
+            !/auto|scroll/.test(hkCs.overflowY || ''),
+          sxNeutral: !!sxCs && !/rgb\(245,\s*131,\s*31\)/.test(sxCs.backgroundColor || ''),
+          svgWide: !!svgBox && svgBox.width >= 250
+        };
       });
       results.push({
         name: 'customize-shuttle-diagram-live-labels',
-        pass: /Play\/Pause/i.test(liveLabels.btn2 || '') &&
-          /90s|−90s|−90/.test(liveLabels.btn1 || '') &&
-          liveLabels.ring === 'Speed' &&
-          liveLabels.jog === 'Frame',
+        pass: /Play\/Pause/i.test(liveLabels.map.btn2 || '') &&
+          /90s|−90s|−90/.test(liveLabels.map.btn1 || '') &&
+          liveLabels.map.ring === 'Speed' &&
+          liveLabels.map.jog === 'Frame',
+        detail: liveLabels.map
+      });
+      results.push({
+        name: 'customize-popup-polish-v161',
+        pass: liveLabels.dirtyReset === true &&
+          liveLabels.noInnerScroll === true &&
+          liveLabels.sxNeutral === true &&
+          liveLabels.svgWide === true,
         detail: liveLabels
       });
       const shuttleStored = await popupPage.evaluate(async () => {
