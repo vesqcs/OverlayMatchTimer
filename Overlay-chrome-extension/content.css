@@ -736,16 +736,15 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    /* Keep the hit strip short (v1.7.2-sized). Hover tip escapes above via absolute + overflow visible. */
-    padding: 8px 10px 4px;
+    /* Top: floating tip; bottom: tick labels. Shell is pointer-events:none. */
+    padding: 28px 10px 16px;
     box-sizing: border-box;
     transition: opacity 0.3s ease;
     background: linear-gradient(to top, rgba(0, 0, 0, 0.55) 0%, rgba(0, 0, 0, 0) 100%);
     pointer-events: none;
 }
 .omt-timeline-bar.omt-chrome-hidden .omt-timeline-track,
-.omt-timeline-bar.omt-chrome-hidden .omt-timeline-times,
-.omt-timeline-bar.omt-chrome-hidden .omt-timeline-bookmark {
+.omt-timeline-bar.omt-chrome-hidden .omt-timeline-times {
     pointer-events: none !important;
 }
 
@@ -777,66 +776,74 @@
     z-index: 0;
 }
 
-/* Period-start bookmarks sit just above the scrubber. */
-.omt-timeline-bookmarks {
+/*
+ * Period ticks — hidden at rest; on timeline hover show thin marks + tiny
+ * short labels BELOW the track. Full period · match-clock tip stays ABOVE.
+ */
+.omt-timeline-period-ticks {
     position: absolute;
     left: 0;
     right: 0;
-    bottom: calc(100% - 1px);
-    height: 18px;
+    top: 0;
+    bottom: 0;
     z-index: 3;
     pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 140ms ease, visibility 140ms ease;
 }
-.omt-timeline-bookmark {
+.omt-timeline-bar.is-timeline-hover .omt-timeline-period-ticks,
+.omt-timeline-bar:hover .omt-timeline-period-ticks {
+    opacity: 1;
+    visibility: visible;
+}
+.omt-period-tick {
     position: absolute;
-    bottom: 0;
-    transform: translateX(-50%);
-    display: inline-flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 1px;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 0;
+    height: 10px;
     padding: 0;
     margin: 0;
     border: none;
     background: transparent;
-    color: rgba(245, 131, 31, 0.55);
-    cursor: pointer;
-    pointer-events: auto;
-    opacity: 0.4;
-    transition: opacity 0.12s ease, color 0.12s ease;
-}
-.omt-timeline-bookmark .omt-icon {
-    display: block;
-}
-.omt-timeline-bookmark .omt-bm-label {
-    font-size: 9px;
-    font-weight: 700;
-    font-family: var(--omt-font);
-    letter-spacing: 0.02em;
-    white-space: nowrap;
-    color: #f0f0f0;
-    background: rgba(20, 20, 20, 0.92);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 3px;
-    padding: 1px 4px;
-    opacity: 0;
-    transform: translateY(2px);
-    transition: opacity 0.12s ease, transform 0.12s ease;
     pointer-events: none;
 }
-.omt-timeline-bar:hover .omt-timeline-bookmark,
-.omt-timeline-bar.is-timeline-hover .omt-timeline-bookmark,
-.omt-timeline-bookmark:hover,
-.omt-timeline-bookmark:focus-visible {
-    opacity: 1;
-    color: var(--omt-orange);
+.omt-period-tick-mark {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    display: block;
+    width: 1px;
+    height: 10px;
+    border-radius: 1px;
+    background: rgba(220, 220, 220, 0.45);
+    transition: background 120ms ease, width 120ms ease, height 120ms ease, box-shadow 120ms ease;
 }
-.omt-timeline-bar:hover .omt-timeline-bookmark .omt-bm-label,
-.omt-timeline-bar.is-timeline-hover .omt-timeline-bookmark .omt-bm-label,
-.omt-timeline-bookmark:hover .omt-bm-label,
-.omt-timeline-bookmark:focus-visible .omt-bm-label {
-    opacity: 1;
-    transform: translateY(0);
+.omt-period-tick-label {
+    position: absolute;
+    left: 50%;
+    top: calc(100% + 5px); /* below the scrubber */
+    transform: translateX(-50%);
+    display: block;
+    font-family: var(--omt-font);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    color: var(--omt-muted);
+    white-space: nowrap;
+    transition: color 120ms ease;
+}
+.omt-period-tick.is-snap .omt-period-tick-mark {
+    width: 2px;
+    height: 12px;
+    background: var(--omt-orange);
+    box-shadow: 0 0 0 1px rgba(245, 131, 31, 0.25);
+}
+.omt-period-tick.is-snap .omt-period-tick-label {
+    color: var(--omt-orange);
 }
 
 .omt-timeline-hover-tip {
@@ -845,20 +852,27 @@
     transform: translateX(-50%);
     z-index: 60;
     pointer-events: none;
-    background: rgba(20, 20, 20, 0.96);
+    background: rgba(20, 20, 20, 0.94);
     color: #f0f0f0;
-    border: 1px solid rgba(255, 255, 255, 0.14);
+    border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 4px;
-    padding: 4px 8px;
+    padding: 4px 7px;
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 500;
     font-family: var(--omt-font);
     line-height: 1.25;
     white-space: nowrap;
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+    opacity: 0;
+    transition: opacity 120ms ease;
+}
+.omt-timeline-bar.is-timeline-hover .omt-timeline-hover-tip:not([hidden]),
+.omt-timeline-bar:hover .omt-timeline-hover-tip:not([hidden]) {
+    opacity: 1;
 }
 .omt-timeline-hover-tip[hidden] {
     display: none !important;
+    opacity: 0;
 }
 
 /* Thin scrubber; thickens on hover. ONE fill colour for the whole match. */
@@ -945,6 +959,8 @@
     margin: 8px 10px 0;
     padding: 8px;
     border-color: rgba(255, 255, 255, 0.1);
+    /* Let data-tip bubbles escape (Shuttle / Open file / Clear timer, etc.). */
+    overflow: visible;
 }
 .omt-more-block {
     display: flex;
@@ -1031,16 +1047,17 @@
     height: 16px;
 }
 
-/* Dark minimal tooltips — escape the card (overflow:visible on .glass-panel). */
+/* Dark minimal tooltips — escape the card; --omt-tip-shift clamps horizontally. */
 .omt-tip {
     position: relative;
+    --omt-tip-shift: 0px;
 }
 .omt-tip[data-tip]::after {
     content: attr(data-tip);
     position: absolute;
     left: 50%;
     bottom: calc(100% + 8px);
-    transform: translateX(-50%) translateY(2px);
+    transform: translateX(calc(-50% + var(--omt-tip-shift))) translateY(2px);
     background: rgba(20, 20, 20, 0.94);
     color: #f0f0f0;
     border: 1px solid rgba(255, 255, 255, 0.12);
@@ -1061,60 +1078,80 @@
 .omt-tip[data-tip]:focus-visible::after {
     opacity: 1;
     visibility: visible;
-    transform: translateX(-50%) translateY(0);
+    transform: translateX(calc(-50% + var(--omt-tip-shift))) translateY(0);
 }
-/* Top-row right cluster: keep tip inside horizontally near the card edge. */
+/* Fixed tips escape backdrop-filter clipping on .glass-panel. */
+.omt-tip.omt-tip-fixed[data-tip]::after,
+.omt-tip.omt-tip-fixed[data-tip]:hover::after,
+.omt-tip.omt-tip-fixed[data-tip]:focus-visible::after,
+#omt-root.omt-tips-flip-below #controls-panel .omt-tip.omt-tip-fixed[data-tip]::after,
+#controls-panel.omt-tips-flip-below .omt-tip.omt-tip-fixed[data-tip]::after,
+#omt-root.omt-tips-flip-below #controls-panel .omt-tip.omt-tip-fixed[data-tip]:hover::after,
+#controls-panel.omt-tips-flip-below .omt-tip.omt-tip-fixed[data-tip]:hover::after,
+.drag-side-left .omt-tip.omt-tip-fixed[data-tip]::after,
+.drag-side-right .omt-tip.omt-tip-fixed[data-tip]::after,
+.drag-side-left .omt-tip.omt-tip-fixed[data-tip]:hover::after,
+.drag-side-right .omt-tip.omt-tip-fixed[data-tip]:hover::after {
+    position: fixed;
+    left: var(--omt-tip-left, 0);
+    top: var(--omt-tip-top, 0);
+    right: auto;
+    bottom: auto;
+    transform: none;
+    z-index: 2147483646;
+}
+/* Top-row right cluster: anchor to control’s right edge, then shift. */
 .drag-side-right .omt-tip[data-tip]::after {
     left: auto;
     right: 0;
-    transform: translateY(2px);
+    transform: translateX(var(--omt-tip-shift)) translateY(2px);
 }
 .drag-side-right .omt-tip[data-tip]:hover::after,
 .drag-side-right .omt-tip[data-tip]:focus-visible::after {
-    transform: translateY(0);
+    transform: translateX(var(--omt-tip-shift)) translateY(0);
 }
-/* Top-row left cluster: keep tip from spilling past the left card edge. */
+/* Top-row left cluster: anchor to control’s left edge, then shift. */
 .drag-side-left .omt-tip[data-tip]::after {
     left: 0;
     right: auto;
-    transform: translateX(0) translateY(2px);
+    transform: translateX(var(--omt-tip-shift)) translateY(2px);
 }
 .drag-side-left .omt-tip[data-tip]:hover::after,
 .drag-side-left .omt-tip[data-tip]:focus-visible::after {
-    transform: translateX(0) translateY(0);
+    transform: translateX(var(--omt-tip-shift)) translateY(0);
 }
 /* When the card sits near the top of the player, flip tips below the control. */
 #omt-root.omt-tips-flip-below #controls-panel .omt-tip[data-tip]::after,
 #controls-panel.omt-tips-flip-below .omt-tip[data-tip]::after {
     bottom: auto;
     top: calc(100% + 8px);
-    transform: translateX(-50%) translateY(-2px);
+    transform: translateX(calc(-50% + var(--omt-tip-shift))) translateY(-2px);
 }
 #omt-root.omt-tips-flip-below #controls-panel .omt-tip[data-tip]:hover::after,
 #omt-root.omt-tips-flip-below #controls-panel .omt-tip[data-tip]:focus-visible::after,
 #controls-panel.omt-tips-flip-below .omt-tip[data-tip]:hover::after,
 #controls-panel.omt-tips-flip-below .omt-tip[data-tip]:focus-visible::after {
-    transform: translateX(-50%) translateY(0);
+    transform: translateX(calc(-50% + var(--omt-tip-shift))) translateY(0);
 }
 #omt-root.omt-tips-flip-below #controls-panel .drag-side-right .omt-tip[data-tip]::after,
 #controls-panel.omt-tips-flip-below .drag-side-right .omt-tip[data-tip]::after {
-    transform: translateY(-2px);
+    transform: translateX(var(--omt-tip-shift)) translateY(-2px);
 }
 #omt-root.omt-tips-flip-below #controls-panel .drag-side-right .omt-tip[data-tip]:hover::after,
 #omt-root.omt-tips-flip-below #controls-panel .drag-side-right .omt-tip[data-tip]:focus-visible::after,
 #controls-panel.omt-tips-flip-below .drag-side-right .omt-tip[data-tip]:hover::after,
 #controls-panel.omt-tips-flip-below .drag-side-right .omt-tip[data-tip]:focus-visible::after {
-    transform: translateY(0);
+    transform: translateX(var(--omt-tip-shift)) translateY(0);
 }
 #omt-root.omt-tips-flip-below #controls-panel .drag-side-left .omt-tip[data-tip]::after,
 #controls-panel.omt-tips-flip-below .drag-side-left .omt-tip[data-tip]::after {
-    transform: translateX(0) translateY(-2px);
+    transform: translateX(var(--omt-tip-shift)) translateY(-2px);
 }
 #omt-root.omt-tips-flip-below #controls-panel .drag-side-left .omt-tip[data-tip]:hover::after,
 #omt-root.omt-tips-flip-below #controls-panel .drag-side-left .omt-tip[data-tip]:focus-visible::after,
 #controls-panel.omt-tips-flip-below .drag-side-left .omt-tip[data-tip]:hover::after,
 #controls-panel.omt-tips-flip-below .drag-side-left .omt-tip[data-tip]:focus-visible::after {
-    transform: translateX(0) translateY(0);
+    transform: translateX(var(--omt-tip-shift)) translateY(0);
 }
 
 .omt-time-text {

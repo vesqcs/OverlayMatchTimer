@@ -1703,7 +1703,7 @@ async function run() {
       detail: moreTip
     });
 
-    // v1.7.5 timeline: no Seek label; no colour bands; bookmarks; match-clock tip; constant fill
+    // v1.7.6 timeline: no Seek tip; no colour bands; ticks only on hover; snap tip
     const seekTipGone = await page.evaluate(() => {
       const slider = document.getElementById('omt-timeline-slider');
       return {
@@ -1745,17 +1745,24 @@ async function run() {
     await page.waitForTimeout(120);
 
     await page.evaluate(() => {
+      const panel = document.getElementById('controls-panel');
       const bar = document.getElementById('omt-timeline-bar');
-      if (bar) { bar.style.opacity = '1'; bar.style.pointerEvents = 'auto'; }
+      if (panel) { panel.style.opacity = '1'; panel.style.pointerEvents = 'auto'; }
+      if (bar) { bar.style.opacity = '1'; }
       const more = document.getElementById('omt-more-panel');
       const btn = document.getElementById('omt-more-toggle');
       if (more?.classList.contains('is-open')) btn?.click();
+      // Leave hover so rest state is measurable
+      bar?.classList.remove('is-timeline-hover');
+      const tip = document.getElementById('omt-timeline-hover-tip');
+      if (tip) tip.hidden = true;
       const v = document.querySelector('video');
       const slider = document.getElementById('omt-timeline-slider');
       if (v && slider) {
         const max = parseFloat(slider.max) || v.duration || 100;
         const min = parseFloat(slider.min) || 0;
-        const t = min + (max - min) * 0.7;
+        // Mid 1st→2nd: sit between kickoffs for mid-half hover later
+        const t = min + (max - min) * 0.35;
         try { v.currentTime = t; } catch (_) {}
         slider.value = String(t);
         slider.dispatchEvent(new Event('input', { bubbles: true }));
@@ -1763,26 +1770,52 @@ async function run() {
     });
     await page.waitForTimeout(140);
 
-    const noBands = await page.evaluate(() => {
+    const atRest = await page.evaluate(() => {
       const segs = document.querySelectorAll('.timeline-period-seg');
+      const ticks = document.querySelectorAll('.omt-period-tick');
       const bookmarks = document.querySelectorAll('.omt-timeline-bookmark');
-      const labels = [...bookmarks].map((b) => b.getAttribute('data-period'));
+      const tickWrap = document.getElementById('omt-timeline-period-ticks');
+      const tip = document.getElementById('omt-timeline-hover-tip');
       const slider = document.getElementById('omt-timeline-slider');
       const bg = slider ? (getComputedStyle(slider).backgroundImage || '') : '';
+      const wrapCs = tickWrap ? getComputedStyle(tickWrap) : null;
+      const shortLabels = [...ticks].map((t) => t.querySelector('.omt-period-tick-label')?.textContent?.trim());
       return {
         segCount: segs.length,
+        tickCount: ticks.length,
         bookmarkCount: bookmarks.length,
-        labels,
+        tipHidden: !tip || tip.hidden === true,
+        wrapOpacity: wrapCs ? wrapCs.opacity : null,
+        wrapVisibility: wrapCs ? wrapCs.visibility : null,
+        shortLabels,
         fillHasRed: /e0201b|rgb\(224,\s*32,\s*27\)/i.test(bg),
-        fillNeutral: /b0b0b0|rgb\(176,\s*176,\s*176\)/i.test(bg),
-        bg
+        fillNeutral: /b0b0b0|rgb\(176,\s*176,\s*176\)/i.test(bg)
       };
     });
     results.push({
       name: 'timeline-no-colour-bands',
-      pass: noBands.segCount === 0 && noBands.bookmarkCount >= 2 && !noBands.fillHasRed && noBands.fillNeutral,
-      detail: noBands
+      pass: atRest.segCount === 0 && atRest.tickCount >= 2 && atRest.bookmarkCount === 0 &&
+        !atRest.fillHasRed && atRest.fillNeutral,
+      detail: atRest
     });
+    results.push({
+      name: 'timeline-no-markers-at-rest',
+      pass: atRest.tipHidden === true && atRest.wrapOpacity === '0' &&
+        atRest.wrapVisibility === 'hidden' && atRest.bookmarkCount === 0,
+      detail: atRest
+    });
+    const trackBox = await page.locator('.omt-timeline-track').boundingBox();
+    if (trackBox) {
+      await page.screenshot({
+        path: path.join(ARTIFACTS, 'v176_timeline_rest.png'),
+        clip: {
+          x: Math.max(0, trackBox.x - 16),
+          y: Math.max(0, trackBox.y - 40),
+          width: Math.min(920, trackBox.width + 32),
+          height: 90
+        }
+      });
+    }
     await page.screenshot({
       path: path.join(ARTIFACTS, 'v175_timeline_at_rest_2nd_half.png'),
       fullPage: true
@@ -1817,59 +1850,155 @@ async function run() {
       detail: fillInstant
     });
 
-    const periodHover = await page.evaluate(() => {
+    // Hover mid-half (away from ticks): tip + ticks/labels visible, no snap
+    await page.evaluate(() => {
       const track = document.querySelector('.omt-timeline-track');
+      const ticks = document.querySelectorAll('.omt-period-tick');
+      if (!track || ticks.length < 2) return;
+      const rect = track.getBoundingClientRect();
+      const t0 = ticks[0].getBoundingClientRect();
+      const t1 = ticks[1].getBoundingClientRect();
+      const x = (t0.left + t1.left) / 2;
+      track.dispatchEvent(new PointerEvent('pointermove', {
+        clientX: x,
+        clientY: rect.top + rect.height / 2,
+        bubbles: true
+      }));
+    });
+    await page.waitForTimeout(180); // allow tick fade-in
+    const midHover = await page.evaluate(() => {
       const tip = document.getElementById('omt-timeline-hover-tip');
       const bar = document.getElementById('omt-timeline-bar');
-      const bookmarks = document.querySelectorAll('.omt-timeline-bookmark');
-      if (!track || !tip) return { ok: false, reason: 'missing' };
-      const rect = track.getBoundingClientRect();
-      const b0 = bookmarks[0]?.getBoundingClientRect();
-      const x = b0 ? (b0.left + b0.width / 2 + Math.min(40, rect.width * 0.08)) : (rect.left + rect.width * 0.25);
-      track.dispatchEvent(new PointerEvent('pointermove', { clientX: x, clientY: rect.top + 4, bubbles: true }));
+      const ticks = document.querySelectorAll('.omt-period-tick');
+      if (!tip || ticks.length < 2) return { ok: false, reason: 'missing' };
       const text = (tip.textContent || '').trim();
       const visible = tip.hidden === false && getComputedStyle(tip).display !== 'none';
-      const hasPeriod = /1st Half/i.test(text);
+      const hasPeriod = /1st Half|2nd Half/i.test(text);
       const hasMatchClock = /\d{2}:\d{2}$/.test(text) && !/\d{2}:\d{2}:\d{2}/.test(text);
+      const wrap = document.getElementById('omt-timeline-period-ticks');
+      const wrapCs = wrap ? getComputedStyle(wrap) : null;
       const hoverClass = !!(bar && bar.classList.contains('is-timeline-hover'));
+      const shorts = [...ticks].map((t) => t.querySelector('.omt-period-tick-label')?.textContent?.trim());
+      const snapped = [...ticks].filter((t) => t.classList.contains('is-snap')).length;
+      const wrapVisible = hoverClass && wrapCs && wrapCs.visibility !== 'hidden' &&
+        parseFloat(wrapCs.opacity || '0') > 0.5;
       return {
-        ok: visible && hasPeriod && hasMatchClock && bookmarks.length >= 2 && hoverClass,
+        ok: visible && hasPeriod && hasMatchClock && wrapVisible &&
+          shorts.includes('1st') && shorts.includes('2nd') && snapped === 0,
         text,
         visible,
         hasPeriod,
         hasMatchClock,
-        bookmarkCount: bookmarks.length,
-        hoverClass
-      };
-    });
-    // Bookmarks go subtle → solid on bar hover (CSS transition); wait then sample
-    await page.waitForTimeout(160);
-    const bookmarkHover = await page.evaluate(() => {
-      const bookmarks = document.querySelectorAll('.omt-timeline-bookmark');
-      const bar = document.getElementById('omt-timeline-bar');
-      const bmOpacity = bookmarks[0] ? parseFloat(getComputedStyle(bookmarks[0]).opacity) : 0;
-      const labelOp = bookmarks[0]?.querySelector('.omt-bm-label')
-        ? parseFloat(getComputedStyle(bookmarks[0].querySelector('.omt-bm-label')).opacity)
-        : 0;
-      return {
-        ok: (bookmarks.length >= 2) && bmOpacity > 0.8 && labelOp > 0.8 &&
-          !!(bar && bar.classList.contains('is-timeline-hover')),
-        bmOpacity,
-        labelOp,
-        bookmarkCount: bookmarks.length
+        hoverClass,
+        wrapOpacity: wrapCs?.opacity,
+        wrapVisibility: wrapCs?.visibility,
+        shorts,
+        snapped
       };
     });
     results.push({
       name: 'timeline-hover-shows-match-clock',
-      pass: periodHover.ok === true && bookmarkHover.ok === true,
-      detail: { periodHover, bookmarkHover }
+      pass: midHover.ok === true,
+      detail: midHover
     });
     results.push({
-      name: 'timeline-bookmarks-at-period-starts',
-      pass: (periodHover.bookmarkCount || 0) >= 2,
-      detail: { bookmarkCount: periodHover.bookmarkCount }
+      name: 'timeline-ticks-on-hover',
+      pass: midHover.ok === true,
+      detail: { shorts: midHover.shorts, wrapOpacity: midHover.wrapOpacity, hoverClass: midHover.hoverClass }
     });
-    await page.waitForTimeout(100);
+    if (trackBox) {
+      const midXY = await page.evaluate(() => {
+        const track = document.querySelector('.omt-timeline-track');
+        const ticks = document.querySelectorAll('.omt-period-tick');
+        if (!track || ticks.length < 2) return null;
+        const rect = track.getBoundingClientRect();
+        const t0 = ticks[0].getBoundingClientRect();
+        const t1 = ticks[1].getBoundingClientRect();
+        const x = (t0.left + t1.left) / 2;
+        const y = rect.top + rect.height / 2;
+        track.dispatchEvent(new PointerEvent('pointermove', { clientX: x, clientY: y, bubbles: true }));
+        return { x, y, left: rect.left, top: rect.top, width: rect.width, bottom: rect.bottom };
+      });
+      if (midXY) await page.mouse.move(midXY.x, midXY.y);
+      await page.waitForTimeout(180);
+      await page.screenshot({
+        path: path.join(ARTIFACTS, 'v176_timeline_hover_mid_half.png'),
+        clip: {
+          x: Math.max(0, trackBox.x - 16),
+          y: Math.max(0, trackBox.y - 64),
+          width: Math.min(920, trackBox.width + 32),
+          height: 130
+        }
+      });
+    }
+
+    // Snap to 2nd tick (~8px): tip at period start, orange highlight, click seeks
+    const snap = await page.evaluate(() => {
+      const track = document.querySelector('.omt-timeline-track');
+      const tip = document.getElementById('omt-timeline-hover-tip');
+      const ticks = document.querySelectorAll('.omt-period-tick');
+      const t2 = [...ticks].find((t) => t.getAttribute('data-half') === '2');
+      if (!track || !tip || !t2) return { ok: false, reason: 'missing-2nd' };
+      const rect = track.getBoundingClientRect();
+      const tr = t2.getBoundingClientRect();
+      const x = tr.left + tr.width / 2;
+      track.dispatchEvent(new PointerEvent('pointermove', {
+        clientX: x,
+        clientY: rect.top + rect.height / 2,
+        bubbles: true
+      }));
+      const text = (tip.textContent || '').trim();
+      const snapped = t2.classList.contains('is-snap');
+      const before = document.querySelector('video')?.currentTime;
+      track.dispatchEvent(new PointerEvent('pointerdown', {
+        clientX: x,
+        clientY: rect.top + rect.height / 2,
+        bubbles: true,
+        cancelable: true
+      }));
+      const after = document.querySelector('video')?.currentTime;
+      const target = parseFloat(t2.getAttribute('data-t') || '');
+      return {
+        ok: snapped && /2nd Half/i.test(text) && /\d{2}:\d{2}/.test(text) &&
+          isFinite(target) && Math.abs((after || 0) - target) < 1.5,
+        text,
+        snapped,
+        before,
+        after,
+        target
+      };
+    });
+    results.push({
+      name: 'timeline-snap-to-2nd-tick-seeks',
+      pass: snap.ok === true,
+      detail: snap
+    });
+    await page.waitForTimeout(80);
+    // Re-snap for a clear screenshot (click may have moved the playhead)
+    const snapShot = await page.evaluate(() => {
+      const track = document.querySelector('.omt-timeline-track');
+      const t2 = document.querySelector('.omt-period-tick[data-half="2"]');
+      if (!track || !t2) return null;
+      const rect = track.getBoundingClientRect();
+      const tr = t2.getBoundingClientRect();
+      const x = tr.left + tr.width / 2;
+      const y = rect.top + rect.height / 2;
+      track.dispatchEvent(new PointerEvent('pointermove', { clientX: x, clientY: y, bubbles: true }));
+      return { x, y, left: tr.left, top: rect.top, bottom: rect.bottom };
+    });
+    if (snapShot) {
+      await page.mouse.move(snapShot.x, snapShot.y);
+      await page.waitForTimeout(180);
+      await page.screenshot({
+        path: path.join(ARTIFACTS, 'v176_timeline_snap_2nd_tick.png'),
+        clip: {
+          x: Math.max(0, snapShot.x - 140),
+          y: Math.max(0, snapShot.top - 56),
+          width: 300,
+          height: 120
+        }
+      });
+    }
     await page.screenshot({
       path: path.join(ARTIFACTS, 'v175_timeline_hover_1st_half_match_clock.png'),
       fullPage: true
@@ -1878,6 +2007,80 @@ async function run() {
       path: path.join(ARTIFACTS, 'v175_timeline_bookmarks_visible.png'),
       fullPage: true
     });
+
+    // Extra-panel tip screenshots: ShuttleXpress + Clear timer (edge-clamped)
+    await page.evaluate(() => {
+      const more = document.getElementById('omt-more-panel');
+      const btn = document.getElementById('omt-more-toggle');
+      if (more && !more.classList.contains('is-open')) btn?.click();
+      const panel = document.getElementById('controls-panel');
+      if (panel) { panel.style.opacity = '1'; panel.style.pointerEvents = 'auto'; }
+    });
+    await page.waitForTimeout(120);
+    const shuttleRow = page.locator('.omt-shuttle-block .omt-tip').first();
+    await shuttleRow.hover();
+    await page.waitForTimeout(140);
+    const shuttleTip = await page.evaluate(() => {
+      const el = document.querySelector('.omt-shuttle-block .omt-tip');
+      const tip = el ? getComputedStyle(el, '::after') : null;
+      const panel = document.getElementById('controls-panel');
+      const more = document.getElementById('omt-more-panel');
+      return {
+        tip: el?.getAttribute('data-tip') || '',
+        visible: tip && tip.opacity !== '0' && tip.visibility !== 'hidden',
+        shift: el?.style.getPropertyValue('--omt-tip-shift') || '',
+        panelOverflow: panel ? getComputedStyle(panel).overflow : null,
+        moreOverflow: more ? getComputedStyle(more).overflow : null
+      };
+    });
+    results.push({
+      name: 'controls-shuttle-tooltip-clamped',
+      pass: /ShuttleXpress/i.test(shuttleTip.tip) && shuttleTip.visible === true &&
+        shuttleTip.panelOverflow === 'visible' && shuttleTip.moreOverflow === 'visible',
+      detail: shuttleTip
+    });
+    const shuttleBox = await shuttleRow.boundingBox();
+    if (shuttleBox) {
+      // Wider crop so a left-shifted tip stays fully in frame
+      await page.screenshot({
+        path: path.join(ARTIFACTS, 'v176_shuttle_tooltip_visible.png'),
+        clip: {
+          x: Math.max(0, shuttleBox.x - 120),
+          y: Math.max(0, shuttleBox.y - 52),
+          width: Math.min(520, shuttleBox.width + 280),
+          height: 100
+        }
+      });
+    }
+    const clearBtn = page.locator('#omt-btn-clear-timer');
+    await clearBtn.hover();
+    await page.waitForTimeout(140);
+    const clearTip = await page.evaluate(() => {
+      const el = document.getElementById('omt-btn-clear-timer');
+      const tip = el ? getComputedStyle(el, '::after') : null;
+      return {
+        tip: el?.getAttribute('data-tip') || '',
+        visible: tip && tip.opacity !== '0' && tip.visibility !== 'hidden',
+        shift: el?.style.getPropertyValue('--omt-tip-shift') || ''
+      };
+    });
+    results.push({
+      name: 'controls-clear-timer-tooltip',
+      pass: clearTip.tip === 'Clear timer' && clearTip.visible === true,
+      detail: clearTip
+    });
+    const clearBox = await clearBtn.boundingBox();
+    if (clearBox) {
+      await page.screenshot({
+        path: path.join(ARTIFACTS, 'v176_clear_timer_tooltip_visible.png'),
+        clip: {
+          x: Math.max(0, clearBox.x - 80),
+          y: Math.max(0, clearBox.y - 44),
+          width: 220,
+          height: 80
+        }
+      });
+    }
 
     // Fullscreen
     await page.evaluate(async () => {
@@ -2136,7 +2339,7 @@ async function run() {
           noCredit: !document.querySelector('.omt-brand-credit'),
           noPersonalizar: !document.body.textContent.includes('Personalizar') &&
             !document.body.textContent.includes('Em breve'),
-          footOk: foot === 'v1.7.5',
+          footOk: foot === 'v1.7.6',
           hasAutoPause: !!document.getElementById('omt-auto-pause-blur'),
           autoPauseDefaultOff: document.getElementById('omt-auto-pause-blur')
             ? document.getElementById('omt-auto-pause-blur').checked === false
@@ -3325,6 +3528,49 @@ async function run() {
           localOpenFile.classOk,
         detail: localOpenFile
       });
+
+      // Open file tip — short text, edge-clamped, fully visible
+      await localPage.evaluate(() => {
+        const more = document.getElementById('omt-more-panel');
+        const btn = document.getElementById('omt-more-toggle');
+        if (more && !more.classList.contains('is-open')) btn?.click();
+        const panel = document.getElementById('controls-panel');
+        if (panel) { panel.style.opacity = '1'; panel.style.pointerEvents = 'auto'; }
+      });
+      await localPage.waitForTimeout(120);
+      await localPage.locator('#omt-local-open-file').hover();
+      await localPage.waitForTimeout(140);
+      const openFileTip = await localPage.evaluate(() => {
+        const el = document.getElementById('omt-local-open-file');
+        const tip = el ? getComputedStyle(el, '::after') : null;
+        const panel = document.getElementById('controls-panel');
+        const more = document.getElementById('omt-more-panel');
+        return {
+          tip: el?.getAttribute('data-tip') || '',
+          visible: tip && tip.opacity !== '0' && tip.visibility !== 'hidden',
+          shift: el?.style.getPropertyValue('--omt-tip-shift') || '',
+          panelOverflow: panel ? getComputedStyle(panel).overflow : null,
+          moreOverflow: more ? getComputedStyle(more).overflow : null
+        };
+      });
+      results.push({
+        name: 'local-open-file-tooltip-clamped',
+        pass: /Open local or NAS video/i.test(openFileTip.tip) && openFileTip.visible === true &&
+          openFileTip.panelOverflow === 'visible' && openFileTip.moreOverflow === 'visible',
+        detail: openFileTip
+      });
+      const openBox = await localPage.locator('#omt-local-open-file').boundingBox();
+      if (openBox) {
+        await localPage.screenshot({
+          path: path.join(ARTIFACTS, 'v176_open_file_tooltip_visible.png'),
+          clip: {
+            x: Math.max(0, openBox.x - 100),
+            y: Math.max(0, openBox.y - 52),
+            width: Math.min(420, openBox.width + 260),
+            height: 100
+          }
+        });
+      }
 
       // Click-to-toggle on <video> (original HTML dashboard behaviour)
       await localPage.evaluate(() => {
