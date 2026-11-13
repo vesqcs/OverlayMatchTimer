@@ -1511,22 +1511,24 @@ async function run() {
           noCredit: !document.querySelector('.omt-brand-credit'),
           noPersonalizar: !document.body.textContent.includes('Personalizar') &&
             !document.body.textContent.includes('Em breve'),
-          footOk: foot === 'v1.5.0',
+          footOk: foot === 'v1.5.1',
           hasAutoPause: !!document.getElementById('omt-auto-pause-blur'),
           autoPauseDefaultOff: document.getElementById('omt-auto-pause-blur')
             ? document.getElementById('omt-auto-pause-blur').checked === false
             : false,
           hasOpenLocal: !!document.getElementById('omt-open-local-player'),
           openLocalLabel: (document.getElementById('omt-open-local-player')?.textContent || '').trim(),
+          logoSrc: document.querySelector('.omt-sp-logo')?.getAttribute('src') || '',
           logoUncropped: (() => {
             const logo = document.querySelector('.omt-sp-logo');
             if (!logo) return false;
             const cs = getComputedStyle(logo);
             const box = logo.getBoundingClientRect();
             const ar = box.width / Math.max(1, box.height);
-            // Official mark is taller than wide (~88/108); square crop was ~1.0
-            return box.height >= 48 && ar < 0.95 && ar > 0.7 &&
-              cs.objectFit === 'contain' && !/hidden/.test(cs.overflow);
+            // Official logo-dark.png is wide (240×63 ≈ 3.81) with Stats Perform wordmark
+            return box.width >= 140 && ar > 3.2 && ar < 4.5 &&
+              cs.objectFit === 'contain' && !/hidden/.test(cs.overflow) &&
+              /stats-perform-logo-dark\.png/i.test(logo.getAttribute('src') || '');
           })(),
           keyCaps: document.querySelectorAll('.shortcut-keys kbd').length >= 8
         };
@@ -1538,7 +1540,8 @@ async function run() {
           popupOk.noSwap && popupOk.noCredit && popupOk.noPersonalizar &&
           popupOk.footOk && popupOk.keyCaps && popupOk.logoUncropped &&
           popupOk.hasAutoPause && popupOk.autoPauseDefaultOff &&
-          popupOk.hasOpenLocal && popupOk.openLocalLabel === 'Open local player',
+          popupOk.hasOpenLocal && popupOk.openLocalLabel === 'Open local player' &&
+          /stats-perform-logo-dark\.png/i.test(popupOk.logoSrc || ''),
         detail: popupOk
       });
       await popupPage.close();
@@ -1613,15 +1616,25 @@ async function run() {
       const localOpenFile = await localPage.evaluate(() => {
         const btn = document.getElementById('omt-local-open-file');
         const name = document.getElementById('omt-local-filename');
+        const cs = btn ? getComputedStyle(btn) : null;
+        const box = btn ? btn.getBoundingClientRect() : null;
+        const bg = cs ? (cs.backgroundColor || '') : '';
+        const isOrangeBar = /245,\s*131,\s*31/.test(bg) && !/rgba?\(\s*245,\s*131,\s*31,\s*0\./.test(bg);
         return {
           hasBtn: !!btn,
           name: (name?.textContent || '').trim(),
-          dropHidden: !!(document.getElementById('omt-local-drop')?.hidden)
+          dropHidden: !!(document.getElementById('omt-local-drop')?.hidden),
+          compact: !!(box && box.width > 0 && box.width < 140 && box.height > 0 && box.height <= 32),
+          notOrangeFill: !isOrangeBar,
+          classOk: !!(btn && btn.classList.contains('omt-local-open-file-btn') && !btn.classList.contains('btn-sync')),
+          bg
         };
       });
       results.push({
         name: 'local-file-loaded',
-        pass: localOpenFile.hasBtn && /sample-match\.mp4/i.test(localOpenFile.name) && localOpenFile.dropHidden,
+        pass: localOpenFile.hasBtn && /sample-match\.mp4/i.test(localOpenFile.name) &&
+          localOpenFile.dropHidden && localOpenFile.compact && localOpenFile.notOrangeFill &&
+          localOpenFile.classOk,
         detail: localOpenFile
       });
 

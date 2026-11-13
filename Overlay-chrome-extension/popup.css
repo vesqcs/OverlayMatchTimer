@@ -29,10 +29,10 @@ body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
   text-align: center;
 }
 .omt-sp-logo {
-  width: 52px;
+  /* Official Stats Perform logo (mark + wordmark) — assets/stats-perform-logo-dark.png 240×63 */
+  width: 168px;
   height: auto;
-  /* Matches assets/stats-perform-mark.svg viewBox (padded official mark) */
-  aspect-ratio: 120 / 150;
+  aspect-ratio: 240 / 63;
   display: block;
   object-fit: contain;
   object-position: center;

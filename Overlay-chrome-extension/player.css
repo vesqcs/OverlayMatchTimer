@@ -91,23 +91,55 @@ html, body.omt-local-page {
   outline-offset: 2px;
 }
 
-/* Local more-panel open-file row */
+/* Local more-panel open-file row — compact secondary control (not Kick-off orange) */
 #omt-root.omt-local .omt-local-file-block {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 #omt-root.omt-local .omt-local-filename {
   font-size: 11px;
-  color: #aaa;
+  color: #888;
   max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-#omt-root.omt-local #omt-local-open-file {
+#omt-root.omt-local #omt-local-open-file,
+#omt-root.omt-local .omt-local-open-file-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
+  flex: 0 0 auto;
+  width: auto;
+  margin: 0;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: #ccc;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  letter-spacing: 0;
+  cursor: pointer;
+  line-height: 1.2;
+}
+#omt-root.omt-local #omt-local-open-file .omt-icon,
+#omt-root.omt-local .omt-local-open-file-btn .omt-icon {
+  color: #F5831F;
+  flex-shrink: 0;
+}
+#omt-root.omt-local #omt-local-open-file:hover,
+#omt-root.omt-local .omt-local-open-file-btn:hover {
+  background: rgba(245, 131, 31, 0.12);
+  border-color: rgba(245, 131, 31, 0.4);
+  color: #eee;
+  filter: none;
+}
+#omt-root.omt-local #omt-local-open-file:focus-visible,
+#omt-root.omt-local .omt-local-open-file-btn:focus-visible {
+  outline: 2px solid #F5831F;
+  outline-offset: 2px;
 }

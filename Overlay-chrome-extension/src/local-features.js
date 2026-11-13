@@ -59,8 +59,8 @@
         const block = document.createElement('div');
         block.className = 'omt-more-block omt-local-file-block';
         block.innerHTML =
-            '<button type="button" id="omt-local-open-file" class="btn-sync omt-tip" data-tip="Open a local or NAS-mapped video file">' +
-            omtIcon('folder-open', 14) +
+            '<button type="button" id="omt-local-open-file" class="omt-local-open-file-btn omt-tip" data-tip="Open a local or NAS-mapped video file">' +
+            omtIcon('folder-open', 13) +
             '<span class="omt-btn-label">Open file</span></button>' +
             '<span id="omt-local-filename" class="omt-local-filename">No file loaded</span>';
         const shuttle = more.querySelector('.omt-shuttle-block');

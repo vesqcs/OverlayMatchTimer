@@ -2,7 +2,7 @@
 
 **Overlay MatchTimer** is a Chrome MV3 extension for professional football / sports match analysts. It injects a drift-aware match timer, HUD timeline, and playback controls over supported stream players.
 
-Supported by this extension build (**v1.5.0** — same v1.4.x HUD on InplayIP / Examino, plus a local file player):
+Supported by this extension build (**v1.5.1** — same v1.4.x HUD on InplayIP / Examino, plus a local file player):
 
 * **InplayIP** (`*.inplayip.tv`) — Video.js Review/DVR sessions (v1.4.x UI unchanged)
 * **Examino** (`examino.statsperform.io/play/dvr/*` and `/play/vod/*`) — OpenPlayer DVR/VOD pages (no iframes / shadow roots)
