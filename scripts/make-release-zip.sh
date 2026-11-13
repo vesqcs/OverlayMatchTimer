@@ -30,7 +30,7 @@ tar -C Overlay-chrome-extension \
 
 # Docs useful for the owner package
 cp -a README.md TESTING-TUESDAY.md TESTING-TUESDAY.pdf \
-  "Overlay MatchTimer Guideline.pdf" ARCHITECTURE.md \
+  "Overlay MatchTimer Guideline.pdf" ARCHITECTURE.md PERFORMANCE.md \
   "$PKG/" 2>/dev/null || true
 cp -a docs supabase store "$PKG/" 2>/dev/null || true
 

@@ -1601,7 +1601,7 @@ async function run() {
           noCredit: !document.querySelector('.omt-brand-credit'),
           noPersonalizar: !document.body.textContent.includes('Personalizar') &&
             !document.body.textContent.includes('Em breve'),
-          footOk: foot === 'v1.7.1',
+          footOk: foot === 'v1.7.2',
           hasAutoPause: !!document.getElementById('omt-auto-pause-blur'),
           autoPauseDefaultOff: document.getElementById('omt-auto-pause-blur')
             ? document.getElementById('omt-auto-pause-blur').checked === false
@@ -1636,11 +1636,16 @@ async function run() {
             const labels = Array.from(host?.querySelectorAll('.omt-sx-label[data-part]') || [])
               .map((el) => [el.getAttribute('data-part'), (el.textContent || '').trim()]);
             const map = Object.fromEntries(labels);
+            const nums = Array.from(host?.querySelectorAll('.omt-sx-num') || [])
+              .map((el) => (el.textContent || '').trim());
             return {
               hasSvg: !!svg,
               outline: !!host?.querySelector('.omt-sx-body') && !host?.querySelector('pattern'),
               map,
+              nums,
+              noBtnNumbers: nums.length === 0,
               ok: !!svg &&
+                nums.length === 0 &&
                 /Play\/Pause/i.test(map.btn3 || '') &&
                 /^[−+\-]/.test(map.btn1 || '') &&
                 /^[−+\-]/.test(map.btn2 || '') &&
@@ -1945,6 +1950,10 @@ async function run() {
         const dimple = wrap?.querySelector('.omt-sx-dimple');
         const jogActive = !!wrap?.querySelector('.omt-sx-part[data-part="jog"].is-active');
         const ringActive = !!wrap?.querySelector('.omt-sx-part[data-part="ring"].is-active');
+        const nums = Array.from(wrap?.querySelectorAll('.omt-sx-num') || [])
+          .map((el) => (el.textContent || '').trim())
+          .sort()
+          .join(',');
         return {
           activeParts: actives,
           activeRows,
@@ -1954,6 +1963,8 @@ async function run() {
           ringActive,
           label: (label?.textContent || '').trim(),
           hasLabels: (wrap?.querySelectorAll('.omt-sx-label[data-part]') || []).length >= 7,
+          btnNumbers: nums,
+          hasBtnNumbers: nums === '1,2,3,4,5',
           dimpleCy: dimple ? Number(dimple.getAttribute('cy')) : null,
           hasChevrons: document.querySelectorAll('.omt-num-chevrons .omt-chev').length >= 8,
           noStepperBtns: document.querySelectorAll('.omt-stepper-btn').length === 0
@@ -2005,6 +2016,7 @@ async function run() {
           highlightJog.rows.length === 1 && highlightJog.rows[0] === 'jog' &&
           shuttleCollapsed.hasSvg === true &&
           highlight.hasLabels === true &&
+          highlight.hasBtnNumbers === true &&
           /^[−+\-]/.test(highlight.label || '') &&
           highlight.dimpleCy != null && highlight.dimpleCy >= 82 &&
           highlight.hasChevrons === true &&

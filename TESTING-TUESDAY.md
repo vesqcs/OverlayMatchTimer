@@ -1,8 +1,8 @@
 # Overlay MatchTimer — Tuesday manual test (~15 min)
 
-**Build:** v1.7.1 · **PC:** work machine · **Date:** ________ · **Tester:** ________
+**Build:** v1.7.2 · **PC:** work machine · **Date:** ________ · **Tester:** ________
 
-Install from the zip (`OverlayMatchTimer-v1.7.1.zip` → `Overlay-chrome-extension/`). Load unpacked in `chrome://extensions` (Developer mode). Do not use an old folder.
+Install from the zip (`OverlayMatchTimer-v1.7.2.zip` → `Overlay-chrome-extension/`). Load unpacked in `chrome://extensions` (Developer mode). Do not use an old folder.
 
 Mark each row: `[ ]` → `[x]` when pass. Use **Notes** for anything odd (screenshot path / console error).
 
@@ -12,9 +12,9 @@ Mark each row: `[ ]` → `[x]` when pass. Use **Notes** for anything odd (screen
 
 | # | Action | Expected | ✓ | Notes |
 |---|--------|----------|---|-------|
-| 0.1 | Load unpacked from zip’s `Overlay-chrome-extension` | Extension shows **1.7.1**, no errors on card | [ ] | |
+| 0.1 | Load unpacked from zip’s `Overlay-chrome-extension` | Extension shows **1.7.2**, no errors on card | [ ] | |
 | 0.2 | Check toolbar / extensions icon | Slash + **20:08** badge top-left (v2) on dark tile | [ ] | |
-| 0.3 | Open popup | Header: SP logo with **20:08** badge + OverlayMatchTimer; footer `v1.7.1` | [ ] | |
+| 0.3 | Open popup | Header: SP logo with **20:08** badge + OverlayMatchTimer; footer `v1.7.2` | [ ] | |
 | 0.4 | Customize tab | Sections: Match clock, Shortcuts, ShuttleXpress only — **no Kickoff sync** | [ ] | |
 
 ---
@@ -75,7 +75,7 @@ Open a live/VOD InplayIP match page with the overlay injected.
 |---|--------|----------|---|-------|
 | 5.1 | Enable Shuttle on page; pair device | Connects; cheatsheet/controls as usual | [ ] | |
 | 5.2 | Press Btn 1–5, turn Jog, rock Shuttle ring | Correct skip / play-pause / frame / scrub; **OSD** labels unchanged | [ ] | |
-| 5.3 | Customize: click **Btn 5** on SVG | **Only** Btn 5 orange on diagram **and** its row; Jog/ring neutral | [ ] | |
+| 5.3 | Customize: click **Btn 5** on SVG | **Only** Btn 5 orange on diagram **and** its row; Jog/ring neutral; **Btn numbers 1–5 visible** around Customize diagram | [ ] | |
 | 5.4 | Focus **Jog** select | **Only** Jog highlighted on SVG + row | [ ] | |
 | 5.5 | Move Play/Pause to **Btn 5** | Btn 5 = Play/Pause (no number field); Btn 3 = **+2m**; General diagram labels match | [ ] | |
 | 5.6 | Press physical Btn 5 / Btn 3 | 5 toggles play; 3 skips +2m; OSD correct | [ ] | |
@@ -90,8 +90,22 @@ Open a live/VOD InplayIP match page with the overlay injected.
 | # | Action | Expected | ✓ | Notes |
 |---|--------|----------|---|-------|
 | 6.1 | Default General | Actions open; Shortcuts + Shuttle **collapsed** | [ ] | |
-| 6.2 | Open ShuttleXpress | **Diagram only** (live labels); no Btn 1…5 text list | [ ] | |
+| 6.2 | Open ShuttleXpress | **Diagram only** (live action labels: −2m / −10s / Play/Pause / +10s / +2m / Jog / Shuttle ring); **no** Btn numbers 1–5 around the ring | [ ] | |
 | 6.3 | **Reset all customizations** | Clock, shortcuts, Shuttle back to defaults | [ ] | |
+
+---
+
+## 7. Performance — Chrome Task Manager (work PC)
+
+Use a real InPlay or Examino tab (not the mock). Record numbers in Notes.
+
+| # | Action | Expected | ✓ | Notes |
+|---|--------|----------|---|-------|
+| 7.1 | Open Task Manager (`Shift+Esc` in Chrome) with **extension disabled** on the match tab; watch ~60 s while video plays | Note tab CPU % and JS memory | [ ] | OFF: CPU ___ % · JS ___ MB |
+| 7.2 | Enable extension; reload match tab; HUD visible; watch ~60 s | CPU/JS higher than OFF is OK; no runaway climb; UI stays smooth | [ ] | ON: CPU ___ % · JS ___ MB |
+| 7.3 | Optional: leave tab open ~5 min with HUD | Memory does not climb without bound (GC noise OK) | [ ] | |
+
+Directionality from the v1.7.2 lab harness: Examino ON ≫ OFF for script time; InPlay ON also clearly above OFF. Absolute % on your PC will differ — see `PERFORMANCE.md`.
 
 ---
 

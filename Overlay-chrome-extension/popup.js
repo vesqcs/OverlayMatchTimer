@@ -293,6 +293,8 @@
       if (svg) {
         svg.classList.add('omt-shuttle-svg--readonly');
         svg.removeAttribute('id');
+        // General: action labels only — no Btn 1..5 numbers around the ring.
+        svg.querySelectorAll('.omt-sx-num').forEach((el) => el.remove());
       }
     }
     if (edit && !edit.querySelector('.omt-shuttle-svg')) {
@@ -301,6 +303,7 @@
       if (svg) {
         svg.id = 'omt-shuttle-svg';
         svg.classList.add('omt-shuttle-svg--edit');
+        // Customize keeps Btn 1..5 numbers (editor rows refer to them).
       }
     }
   }
