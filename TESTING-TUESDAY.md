@@ -2,7 +2,7 @@
 
 **Build:** v2.0.0 · **PC:** work machine · **Date:** ________ · **Tester:** ________
 
-Install from the zip (`OverlayMatchTimer-v2.0.0.zip` → `Overlay-chrome-extension/`). Load unpacked in `chrome://extensions` (Developer mode). Do not use an old folder.
+Install from the full zip (`OverlayMatchTimer-v2.0.0-full.zip` → `OverlayMatchTimer-v2.0.0/Overlay-chrome-extension/`). Load unpacked in `chrome://extensions` (Developer mode). Do not use an old folder.
 
 Mark each row: `[ ]` → `[x]` when pass. Use **Notes** for anything odd (screenshot path / console error).
 
@@ -34,6 +34,7 @@ Open a live/VOD InplayIP match page with the overlay injected.
 | 1.7 | Press **Esc** while editing | Edit cancels; previous valid time restored | [ ] | |
 | 1.8 | Popup → Customize → move clock through 6 positions × sizes S–XL × Box/Pill/Minimal | Clock stays clear of OSD/timeline; style matches choice | [ ] | |
 | 1.9 | Speed row / **eye** Auto hide toggle | Eye-off = Auto hide on; eye = off; click does **not** hide panel; tooltip `Auto hide: on/off` | [ ] | |
+| 1.9b | Hover **Play**, skip (±2s/±10s/±2m), lower speed chips | **No** hover tooltip (self-explanatory). Frame ± / top speed select still tip | [ ] | |
 | 1.10 | Auto hide **ON**: leave mouse still over video ~3s | Controls + timeline **fade**; move mouse → they return | [ ] | |
 | 1.11 | Auto hide **OFF**: leave mouse still over video ~3s | Controls **stay** visible | [ ] | |
 | 1.12 | Hover volume slider / top-row icons | Tip fully visible (not clipped by card top); near top of player tips flip below | [ ] | |

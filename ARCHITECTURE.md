@@ -102,7 +102,7 @@ Each adapter is a plain object:
 
 Branding, shortcuts reference, Customize (clock / shortcuts / ShuttleXpress), and General actions live in `popup.html`. Values sync through `chrome.storage.local` via `bridge.js`. In-video UI stays limited to transport, timeline, LIVE, match clock + offset nudge, kick-off, and Examino Source.
 
-## Kickoff sync (planned — disabled in v1.7.1)
+## Kickoff sync (planned — disabled since v1.7.1; still off in v2.0.0)
 
 **Status:** Code and SQL remain in the repo (`src/sync/`, `background.js` gated paths, `supabase/`) but are **inert**. Gate: `Overlay-chrome-extension/sync-feature-flag.js` → `OMT_SYNC_FEATURE_ENABLED = false`. No Customize UI, no message handlers, no network, no Supabase host permission in the manifest while the flag is off.
 

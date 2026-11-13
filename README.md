@@ -33,7 +33,7 @@ Xeatre content-script injection remains out of scope until material is provided 
 | `TESTING-TUESDAY.md` / `.pdf` | Short smoke checklist for a build |
 | `store/` | Unlisted Chrome Web Store prep |
 | `test/fixtures/` + `test/e2e/` | Local mocks + Playwright harness |
-| `scripts/` | PDF generators + `make-release-zip.sh` |
+| `scripts/` | PDF generators + `make-release-zip.sh` (writes `OverlayMatchTimer-v*-full.zip`) |
 | `ARCHITECTURE.md` | Module map + planned sync design |
 | `OverlayMatchTimer.html` | Legacy local companion dashboard |
 

@@ -63,9 +63,9 @@ security: Stats Perform internal — confirm classification before external shar
 
 ## 2. Installing the Chrome extension
 
-1. Obtain the release zip (e.g. `OverlayMatchTimer-v2.0.0.zip`) and extract it.
+1. Obtain the release zip (e.g. `OverlayMatchTimer-v2.0.0-full.zip`) and extract it.
 2. Open `chrome://extensions` → enable **Developer mode**.
-3. **Load unpacked** → select `Overlay-chrome-extension/` (contains `manifest.json`).
+3. **Load unpacked** → select `OverlayMatchTimer-v2.0.0/Overlay-chrome-extension/` (contains `manifest.json`).
 4. Confirm the card shows version **2.0.0** and no errors.
 5. Pin the toolbar icon (slash + **20:08** badge).
 
@@ -111,7 +111,18 @@ Click the HUD clock to type a match time (`45`, `45.30`, `45:30`, etc.).
 
 ---
 
-## 6. Navigation & hotkeys
+## 6. HUD controls (current behaviour)
+
+| Control | Behaviour |
+|---------|-----------|
+| Play / Pause, skip (±2s / ±10s / ±2m), lower speed-row chips | Self-explanatory — **no hover tooltips** |
+| Frame ±, top speed select, volume, more chevron, Open file, ShuttleXpress, Clear timer | Hover tips as usual (opaque portal tips) |
+| **Eye** button | **Auto hide** toggle only (does not hide the panel on click). Eye-off = Auto hide on; eye = off. Tip: `Auto hide: on/off` |
+| **H** | Still hides/shows the whole control chrome (original hotkey) |
+| Timeline (kick-offs set) | At rest: no markers. On hover: thin period ticks + tiny `1st/2nd/…` labels; tip above = period · match clock; near a tick snaps + click seeks |
+| Kickoff sync / Customize sync | **Hidden / disabled** in this build |
+
+## 7. Navigation & hotkeys
 
 | Action | Default shortcut |
 |--------|------------------|
@@ -129,7 +140,7 @@ Defaults are rebindable under **Customize → Shortcuts**.
 
 ---
 
-## 7. ShuttleXpress
+## 8. ShuttleXpress
 
 1. Connect Contour ShuttleXpress over USB.
 2. On the page HUD, enable **ShuttleXpress** (per window on local player).
@@ -138,7 +149,7 @@ Defaults are rebindable under **Customize → Shortcuts**.
 
 ---
 
-## 8. Customize & General (toolbar popup)
+## 9. Customize & General (toolbar popup)
 
 **General:** Open local player, Auto pause on Alt+Tab (default off), live shortcut list, Shuttle diagram summary (action labels only — no Btn 1–5 numbers; those appear under Customize → ShuttleXpress).
 
@@ -154,13 +165,13 @@ Defaults are rebindable under **Customize → Shortcuts**.
 
 ---
 
-## 9. Legacy URL workflows (HTML)
+## 10. Legacy URL workflows (HTML)
 
 Xeatre / Examino “copy DVR URL → paste into dashboard” steps from Guideline 1.0.0 still apply to `OverlayMatchTimer.html`. The extension injects on Examino play URLs and InplayIP directly.
 
 ---
 
-## 10. Troubleshooting (short)
+## 11. Troubleshooting (short)
 
 | Symptom | Try |
 |---------|-----|
@@ -171,7 +182,7 @@ Xeatre / Examino “copy DVR URL → paste into dashboard” steps from Guidelin
 
 ---
 
-## 11. Updating this Guideline (maintainers)
+## 12. Updating this Guideline (maintainers)
 
 | File | Role |
 |------|------|
@@ -188,6 +199,6 @@ python3 scripts/generate-testing-tuesday-pdf.py
 
 ---
 
-## 12. Disclaimer
+## 13. Disclaimer
 
 Confirm security marking and distribution with the owner before sharing. Do not paste credentials into this document or commit them to git.

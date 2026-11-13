@@ -6,7 +6,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 VERSION="$(node -p "require('./Overlay-chrome-extension/package.json').version")"
-NAME="OverlayMatchTimer-v${VERSION}.zip"
+# Full owner/QA bundle (extension + docs + store + supabase). Not the Store upload zip.
+NAME="OverlayMatchTimer-v${VERSION}-full.zip"
 OUT_DIR="${1:-/opt/cursor/artifacts}"
 mkdir -p "$OUT_DIR"
 
@@ -43,4 +44,4 @@ find "$STAGE" -type f \( -name '.env' -o -name '*.pem' -o -name '*service_role*'
 )
 
 echo "Wrote $OUT_DIR/$NAME"
-unzip -l "$OUT_DIR/$NAME" | head -40
+unzip -l "$OUT_DIR/$NAME" | head -50

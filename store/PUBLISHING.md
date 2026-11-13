@@ -33,7 +33,7 @@ Do **not** claim active cloud sync. Sync is feature-flagged off: no UI, no Supab
 
 ## Before you start
 
-1. Build: `./scripts/make-release-zip.sh` → `OverlayMatchTimer-v1.7.1.zip`. For Store upload, zip **contents** of `Overlay-chrome-extension/` (manifest at zip root).
+1. Build: `./scripts/make-release-zip.sh` → versioned zip (e.g. `OverlayMatchTimer-v2.0.0-full.zip`). For Store upload, zip **contents** of `Overlay-chrome-extension/` (manifest at zip root).
 2. Host privacy at a stable HTTPS URL.
 3. Keep listing **Unlisted** unless policy says otherwise.
 

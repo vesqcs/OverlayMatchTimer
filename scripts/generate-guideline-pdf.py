@@ -34,12 +34,17 @@ SRC = ROOT / "docs" / "guideline" / "GUIDELINE.md"
 OUT = ROOT / "Overlay MatchTimer Guideline.pdf"
 
 
-def strip_front_matter(text: str) -> str:
+def strip_front_matter(text: str) -> tuple[str, dict[str, str]]:
+    meta: dict[str, str] = {}
     if text.startswith("---"):
         end = text.find("\n---", 3)
         if end != -1:
-            return text[end + 4 :].lstrip("\n")
-    return text
+            for line in text[3:end].splitlines():
+                if ":" in line:
+                    k, v = line.split(":", 1)
+                    meta[k.strip()] = v.strip()
+            return text[end + 4 :].lstrip("\n"), meta
+    return text, meta
 
 
 def inline(md: str) -> str:
@@ -61,7 +66,8 @@ def parse_table(lines: list[str]) -> list[list[str]]:
 
 
 def build():
-    raw = strip_front_matter(SRC.read_text(encoding="utf-8"))
+    raw, meta = strip_front_matter(SRC.read_text(encoding="utf-8"))
+    version = meta.get("version") or "2.0.0"
     styles = getSampleStyleSheet()
     styles.add(
         ParagraphStyle(
@@ -168,7 +174,7 @@ def build():
     story.append(Paragraph("OVERLAY MATCHTIMER", styles["CoverTitle"]))
     story.append(Paragraph("User Guideline", styles["CoverMeta"]))
     story.append(Paragraph("STATS PERFORM (internal)", styles["CoverMeta"]))
-    story.append(Paragraph("Editable source → PDF · v1.7.0", styles["CoverMeta"]))
+    story.append(Paragraph(f"Editable source → PDF · v{version}", styles["CoverMeta"]))
     story.append(Spacer(1, 20 * mm))
     story.append(
         Paragraph(
@@ -274,7 +280,7 @@ def build():
         canvas.saveState()
         canvas.setFont("Helvetica", 7)
         canvas.setFillColor(colors.HexColor("#888888"))
-        canvas.drawString(18 * mm, 10 * mm, "Overlay MatchTimer Guideline · v1.7.0 · internal")
+        canvas.drawString(18 * mm, 10 * mm, f"Overlay MatchTimer Guideline · v{version} · internal")
         canvas.drawRightString(A4[0] - 18 * mm, 10 * mm, str(doc.page))
         canvas.restoreState()
 
@@ -285,7 +291,7 @@ def build():
         rightMargin=16 * mm,
         topMargin=14 * mm,
         bottomMargin=16 * mm,
-        title="Overlay MatchTimer Guideline",
+        title=f"Overlay MatchTimer Guideline v{version}",
         author="Stats Perform / Overlay MatchTimer maintainers",
     )
     doc.build(story, onFirstPage=footer, onLaterPages=footer)
