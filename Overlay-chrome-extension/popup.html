@@ -46,52 +46,55 @@
   </section>
 
   <section class="omt-pane" data-pane="customize">
-    <div class="omt-cust-section">
-      <div class="omt-cust-heading">Match clock</div>
-      <div class="omt-clock-preview" aria-hidden="true">
-        <div class="omt-clock-preview-stage" id="omt-clock-preview-stage">
-          <div class="omt-clock-preview-face" id="omt-clock-preview-face">45:00</div>
+    <details class="omt-cust-details" id="omt-clock-details" data-section="clock" open>
+      <summary class="omt-cust-summary">Match clock</summary>
+      <div class="omt-cust-details-body">
+        <div class="omt-clock-preview" aria-hidden="true">
+          <div class="omt-clock-preview-stage" id="omt-clock-preview-stage">
+            <div class="omt-clock-preview-face" id="omt-clock-preview-face">45:00</div>
+          </div>
+        </div>
+        <label class="omt-field">Position
+          <select id="clock-pos">
+            <option value="top-left">Top left (default)</option>
+            <option value="top-centre">Top centre</option>
+            <option value="top-right">Top right</option>
+            <option value="bottom-left">Bottom left</option>
+            <option value="bottom-centre">Bottom centre</option>
+            <option value="bottom-right">Bottom right</option>
+          </select>
+        </label>
+        <label class="omt-field">Size
+          <select id="clock-size">
+            <option value="small">S</option>
+            <option value="medium" selected>M (default)</option>
+            <option value="large">L</option>
+            <option value="xlarge">XL</option>
+          </select>
+        </label>
+        <label class="omt-field">Style
+          <select id="clock-shape">
+            <option value="rounded" selected>Box (default)</option>
+            <option value="pill">Pill</option>
+            <option value="minimal">Transparent text</option>
+          </select>
+        </label>
+        <p class="omt-note">Click the on-video clock to type a match time (mm:ss). Positions stay clear of the OSD and timeline.</p>
+      </div>
+    </details>
+
+    <details class="omt-cust-details" id="omt-hotkeys-details" data-section="hotkeys">
+      <summary class="omt-cust-summary">Shortcuts</summary>
+      <div class="omt-cust-details-body">
+        <p class="omt-note">Click a binding, then press a key (modifiers allowed). Conflicts warn inline.</p>
+        <div id="omt-hotkey-editor" class="omt-hotkey-editor"></div>
+        <div class="omt-cust-actions">
+          <button type="button" id="omt-hotkeys-reset-all" class="omt-btn-secondary">Reset all shortcuts</button>
         </div>
       </div>
-      <label class="omt-field">Position
-        <select id="clock-pos">
-          <option value="top-left">Top left (default)</option>
-          <option value="top-right">Top right</option>
-          <option value="bottom-left">Bottom left</option>
-          <option value="bottom-right">Bottom right</option>
-        </select>
-      </label>
-      <label class="omt-field">Size
-        <select id="clock-size">
-          <option value="small">S</option>
-          <option value="medium" selected>M (default)</option>
-          <option value="large">L</option>
-          <option value="xlarge">XL</option>
-        </select>
-      </label>
-      <label class="omt-field">Style
-        <select id="clock-shape">
-          <option value="rounded" selected>Box (default)</option>
-          <option value="pill">Pill</option>
-          <option value="minimal">Transparent text</option>
-        </select>
-      </label>
-      <div class="omt-cust-actions">
-        <button type="button" id="omt-clock-reset-pos" class="omt-btn-secondary">Reset position</button>
-      </div>
-      <p class="omt-note">Drag the clock on video to place it anywhere; Reset position returns to the corner above.</p>
-    </div>
+    </details>
 
-    <div class="omt-cust-section">
-      <div class="omt-cust-heading">Shortcuts</div>
-      <p class="omt-note">Click a binding, then press a key (modifiers allowed). Conflicts warn inline.</p>
-      <div id="omt-hotkey-editor" class="omt-hotkey-editor"></div>
-      <div class="omt-cust-actions">
-        <button type="button" id="omt-hotkeys-reset-all" class="omt-btn-secondary">Reset all shortcuts</button>
-      </div>
-    </div>
-
-    <details class="omt-cust-details" id="omt-shuttle-details">
+    <details class="omt-cust-details" id="omt-shuttle-details" data-section="shuttle">
       <summary class="omt-cust-summary">ShuttleXpress</summary>
       <div class="omt-cust-details-body">
         <div class="omt-shuttle-diagram-wrap omt-shuttle-diagram-wrap--edit" id="omt-shuttle-diagram-wrap" aria-label="ShuttleXpress diagram">
@@ -102,7 +105,13 @@
           <label class="omt-field omt-shuttle-row" data-part="btn1">
             <span>Btn 1 skip (−)</span>
             <span class="omt-inline-edit">
-              <input type="number" id="omt-sx-skip1" min="1" max="600" step="1" />
+              <span class="omt-stepper">
+                <button type="button" class="omt-stepper-btn" data-step="-1" data-for="omt-sx-skip1" aria-label="Decrease" tabindex="-1"><svg class="omt-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/></svg>
+                </button>
+                <input type="number" id="omt-sx-skip1" class="omt-stepper-input" min="1" max="600" step="1" />
+                <button type="button" class="omt-stepper-btn" data-step="1" data-for="omt-sx-skip1" aria-label="Increase" tabindex="-1"><svg class="omt-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                </button>
+              </span>
               <span class="omt-unit">s</span>
               <button type="button" class="omt-btn-icon" data-reset="skipBtn1" title="Reset to default" aria-label="Reset to default"><svg class="omt-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
             </span>
@@ -110,7 +119,13 @@
           <label class="omt-field omt-shuttle-row" data-part="btn2">
             <span>Btn 2 skip (−)</span>
             <span class="omt-inline-edit">
-              <input type="number" id="omt-sx-skip2" min="1" max="600" step="1" />
+              <span class="omt-stepper">
+                <button type="button" class="omt-stepper-btn" data-step="-1" data-for="omt-sx-skip2" aria-label="Decrease" tabindex="-1"><svg class="omt-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/></svg>
+                </button>
+                <input type="number" id="omt-sx-skip2" class="omt-stepper-input" min="1" max="600" step="1" />
+                <button type="button" class="omt-stepper-btn" data-step="1" data-for="omt-sx-skip2" aria-label="Increase" tabindex="-1"><svg class="omt-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                </button>
+              </span>
               <span class="omt-unit">s</span>
               <button type="button" class="omt-btn-icon" data-reset="skipBtn2" title="Reset to default" aria-label="Reset to default"><svg class="omt-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
             </span>
@@ -131,7 +146,13 @@
           <label class="omt-field omt-shuttle-row" data-part="btn4">
             <span>Btn 4 skip (+)</span>
             <span class="omt-inline-edit">
-              <input type="number" id="omt-sx-skip4" min="1" max="600" step="1" />
+              <span class="omt-stepper">
+                <button type="button" class="omt-stepper-btn" data-step="-1" data-for="omt-sx-skip4" aria-label="Decrease" tabindex="-1"><svg class="omt-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/></svg>
+                </button>
+                <input type="number" id="omt-sx-skip4" class="omt-stepper-input" min="1" max="600" step="1" />
+                <button type="button" class="omt-stepper-btn" data-step="1" data-for="omt-sx-skip4" aria-label="Increase" tabindex="-1"><svg class="omt-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                </button>
+              </span>
               <span class="omt-unit">s</span>
               <button type="button" class="omt-btn-icon" data-reset="skipBtn4" title="Reset to default" aria-label="Reset to default"><svg class="omt-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
             </span>
@@ -139,7 +160,13 @@
           <label class="omt-field omt-shuttle-row" data-part="btn5">
             <span>Btn 5 skip (+)</span>
             <span class="omt-inline-edit">
-              <input type="number" id="omt-sx-skip5" min="1" max="600" step="1" />
+              <span class="omt-stepper">
+                <button type="button" class="omt-stepper-btn" data-step="-1" data-for="omt-sx-skip5" aria-label="Decrease" tabindex="-1"><svg class="omt-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/></svg>
+                </button>
+                <input type="number" id="omt-sx-skip5" class="omt-stepper-input" min="1" max="600" step="1" />
+                <button type="button" class="omt-stepper-btn" data-step="1" data-for="omt-sx-skip5" aria-label="Increase" tabindex="-1"><svg class="omt-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                </button>
+              </span>
               <span class="omt-unit">s</span>
               <button type="button" class="omt-btn-icon" data-reset="skipBtn5" title="Reset to default" aria-label="Reset to default"><svg class="omt-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
             </span>

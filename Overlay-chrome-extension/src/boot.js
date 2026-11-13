@@ -88,6 +88,7 @@
         timerAtivo = false;
         offsetEmSegundos = 0;
         tempoBase = 0;
+        if (typeof omtResetClockClickEditFlag === 'function') omtResetClockClickEditFlag();
     }
 
     /* =========================================================

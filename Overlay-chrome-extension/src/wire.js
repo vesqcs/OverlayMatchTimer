@@ -228,8 +228,8 @@
 
         liveBtn.style.display = 'flex';
 
-        // Match-clock click-to-edit ("set video time") removed from in-video UI.
-        // navegarParaMinutoDeJogo / iniciarEdicaoTimer remain available internally.
+        // Match-clock click-to-edit is wired in customize.js (omtInstallClockClickEdit).
+        // Fixed presets only — no drag.
 
         // Shuttle toggle lives in the in-video more panel (analyst browser only).
         if (shuttleToggle) {

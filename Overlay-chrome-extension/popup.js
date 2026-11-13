@@ -8,8 +8,11 @@
     clockCustom: 'omtClockCustomOffset',
     hotkeys: 'omtHotkeys',
     shuttlePrefs: 'omtShuttlePrefs',
-    autoPauseOnBlur: 'omtAutoPauseOnBlur'
+    autoPauseOnBlur: 'omtAutoPauseOnBlur',
+    custSections: 'omtCustSectionsOpen'
   };
+
+  const CUST_SECTION_DEFAULTS = { clock: true, hotkeys: false, shuttle: false };
 
   const HOTKEY_DEFAULTS = {
     playPause:   { key: ' ',         label: 'Play / Pause' },
@@ -428,6 +431,33 @@
     updateShuttleDiagramLabels();
   }
 
+  function applyCustSections(stored) {
+    const state = Object.assign({}, CUST_SECTION_DEFAULTS);
+    if (stored && typeof stored === 'object') {
+      Object.keys(CUST_SECTION_DEFAULTS).forEach((k) => {
+        if (typeof stored[k] === 'boolean') state[k] = stored[k];
+      });
+    }
+    document.querySelectorAll('.omt-cust-details[data-section]').forEach((el) => {
+      const key = el.getAttribute('data-section');
+      if (!key) return;
+      el.open = !!state[key];
+    });
+  }
+
+  function persistCustSections() {
+    const state = {};
+    document.querySelectorAll('.omt-cust-details[data-section]').forEach((el) => {
+      const key = el.getAttribute('data-section');
+      if (key) state[key] = !!el.open;
+    });
+    chrome.storage.local.set({ [KEYS.custSections]: state });
+  }
+
+  document.querySelectorAll('.omt-cust-details[data-section]').forEach((el) => {
+    el.addEventListener('toggle', persistCustSections);
+  });
+
   chrome.storage.local.get(
     {
       [KEYS.clockPos]: 'top-left',
@@ -435,7 +465,8 @@
       [KEYS.clockShape]: 'rounded',
       [KEYS.hotkeys]: null,
       [KEYS.shuttlePrefs]: null,
-      [KEYS.autoPauseOnBlur]: false
+      [KEYS.autoPauseOnBlur]: false,
+      [KEYS.custSections]: null
     },
     (result) => {
       clockPos.value = result[KEYS.clockPos] || 'top-left';
@@ -444,6 +475,7 @@
       if (autoPause) autoPause.checked = !!result[KEYS.autoPauseOnBlur];
       hotkeys = mergeHotkeys(result[KEYS.hotkeys]);
       shuttlePrefs = mergeShuttle(result[KEYS.shuttlePrefs]);
+      applyCustSections(result[KEYS.custSections]);
       refreshAll();
     }
   );
@@ -475,17 +507,14 @@
     chrome.storage.local.set({
       [KEYS.clockPos]: clockPos.value,
       [KEYS.clockSize]: clockSize.value,
-      [KEYS.clockShape]: clockShape.value
+      [KEYS.clockShape]: clockShape.value,
+      [KEYS.clockCustom]: null // legacy drag offsets discarded
     });
     updateClockPreview();
   }
   clockPos.addEventListener('change', persistClock);
   clockSize.addEventListener('change', persistClock);
   clockShape.addEventListener('change', persistClock);
-
-  document.getElementById('omt-clock-reset-pos').addEventListener('click', () => {
-    chrome.storage.local.set({ [KEYS.clockCustom]: null });
-  });
 
   document.getElementById('omt-hotkey-editor').addEventListener('click', (e) => {
     const resetBtn = e.target.closest('[data-reset-hotkey]');
@@ -553,6 +582,23 @@
     updateShuttleResetVisibility();
   }
 
+  document.getElementById('omt-shuttle-edit-list').addEventListener('click', (e) => {
+    const stepBtn = e.target.closest('.omt-stepper-btn');
+    if (!stepBtn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const inputId = stepBtn.getAttribute('data-for');
+    const input = inputId ? document.getElementById(inputId) : null;
+    if (!input) return;
+    const step = Number(stepBtn.getAttribute('data-step')) || 0;
+    const min = Number(input.min) || 1;
+    const max = Number(input.max) || 600;
+    const cur = Number(input.value);
+    const next = Math.min(max, Math.max(min, (Number.isFinite(cur) ? cur : min) + step));
+    input.value = String(next);
+    readShuttleFromForm();
+    updateShuttleResetVisibility();
+  });
   document.getElementById('omt-shuttle-edit-list').addEventListener('change', (e) => {
     if (e.target.matches('input, select')) readShuttleFromForm();
   });

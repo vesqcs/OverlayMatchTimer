@@ -432,6 +432,7 @@
         timerAtivo = false;
         offsetEmSegundos = 0;
         tempoBase = 0;
+        if (typeof omtResetClockClickEditFlag === 'function') omtResetClockClickEditFlag();
     }
 
     /* =========================================================
@@ -1264,8 +1265,8 @@
 
         liveBtn.style.display = 'flex';
 
-        // Match-clock click-to-edit ("set video time") removed from in-video UI.
-        // navegarParaMinutoDeJogo / iniciarEdicaoTimer remain available internally.
+        // Match-clock click-to-edit is wired in customize.js (omtInstallClockClickEdit).
+        // Fixed presets only — no drag.
 
         // Shuttle toggle lives in the in-video more panel (analyst browser only).
         if (shuttleToggle) {
@@ -1781,60 +1782,159 @@
                 targetVideoTime = Math.min(targetVideoTime, vid.duration);
             }
             seekTo(targetVideoTime);
-            mostrarOSD('Jumped to Min ' + minutoAlvo);
+            // OSD label set by caller when coming from clock edit; fallback for other callers
+            if (!isEditingTimer) mostrarOSD('Jumped to Min ' + minutoAlvo);
         }
     }
 
+    /**
+     * Production clock-edit parsing (analysts usually type digits):
+     *   "45"        → 45:00
+     *   "45:30" / "45.30" / "45,30" / "45 30" / "45-30" → 45:30
+     * Seconds must be 0–59; otherwise keep editing open.
+     */
+    function omtParseClockEditInput(raw) {
+        const s = String(raw || '').trim();
+        if (!s) return { ok: true, empty: true };
+
+        // Minutes only
+        if (/^\d{1,4}$/.test(s)) {
+            const minutes = parseInt(s, 10);
+            return {
+                ok: true,
+                label: String(minutes).padStart(2, '0') + ':00',
+                minuteFloat: minutes
+            };
+        }
+
+        // Minutes + any common separator + seconds
+        const m = /^(\d{1,4})[\s:.,\-–—_/]+(\d{1,2})$/.exec(s);
+        if (!m) return { ok: false, reason: 'format' };
+
+        const minutes = parseInt(m[1], 10);
+        const seconds = parseInt(m[2], 10);
+        if (!Number.isFinite(minutes) || !Number.isFinite(seconds)) {
+            return { ok: false, reason: 'format' };
+        }
+        if (seconds > 59) {
+            return { ok: false, reason: 'seconds', seconds };
+        }
+        return {
+            ok: true,
+            label: String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0'),
+            minuteFloat: minutes + (seconds / 60)
+        };
+    }
+
+    function omtClockEditHint(show, text) {
+        const wrap = typeof q === 'function' ? q('match-timer-wrap') : null;
+        if (!wrap) return;
+        let hint = wrap.querySelector('.omt-clock-edit-hint');
+        if (!show) {
+            if (hint) hint.remove();
+            return;
+        }
+        if (!hint) {
+            hint = document.createElement('div');
+            hint.className = 'omt-clock-edit-hint';
+            wrap.appendChild(hint);
+        }
+        hint.textContent = text || '';
+    }
+
     function iniciarEdicaoTimer() {
-        if (isEditingTimer || !timerAtivo) return;
+        // Production behaviour: inline text field prefilled with current match minute (integer).
+        if (isEditingTimer || !timerAtivo || !timerUI) return;
+        if (/pre-match/i.test(timerUI.textContent || '')) return;
 
         const minAtual = obterMinutoAtualJogo();
         isEditingTimer = true;
+        timerUI.classList.add('is-editing');
+        timerUI.classList.remove('is-invalid');
+        omtClockEditHint(false);
 
-        timerUI.innerHTML = `<input type="text" id="timer-edit-input" value="${minAtual}" style="width: 70px; background: transparent; border: none; color: white; font-size: inherit; font-family: inherit; font-weight: inherit; text-align: center; outline: none; padding: 0; margin: 0; display: inline-block; vertical-align: middle;">`;
+        timerUI.innerHTML =
+            '<input type="text" id="timer-edit-input" inputmode="decimal" autocomplete="off" ' +
+            'spellcheck="false" value="' + String(minAtual) + '">';
 
         const input = omtRoot.querySelector('#timer-edit-input');
-        if (input) {
+        if (!input) {
+            isEditingTimer = false;
+            timerUI.classList.remove('is-editing');
+            atualizarRelogio();
+            return;
+        }
+
+        input.focus();
+        input.select();
+
+        let isCommitted = false;
+
+        function markInvalid(reason) {
+            timerUI.classList.remove('is-invalid');
+            void timerUI.offsetWidth;
+            timerUI.classList.add('is-invalid');
+            if (reason === 'seconds') omtClockEditHint(true, 'Seconds 0-59');
+            else omtClockEditHint(false);
             input.focus();
             input.select();
-
-            let isCommitted = false;
-
-            function salvarEdicao() {
-                if (isCommitted) return;
-                isCommitted = true;
-                const val = input.value.trim();
-                if (val !== '') {
-                    const targetMin = parseFloat(val);
-                    if (!isNaN(targetMin) && targetMin >= 0) {
-                        navegarParaMinutoDeJogo(targetMin);
-                    }
-                }
-                isEditingTimer = false;
-                atualizarRelogio();
-            }
-
-            function cancelarEdicao() {
-                if (isCommitted) return;
-                isCommitted = true;
-                isEditingTimer = false;
-                atualizarRelogio();
-            }
-
-            input.addEventListener('keydown', function (e) {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    salvarEdicao();
-                } else if (e.key === 'Escape') {
-                    e.preventDefault();
-                    cancelarEdicao();
-                }
-            });
-
-            input.addEventListener('blur', function () {
-                setTimeout(salvarEdicao, 150);
-            });
         }
+
+        function finishEdit() {
+            isEditingTimer = false;
+            timerUI.classList.remove('is-editing', 'is-invalid');
+            omtClockEditHint(false);
+            atualizarRelogio();
+        }
+
+        function salvarEdicao() {
+            if (isCommitted) return;
+            const parsed = omtParseClockEditInput(input.value);
+            if (!parsed.ok) {
+                markInvalid(parsed.reason);
+                return;
+            }
+            isCommitted = true;
+            if (!parsed.empty) {
+                navegarParaMinutoDeJogo(parsed.minuteFloat);
+                mostrarOSD('Clock set ' + parsed.label);
+            }
+            finishEdit();
+        }
+
+        function cancelarEdicao() {
+            if (isCommitted) return;
+            isCommitted = true;
+            finishEdit();
+        }
+
+        input.addEventListener('input', function () {
+            timerUI.classList.remove('is-invalid');
+            omtClockEditHint(false);
+        });
+
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                e.stopPropagation();
+                salvarEdicao();
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                cancelarEdicao();
+            }
+        });
+
+        // Production: blur commits. Defer binding so the opening click cannot
+        // immediately dismiss the field before the analyst types.
+        setTimeout(function () {
+            if (isCommitted || !input.isConnected) return;
+            input.addEventListener('blur', function () {
+                setTimeout(function () {
+                    if (!isCommitted) salvarEdicao();
+                }, 150);
+            });
+        }, 200);
     }
 
 /* Kick-off markers on the HUD timeline. */
@@ -2892,7 +2992,17 @@
 
     let omtHotkeyMap = null; // actionId → binding
     let omtShuttlePrefs = null;
-    let omtClockDragInstalled = false;
+    let omtClockClickInstalled = false;
+
+    /** Allow re-bind after SPA teardown / UI reinject (same document). */
+    function omtResetClockClickEditFlag() {
+        omtClockClickInstalled = false;
+    }
+
+    const OMT_CLOCK_POSITIONS = [
+        'top-left', 'top-centre', 'top-right',
+        'bottom-left', 'bottom-centre', 'bottom-right'
+    ];
 
     function omtNormalizeKey(key) {
         if (key == null) return '';
@@ -2995,68 +3105,16 @@
         let pos = localStorage.getItem(OMT_STORAGE_KEYS.clockPos) || 'top-left';
         let size = localStorage.getItem(OMT_STORAGE_KEYS.clockSize) || 'medium';
         let shape = localStorage.getItem(OMT_STORAGE_KEYS.clockShape) || 'rounded';
-        let custom = null;
-        try {
-            const raw = localStorage.getItem(OMT_STORAGE_KEYS.clockCustom);
-            if (raw) custom = JSON.parse(raw);
-        } catch (_) {}
-        if (!['top-left', 'top-right', 'bottom-left', 'bottom-right'].includes(pos)) {
-            pos = 'top-left';
-        }
+        // Migrate removed custom drag offsets / unknown values → top-left
+        if (pos === 'top-center') pos = 'top-centre';
+        if (pos === 'bottom-center') pos = 'bottom-centre';
+        if (!OMT_CLOCK_POSITIONS.includes(pos)) pos = 'top-left';
         if (!['small', 'medium', 'large', 'xlarge'].includes(size)) size = 'medium';
         if (!['rounded', 'pill', 'minimal'].includes(shape)) shape = 'rounded';
-        if (custom && (typeof custom.top !== 'number' || typeof custom.left !== 'number')) {
-            custom = null;
-        }
-        return { pos, size, shape, custom };
+        return { pos, size, shape };
     }
 
-    function omtApplyClockAppearance() {
-        const wrap = typeof q === 'function' ? q('match-timer-wrap') : document.getElementById('match-timer-wrap');
-        if (!wrap || !omtRoot) return;
-        const prefs = omtReadClockPrefs();
-        const POS = ['top-left', 'top-right', 'bottom-left', 'bottom-right', 'custom'];
-        const SIZE = ['small', 'medium', 'large', 'xlarge'];
-        const STYLE = ['rounded', 'pill', 'minimal'];
-        POS.forEach((p) => wrap.classList.remove('omt-clock-pos-' + p));
-        SIZE.forEach((s) => wrap.classList.remove('omt-clock-size-' + s));
-        STYLE.forEach((s) => wrap.classList.remove('omt-clock-style-' + s));
-        wrap.classList.add('omt-clock-size-' + prefs.size);
-        wrap.classList.add('omt-clock-style-' + prefs.shape);
-
-        if (prefs.custom) {
-            wrap.classList.add('omt-clock-pos-custom');
-            wrap.style.top = prefs.custom.top + 'px';
-            wrap.style.left = prefs.custom.left + 'px';
-            wrap.style.right = 'auto';
-            wrap.style.bottom = 'auto';
-            wrap.style.transform = 'none';
-        } else {
-            wrap.classList.add('omt-clock-pos-' + prefs.pos);
-            wrap.style.top = '';
-            wrap.style.left = '';
-            wrap.style.right = '';
-            wrap.style.bottom = '';
-            wrap.style.transform = '';
-        }
-    }
-
-    function omtPersistClockCustom(top, left) {
-        const payload = { top: Math.round(top), left: Math.round(left) };
-        try {
-            localStorage.setItem(OMT_STORAGE_KEYS.clockCustom, JSON.stringify(payload));
-        } catch (_) {}
-        try {
-            window.postMessage({
-                source: 'omt-page',
-                type: 'OMT_STORAGE_SET',
-                key: OMT_STORAGE_KEYS.clockCustom,
-                value: payload
-            }, '*');
-        } catch (_) {}
-    }
-
-    function omtClearClockCustom() {
+    function omtClearLegacyClockCustom() {
         try { localStorage.removeItem(OMT_STORAGE_KEYS.clockCustom); } catch (_) {}
         try {
             window.postMessage({
@@ -3066,62 +3124,38 @@
                 value: null
             }, '*');
         } catch (_) {}
-        omtApplyClockAppearance();
     }
 
-    function omtInstallClockDrag() {
-        if (omtClockDragInstalled) return;
-        const wrap = typeof q === 'function' ? q('match-timer-wrap') : null;
+    function omtApplyClockAppearance() {
+        const wrap = typeof q === 'function' ? q('match-timer-wrap') : document.getElementById('match-timer-wrap');
         if (!wrap || !omtRoot) return;
-        omtClockDragInstalled = true;
-        let dragging = false;
-        let startX = 0, startY = 0, origTop = 0, origLeft = 0;
+        const prefs = omtReadClockPrefs();
+        const SIZE = ['small', 'medium', 'large', 'xlarge'];
+        const STYLE = ['rounded', 'pill', 'minimal'];
+        OMT_CLOCK_POSITIONS.concat(['custom']).forEach((p) => wrap.classList.remove('omt-clock-pos-' + p));
+        SIZE.forEach((s) => wrap.classList.remove('omt-clock-size-' + s));
+        STYLE.forEach((s) => wrap.classList.remove('omt-clock-style-' + s));
+        wrap.classList.add('omt-clock-size-' + prefs.size);
+        wrap.classList.add('omt-clock-style-' + prefs.shape);
+        wrap.classList.add('omt-clock-pos-' + prefs.pos);
+        wrap.style.top = '';
+        wrap.style.left = '';
+        wrap.style.right = '';
+        wrap.style.bottom = '';
+        wrap.style.transform = '';
+        wrap.style.cursor = 'pointer';
+    }
 
-        wrap.addEventListener('mousedown', (e) => {
-            if (e.button !== 0) return;
+    function omtInstallClockClickEdit() {
+        if (omtClockClickInstalled) return;
+        const wrap = typeof q === 'function' ? q('match-timer-wrap') : null;
+        if (!wrap) return;
+        omtClockClickInstalled = true;
+        wrap.addEventListener('click', (e) => {
             if (e.target && e.target.closest && e.target.closest('input, select, button, a')) return;
-            e.preventDefault();
-            dragging = true;
-            const rect = wrap.getBoundingClientRect();
-            const rootRect = omtRoot.getBoundingClientRect();
-            origTop = rect.top - rootRect.top;
-            origLeft = rect.left - rootRect.left;
-            wrap.classList.add('omt-clock-pos-custom');
-            wrap.classList.remove('omt-clock-pos-top-left', 'omt-clock-pos-top-right',
-                'omt-clock-pos-bottom-left', 'omt-clock-pos-bottom-right');
-            wrap.style.top = origTop + 'px';
-            wrap.style.left = origLeft + 'px';
-            wrap.style.right = 'auto';
-            wrap.style.bottom = 'auto';
-            wrap.style.transform = 'none';
-            startX = e.clientX;
-            startY = e.clientY;
-
-            const onMove = (ev) => {
-                if (!dragging) return;
-                const dx = ev.clientX - startX;
-                const dy = ev.clientY - startY;
-                let newTop = origTop + dy;
-                let newLeft = origLeft + dx;
-                const maxTop = Math.max(0, omtRoot.clientHeight - wrap.offsetHeight);
-                const maxLeft = Math.max(0, omtRoot.clientWidth - wrap.offsetWidth);
-                newTop = Math.max(0, Math.min(newTop, maxTop));
-                newLeft = Math.max(0, Math.min(newLeft, maxLeft));
-                wrap.style.top = newTop + 'px';
-                wrap.style.left = newLeft + 'px';
-            };
-            const onUp = () => {
-                dragging = false;
-                document.removeEventListener('mousemove', onMove, true);
-                document.removeEventListener('mouseup', onUp, true);
-                const top = parseFloat(wrap.style.top) || 0;
-                const left = parseFloat(wrap.style.left) || 0;
-                omtPersistClockCustom(top, left);
-            };
-            document.addEventListener('mousemove', onMove, true);
-            document.addEventListener('mouseup', onUp, true);
+            if (typeof isEditingTimer !== 'undefined' && isEditingTimer) return;
+            if (typeof iniciarEdicaoTimer === 'function') iniciarEdicaoTimer();
         });
-        wrap.style.cursor = 'grab';
     }
 
     function omtMergeShuttlePrefs(stored) {
@@ -3158,8 +3192,9 @@
     function omtApplyCustomizeFromStorage() {
         omtLoadHotkeysFromLocal();
         omtLoadShuttlePrefsFromLocal();
+        omtClearLegacyClockCustom();
         omtApplyClockAppearance();
-        omtInstallClockDrag();
+        omtInstallClockClickEdit();
     }
 
 /* Auto pause on Alt+Tab / tab hidden (popup General setting, default OFF).

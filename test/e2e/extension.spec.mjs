@@ -47,6 +47,15 @@ async function waitForOmt(page, timeout = 20000) {
   await page.waitForFunction(() => !!document.getElementById('omt-root'), null, { timeout });
 }
 
+const EXPECTED_CLOCK_POS = [
+  'top-left', 'top-centre', 'top-right',
+  'bottom-left', 'bottom-centre', 'bottom-right'
+];
+
+function posOptsInclude(opts) {
+  return EXPECTED_CLOCK_POS.every((p) => (opts || []).includes(p));
+}
+
 /** Shared v1.4.x HUD fingerprint for InPlay / Examino / local parity. */
 async function captureUiFingerprint(page) {
   return page.evaluate(() => {
@@ -1603,6 +1612,30 @@ async function run() {
       // ---------- Customize tab (v1.6.2) ----------
       await popupPage.click('[data-tab="customize"]');
       await popupPage.waitForTimeout(150);
+      const sectionsDefault = await popupPage.evaluate(() => {
+        const clock = document.getElementById('omt-clock-details');
+        const hotkeys = document.getElementById('omt-hotkeys-details');
+        const shuttle = document.getElementById('omt-shuttle-details');
+        const posOpts = Array.from(document.querySelectorAll('#clock-pos option')).map((o) => o.value);
+        return {
+          clockOpen: !!clock?.open,
+          hotkeysOpen: !!hotkeys?.open,
+          shuttleOpen: !!shuttle?.open,
+          noResetPos: !document.getElementById('omt-clock-reset-pos'),
+          noDragHint: !/drag the clock/i.test(document.body.innerText || ''),
+          posOpts
+        };
+      });
+      results.push({
+        name: 'customize-sections-default',
+        pass: sectionsDefault.clockOpen === true &&
+          sectionsDefault.hotkeysOpen === false &&
+          sectionsDefault.shuttleOpen === false &&
+          sectionsDefault.noResetPos === true &&
+          sectionsDefault.noDragHint === true &&
+          posOptsInclude(sectionsDefault.posOpts),
+        detail: sectionsDefault
+      });
       await popupPage.screenshot({ path: path.join(ARTIFACTS, 'popup_customize.png'), fullPage: true });
 
       // Shuttle section collapsed screenshot
@@ -1625,7 +1658,11 @@ async function run() {
       await popupPage.waitForTimeout(120);
       await popupPage.screenshot({ path: path.join(ARTIFACTS, 'popup_shuttle_expanded.png'), fullPage: true });
 
-      // Clock prefs + live preview
+      // Clock prefs + live preview (section already open by default)
+      await popupPage.evaluate(() => {
+        const d = document.getElementById('omt-clock-details');
+        if (d) d.open = true;
+      });
       await popupPage.selectOption('#clock-pos', 'top-right');
       await popupPage.selectOption('#clock-size', 'large');
       await popupPage.selectOption('#clock-shape', 'pill');
@@ -1645,6 +1682,13 @@ async function run() {
           /style-pill/.test(clockPreview.faceClass),
         detail: clockPreview
       });
+
+      // Open Shortcuts section for rebind tests
+      await popupPage.evaluate(() => {
+        const d = document.getElementById('omt-hotkeys-details');
+        if (d) d.open = true;
+      });
+      await popupPage.waitForTimeout(80);
 
       // Rebind Play/Pause to KeyF and verify General list updates
       await popupPage.click('[data-bind="playPause"]');
@@ -1670,6 +1714,10 @@ async function run() {
       // Conflict: bind Live to F as well
       await popupPage.click('[data-tab="customize"]');
       await popupPage.waitForTimeout(80);
+      await popupPage.evaluate(() => {
+        const d = document.getElementById('omt-hotkeys-details');
+        if (d) d.open = true;
+      });
       await popupPage.click('[data-bind="live"]');
       await popupPage.keyboard.press('KeyF');
       await popupPage.waitForTimeout(100);
@@ -1740,11 +1788,12 @@ async function run() {
         const sxCs = sxReset ? getComputedStyle(sxReset) : null;
         const svg = wrap?.querySelector('.omt-shuttle-svg');
         const svgBox = svg?.getBoundingClientRect();
+        const maxH = hkCs ? parseFloat(hkCs.maxHeight) : NaN;
         return {
           map,
           dirtyReset: !!skip1Reset?.classList.contains('is-dirty'),
-          noInnerScroll: !!hkCs && (hkCs.maxHeight === 'none' || hkCs.maxHeight === '') &&
-            !/auto|scroll/.test(hkCs.overflowY || ''),
+          compactHotkeyScroll: !!hkCs && Number.isFinite(maxH) && maxH > 0 && maxH <= 240 &&
+            /auto|scroll/.test(hkCs.overflowY || ''),
           sxNeutral: !!sxCs && !/rgb\(245,\s*131,\s*31\)/.test(sxCs.backgroundColor || ''),
           svgWide: !!svgBox && svgBox.width >= 250
         };
@@ -1760,7 +1809,7 @@ async function run() {
       results.push({
         name: 'customize-popup-polish-v161',
         pass: liveLabels.dirtyReset === true &&
-          liveLabels.noInnerScroll === true &&
+          liveLabels.compactHotkeyScroll === true &&
           liveLabels.sxNeutral === true &&
           liveLabels.svgWide === true,
         detail: liveLabels
@@ -1783,11 +1832,25 @@ async function run() {
 
       await popupPage.close();
 
-      // Live apply clock on Examino mock (reuse main page)
+      // Return to Examino mock (page may still be on InPlay from earlier).
+      // VOD duration is 7200s so clock seeks to 45:xx are not clamped.
       await page.bringToFront();
+      await page.goto(`${base}/examino-mock.html`, { waitUntil: 'domcontentloaded' });
+      await waitForOmt(page, 20000);
+      await page.waitForFunction(() => {
+        const v = document.querySelector('video');
+        return v && v.dataset.omtSource === 'VOD' && v.duration >= 7000;
+      }, null, { timeout: 15000 });
       await page.evaluate(() => {
-        const btn = document.getElementById('omt-btn-set-kickoff');
-        if (btn) btn.click();
+        for (const id of ['omt-sync-hr', 'omt-sync-min', 'omt-sync-sec']) {
+          const el = document.getElementById(id);
+          if (el) el.value = '';
+        }
+        const half = document.getElementById('omt-half-select');
+        if (half) half.value = '1';
+        const v = document.querySelector('video');
+        if (v) { try { v.pause(); v.currentTime = 0; } catch (_) {} }
+        document.getElementById('omt-btn-set-kickoff')?.click();
       });
       await page.waitForTimeout(200);
       // Broadcast storage sync as bridge would
@@ -1823,10 +1886,12 @@ async function run() {
         detail: clockApplied
       });
 
-      // Other corners / sizes screenshots
+      // Other corners / centre / sizes screenshots
       for (const [pos, size, shape, file] of [
         ['top-left', 'small', 'rounded', 'clock_top_left_small.png'],
+        ['top-centre', 'medium', 'rounded', 'clock_top_centre.png'],
         ['bottom-left', 'medium', 'minimal', 'clock_bottom_left_minimal.png'],
+        ['bottom-centre', 'large', 'pill', 'clock_bottom_centre.png'],
         ['bottom-right', 'xlarge', 'rounded', 'clock_bottom_right_xlarge.png']
       ]) {
         await page.evaluate(({ pos, size, shape }) => {
@@ -1850,6 +1915,209 @@ async function run() {
         await page.waitForTimeout(120);
         await page.screenshot({ path: path.join(ARTIFACTS, file), fullPage: true });
       }
+
+      // ---- Clock click-to-edit: production-style input + flexible parse ----
+      // Stay on current Examino VOD (already duration ≥ 7000). Avoid Source
+      // churn that reinjects the HUD mid-test.
+      await page.evaluate(() => {
+        window.postMessage({
+          source: 'omt-bridge',
+          type: 'OMT_STORAGE_SYNC',
+          values: {
+            omtClockPosition: 'top-right',
+            omtClockSize: 'large',
+            omtClockShape: 'rounded',
+            omtClockCustomOffset: null
+          }
+        }, '*');
+        try {
+          localStorage.setItem('omtClockPosition', 'top-right');
+          localStorage.setItem('omtClockSize', 'large');
+          localStorage.setItem('omtClockShape', 'rounded');
+          localStorage.removeItem('omtClockCustomOffset');
+        } catch (_) {}
+        document.getElementById('omt-btn-clear-timer')?.click();
+        for (const id of ['omt-sync-hr', 'omt-sync-min', 'omt-sync-sec']) {
+          const el = document.getElementById(id);
+          if (el) el.value = '';
+        }
+        const half = document.getElementById('omt-half-select');
+        if (half) half.value = '1';
+        const v = document.querySelector('video');
+        if (v) { v.pause(); v.currentTime = 0; }
+        document.getElementById('omt-btn-set-kickoff')?.click();
+      });
+      await page.waitForTimeout(350);
+
+      // Click opens edit with integer-minute prefill (no mm:ss mask)
+      const preEdit = await page.evaluate(() => {
+        const t = document.getElementById('match-timer');
+        const w = document.getElementById('match-timer-wrap');
+        const r = t?.getBoundingClientRect();
+        return {
+          text: (t?.textContent || '').trim(),
+          wrapClass: w?.className || '',
+          display: w ? getComputedStyle(w).display : null,
+          opacity: w ? getComputedStyle(w).opacity : null,
+          pe: w ? getComputedStyle(w).pointerEvents : null,
+          rootOn: !!document.getElementById('omt-root')?.classList.contains('omt-timer-on'),
+          rect: r ? { x: r.x, y: r.y, w: r.width, h: r.height } : null,
+          typeofEdit: typeof iniciarEdicaoTimer
+        };
+      });
+      results.push({ name: 'clock-edit-pre-state', pass: preEdit.rootOn === true && (preEdit.rect?.w || 0) > 0, detail: preEdit });
+      await page.waitForFunction(() => {
+        const t = document.getElementById('match-timer');
+        const text = (t?.textContent || '').trim();
+        return !!document.getElementById('omt-root')?.classList.contains('omt-timer-on') &&
+          text.length > 0 && !/pre-match/i.test(text);
+      }, null, { timeout: 5000 });
+      // Prefer DOM click on the clock face (content-script listener is on the wrap).
+      await page.evaluate(() => {
+        const face = document.getElementById('match-timer');
+        const wrap = document.getElementById('match-timer-wrap');
+        const el = face || wrap;
+        el?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+      });
+      try {
+        await page.waitForSelector('#timer-edit-input', { timeout: 2500 });
+      } catch (_) {
+        await page.locator('#match-timer').click({ force: true });
+        await page.waitForSelector('#timer-edit-input', { timeout: 5000 });
+      }
+      await page.waitForTimeout(50);
+      const editOpen = await page.evaluate(() => {
+        const input = document.getElementById('timer-edit-input');
+        const timer = document.getElementById('match-timer');
+        const wrap = document.getElementById('match-timer-wrap');
+        const cs = wrap ? getComputedStyle(wrap) : null;
+        return {
+          hasInput: !!input,
+          value: input?.value ?? null,
+          digitsOnlyPrefill: /^\d+$/.test(input?.value || ''),
+          editing: !!timer?.classList.contains('is-editing'),
+          noGrab: !cs || !/grab/.test(cs.cursor || ''),
+          inputType: input?.getAttribute('type') || null
+        };
+      });
+      results.push({
+        name: 'clock-edit-opens-integer-prefill',
+        pass: editOpen.hasInput && editOpen.digitsOnlyPrefill && editOpen.editing && editOpen.noGrab,
+        detail: editOpen
+      });
+      await page.screenshot({ path: path.join(ARTIFACTS, 'clock_edit_open.png'), fullPage: true });
+
+      // Minutes alone: "45" → 45:00
+      await page.fill('#timer-edit-input', '45');
+      await page.keyboard.press('Enter');
+      await page.waitForFunction(() => !document.getElementById('timer-edit-input'), null, { timeout: 3000 });
+      await page.waitForTimeout(150);
+      const after45 = await page.evaluate(() => {
+        const timer = document.getElementById('match-timer');
+        const osd = document.getElementById('osd-message');
+        const v = document.querySelector('video');
+        return {
+          editing: !!timer?.classList.contains('is-editing'),
+          text: (timer?.textContent || '').trim(),
+          osd: (osd?.textContent || '').trim(),
+          currentTime: v?.currentTime ?? null
+        };
+      });
+      results.push({
+        name: 'clock-edit-minutes-only-45',
+        pass: after45.editing === false &&
+          /Clock set 45:00/.test(after45.osd || '') &&
+          (/45:00/.test(after45.text) || (after45.currentTime != null && Math.abs(after45.currentTime - 45 * 60) < 2)),
+        detail: after45
+      });
+
+      // Flexible separators → 45:30
+      async function clockEditCase(raw, expectOk, expectLabel) {
+        await page.click('#match-timer');
+        await page.waitForSelector('#timer-edit-input', { timeout: 5000 });
+        await page.fill('#timer-edit-input', raw);
+        await page.keyboard.press('Enter');
+        if (expectOk) {
+          await page.waitForFunction(() => !document.getElementById('timer-edit-input'), null, { timeout: 3000 }).catch(() => {});
+        }
+        await page.waitForTimeout(180);
+        return page.evaluate(({ expectOk, expectLabel, raw }) => {
+          const timer = document.getElementById('match-timer');
+          const input = document.getElementById('timer-edit-input');
+          const hint = document.querySelector('.omt-clock-edit-hint');
+          const osd = document.getElementById('osd-message');
+          const v = document.querySelector('video');
+          const editing = !!timer?.classList.contains('is-editing');
+          const invalid = !!timer?.classList.contains('is-invalid');
+          if (expectOk) {
+            const labelHit = new RegExp(expectLabel.replace(':', '\\:')).test(
+              (timer?.textContent || '') + ' ' + (osd?.textContent || '')
+            );
+            const secs = expectLabel.split(':').map(Number);
+            const target = secs[0] * 60 + secs[1];
+            return {
+              raw,
+              pass: editing === false && labelHit && v && Math.abs(v.currentTime - target) < 2,
+              editing,
+              invalid,
+              text: (timer?.textContent || '').trim(),
+              osd: (osd?.textContent || '').trim(),
+              hint: hint?.textContent || null,
+              currentTime: v?.currentTime ?? null
+            };
+          }
+          return {
+            raw,
+            pass: editing === true && invalid === true && !!input &&
+              /Seconds 0-59/i.test(hint?.textContent || ''),
+            editing,
+            invalid,
+            text: (timer?.textContent || '').trim(),
+            hint: hint?.textContent || null,
+            inputValue: input?.value ?? null
+          };
+        }, { expectOk, expectLabel, raw });
+      }
+
+      const sepCases = [];
+      for (const raw of ['45:30', '45.30', '45,30', '45 30', '45-30']) {
+        const r = await clockEditCase(raw, true, '45:30');
+        sepCases.push(r);
+        results.push({
+          name: `clock-edit-separator-${raw.replace(/\s/g, 'space')}`,
+          pass: r.pass === true,
+          detail: r
+        });
+      }
+      await page.screenshot({ path: path.join(ARTIFACTS, 'clock_edit_45_30.png'), fullPage: true });
+
+      // Seconds > 59: keep edit open + red outline + hint
+      const badSecs = await clockEditCase('45:70', false, null);
+      results.push({
+        name: 'clock-edit-seconds-over-59-hint',
+        pass: badSecs.pass === true,
+        detail: badSecs
+      });
+      await page.screenshot({ path: path.join(ARTIFACTS, 'clock_edit_invalid_seconds.png'), fullPage: true });
+
+      // Esc cancels invalid edit
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(120);
+      const afterEsc = await page.evaluate(() => {
+        const timer = document.getElementById('match-timer');
+        const input = document.getElementById('timer-edit-input');
+        const hint = document.querySelector('.omt-clock-edit-hint');
+        return {
+          editing: !!timer?.classList.contains('is-editing'),
+          hasInput: !!input,
+          hasHint: !!hint
+        };
+      });
+      results.push({
+        name: 'clock-edit-escape-cancels',
+        pass: afterEsc.editing === false && afterEsc.hasInput === false && afterEsc.hasHint === false,
+        detail: { afterEsc, sepCases }
+      });
 
       // Rebound hotkey F toggles play on page after applying hotkeys map
       await page.evaluate(() => {

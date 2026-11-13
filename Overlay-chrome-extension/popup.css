@@ -18,15 +18,19 @@ html, body {
   font-family: var(--omt-font);
   -webkit-font-smoothing: antialiased;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,0.28) transparent;
+  scrollbar-color: rgba(255,255,255,0.22) transparent;
 }
-::-webkit-scrollbar { width: 6px; height: 6px; }
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.22) transparent;
+}
+::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,0.28);
-  border-radius: 3px;
+  background: rgba(255,255,255,0.22);
+  border-radius: 999px;
 }
-::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.4); }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.38); }
 body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
 .omt-popup-header { display: flex; flex-direction: column; gap: 8px; align-items: center; }
 .omt-brand {
@@ -269,8 +273,10 @@ body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
   pointer-events: none;
 }
 .omt-clock-preview-stage.pos-top-left .omt-clock-preview-face { top: 6px; left: 6px; }
+.omt-clock-preview-stage.pos-top-centre .omt-clock-preview-face { top: 6px; left: 50%; transform: translateX(-50%); }
 .omt-clock-preview-stage.pos-top-right .omt-clock-preview-face { top: 6px; right: 6px; }
 .omt-clock-preview-stage.pos-bottom-left .omt-clock-preview-face { bottom: 6px; left: 6px; }
+.omt-clock-preview-stage.pos-bottom-centre .omt-clock-preview-face { bottom: 6px; left: 50%; transform: translateX(-50%); }
 .omt-clock-preview-stage.pos-bottom-right .omt-clock-preview-face { bottom: 6px; right: 6px; }
 .omt-clock-preview-face.size-small { font-size: 11px; padding: 2px 5px; }
 .omt-clock-preview-face.size-medium { font-size: 14px; padding: 3px 7px; }
@@ -347,7 +353,26 @@ body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
   outline-offset: 1px;
 }
 .omt-icon { display: block; }
-.omt-hotkey-editor { display: flex; flex-direction: column; gap: 4px; }
+.omt-hotkey-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.22) transparent;
+}
+.omt-hotkey-editor::-webkit-scrollbar { width: 5px; }
+.omt-hotkey-editor::-webkit-scrollbar-track { background: transparent; }
+.omt-hotkey-editor::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.22);
+  border-radius: 999px;
+}
+.omt-hotkey-editor::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.38);
+}
 .omt-hotkey-row {
   display: grid;
   grid-template-columns: 1fr auto auto;
@@ -496,3 +521,53 @@ body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
 .omt-inline-edit { display: inline-flex; align-items: center; gap: 4px; }
 .omt-unit { font-size: 10px; color: var(--omt-muted); font-weight: 600; }
 .omt-inline-edit select { max-width: 148px; }
+.omt-stepper {
+  display: inline-flex;
+  align-items: stretch;
+  height: 28px;
+  border: 1px solid var(--omt-border);
+  border-radius: 4px;
+  background: rgba(0,0,0,0.35);
+  overflow: hidden;
+}
+.omt-stepper-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  padding: 0;
+  border: none;
+  background: rgba(255,255,255,0.04);
+  color: var(--omt-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.omt-stepper-btn:hover {
+  color: var(--omt-text);
+  background: rgba(255,255,255,0.10);
+}
+.omt-stepper-btn:active {
+  background: rgba(255,255,255,0.14);
+}
+.omt-stepper-input {
+  width: 48px !important;
+  height: 28px !important;
+  margin: 0;
+  padding: 0 4px !important;
+  border: none !important;
+  border-left: 1px solid var(--omt-border) !important;
+  border-right: 1px solid var(--omt-border) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: var(--omt-text);
+  font-size: 12px;
+  font-family: inherit;
+  text-align: center;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.omt-stepper-input::-webkit-outer-spin-button,
+.omt-stepper-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}

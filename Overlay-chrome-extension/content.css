@@ -95,26 +95,40 @@
     letter-spacing: 0.02em;
 }
 
-/* ---- MATCH CLOCK (position / size / style via customize) ---- */
+/* ---- MATCH CLOCK (fixed presets via customize; click to edit time) ---- */
 #match-timer-wrap {
     position: absolute;
     top: 14px;
     left: 14px;
     right: auto;
     bottom: auto;
-    z-index: 9999;
+    z-index: 9998; /* below OSD (9999) so top-centre never covers it */
     display: none;
-    cursor: grab;
+    cursor: pointer;
 }
 #match-timer-wrap.is-visible,
 #omt-root.omt-timer-on #match-timer-wrap {
     display: block;
 }
-#match-timer-wrap.omt-clock-pos-top-left { top: 14px; left: 14px; right: auto; bottom: auto; }
-#match-timer-wrap.omt-clock-pos-top-right { top: 14px; right: 14px; left: auto; bottom: auto; }
-#match-timer-wrap.omt-clock-pos-bottom-left { bottom: 52px; left: 14px; top: auto; right: auto; }
-#match-timer-wrap.omt-clock-pos-bottom-right { bottom: 52px; right: 14px; top: auto; left: auto; }
-#match-timer-wrap.omt-clock-pos-custom { right: auto; bottom: auto; }
+/* Corners clear of centre OSD; bottoms clear of timeline (~48–56px) */
+#match-timer-wrap.omt-clock-pos-top-left { top: 14px; left: 14px; right: auto; bottom: auto; transform: none; }
+#match-timer-wrap.omt-clock-pos-top-centre {
+    top: 44px; /* below centre OSD */
+    left: 50%;
+    right: auto;
+    bottom: auto;
+    transform: translateX(-50%);
+}
+#match-timer-wrap.omt-clock-pos-top-right { top: 14px; right: 14px; left: auto; bottom: auto; transform: none; }
+#match-timer-wrap.omt-clock-pos-bottom-left { bottom: 56px; left: 14px; top: auto; right: auto; transform: none; }
+#match-timer-wrap.omt-clock-pos-bottom-centre {
+    bottom: 56px;
+    left: 50%;
+    top: auto;
+    right: auto;
+    transform: translateX(-50%);
+}
+#match-timer-wrap.omt-clock-pos-bottom-right { bottom: 56px; right: 14px; top: auto; left: auto; transform: none; }
 #match-timer {
     position: relative;
     top: auto;
@@ -127,12 +141,51 @@
     font-variant-numeric: tabular-nums;
     font-family: var(--omt-mono);
     border-radius: 3px;
-    cursor: inherit;
+    cursor: pointer;
     display: block;
     user-select: none;
     letter-spacing: 0.03em;
     color: #f3f3f3;
     text-shadow: none;
+}
+#match-timer.is-editing {
+    cursor: text;
+    user-select: text;
+    border-color: rgba(245, 131, 31, 0.55);
+}
+#match-timer.is-invalid {
+    border-color: #e57373 !important;
+    box-shadow: 0 0 0 1px rgba(229, 115, 115, 0.45);
+}
+#match-timer #timer-edit-input {
+    width: 4.6em;
+    min-width: 2.8em;
+    max-width: 7em;
+    background: transparent;
+    border: none;
+    color: inherit;
+    font-size: inherit;
+    font-family: inherit;
+    font-weight: inherit;
+    font-variant-numeric: inherit;
+    letter-spacing: inherit;
+    text-align: center;
+    outline: none;
+    padding: 0;
+    margin: 0;
+    display: inline-block;
+    vertical-align: middle;
+    box-sizing: content-box;
+}
+#match-timer-wrap .omt-clock-edit-hint {
+    margin-top: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    color: #ef9a9a;
+    text-align: center;
+    letter-spacing: 0.02em;
+    pointer-events: none;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
 }
 #match-timer-wrap.omt-clock-size-small #match-timer { font-size: 18px; padding: 4px 8px; }
 #match-timer-wrap.omt-clock-size-medium #match-timer { font-size: 26px; padding: 7px 12px; }
@@ -1149,9 +1202,11 @@
 
 /* Compact Examino — keep corner insets; size/style classes still apply */
 #omt-root.omt-examino.omt-compact #match-timer-wrap.omt-clock-pos-top-left { top: 8px; left: 8px; }
+#omt-root.omt-examino.omt-compact #match-timer-wrap.omt-clock-pos-top-centre { top: 36px; left: 50%; transform: translateX(-50%); }
 #omt-root.omt-examino.omt-compact #match-timer-wrap.omt-clock-pos-top-right { top: 8px; right: 8px; }
-#omt-root.omt-examino.omt-compact #match-timer-wrap.omt-clock-pos-bottom-left { bottom: 36px; left: 8px; }
-#omt-root.omt-examino.omt-compact #match-timer-wrap.omt-clock-pos-bottom-right { bottom: 36px; right: 8px; }
+#omt-root.omt-examino.omt-compact #match-timer-wrap.omt-clock-pos-bottom-left { bottom: 40px; left: 8px; }
+#omt-root.omt-examino.omt-compact #match-timer-wrap.omt-clock-pos-bottom-centre { bottom: 40px; left: 50%; transform: translateX(-50%); }
+#omt-root.omt-examino.omt-compact #match-timer-wrap.omt-clock-pos-bottom-right { bottom: 40px; right: 8px; }
 #omt-root.omt-examino.omt-compact #controls-panel {
     bottom: 28px;
     width: min(560px, calc(100% - 16px));

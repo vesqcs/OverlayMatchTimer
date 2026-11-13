@@ -35,7 +35,17 @@
 
     let omtHotkeyMap = null; // actionId → binding
     let omtShuttlePrefs = null;
-    let omtClockDragInstalled = false;
+    let omtClockClickInstalled = false;
+
+    /** Allow re-bind after SPA teardown / UI reinject (same document). */
+    function omtResetClockClickEditFlag() {
+        omtClockClickInstalled = false;
+    }
+
+    const OMT_CLOCK_POSITIONS = [
+        'top-left', 'top-centre', 'top-right',
+        'bottom-left', 'bottom-centre', 'bottom-right'
+    ];
 
     function omtNormalizeKey(key) {
         if (key == null) return '';
@@ -138,68 +148,16 @@
         let pos = localStorage.getItem(OMT_STORAGE_KEYS.clockPos) || 'top-left';
         let size = localStorage.getItem(OMT_STORAGE_KEYS.clockSize) || 'medium';
         let shape = localStorage.getItem(OMT_STORAGE_KEYS.clockShape) || 'rounded';
-        let custom = null;
-        try {
-            const raw = localStorage.getItem(OMT_STORAGE_KEYS.clockCustom);
-            if (raw) custom = JSON.parse(raw);
-        } catch (_) {}
-        if (!['top-left', 'top-right', 'bottom-left', 'bottom-right'].includes(pos)) {
-            pos = 'top-left';
-        }
+        // Migrate removed custom drag offsets / unknown values → top-left
+        if (pos === 'top-center') pos = 'top-centre';
+        if (pos === 'bottom-center') pos = 'bottom-centre';
+        if (!OMT_CLOCK_POSITIONS.includes(pos)) pos = 'top-left';
         if (!['small', 'medium', 'large', 'xlarge'].includes(size)) size = 'medium';
         if (!['rounded', 'pill', 'minimal'].includes(shape)) shape = 'rounded';
-        if (custom && (typeof custom.top !== 'number' || typeof custom.left !== 'number')) {
-            custom = null;
-        }
-        return { pos, size, shape, custom };
+        return { pos, size, shape };
     }
 
-    function omtApplyClockAppearance() {
-        const wrap = typeof q === 'function' ? q('match-timer-wrap') : document.getElementById('match-timer-wrap');
-        if (!wrap || !omtRoot) return;
-        const prefs = omtReadClockPrefs();
-        const POS = ['top-left', 'top-right', 'bottom-left', 'bottom-right', 'custom'];
-        const SIZE = ['small', 'medium', 'large', 'xlarge'];
-        const STYLE = ['rounded', 'pill', 'minimal'];
-        POS.forEach((p) => wrap.classList.remove('omt-clock-pos-' + p));
-        SIZE.forEach((s) => wrap.classList.remove('omt-clock-size-' + s));
-        STYLE.forEach((s) => wrap.classList.remove('omt-clock-style-' + s));
-        wrap.classList.add('omt-clock-size-' + prefs.size);
-        wrap.classList.add('omt-clock-style-' + prefs.shape);
-
-        if (prefs.custom) {
-            wrap.classList.add('omt-clock-pos-custom');
-            wrap.style.top = prefs.custom.top + 'px';
-            wrap.style.left = prefs.custom.left + 'px';
-            wrap.style.right = 'auto';
-            wrap.style.bottom = 'auto';
-            wrap.style.transform = 'none';
-        } else {
-            wrap.classList.add('omt-clock-pos-' + prefs.pos);
-            wrap.style.top = '';
-            wrap.style.left = '';
-            wrap.style.right = '';
-            wrap.style.bottom = '';
-            wrap.style.transform = '';
-        }
-    }
-
-    function omtPersistClockCustom(top, left) {
-        const payload = { top: Math.round(top), left: Math.round(left) };
-        try {
-            localStorage.setItem(OMT_STORAGE_KEYS.clockCustom, JSON.stringify(payload));
-        } catch (_) {}
-        try {
-            window.postMessage({
-                source: 'omt-page',
-                type: 'OMT_STORAGE_SET',
-                key: OMT_STORAGE_KEYS.clockCustom,
-                value: payload
-            }, '*');
-        } catch (_) {}
-    }
-
-    function omtClearClockCustom() {
+    function omtClearLegacyClockCustom() {
         try { localStorage.removeItem(OMT_STORAGE_KEYS.clockCustom); } catch (_) {}
         try {
             window.postMessage({
@@ -209,62 +167,38 @@
                 value: null
             }, '*');
         } catch (_) {}
-        omtApplyClockAppearance();
     }
 
-    function omtInstallClockDrag() {
-        if (omtClockDragInstalled) return;
-        const wrap = typeof q === 'function' ? q('match-timer-wrap') : null;
+    function omtApplyClockAppearance() {
+        const wrap = typeof q === 'function' ? q('match-timer-wrap') : document.getElementById('match-timer-wrap');
         if (!wrap || !omtRoot) return;
-        omtClockDragInstalled = true;
-        let dragging = false;
-        let startX = 0, startY = 0, origTop = 0, origLeft = 0;
+        const prefs = omtReadClockPrefs();
+        const SIZE = ['small', 'medium', 'large', 'xlarge'];
+        const STYLE = ['rounded', 'pill', 'minimal'];
+        OMT_CLOCK_POSITIONS.concat(['custom']).forEach((p) => wrap.classList.remove('omt-clock-pos-' + p));
+        SIZE.forEach((s) => wrap.classList.remove('omt-clock-size-' + s));
+        STYLE.forEach((s) => wrap.classList.remove('omt-clock-style-' + s));
+        wrap.classList.add('omt-clock-size-' + prefs.size);
+        wrap.classList.add('omt-clock-style-' + prefs.shape);
+        wrap.classList.add('omt-clock-pos-' + prefs.pos);
+        wrap.style.top = '';
+        wrap.style.left = '';
+        wrap.style.right = '';
+        wrap.style.bottom = '';
+        wrap.style.transform = '';
+        wrap.style.cursor = 'pointer';
+    }
 
-        wrap.addEventListener('mousedown', (e) => {
-            if (e.button !== 0) return;
+    function omtInstallClockClickEdit() {
+        if (omtClockClickInstalled) return;
+        const wrap = typeof q === 'function' ? q('match-timer-wrap') : null;
+        if (!wrap) return;
+        omtClockClickInstalled = true;
+        wrap.addEventListener('click', (e) => {
             if (e.target && e.target.closest && e.target.closest('input, select, button, a')) return;
-            e.preventDefault();
-            dragging = true;
-            const rect = wrap.getBoundingClientRect();
-            const rootRect = omtRoot.getBoundingClientRect();
-            origTop = rect.top - rootRect.top;
-            origLeft = rect.left - rootRect.left;
-            wrap.classList.add('omt-clock-pos-custom');
-            wrap.classList.remove('omt-clock-pos-top-left', 'omt-clock-pos-top-right',
-                'omt-clock-pos-bottom-left', 'omt-clock-pos-bottom-right');
-            wrap.style.top = origTop + 'px';
-            wrap.style.left = origLeft + 'px';
-            wrap.style.right = 'auto';
-            wrap.style.bottom = 'auto';
-            wrap.style.transform = 'none';
-            startX = e.clientX;
-            startY = e.clientY;
-
-            const onMove = (ev) => {
-                if (!dragging) return;
-                const dx = ev.clientX - startX;
-                const dy = ev.clientY - startY;
-                let newTop = origTop + dy;
-                let newLeft = origLeft + dx;
-                const maxTop = Math.max(0, omtRoot.clientHeight - wrap.offsetHeight);
-                const maxLeft = Math.max(0, omtRoot.clientWidth - wrap.offsetWidth);
-                newTop = Math.max(0, Math.min(newTop, maxTop));
-                newLeft = Math.max(0, Math.min(newLeft, maxLeft));
-                wrap.style.top = newTop + 'px';
-                wrap.style.left = newLeft + 'px';
-            };
-            const onUp = () => {
-                dragging = false;
-                document.removeEventListener('mousemove', onMove, true);
-                document.removeEventListener('mouseup', onUp, true);
-                const top = parseFloat(wrap.style.top) || 0;
-                const left = parseFloat(wrap.style.left) || 0;
-                omtPersistClockCustom(top, left);
-            };
-            document.addEventListener('mousemove', onMove, true);
-            document.addEventListener('mouseup', onUp, true);
+            if (typeof isEditingTimer !== 'undefined' && isEditingTimer) return;
+            if (typeof iniciarEdicaoTimer === 'function') iniciarEdicaoTimer();
         });
-        wrap.style.cursor = 'grab';
     }
 
     function omtMergeShuttlePrefs(stored) {
@@ -301,6 +235,7 @@
     function omtApplyCustomizeFromStorage() {
         omtLoadHotkeysFromLocal();
         omtLoadShuttlePrefsFromLocal();
+        omtClearLegacyClockCustom();
         omtApplyClockAppearance();
-        omtInstallClockDrag();
+        omtInstallClockClickEdit();
     }

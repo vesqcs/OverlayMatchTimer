@@ -349,58 +349,157 @@
                 targetVideoTime = Math.min(targetVideoTime, vid.duration);
             }
             seekTo(targetVideoTime);
-            mostrarOSD('Jumped to Min ' + minutoAlvo);
+            // OSD label set by caller when coming from clock edit; fallback for other callers
+            if (!isEditingTimer) mostrarOSD('Jumped to Min ' + minutoAlvo);
         }
     }
 
+    /**
+     * Production clock-edit parsing (analysts usually type digits):
+     *   "45"        → 45:00
+     *   "45:30" / "45.30" / "45,30" / "45 30" / "45-30" → 45:30
+     * Seconds must be 0–59; otherwise keep editing open.
+     */
+    function omtParseClockEditInput(raw) {
+        const s = String(raw || '').trim();
+        if (!s) return { ok: true, empty: true };
+
+        // Minutes only
+        if (/^\d{1,4}$/.test(s)) {
+            const minutes = parseInt(s, 10);
+            return {
+                ok: true,
+                label: String(minutes).padStart(2, '0') + ':00',
+                minuteFloat: minutes
+            };
+        }
+
+        // Minutes + any common separator + seconds
+        const m = /^(\d{1,4})[\s:.,\-–—_/]+(\d{1,2})$/.exec(s);
+        if (!m) return { ok: false, reason: 'format' };
+
+        const minutes = parseInt(m[1], 10);
+        const seconds = parseInt(m[2], 10);
+        if (!Number.isFinite(minutes) || !Number.isFinite(seconds)) {
+            return { ok: false, reason: 'format' };
+        }
+        if (seconds > 59) {
+            return { ok: false, reason: 'seconds', seconds };
+        }
+        return {
+            ok: true,
+            label: String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0'),
+            minuteFloat: minutes + (seconds / 60)
+        };
+    }
+
+    function omtClockEditHint(show, text) {
+        const wrap = typeof q === 'function' ? q('match-timer-wrap') : null;
+        if (!wrap) return;
+        let hint = wrap.querySelector('.omt-clock-edit-hint');
+        if (!show) {
+            if (hint) hint.remove();
+            return;
+        }
+        if (!hint) {
+            hint = document.createElement('div');
+            hint.className = 'omt-clock-edit-hint';
+            wrap.appendChild(hint);
+        }
+        hint.textContent = text || '';
+    }
+
     function iniciarEdicaoTimer() {
-        if (isEditingTimer || !timerAtivo) return;
+        // Production behaviour: inline text field prefilled with current match minute (integer).
+        if (isEditingTimer || !timerAtivo || !timerUI) return;
+        if (/pre-match/i.test(timerUI.textContent || '')) return;
 
         const minAtual = obterMinutoAtualJogo();
         isEditingTimer = true;
+        timerUI.classList.add('is-editing');
+        timerUI.classList.remove('is-invalid');
+        omtClockEditHint(false);
 
-        timerUI.innerHTML = `<input type="text" id="timer-edit-input" value="${minAtual}" style="width: 70px; background: transparent; border: none; color: white; font-size: inherit; font-family: inherit; font-weight: inherit; text-align: center; outline: none; padding: 0; margin: 0; display: inline-block; vertical-align: middle;">`;
+        timerUI.innerHTML =
+            '<input type="text" id="timer-edit-input" inputmode="decimal" autocomplete="off" ' +
+            'spellcheck="false" value="' + String(minAtual) + '">';
 
         const input = omtRoot.querySelector('#timer-edit-input');
-        if (input) {
+        if (!input) {
+            isEditingTimer = false;
+            timerUI.classList.remove('is-editing');
+            atualizarRelogio();
+            return;
+        }
+
+        input.focus();
+        input.select();
+
+        let isCommitted = false;
+
+        function markInvalid(reason) {
+            timerUI.classList.remove('is-invalid');
+            void timerUI.offsetWidth;
+            timerUI.classList.add('is-invalid');
+            if (reason === 'seconds') omtClockEditHint(true, 'Seconds 0-59');
+            else omtClockEditHint(false);
             input.focus();
             input.select();
-
-            let isCommitted = false;
-
-            function salvarEdicao() {
-                if (isCommitted) return;
-                isCommitted = true;
-                const val = input.value.trim();
-                if (val !== '') {
-                    const targetMin = parseFloat(val);
-                    if (!isNaN(targetMin) && targetMin >= 0) {
-                        navegarParaMinutoDeJogo(targetMin);
-                    }
-                }
-                isEditingTimer = false;
-                atualizarRelogio();
-            }
-
-            function cancelarEdicao() {
-                if (isCommitted) return;
-                isCommitted = true;
-                isEditingTimer = false;
-                atualizarRelogio();
-            }
-
-            input.addEventListener('keydown', function (e) {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    salvarEdicao();
-                } else if (e.key === 'Escape') {
-                    e.preventDefault();
-                    cancelarEdicao();
-                }
-            });
-
-            input.addEventListener('blur', function () {
-                setTimeout(salvarEdicao, 150);
-            });
         }
+
+        function finishEdit() {
+            isEditingTimer = false;
+            timerUI.classList.remove('is-editing', 'is-invalid');
+            omtClockEditHint(false);
+            atualizarRelogio();
+        }
+
+        function salvarEdicao() {
+            if (isCommitted) return;
+            const parsed = omtParseClockEditInput(input.value);
+            if (!parsed.ok) {
+                markInvalid(parsed.reason);
+                return;
+            }
+            isCommitted = true;
+            if (!parsed.empty) {
+                navegarParaMinutoDeJogo(parsed.minuteFloat);
+                mostrarOSD('Clock set ' + parsed.label);
+            }
+            finishEdit();
+        }
+
+        function cancelarEdicao() {
+            if (isCommitted) return;
+            isCommitted = true;
+            finishEdit();
+        }
+
+        input.addEventListener('input', function () {
+            timerUI.classList.remove('is-invalid');
+            omtClockEditHint(false);
+        });
+
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                e.stopPropagation();
+                salvarEdicao();
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                cancelarEdicao();
+            }
+        });
+
+        // Production: blur commits. Defer binding so the opening click cannot
+        // immediately dismiss the field before the analyst types.
+        setTimeout(function () {
+            if (isCommitted || !input.isConnected) return;
+            input.addEventListener('blur', function () {
+                setTimeout(function () {
+                    if (!isCommitted) salvarEdicao();
+                }, 150);
+            });
+        }, 200);
     }
