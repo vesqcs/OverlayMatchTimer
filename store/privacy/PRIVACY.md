@@ -29,7 +29,7 @@ This data stays on the machine/profile that installed the extension.
 
 ## Cloud / Kickoff sync
 
-**Not active in the current build (v1.7.1).** No Supabase (or similar) host permission is declared, and the extension does not send kickoff data to a remote project.
+**Not active in the current build (v2.0.0).** No Supabase (or similar) host permission is declared, and the extension does not send kickoff data to a remote project.
 
 If a future release enables shared kickoff sync, the privacy policy will be updated **before** enablement to describe what is sent, where it is stored, and retention. Until then, treat the product as local-only.
 
