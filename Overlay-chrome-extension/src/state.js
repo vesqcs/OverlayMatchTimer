@@ -35,6 +35,7 @@
     let isDraggingTimeline = false;
     let isManuallyHidden = false;
     let mouseMoveTimeout = null;
+    // Set when Auto pause on Alt+Tab pauses playback; cleared on manual play/pause/seek.
     let controlsObserver = null; // MutationObserver watching the video 'controls' attribute
     let isEditingTimer = false;
     const isLocalVideo = false; // Extension always targets a live/DVR stream

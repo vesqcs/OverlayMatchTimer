@@ -9,6 +9,7 @@
 
   const KEY_AUTO_VOD = 'omtAutoSwitchVod';
   const KEY_SHUTTLE = 'shuttleXpressEnabled';
+  const KEY_AUTO_PAUSE = 'omtAutoPauseOnBlur';
   const KEY_CLOCK_POS = 'omtClockPosition';
   const KEY_CLOCK_SIZE = 'omtClockSize';
   const KEY_CLOCK_SHAPE = 'omtClockShape';
@@ -16,6 +17,7 @@
   const DEFAULTS = {
     [KEY_AUTO_VOD]: true,
     [KEY_SHUTTLE]: false,
+    [KEY_AUTO_PAUSE]: false,
     [KEY_CLOCK_POS]: 'top-left',
     [KEY_CLOCK_SIZE]: 'medium',
     [KEY_CLOCK_SHAPE]: 'rounded'
@@ -28,6 +30,9 @@
       }
       if (Object.prototype.hasOwnProperty.call(values, KEY_SHUTTLE)) {
         localStorage.setItem(KEY_SHUTTLE, values[KEY_SHUTTLE] ? 'true' : 'false');
+      }
+      if (Object.prototype.hasOwnProperty.call(values, KEY_AUTO_PAUSE)) {
+        localStorage.setItem(KEY_AUTO_PAUSE, values[KEY_AUTO_PAUSE] ? 'true' : 'false');
       }
       [KEY_CLOCK_POS, KEY_CLOCK_SIZE, KEY_CLOCK_SHAPE].forEach((k) => {
         if (Object.prototype.hasOwnProperty.call(values, k) && values[k] != null) {

@@ -24,6 +24,7 @@
   "src/shuttle.js",
   "src/restore.js",
   "src/storage.js",
+  "src/auto-pause.js",
   "src/examino-features.js",
   "src/entry.js"
 ]

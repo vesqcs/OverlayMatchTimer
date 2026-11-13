@@ -730,10 +730,28 @@ async function run() {
       name: 'examino-option-a-transport',
       pass: optionA.orderOk && optionA.flush && optionA.playProminent &&
         optionA.speedBelow &&
-        optionA.chips.map((c) => c.text).join(',') === '0.5x,1x,1.5x,2x' &&
+        optionA.chips.map((c) => c.text).join(',') === '0.25x,0.5x,0.75x,1x,1.25x,1.5x,2x' &&
         optionA.hideBtn.present && /Hide controls \(H\)/.test(optionA.hideBtn.tip),
       detail: optionA
     });
+
+    // Right-side 2m label must not be cramped against its icon
+    const skip2mFit = await page.evaluate(() => {
+      const btn = document.getElementById('omt-p120');
+      if (!btn) return { ok: false, reason: 'missing' };
+      const label = btn.querySelector('.omt-btn-label');
+      const icon = btn.querySelector('.omt-icon');
+      if (!label || !icon) return { ok: false, reason: 'parts' };
+      const lb = label.getBoundingClientRect();
+      const ib = icon.getBoundingClientRect();
+      const gap = ib.left - lb.right;
+      const overflow = label.scrollWidth > label.clientWidth + 1;
+      return {
+        ok: lb.width >= 14 && gap >= 4 && !overflow && (label.textContent || '').trim() === '2m',
+        gap, labelW: lb.width, overflow
+      };
+    });
+    results.push({ name: 'examino-skip-2m-label-fit', pass: skip2mFit.ok === true, detail: skip2mFit });
 
     // Speed row syncs with select + Z/C/X hotkeys
     // Mock MSE fixtures often clamp HTMLMediaElement.playbackRate to 1; stub the
@@ -797,11 +815,17 @@ async function run() {
     await page.waitForTimeout(80);
     const speedAfterC = await page.evaluate(() => {
       const v = document.querySelector('video');
-      const chip15 = document.querySelector('.omt-speed-chip[data-speed="1.5"]');
+      const chip = document.querySelector('.omt-speed-chip[data-speed="1.25"]');
+      const select = document.getElementById('omt-speed-select');
+      const opts = select ? Array.from(select.options).map((o) => o.value) : [];
       return {
-        ok: Math.abs((v?.playbackRate || 0) - 1.5) < 0.05 &&
-          chip15?.classList.contains('is-active') === true,
-        rate: v?.playbackRate
+        ok: Math.abs((v?.playbackRate || 0) - 1.25) < 0.05 &&
+          chip?.classList.contains('is-active') === true &&
+          select?.value === '1.25' &&
+          opts.join(',') === '0.25,0.5,0.75,1.0,1.25,1.5,2.0',
+        rate: v?.playbackRate,
+        select: select?.value,
+        opts
       };
     });
     await page.keyboard.press('KeyZ');
@@ -815,11 +839,29 @@ async function run() {
         rate: v?.playbackRate
       };
     });
+    const speedActiveStyle = await page.evaluate(() => {
+      const active = document.querySelector('.omt-speed-chip.is-active');
+      const idle = document.querySelector('.omt-speed-chip:not(.is-active)');
+      if (!active || !idle) return { ok: false };
+      const ac = getComputedStyle(active);
+      const ic = getComputedStyle(idle);
+      const parseRgb = (c) => {
+        const m = String(c).match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+        return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+      };
+      const ar = parseRgb(ac.color);
+      const ir = parseRgb(ic.color);
+      const activeOrange = !!(ar && ar[0] >= 220 && ar[1] >= 100 && ar[1] <= 170 && ar[2] <= 80);
+      const idleNotOrange = !!(ir && !(ir[0] >= 220 && ir[1] >= 100 && ir[1] <= 170 && ir[2] <= 80));
+      const noFill = ac.backgroundColor === 'rgba(0, 0, 0, 0)' || ac.backgroundColor === 'transparent';
+      const noInset = !ac.boxShadow || ac.boxShadow === 'none';
+      return { ok: activeOrange && idleNotOrange && noFill && noInset, color: ac.color, bg: ac.backgroundColor, box: ac.boxShadow };
+    });
     results.push({
       name: 'examino-speed-row-sync',
       pass: speedAfterChip.ok && speedAfterSelect.ok && speedAfterX.ok &&
-        speedAfterC.ok && speedAfterZ.ok,
-      detail: { speedAfterChip, speedAfterSelect, speedAfterX, speedAfterC, speedAfterZ }
+        speedAfterC.ok && speedAfterZ.ok && speedActiveStyle.ok,
+      detail: { speedAfterChip, speedAfterSelect, speedAfterX, speedAfterC, speedAfterZ, speedActiveStyle }
     });
 
     // Hide panel button mirrors H hotkey
@@ -866,6 +908,200 @@ async function run() {
       pass: afterHideBtn.panel === '0' && afterHideBtn.pe === 'none' &&
         afterHideBtn.timeline === '0' && afterShowH.panel === '1',
       detail: { afterHideBtn, afterShowH }
+    });
+
+    // Play/pause centre button follows real media state; top OSD only (no centre flash)
+    await page.evaluate(() => {
+      const panel = document.getElementById('controls-panel');
+      const timeline = document.getElementById('omt-timeline-bar');
+      [panel, timeline].forEach((el) => {
+        if (!el) return;
+        el.style.opacity = '1';
+        el.style.pointerEvents = 'auto';
+      });
+    });
+    await page.evaluate(async () => {
+      const v = document.querySelector('video');
+      if (v) {
+        try { await v.play(); } catch (_) {}
+      }
+    });
+    await page.waitForTimeout(120);
+    const playStatePlaying = await page.evaluate(() => {
+      const btn = document.getElementById('omt-btn-play');
+      const v = document.querySelector('video');
+      const cs = btn ? getComputedStyle(btn) : null;
+      const m = cs ? String(cs.color).match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i) : null;
+      const orange = !!(m && Number(m[1]) >= 220 && Number(m[2]) >= 100 && Number(m[2]) <= 170 && Number(m[3]) <= 80);
+      return {
+        paused: !!(v && v.paused),
+        hasPlayingClass: !!(btn && btn.classList.contains('playing')),
+        orange,
+        color: cs ? cs.color : null,
+        hasPauseIcon: !!(btn && btn.querySelector('svg') && /rect/i.test(btn.innerHTML)),
+        noCentreFlash: !document.querySelector('#omt-root .omt-centre-flash, #omt-root .omt-center-flash, #omt-big-play')
+      };
+    });
+    await page.locator('#omt-btn-play').click();
+    await page.waitForTimeout(100);
+    const playStatePaused = await page.evaluate(() => {
+      const btn = document.getElementById('omt-btn-play');
+      const osd = document.getElementById('osd-message');
+      const v = document.querySelector('video');
+      const cs = btn ? getComputedStyle(btn) : null;
+      return {
+        paused: !!(v && v.paused),
+        hasPlayingClass: !!(btn && btn.classList.contains('playing')),
+        grey: !!(cs && !/245,\s*131,\s*31/i.test(cs.color)),
+        hasPlayIcon: !!(btn && /polygon/i.test(btn.innerHTML)),
+        osdPause: !!(osd && /Pause/i.test(osd.innerText || '')),
+        noCentreFlash: !document.querySelector('#omt-root .omt-centre-flash, #omt-root .omt-center-flash, #omt-big-play')
+      };
+    });
+    await page.keyboard.press('Space');
+    await page.waitForTimeout(100);
+    const playStateSpace = await page.evaluate(() => {
+      const btn = document.getElementById('omt-btn-play');
+      const osd = document.getElementById('osd-message');
+      const v = document.querySelector('video');
+      return {
+        paused: !!(v && v.paused),
+        hasPlayingClass: !!(btn && btn.classList.contains('playing')),
+        osdPlay: !!(osd && /Play/i.test(osd.innerText || ''))
+      };
+    });
+    results.push({
+      name: 'examino-play-pause-button-state',
+      pass: !playStatePlaying.paused && playStatePlaying.hasPlayingClass && playStatePlaying.orange &&
+        playStatePlaying.hasPauseIcon && playStatePlaying.noCentreFlash &&
+        playStatePaused.paused && !playStatePaused.hasPlayingClass && playStatePaused.grey &&
+        playStatePaused.hasPlayIcon && playStatePaused.osdPause && playStatePaused.noCentreFlash &&
+        !playStateSpace.paused && playStateSpace.hasPlayingClass && playStateSpace.osdPlay,
+      detail: { playStatePlaying, playStatePaused, playStateSpace }
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'examino_playing.png'), fullPage: true });
+    await page.locator('#omt-btn-play').click();
+    await page.waitForTimeout(100);
+    await page.screenshot({ path: path.join(ARTIFACTS, 'examino_paused.png'), fullPage: true });
+
+    // Speed 2x active screenshot
+    await page.evaluate(() => {
+      document.querySelector('.omt-speed-chip[data-speed="2.0"]')?.click();
+      const panel = document.getElementById('controls-panel');
+      if (panel) {
+        panel.style.opacity = '1';
+        panel.style.pointerEvents = 'auto';
+      }
+    });
+    await page.waitForTimeout(80);
+    await page.screenshot({ path: path.join(ARTIFACTS, 'examino_speed_2x.png'), fullPage: true });
+    await page.evaluate(() => {
+      document.querySelector('.omt-speed-chip[data-speed="1.0"]')?.click();
+    });
+
+    // Auto pause on Alt+Tab (default off; resume only when we auto-paused)
+    const autoPauseOff = await page.evaluate(async () => {
+      localStorage.setItem('omtAutoPauseOnBlur', 'false');
+      const v = document.querySelector('video');
+      if (!v) return { ok: false, reason: 'no-video' };
+      try { await v.play(); } catch (_) {}
+      await new Promise((r) => setTimeout(r, 40));
+      window.dispatchEvent(new Event('blur'));
+      document.dispatchEvent(new Event('visibilitychange'));
+      // Force hidden path
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+      document.dispatchEvent(new Event('visibilitychange'));
+      await new Promise((r) => setTimeout(r, 40));
+      const paused = v.paused;
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+      return { ok: paused === false, paused };
+    });
+    results.push({ name: 'examino-auto-pause-off', pass: autoPauseOff.ok === true, detail: autoPauseOff });
+
+    const autoPauseOnResume = await page.evaluate(async () => {
+      localStorage.setItem('omtAutoPauseOnBlur', 'true');
+      localStorage.setItem('shuttleXpressEnabled', 'false');
+      const v = document.querySelector('video');
+      if (!v) return { ok: false, reason: 'no-video' };
+      v.muted = true;
+      try { await v.play(); } catch (e) { return { ok: false, reason: 'play-failed', err: String(e) }; }
+      await new Promise((r) => setTimeout(r, 40));
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+      document.dispatchEvent(new Event('visibilitychange'));
+      await new Promise((r) => setTimeout(r, 60));
+      const afterAway = v.paused;
+      const osd = (document.getElementById('osd-message')?.innerText || '');
+      const origPlay = HTMLMediaElement.prototype.play;
+      let playCalls = 0;
+      HTMLMediaElement.prototype.play = function (...args) {
+        playCalls += 1;
+        return origPlay.apply(this, args);
+      };
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+      document.dispatchEvent(new Event('visibilitychange'));
+      window.dispatchEvent(new Event('focus'));
+      await new Promise((r) => setTimeout(r, 200));
+      HTMLMediaElement.prototype.play = origPlay;
+      return {
+        ok: afterAway === true && v.paused === false && /Auto paused/i.test(osd) && playCalls >= 1,
+        afterAway,
+        afterReturn: v.paused,
+        osd,
+        playCalls
+      };
+    });
+    results.push({
+      name: 'examino-auto-pause-resumes',
+      pass: autoPauseOnResume.ok === true,
+      detail: autoPauseOnResume
+    });
+
+    const autoPauseManualStays = await page.evaluate(async () => {
+      localStorage.setItem('omtAutoPauseOnBlur', 'true');
+      localStorage.setItem('shuttleXpressEnabled', 'false');
+      const v = document.querySelector('video');
+      if (!v) return { ok: false };
+      try { await v.play(); } catch (_) {}
+      await new Promise((r) => setTimeout(r, 30));
+      v.pause(); // manual pause before away
+      await new Promise((r) => setTimeout(r, 30));
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+      document.dispatchEvent(new Event('visibilitychange'));
+      await new Promise((r) => setTimeout(r, 30));
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+      document.dispatchEvent(new Event('visibilitychange'));
+      window.dispatchEvent(new Event('focus'));
+      await new Promise((r) => setTimeout(r, 80));
+      return { ok: v.paused === true, paused: v.paused };
+    });
+    results.push({
+      name: 'examino-auto-pause-manual-stays-paused',
+      pass: autoPauseManualStays.ok === true,
+      detail: autoPauseManualStays
+    });
+
+    const autoPauseShuttleSkip = await page.evaluate(async () => {
+      localStorage.setItem('omtAutoPauseOnBlur', 'true');
+      localStorage.setItem('shuttleXpressEnabled', 'true');
+      const v = document.querySelector('video');
+      if (!v) return { ok: false };
+      try { await v.play(); } catch (_) {}
+      await new Promise((r) => setTimeout(r, 30));
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+      document.dispatchEvent(new Event('visibilitychange'));
+      await new Promise((r) => setTimeout(r, 40));
+      const paused = v.paused;
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+      document.dispatchEvent(new Event('visibilitychange'));
+      localStorage.setItem('shuttleXpressEnabled', 'false');
+      return { ok: paused === false, paused };
+    });
+    results.push({
+      name: 'examino-auto-pause-shuttle-skips',
+      pass: autoPauseShuttleSkip.ok === true,
+      detail: autoPauseShuttleSkip
     });
 
     // Expanded more panel with custom period + start-minute edit visible
@@ -985,7 +1221,7 @@ async function run() {
       name: 'examino-timeline-grey-behind',
       pass: !behindState.atLive && !behindState.liveOn &&
         /909090|rgb\(144,\s*144,\s*144\)/i.test(behindState.bg) &&
-        /55%/.test(behindState.progress || ''),
+        Math.abs(parseFloat(behindState.progress || '0') - 55) < 0.1,
       detail: behindState
     });
     await page.screenshot({ path: path.join(ARTIFACTS, 'examino_behind_live.png'), fullPage: true });
@@ -1194,7 +1430,11 @@ async function run() {
           noCredit: !document.querySelector('.omt-brand-credit'),
           noPersonalizar: !document.body.textContent.includes('Personalizar') &&
             !document.body.textContent.includes('Em breve'),
-          footOk: foot === 'v1.4.2',
+          footOk: foot === 'v1.4.3',
+          hasAutoPause: !!document.getElementById('omt-auto-pause-blur'),
+          autoPauseDefaultOff: document.getElementById('omt-auto-pause-blur')
+            ? document.getElementById('omt-auto-pause-blur').checked === false
+            : false,
           logoUncropped: (() => {
             const logo = document.querySelector('.omt-sp-logo');
             if (!logo) return false;
@@ -1213,7 +1453,8 @@ async function run() {
         pass: popupOk.hasWordmark && popupOk.hasLogo && popupOk.logoCount === 1 &&
           popupOk.hasCustomize && popupOk.soonOk && popupOk.noShuttle &&
           popupOk.noSwap && popupOk.noCredit && popupOk.noPersonalizar &&
-          popupOk.footOk && popupOk.keyCaps && popupOk.logoUncropped,
+          popupOk.footOk && popupOk.keyCaps && popupOk.logoUncropped &&
+          popupOk.hasAutoPause && popupOk.autoPauseDefaultOff,
         detail: popupOk
       });
       await popupPage.close();

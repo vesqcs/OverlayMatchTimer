@@ -171,17 +171,31 @@
         }, vsig);
 
         vid.addEventListener('play', () => {
-            if (!btnMainPlay || !controlsPanel) return; // null-guard: UI may have been torn down
-            atualizarBotaoPlay(true);
-            controlsPanel.classList.add('playing-state');
+            // External/manual play cancels a pending auto-resume (our resume sets in-progress).
+            if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
+            syncPlayButtonFromVideo();
             // Don't reveal the panel — ShuttleXpress triggers play() silently.
             resetControlsTimeout(false);
         }, vsig);
         vid.addEventListener('pause', () => {
-            if (!btnMainPlay || !controlsPanel) return; // null-guard: UI may have been torn down
-            atualizarBotaoPlay(false);
-            controlsPanel.classList.remove('playing-state');
+            // Do not clear auto-pause flag here — auto-pause itself fires pause.
+            // Manual pause clears via togglePlay / click / Shuttle handlers.
+            syncPlayButtonFromVideo();
         }, vsig);
+        vid.addEventListener('ended', () => {
+            if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
+            syncPlayButtonFromVideo();
+        }, vsig);
+        vid.addEventListener('seeking', () => {
+            if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
+        }, vsig);
+        vid.addEventListener('seeked', () => {
+            if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
+            syncPlayButtonFromVideo();
+        }, vsig);
+        // Initial icon/colour from the real media state (no centre-screen flash).
+        syncPlayButtonFromVideo();
+        if (typeof installAutoPauseOnBlur === 'function') installAutoPauseOnBlur();
 
         // Floating control panel is draggable via the top handle (timeline stays fixed at bottom).
         if (controlsPanel) {

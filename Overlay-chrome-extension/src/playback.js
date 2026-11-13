@@ -2,6 +2,18 @@
     /* =========================================================
        12. PLAYBACK CONTROLS
        ========================================================= */
+    // Symmetric speed ladder (1x centre). Shared by chips, select, Z/C/X.
+    const OMT_SPEED_RATES = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+    const OMT_SPEED_SELECT_VALUES = {
+        0.25: '0.25',
+        0.5: '0.5',
+        0.75: '0.75',
+        1.0: '1.0',
+        1.25: '1.25',
+        1.5: '1.5',
+        2.0: '2.0'
+    };
+
     // Examino OpenPlayer may replace <video> during DVR/VOD switches.
     // Prefer the live connected element so transport/speed always hit the player.
     function ensureLiveVideo() {
@@ -13,20 +25,30 @@
         return vid;
     }
 
+    function closestSpeedRate(rate) {
+        const current = parseFloat(rate);
+        if (!isFinite(current)) return 1.0;
+        return OMT_SPEED_RATES.reduce((prev, curr) =>
+            Math.abs(curr - current) < Math.abs(prev - current) ? curr : prev, 1.0);
+    }
+
     function saltarVideo(segundos) {
         if (!ensureLiveVideo()) return;
+        if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
         seekTo(vid.currentTime + segundos);
         mostrarOSD((segundos > 0 ? '+' : '') + segundos + 's');
     }
 
     function togglePlay() {
         if (!ensureLiveVideo()) return;
-        if (vid.paused) { vid.play(); mostrarOSD('Play'); }
+        if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
+        if (vid.paused || vid.ended) { vid.play(); mostrarOSD('Play'); }
         else { vid.pause(); mostrarOSD('Pause'); }
     }
 
     function avancarFrame() {
         if (!ensureLiveVideo()) return;
+        if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
         vid.pause();
         vid.currentTime += 0.04;
         mostrarOSD('+1 Frame');
@@ -34,6 +56,7 @@
 
     function retrocederFrame() {
         if (!ensureLiveVideo()) return;
+        if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
         vid.pause();
         vid.currentTime -= 0.04;
         mostrarOSD('-1 Frame');
@@ -41,30 +64,25 @@
 
     function selecionarVelocidade() {
         if (!ensureLiveVideo() || !speedSelect) return;
-        const valor = parseFloat(speedSelect.value);
-        vid.playbackRate = valor;
-        mostrarOSD('Speed: ' + valor.toFixed(2) + 'x');
-        syncSpeedChips();
+        applyPlaybackSpeed(speedSelect.value);
         speedSelect.blur();
     }
 
     function applyPlaybackSpeed(rate, { announce = true } = {}) {
         const valor = parseFloat(rate);
         if (!ensureLiveVideo() || !isFinite(valor) || valor <= 0) return;
-        vid.playbackRate = valor;
+        const closest = closestSpeedRate(valor);
+        vid.playbackRate = closest;
         if (speedSelect) {
-            const rateStrings = { 0.25: '0.25', 0.5: '0.5', 1.0: '1.0', 1.5: '1.5', 2.0: '2.0' };
-            const key = Object.keys(rateStrings).map(Number).reduce((prev, curr) =>
-                Math.abs(curr - valor) < Math.abs(prev - valor) ? curr : prev, 1.0);
-            speedSelect.value = rateStrings[key] || String(valor);
+            speedSelect.value = OMT_SPEED_SELECT_VALUES[closest] || String(closest);
         }
         syncSpeedChips();
-        if (announce) mostrarOSD('Speed: ' + valor.toFixed(2) + 'x');
+        if (announce) mostrarOSD('Speed: ' + closest.toFixed(2) + 'x');
     }
 
     function syncSpeedChips() {
         if (!omtRoot || !ensureLiveVideo()) return;
-        const rate = vid.playbackRate || 1;
+        const rate = closestSpeedRate(vid.playbackRate || 1);
         const chips = omtRoot.querySelectorAll('.omt-speed-chip');
         chips.forEach((chip) => {
             const chipRate = parseFloat(chip.getAttribute('data-speed'));
@@ -72,6 +90,21 @@
             chip.classList.toggle('is-active', active);
             chip.setAttribute('aria-pressed', active ? 'true' : 'false');
         });
+    }
+
+    function atualizarBotaoPlay(playing) {
+        if (!btnMainPlay) return;
+        // Playing → orange pause icon; paused → grey/white play icon.
+        btnMainPlay.innerHTML = playing ? omtIcon('pause', 22) : omtIcon('play', 22);
+        btnMainPlay.classList.toggle('playing', !!playing);
+        btnMainPlay.setAttribute('aria-pressed', playing ? 'true' : 'false');
+    }
+
+    function syncPlayButtonFromVideo() {
+        if (!ensureLiveVideo()) return;
+        const playing = !vid.paused && !vid.ended;
+        atualizarBotaoPlay(playing);
+        if (controlsPanel) controlsPanel.classList.toggle('playing-state', playing);
     }
 
     function irParaLive() {
@@ -143,10 +176,4 @@
         if (!volumeIconBtn) return;
         const name = vol === 0 ? 'volume-x' : vol < 0.5 ? 'volume-1' : 'volume-2';
         volumeIconBtn.innerHTML = omtIcon(name, 15);
-    }
-
-    function atualizarBotaoPlay(playing) {
-        if (!btnMainPlay) return;
-        btnMainPlay.innerHTML = playing ? omtIcon('pause', 18) : omtIcon('play', 18);
-        btnMainPlay.classList.toggle('playing', !!playing);
     }

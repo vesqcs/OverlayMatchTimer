@@ -20,6 +20,16 @@
   </nav>
 
   <section class="omt-pane is-active" data-pane="general">
+    <div class="omt-general-settings">
+      <div class="omt-toggle-row" title="Pause when the browser window loses focus or the tab is hidden. Resumes on return only if this feature paused playback. Never applies when ShuttleXpress is enabled on the page.">
+        <span class="omt-toggle-label">Auto pause on Alt+Tab</span>
+        <label class="omt-switch" for="omt-auto-pause-blur">
+          <input type="checkbox" id="omt-auto-pause-blur" />
+          <span class="omt-switch-slider"></span>
+        </label>
+      </div>
+      <p class="omt-note">Default off. Skipped on pages with ShuttleXpress enabled (shared live monitor).</p>
+    </div>
     <div class="cheatsheet">
       <div class="cheatsheet-title">Shortcuts</div>
       <div class="shortcut-item"><span class="shortcut-label">Play / Pause</span><span class="shortcut-keys"><kbd>Space</kbd></span></div>
@@ -60,7 +70,7 @@
     <p class="omt-note">Customisable shortcuts will save per user in chrome.storage. Defaults stay as today until this ships.</p>
   </section>
 
-  <footer class="omt-popup-foot">v1.4.2</footer>
+  <footer class="omt-popup-foot">v1.4.3</footer>
   <script src="popup.js"></script>
 </body>
 </html>

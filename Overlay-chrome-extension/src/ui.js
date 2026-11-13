@@ -107,7 +107,9 @@
             <select id="omt-speed-select" class="top-select omt-tip"${tip('Playback speed (Z / C / X)')}>
                 <option value="0.25">0.25x</option>
                 <option value="0.5">0.50x</option>
+                <option value="0.75">0.75x</option>
                 <option value="1.0" selected>1.00x</option>
+                <option value="1.25">1.25x</option>
                 <option value="1.5">1.50x</option>
                 <option value="2.0">2.00x</option>
             </select>
@@ -190,13 +192,16 @@
             <button class="ctrl-btn btn-play omt-tip" id="omt-btn-play" type="button"${tip('Play / Pause (Space)')}>${omtIcon('play', 22)}</button>
             <button class="ctrl-btn btn-frame omt-tip" id="omt-next-frame" type="button"${tip('Next frame (↑)')}>${omtIcon('step-forward', 18)}</button>
             <span class="omt-seg-divider" aria-hidden="true"></span>
-            <button class="ctrl-btn omt-tip" id="omt-p2" type="button"${tip('Skip +2 seconds (→)')}><span class="omt-btn-label">2s</span>${omtIcon('skip-forward', 17)}</button>
-            <button class="ctrl-btn omt-tip" id="omt-p10" type="button"${tip('Skip +10 seconds (Shift + →)')}><span class="omt-btn-label">10s</span>${omtIcon('skip-forward', 18)}</button>
-            <button class="ctrl-btn omt-tip" id="omt-p120" type="button"${tip('Skip +2 minutes (Ctrl + →)')}><span class="omt-btn-label">2m</span>${omtIcon('fast-forward', 18)}</button>
+            <button class="ctrl-btn omt-tip" id="omt-p2" type="button"${tip('Skip +2 seconds (→)')}><span class="omt-btn-label">2s</span>${omtIcon('skip-forward', 16)}</button>
+            <button class="ctrl-btn omt-tip" id="omt-p10" type="button"${tip('Skip +10 seconds (Shift + →)')}><span class="omt-btn-label">10s</span>${omtIcon('skip-forward', 16)}</button>
+            <button class="ctrl-btn omt-tip" id="omt-p120" type="button"${tip('Skip +2 minutes (Ctrl + →)')}><span class="omt-btn-label">2m</span>${omtIcon('fast-forward', 16)}</button>
         </div>
         <div class="omt-speed-row" role="group" aria-label="Playback speed">
+            <button type="button" class="omt-speed-chip omt-tip" data-speed="0.25"${tip('Speed 0.25x')}>0.25x</button>
             <button type="button" class="omt-speed-chip omt-tip" data-speed="0.5"${tip('Speed 0.5x')}>0.5x</button>
+            <button type="button" class="omt-speed-chip omt-tip" data-speed="0.75"${tip('Speed 0.75x')}>0.75x</button>
             <button type="button" class="omt-speed-chip omt-tip is-active" data-speed="1.0"${tip('Speed 1x (X)')}>1x</button>
+            <button type="button" class="omt-speed-chip omt-tip" data-speed="1.25"${tip('Speed 1.25x')}>1.25x</button>
             <button type="button" class="omt-speed-chip omt-tip" data-speed="1.5"${tip('Speed 1.5x')}>1.5x</button>
             <button type="button" class="omt-speed-chip omt-tip" data-speed="2.0"${tip('Speed 2x')}>2x</button>
         </div>

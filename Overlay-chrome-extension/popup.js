@@ -4,25 +4,36 @@
   const KEYS = {
     clockPos: 'omtClockPosition',
     clockSize: 'omtClockSize',
-    clockShape: 'omtClockShape'
+    clockShape: 'omtClockShape',
+    autoPauseOnBlur: 'omtAutoPauseOnBlur'
   };
 
   const clockPos = document.getElementById('clock-pos');
   const clockSize = document.getElementById('clock-size');
   const clockShape = document.getElementById('clock-shape');
+  const autoPause = document.getElementById('omt-auto-pause-blur');
 
   chrome.storage.local.get(
     {
       [KEYS.clockPos]: 'top-left',
       [KEYS.clockSize]: 'medium',
-      [KEYS.clockShape]: 'rounded'
+      [KEYS.clockShape]: 'rounded',
+      [KEYS.autoPauseOnBlur]: false
     },
     (result) => {
       clockPos.value = result[KEYS.clockPos] || 'top-left';
       clockSize.value = result[KEYS.clockSize] || 'medium';
       clockShape.value = result[KEYS.clockShape] || 'rounded';
+      if (autoPause) autoPause.checked = !!result[KEYS.autoPauseOnBlur];
     }
   );
+
+  if (autoPause) {
+    autoPause.addEventListener('change', () => {
+      const enabled = !!autoPause.checked;
+      chrome.storage.local.set({ [KEYS.autoPauseOnBlur]: enabled });
+    });
+  }
 
   // Customize controls are disabled (coming soon) — values are still read for future wiring.
   document.querySelectorAll('.omt-tab').forEach((tab) => {

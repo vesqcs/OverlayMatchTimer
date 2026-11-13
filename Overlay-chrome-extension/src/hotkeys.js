@@ -46,25 +46,17 @@
             case 'arrowdown': retrocederFrame(); break;
             case ' ': togglePlay(); break;
             case 'z': {
-                const allowedRates = [0.25, 0.5, 1.0, 1.5, 2.0];
-                const currentRate = vid.playbackRate;
-                const closestRate = allowedRates.reduce((prev, curr) => 
-                    Math.abs(curr - currentRate) < Math.abs(prev - currentRate) ? curr : prev
-                );
-                const currentIndex = allowedRates.indexOf(closestRate);
+                const closestRate = closestSpeedRate(vid.playbackRate);
+                const currentIndex = OMT_SPEED_RATES.indexOf(closestRate);
                 const newIndex = Math.max(0, currentIndex - 1);
-                applyPlaybackSpeed(allowedRates[newIndex]);
+                applyPlaybackSpeed(OMT_SPEED_RATES[newIndex]);
                 break;
             }
             case 'c': {
-                const allowedRates = [0.25, 0.5, 1.0, 1.5, 2.0];
-                const currentRate = vid.playbackRate;
-                const closestRate = allowedRates.reduce((prev, curr) => 
-                    Math.abs(curr - currentRate) < Math.abs(prev - currentRate) ? curr : prev
-                );
-                const currentIndex = allowedRates.indexOf(closestRate);
-                const newIndex = Math.min(allowedRates.length - 1, currentIndex + 1);
-                applyPlaybackSpeed(allowedRates[newIndex]);
+                const closestRate = closestSpeedRate(vid.playbackRate);
+                const currentIndex = OMT_SPEED_RATES.indexOf(closestRate);
+                const newIndex = Math.min(OMT_SPEED_RATES.length - 1, currentIndex + 1);
+                applyPlaybackSpeed(OMT_SPEED_RATES[newIndex]);
                 break;
             }
             case 'x':
@@ -109,14 +101,10 @@
     }
 
     function syncSpeedSelect() {
-        const currentRate = vid.playbackRate;
-        const allowedRates = [0.25, 0.5, 1.0, 1.5, 2.0];
-        const closestRate = allowedRates.reduce((prev, curr) => 
-            Math.abs(curr - currentRate) < Math.abs(prev - currentRate) ? curr : prev
-        );
-        const rateStrings = { 0.25: "0.25", 0.5: "0.5", 1.0: "1.0", 1.5: "1.5", 2.0: "2.0" };
+        if (!ensureLiveVideo()) return;
+        const closestRate = closestSpeedRate(vid.playbackRate);
         if (speedSelect) {
-            speedSelect.value = rateStrings[closestRate] || closestRate.toString();
+            speedSelect.value = OMT_SPEED_SELECT_VALUES[closestRate] || String(closestRate);
         }
         if (typeof syncSpeedChips === 'function') syncSpeedChips();
     }

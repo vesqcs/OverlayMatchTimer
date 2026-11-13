@@ -61,17 +61,21 @@
     }
 
     function handleInputReport(event) {
+        if (typeof noteShuttleActivity === 'function') noteShuttleActivity();
         const { data } = event;
         const bytes = new Uint8Array(data.buffer);
 
         // A) 5 Buttons edge detection
         if (bytes[3] === 16 && prevBytes3 !== 16) {
+            if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
             vid.currentTime -= 120;
             mostrarOSD('Skip -2m');
         } else if (bytes[3] === 32 && prevBytes3 !== 32) {
+            if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
             vid.currentTime -= 10;
             mostrarOSD('Skip -10s');
         } else if (bytes[3] === 64 && prevBytes3 !== 64) {
+            if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
             if (vid.paused) {
                 vid.play().catch(e => {});
                 mostrarOSD('Play');
@@ -80,11 +84,13 @@
                 mostrarOSD('Pause');
             }
         } else if (bytes[3] === 128 && prevBytes3 !== 128) {
+            if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
             vid.currentTime += 10;
             mostrarOSD('Skip +10s');
         }
 
         if (bytes[4] === 1 && prevBytes4 !== 1) {
+            if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
             vid.currentTime += 120;
             mostrarOSD('Skip +2m');
         }

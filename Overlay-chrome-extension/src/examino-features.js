@@ -84,6 +84,7 @@
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
+        if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
         if (media.paused) {
             media.play().catch(() => {});
             mostrarOSD('Play');

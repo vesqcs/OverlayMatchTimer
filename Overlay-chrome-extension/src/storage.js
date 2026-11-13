@@ -5,11 +5,30 @@
     const OMT_STORAGE_KEYS = {
         autoVod: 'omtAutoSwitchVod',
         shuttle: 'shuttleXpressEnabled',
+        autoPauseOnBlur: 'omtAutoPauseOnBlur',
         // Personalizar keys reserved (popup writes; content ignores until implemented)
         clockPos: 'omtClockPosition',
         clockSize: 'omtClockSize',
         clockShape: 'omtClockShape'
     };
+
+    function storageGetAutoPauseOnBlur() {
+        const v = localStorage.getItem(OMT_STORAGE_KEYS.autoPauseOnBlur);
+        if (v === null || v === undefined || v === '') return false; // default OFF
+        return v === 'true';
+    }
+
+    function storageSetAutoPauseOnBlur(enabled) {
+        localStorage.setItem(OMT_STORAGE_KEYS.autoPauseOnBlur, enabled ? 'true' : 'false');
+        try {
+            window.postMessage({
+                source: 'omt-page',
+                type: 'OMT_STORAGE_SET',
+                key: OMT_STORAGE_KEYS.autoPauseOnBlur,
+                value: !!enabled
+            }, '*');
+        } catch (_) {}
+    }
 
     function storageGetAutoVod() {
         const v = localStorage.getItem(OMT_STORAGE_KEYS.autoVod);
@@ -80,5 +99,13 @@
             } catch (_) {}
             const autoBox = omtRoot && omtRoot.querySelector('#omt-examino-auto-vod');
             if (autoBox) autoBox.checked = !!values[OMT_STORAGE_KEYS.autoVod] && examinoManualSourceChoice !== 'DVR';
+        }
+        if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.autoPauseOnBlur)) {
+            try {
+                localStorage.setItem(
+                    OMT_STORAGE_KEYS.autoPauseOnBlur,
+                    values[OMT_STORAGE_KEYS.autoPauseOnBlur] ? 'true' : 'false'
+                );
+            } catch (_) {}
         }
     });

@@ -49,6 +49,7 @@
     let isDraggingTimeline = false;
     let isManuallyHidden = false;
     let mouseMoveTimeout = null;
+    // Set when Auto pause on Alt+Tab pauses playback; cleared on manual play/pause/seek.
     let controlsObserver = null; // MutationObserver watching the video 'controls' attribute
     let isEditingTimer = false;
     const isLocalVideo = false; // Extension always targets a live/DVR stream
@@ -821,7 +822,9 @@
             <select id="omt-speed-select" class="top-select omt-tip"${tip('Playback speed (Z / C / X)')}>
                 <option value="0.25">0.25x</option>
                 <option value="0.5">0.50x</option>
+                <option value="0.75">0.75x</option>
                 <option value="1.0" selected>1.00x</option>
+                <option value="1.25">1.25x</option>
                 <option value="1.5">1.50x</option>
                 <option value="2.0">2.00x</option>
             </select>
@@ -904,13 +907,16 @@
             <button class="ctrl-btn btn-play omt-tip" id="omt-btn-play" type="button"${tip('Play / Pause (Space)')}>${omtIcon('play', 22)}</button>
             <button class="ctrl-btn btn-frame omt-tip" id="omt-next-frame" type="button"${tip('Next frame (↑)')}>${omtIcon('step-forward', 18)}</button>
             <span class="omt-seg-divider" aria-hidden="true"></span>
-            <button class="ctrl-btn omt-tip" id="omt-p2" type="button"${tip('Skip +2 seconds (→)')}><span class="omt-btn-label">2s</span>${omtIcon('skip-forward', 17)}</button>
-            <button class="ctrl-btn omt-tip" id="omt-p10" type="button"${tip('Skip +10 seconds (Shift + →)')}><span class="omt-btn-label">10s</span>${omtIcon('skip-forward', 18)}</button>
-            <button class="ctrl-btn omt-tip" id="omt-p120" type="button"${tip('Skip +2 minutes (Ctrl + →)')}><span class="omt-btn-label">2m</span>${omtIcon('fast-forward', 18)}</button>
+            <button class="ctrl-btn omt-tip" id="omt-p2" type="button"${tip('Skip +2 seconds (→)')}><span class="omt-btn-label">2s</span>${omtIcon('skip-forward', 16)}</button>
+            <button class="ctrl-btn omt-tip" id="omt-p10" type="button"${tip('Skip +10 seconds (Shift + →)')}><span class="omt-btn-label">10s</span>${omtIcon('skip-forward', 16)}</button>
+            <button class="ctrl-btn omt-tip" id="omt-p120" type="button"${tip('Skip +2 minutes (Ctrl + →)')}><span class="omt-btn-label">2m</span>${omtIcon('fast-forward', 16)}</button>
         </div>
         <div class="omt-speed-row" role="group" aria-label="Playback speed">
+            <button type="button" class="omt-speed-chip omt-tip" data-speed="0.25"${tip('Speed 0.25x')}>0.25x</button>
             <button type="button" class="omt-speed-chip omt-tip" data-speed="0.5"${tip('Speed 0.5x')}>0.5x</button>
+            <button type="button" class="omt-speed-chip omt-tip" data-speed="0.75"${tip('Speed 0.75x')}>0.75x</button>
             <button type="button" class="omt-speed-chip omt-tip is-active" data-speed="1.0"${tip('Speed 1x (X)')}>1x</button>
+            <button type="button" class="omt-speed-chip omt-tip" data-speed="1.25"${tip('Speed 1.25x')}>1.25x</button>
             <button type="button" class="omt-speed-chip omt-tip" data-speed="1.5"${tip('Speed 1.5x')}>1.5x</button>
             <button type="button" class="omt-speed-chip omt-tip" data-speed="2.0"${tip('Speed 2x')}>2x</button>
         </div>
@@ -1135,17 +1141,31 @@
         }, vsig);
 
         vid.addEventListener('play', () => {
-            if (!btnMainPlay || !controlsPanel) return; // null-guard: UI may have been torn down
-            atualizarBotaoPlay(true);
-            controlsPanel.classList.add('playing-state');
+            // External/manual play cancels a pending auto-resume (our resume sets in-progress).
+            if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
+            syncPlayButtonFromVideo();
             // Don't reveal the panel — ShuttleXpress triggers play() silently.
             resetControlsTimeout(false);
         }, vsig);
         vid.addEventListener('pause', () => {
-            if (!btnMainPlay || !controlsPanel) return; // null-guard: UI may have been torn down
-            atualizarBotaoPlay(false);
-            controlsPanel.classList.remove('playing-state');
+            // Do not clear auto-pause flag here — auto-pause itself fires pause.
+            // Manual pause clears via togglePlay / click / Shuttle handlers.
+            syncPlayButtonFromVideo();
         }, vsig);
+        vid.addEventListener('ended', () => {
+            if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
+            syncPlayButtonFromVideo();
+        }, vsig);
+        vid.addEventListener('seeking', () => {
+            if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
+        }, vsig);
+        vid.addEventListener('seeked', () => {
+            if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
+            syncPlayButtonFromVideo();
+        }, vsig);
+        // Initial icon/colour from the real media state (no centre-screen flash).
+        syncPlayButtonFromVideo();
+        if (typeof installAutoPauseOnBlur === 'function') installAutoPauseOnBlur();
 
         // Floating control panel is draggable via the top handle (timeline stays fixed at bottom).
         if (controlsPanel) {
@@ -1814,6 +1834,18 @@
     /* =========================================================
        12. PLAYBACK CONTROLS
        ========================================================= */
+    // Symmetric speed ladder (1x centre). Shared by chips, select, Z/C/X.
+    const OMT_SPEED_RATES = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+    const OMT_SPEED_SELECT_VALUES = {
+        0.25: '0.25',
+        0.5: '0.5',
+        0.75: '0.75',
+        1.0: '1.0',
+        1.25: '1.25',
+        1.5: '1.5',
+        2.0: '2.0'
+    };
+
     // Examino OpenPlayer may replace <video> during DVR/VOD switches.
     // Prefer the live connected element so transport/speed always hit the player.
     function ensureLiveVideo() {
@@ -1825,20 +1857,30 @@
         return vid;
     }
 
+    function closestSpeedRate(rate) {
+        const current = parseFloat(rate);
+        if (!isFinite(current)) return 1.0;
+        return OMT_SPEED_RATES.reduce((prev, curr) =>
+            Math.abs(curr - current) < Math.abs(prev - current) ? curr : prev, 1.0);
+    }
+
     function saltarVideo(segundos) {
         if (!ensureLiveVideo()) return;
+        if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
         seekTo(vid.currentTime + segundos);
         mostrarOSD((segundos > 0 ? '+' : '') + segundos + 's');
     }
 
     function togglePlay() {
         if (!ensureLiveVideo()) return;
-        if (vid.paused) { vid.play(); mostrarOSD('Play'); }
+        if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
+        if (vid.paused || vid.ended) { vid.play(); mostrarOSD('Play'); }
         else { vid.pause(); mostrarOSD('Pause'); }
     }
 
     function avancarFrame() {
         if (!ensureLiveVideo()) return;
+        if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
         vid.pause();
         vid.currentTime += 0.04;
         mostrarOSD('+1 Frame');
@@ -1846,6 +1888,7 @@
 
     function retrocederFrame() {
         if (!ensureLiveVideo()) return;
+        if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
         vid.pause();
         vid.currentTime -= 0.04;
         mostrarOSD('-1 Frame');
@@ -1853,30 +1896,25 @@
 
     function selecionarVelocidade() {
         if (!ensureLiveVideo() || !speedSelect) return;
-        const valor = parseFloat(speedSelect.value);
-        vid.playbackRate = valor;
-        mostrarOSD('Speed: ' + valor.toFixed(2) + 'x');
-        syncSpeedChips();
+        applyPlaybackSpeed(speedSelect.value);
         speedSelect.blur();
     }
 
     function applyPlaybackSpeed(rate, { announce = true } = {}) {
         const valor = parseFloat(rate);
         if (!ensureLiveVideo() || !isFinite(valor) || valor <= 0) return;
-        vid.playbackRate = valor;
+        const closest = closestSpeedRate(valor);
+        vid.playbackRate = closest;
         if (speedSelect) {
-            const rateStrings = { 0.25: '0.25', 0.5: '0.5', 1.0: '1.0', 1.5: '1.5', 2.0: '2.0' };
-            const key = Object.keys(rateStrings).map(Number).reduce((prev, curr) =>
-                Math.abs(curr - valor) < Math.abs(prev - valor) ? curr : prev, 1.0);
-            speedSelect.value = rateStrings[key] || String(valor);
+            speedSelect.value = OMT_SPEED_SELECT_VALUES[closest] || String(closest);
         }
         syncSpeedChips();
-        if (announce) mostrarOSD('Speed: ' + valor.toFixed(2) + 'x');
+        if (announce) mostrarOSD('Speed: ' + closest.toFixed(2) + 'x');
     }
 
     function syncSpeedChips() {
         if (!omtRoot || !ensureLiveVideo()) return;
-        const rate = vid.playbackRate || 1;
+        const rate = closestSpeedRate(vid.playbackRate || 1);
         const chips = omtRoot.querySelectorAll('.omt-speed-chip');
         chips.forEach((chip) => {
             const chipRate = parseFloat(chip.getAttribute('data-speed'));
@@ -1884,6 +1922,21 @@
             chip.classList.toggle('is-active', active);
             chip.setAttribute('aria-pressed', active ? 'true' : 'false');
         });
+    }
+
+    function atualizarBotaoPlay(playing) {
+        if (!btnMainPlay) return;
+        // Playing → orange pause icon; paused → grey/white play icon.
+        btnMainPlay.innerHTML = playing ? omtIcon('pause', 22) : omtIcon('play', 22);
+        btnMainPlay.classList.toggle('playing', !!playing);
+        btnMainPlay.setAttribute('aria-pressed', playing ? 'true' : 'false');
+    }
+
+    function syncPlayButtonFromVideo() {
+        if (!ensureLiveVideo()) return;
+        const playing = !vid.paused && !vid.ended;
+        atualizarBotaoPlay(playing);
+        if (controlsPanel) controlsPanel.classList.toggle('playing-state', playing);
     }
 
     function irParaLive() {
@@ -1955,12 +2008,6 @@
         if (!volumeIconBtn) return;
         const name = vol === 0 ? 'volume-x' : vol < 0.5 ? 'volume-1' : 'volume-2';
         volumeIconBtn.innerHTML = omtIcon(name, 15);
-    }
-
-    function atualizarBotaoPlay(playing) {
-        if (!btnMainPlay) return;
-        btnMainPlay.innerHTML = playing ? omtIcon('pause', 18) : omtIcon('play', 18);
-        btnMainPlay.classList.toggle('playing', !!playing);
     }
 
 /* Transient OSD toast messages. */
@@ -2119,25 +2166,17 @@
             case 'arrowdown': retrocederFrame(); break;
             case ' ': togglePlay(); break;
             case 'z': {
-                const allowedRates = [0.25, 0.5, 1.0, 1.5, 2.0];
-                const currentRate = vid.playbackRate;
-                const closestRate = allowedRates.reduce((prev, curr) => 
-                    Math.abs(curr - currentRate) < Math.abs(prev - currentRate) ? curr : prev
-                );
-                const currentIndex = allowedRates.indexOf(closestRate);
+                const closestRate = closestSpeedRate(vid.playbackRate);
+                const currentIndex = OMT_SPEED_RATES.indexOf(closestRate);
                 const newIndex = Math.max(0, currentIndex - 1);
-                applyPlaybackSpeed(allowedRates[newIndex]);
+                applyPlaybackSpeed(OMT_SPEED_RATES[newIndex]);
                 break;
             }
             case 'c': {
-                const allowedRates = [0.25, 0.5, 1.0, 1.5, 2.0];
-                const currentRate = vid.playbackRate;
-                const closestRate = allowedRates.reduce((prev, curr) => 
-                    Math.abs(curr - currentRate) < Math.abs(prev - currentRate) ? curr : prev
-                );
-                const currentIndex = allowedRates.indexOf(closestRate);
-                const newIndex = Math.min(allowedRates.length - 1, currentIndex + 1);
-                applyPlaybackSpeed(allowedRates[newIndex]);
+                const closestRate = closestSpeedRate(vid.playbackRate);
+                const currentIndex = OMT_SPEED_RATES.indexOf(closestRate);
+                const newIndex = Math.min(OMT_SPEED_RATES.length - 1, currentIndex + 1);
+                applyPlaybackSpeed(OMT_SPEED_RATES[newIndex]);
                 break;
             }
             case 'x':
@@ -2182,14 +2221,10 @@
     }
 
     function syncSpeedSelect() {
-        const currentRate = vid.playbackRate;
-        const allowedRates = [0.25, 0.5, 1.0, 1.5, 2.0];
-        const closestRate = allowedRates.reduce((prev, curr) => 
-            Math.abs(curr - currentRate) < Math.abs(prev - currentRate) ? curr : prev
-        );
-        const rateStrings = { 0.25: "0.25", 0.5: "0.5", 1.0: "1.0", 1.5: "1.5", 2.0: "2.0" };
+        if (!ensureLiveVideo()) return;
+        const closestRate = closestSpeedRate(vid.playbackRate);
         if (speedSelect) {
-            speedSelect.value = rateStrings[closestRate] || closestRate.toString();
+            speedSelect.value = OMT_SPEED_SELECT_VALUES[closestRate] || String(closestRate);
         }
         if (typeof syncSpeedChips === 'function') syncSpeedChips();
     }
@@ -2319,17 +2354,21 @@
     }
 
     function handleInputReport(event) {
+        if (typeof noteShuttleActivity === 'function') noteShuttleActivity();
         const { data } = event;
         const bytes = new Uint8Array(data.buffer);
 
         // A) 5 Buttons edge detection
         if (bytes[3] === 16 && prevBytes3 !== 16) {
+            if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
             vid.currentTime -= 120;
             mostrarOSD('Skip -2m');
         } else if (bytes[3] === 32 && prevBytes3 !== 32) {
+            if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
             vid.currentTime -= 10;
             mostrarOSD('Skip -10s');
         } else if (bytes[3] === 64 && prevBytes3 !== 64) {
+            if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
             if (vid.paused) {
                 vid.play().catch(e => {});
                 mostrarOSD('Play');
@@ -2338,11 +2377,13 @@
                 mostrarOSD('Pause');
             }
         } else if (bytes[3] === 128 && prevBytes3 !== 128) {
+            if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
             vid.currentTime += 10;
             mostrarOSD('Skip +10s');
         }
 
         if (bytes[4] === 1 && prevBytes4 !== 1) {
+            if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
             vid.currentTime += 120;
             mostrarOSD('Skip +2m');
         }
@@ -2559,11 +2600,30 @@
     const OMT_STORAGE_KEYS = {
         autoVod: 'omtAutoSwitchVod',
         shuttle: 'shuttleXpressEnabled',
+        autoPauseOnBlur: 'omtAutoPauseOnBlur',
         // Personalizar keys reserved (popup writes; content ignores until implemented)
         clockPos: 'omtClockPosition',
         clockSize: 'omtClockSize',
         clockShape: 'omtClockShape'
     };
+
+    function storageGetAutoPauseOnBlur() {
+        const v = localStorage.getItem(OMT_STORAGE_KEYS.autoPauseOnBlur);
+        if (v === null || v === undefined || v === '') return false; // default OFF
+        return v === 'true';
+    }
+
+    function storageSetAutoPauseOnBlur(enabled) {
+        localStorage.setItem(OMT_STORAGE_KEYS.autoPauseOnBlur, enabled ? 'true' : 'false');
+        try {
+            window.postMessage({
+                source: 'omt-page',
+                type: 'OMT_STORAGE_SET',
+                key: OMT_STORAGE_KEYS.autoPauseOnBlur,
+                value: !!enabled
+            }, '*');
+        } catch (_) {}
+    }
 
     function storageGetAutoVod() {
         const v = localStorage.getItem(OMT_STORAGE_KEYS.autoVod);
@@ -2635,7 +2695,109 @@
             const autoBox = omtRoot && omtRoot.querySelector('#omt-examino-auto-vod');
             if (autoBox) autoBox.checked = !!values[OMT_STORAGE_KEYS.autoVod] && examinoManualSourceChoice !== 'DVR';
         }
+        if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.autoPauseOnBlur)) {
+            try {
+                localStorage.setItem(
+                    OMT_STORAGE_KEYS.autoPauseOnBlur,
+                    values[OMT_STORAGE_KEYS.autoPauseOnBlur] ? 'true' : 'false'
+                );
+            } catch (_) {}
+        }
     });
+
+/* Auto pause on Alt+Tab / tab hidden (popup General setting, default OFF).
+ * Never touches ShuttleXpress pages; resumes only when we caused the pause.
+ */
+    let autoPauseInstalled = false;
+    let autoPausedByBlur = false;
+    let autoPauseInProgress = false;
+    let autoResumeInProgress = false;
+    let lastShuttleActivityAt = 0;
+
+    function noteShuttleActivity() {
+        lastShuttleActivityAt = Date.now();
+    }
+
+    function clearAutoPauseFlag() {
+        if (autoPauseInProgress || autoResumeInProgress) return;
+        autoPausedByBlur = false;
+    }
+
+    function shouldBypassAutoPause() {
+        // Setting off, Shuttle enabled on this page, or recent WebHID/shuttle input.
+        if (typeof storageGetAutoPauseOnBlur === 'function' && !storageGetAutoPauseOnBlur()) {
+            return true;
+        }
+        if (typeof storageGetShuttleEnabled === 'function' && storageGetShuttleEnabled()) {
+            return true;
+        }
+        if (Date.now() - lastShuttleActivityAt < 1000) return true;
+        return false;
+    }
+
+    function maybeAutoPauseOnAway() {
+        if (shouldBypassAutoPause()) return;
+        if (!ensureLiveVideo()) return;
+        // Already paused (manual or ended) — do not claim an auto-pause resume.
+        if (vid.paused || vid.ended) return;
+        autoPauseInProgress = true;
+        try {
+            vid.pause();
+            // Set after pause so the pause listener's clear (if any) is skipped via in-progress.
+            if (vid.paused) {
+                autoPausedByBlur = true;
+                mostrarOSD('Auto paused');
+            }
+        } finally {
+            autoPauseInProgress = false;
+        }
+        syncPlayButtonFromVideo();
+    }
+
+    function maybeAutoResumeOnReturn() {
+        if (!autoPausedByBlur) return;
+        // Shuttle pages never auto-pause; if shuttle was enabled while away, drop resume.
+        if (typeof storageGetShuttleEnabled === 'function' && storageGetShuttleEnabled()) {
+            autoPausedByBlur = false;
+            return;
+        }
+        if (!ensureLiveVideo()) return;
+        if (!vid.paused) {
+            autoPausedByBlur = false;
+            return;
+        }
+        autoResumeInProgress = true;
+        autoPausedByBlur = false;
+        Promise.resolve(vid.play())
+            .catch(() => {})
+            .finally(() => {
+                autoResumeInProgress = false;
+                syncPlayButtonFromVideo();
+            });
+    }
+
+    function onDocumentVisibilityChange() {
+        if (document.visibilityState === 'hidden') maybeAutoPauseOnAway();
+        else if (document.visibilityState === 'visible') maybeAutoResumeOnReturn();
+    }
+
+    function onWindowBlur() {
+        // visibilitychange usually covers Alt+Tab; blur covers focus loss while visible.
+        if (document.visibilityState === 'hidden') return;
+        maybeAutoPauseOnAway();
+    }
+
+    function onWindowFocus() {
+        maybeAutoResumeOnReturn();
+    }
+
+    function installAutoPauseOnBlur() {
+        if (autoPauseInstalled) return;
+        autoPauseInstalled = true;
+        document.addEventListener('visibilitychange', onDocumentVisibilityChange);
+        window.addEventListener('blur', onWindowBlur);
+        window.addEventListener('focus', onWindowFocus);
+    }
 
 /* Examino-only: hotkeys install, click-to-toggle, hide native chrome,
  * Source DVR/VOD scrape/apply, auto-VOD, chrome.storage bridge client.
@@ -2723,6 +2885,7 @@
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
+        if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
         if (media.paused) {
             media.play().catch(() => {});
             mostrarOSD('Play');
