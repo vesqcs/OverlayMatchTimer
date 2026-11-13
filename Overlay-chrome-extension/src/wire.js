@@ -133,6 +133,14 @@
             if (typeof paintTimelineScrubberProgress === 'function') paintTimelineScrubberProgress(true);
         });
         timelineSlider.addEventListener('change', function () {
+            const snap = (typeof getTimelineSnapAnchor === 'function') ? getTimelineSnapAnchor() : null;
+            if (snap && typeof jumpToKickoff === 'function') {
+                jumpToKickoff(snap.key);
+                isDraggingTimeline = false;
+                this.blur();
+                resetControlsTimeout(false);
+                return;
+            }
             const t = parseFloat(this.value);
             if (typeof paintTimelineScrubberProgress === 'function') paintTimelineScrubberProgress(true);
             seekTo(t);
@@ -141,7 +149,7 @@
             resetControlsTimeout(false);
         });
 
-        // Period + time hover tip (redesign); no "Seek timeline" label on the slider.
+        // Period ticks + match-clock tip (redesign); snap-click seeks to period start.
         const timelineTrack = omtRoot ? omtRoot.querySelector('.omt-timeline-track') : null;
         if (timelineTrack) {
             timelineTrack.addEventListener('pointermove', (e) => {
@@ -150,6 +158,20 @@
             timelineTrack.addEventListener('pointerleave', () => {
                 if (typeof hideTimelineHoverTip === 'function') hideTimelineHoverTip();
             });
+            timelineTrack.addEventListener('pointerdown', (e) => {
+                const snap = (typeof getTimelineSnapAnchor === 'function') ? getTimelineSnapAnchor() : null;
+                if (!snap || typeof jumpToKickoff !== 'function') return;
+                // Refresh snap from this X in case move lagged the down.
+                if (typeof updateTimelineHoverTip === 'function') updateTimelineHoverTip(e.clientX);
+                const snap2 = getTimelineSnapAnchor();
+                if (!snap2) return;
+                e.preventDefault();
+                e.stopPropagation();
+                jumpToKickoff(snap2.key);
+                isDraggingTimeline = false;
+                if (timelineSlider) timelineSlider.blur();
+                resetControlsTimeout(false);
+            }, true);
         }
 
         // --- Video element events (AbortController so teardown detaches cleanly) ---
@@ -281,6 +303,7 @@
             updateControlsTipFlip();
             window.addEventListener('resize', updateControlsTipFlip, { passive: true });
         }
+        if (typeof wireOmtTipEdgeClamp === 'function') wireOmtTipEdgeClamp();
 
         // Match-clock click-to-edit is wired in customize.js (omtInstallClockClickEdit).
         // Fixed presets only — no drag.

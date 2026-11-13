@@ -1,8 +1,8 @@
 # Overlay MatchTimer — Tuesday manual test (~15 min)
 
-**Build:** v1.7.5 · **PC:** work machine · **Date:** ________ · **Tester:** ________
+**Build:** v1.7.6 · **PC:** work machine · **Date:** ________ · **Tester:** ________
 
-Install from the zip (`OverlayMatchTimer-v1.7.5.zip` → `Overlay-chrome-extension/`). Load unpacked in `chrome://extensions` (Developer mode). Do not use an old folder.
+Install from the zip (`OverlayMatchTimer-v1.7.6.zip` → `Overlay-chrome-extension/`). Load unpacked in `chrome://extensions` (Developer mode). Do not use an old folder.
 
 Mark each row: `[ ]` → `[x]` when pass. Use **Notes** for anything odd (screenshot path / console error).
 
@@ -12,9 +12,9 @@ Mark each row: `[ ]` → `[x]` when pass. Use **Notes** for anything odd (screen
 
 | # | Action | Expected | ✓ | Notes |
 |---|--------|----------|---|-------|
-| 0.1 | Load unpacked from zip’s `Overlay-chrome-extension` | Extension shows **1.7.5**, no errors on card | [ ] | |
+| 0.1 | Load unpacked from zip’s `Overlay-chrome-extension` | Extension shows **1.7.6**, no errors on card | [ ] | |
 | 0.2 | Check toolbar / extensions icon | Slash + **20:08** badge top-left (v2) on dark tile | [ ] | |
-| 0.3 | Open popup | Header: SP logo with **20:08** badge + OverlayMatchTimer; footer `v1.7.5` | [ ] | |
+| 0.3 | Open popup | Header: SP logo with **20:08** badge + OverlayMatchTimer; footer `v1.7.6` | [ ] | |
 | 0.4 | Customize tab | Sections: Match clock, Shortcuts, ShuttleXpress only — **no Kickoff sync** | [ ] | |
 
 ---
@@ -39,7 +39,8 @@ Open a live/VOD InplayIP match page with the overlay injected.
 | 1.12 | Hover volume slider / top-row icons | Tip fully visible (not clipped by card top); near top of player tips flip below | [ ] | |
 | 1.13 | Hover **chevron** collapsed / expanded | Tip **More controls** / **Less controls** | [ ] | |
 | 1.14 | Click **up** chevron (more) | Same glass card; extras in the **middle** (under top row); transport/speeds **stay put**; card top rises | [ ] | |
-| 1.15 | Hover timeline (with kick-offs set) | Bookmarks at period starts; tip shows period · **match clock** (mm:ss); **no** colour bands; **no** “Seek timeline” | [ ] | |
+| 1.15 | Hover timeline (with kick-offs set) | At rest: no markers. On hover: thin ticks + tiny `1st/2nd/…` below; tip above = period · match clock; near tick snaps + click seeks | [ ] | |
+| 1.15b | Hover Open file / Shuttle / Clear timer (X) tips | Fully visible, edge-clamped; Open file = `Open local or NAS video`; X = `Clear timer` | [ ] | |
 | 1.16 | Click ahead on timeline | Thumb **and** filled bar jump together; fill stays one colour in 2nd half | [ ] | |
 | 1.17 | Click empty video (not controls) | Toggles play/pause (local / Examino / InPlay) | [ ] | |
 | 1.18 | Press **H** | Still hides/shows controls completely (original hotkey) | [ ] | |

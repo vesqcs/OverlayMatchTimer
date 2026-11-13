@@ -86,7 +86,7 @@
 <!-- Timeline alone: full-width thin bar at the very bottom of the video -->
 <div id="omt-timeline-bar" class="omt-timeline-bar">
     <div class="omt-timeline-track">
-        <div id="omt-timeline-bookmarks" class="omt-timeline-bookmarks" aria-hidden="true"></div>
+        <div id="omt-timeline-period-ticks" class="omt-timeline-period-ticks" aria-hidden="true"></div>
         <input type="range" id="omt-timeline-slider" class="timeline-slider" min="0" max="100" value="0" step="0.01" aria-label="Timeline">
         <div id="omt-timeline-markers" aria-hidden="true"></div>
     </div>
@@ -106,7 +106,7 @@
                 <span class="omt-more-icon-collapsed">${omtIcon('chevrons-up', 16)}</span>
                 <span class="omt-more-icon-expanded" hidden>${omtIcon('chevrons-down', 16)}</span>
             </button>
-            <select id="omt-speed-select" class="top-select omt-tip"${tip('Playback speed (Z / C / X)')}>
+            <select id="omt-speed-select" class="top-select omt-tip"${tip('Speed (Z / C / X)')}>
                 <option value="0.25">0.25x</option>
                 <option value="0.5">0.50x</option>
                 <option value="0.75">0.75x</option>
@@ -134,7 +134,7 @@
     <div id="omt-more-panel" class="omt-more-panel" aria-hidden="true">
         <div id="omt-kickoff-bar" class="omt-more-block">
             <label class="omt-more-label" for="omt-half-select">Period</label>
-            <select id="omt-half-select" class="omt-tip" title="Match period"${tip('Match period')}>
+            <select id="omt-half-select" class="omt-tip" title="Match period"${tip('Period')}>
                 <option value="1">1st Half</option>
                 <option value="2">2nd Half</option>
                 <option value="custom1">Custom 1</option>
@@ -142,29 +142,29 @@
             </select>
             <div id="omt-custom-c1" class="omt-custom-minute" style="display:none;">
                 <label class="omt-more-label" for="omt-custom-minute-c1">Start min</label>
-                <input type="number" id="omt-custom-minute-c1" class="omt-tip" placeholder="e.g. 90" min="0"${tip('Custom 1 start minute')}>
+                <input type="number" id="omt-custom-minute-c1" class="omt-tip" placeholder="e.g. 90" min="0"${tip('Custom 1 start')}>
             </div>
             <div id="omt-custom-c2" class="omt-custom-minute" style="display:none;">
                 <label class="omt-more-label" for="omt-custom-minute-c2">Start min</label>
-                <input type="number" id="omt-custom-minute-c2" class="omt-tip" placeholder="e.g. 105" min="0"${tip('Custom 2 start minute')}>
+                <input type="number" id="omt-custom-minute-c2" class="omt-tip" placeholder="e.g. 105" min="0"${tip('Custom 2 start')}>
             </div>
-            <button type="button" class="btn-sync omt-tip" id="omt-btn-set-kickoff"${tip('Set kick-off at current frame (K)')}>Kick-off</button>
-            <button type="button" id="omt-btn-clear-timer" class="btn-clear-timer omt-tip"${tip('Clear match timer')}>${omtIcon('x', 13)}</button>
+            <button type="button" class="btn-sync omt-tip" id="omt-btn-set-kickoff"${tip('Set kick-off (K)')}>Kick-off</button>
+            <button type="button" id="omt-btn-clear-timer" class="btn-clear-timer omt-tip"${tip('Clear timer')}>${omtIcon('x', 13)}</button>
             <div class="omt-offset-nudge" aria-label="Kick-off offset">
-                <button type="button" class="omt-offset-btn omt-tip" id="omt-offset-m5"${tip('Offset −5 seconds')}>${omtIcon('chevrons-left', 12)}5</button>
-                <button type="button" class="omt-offset-btn omt-tip" id="omt-offset-m1"${tip('Offset −1 second')}>−1</button>
-                <button type="button" class="omt-offset-btn omt-tip" id="omt-offset-p1"${tip('Offset +1 second')}>+1</button>
-                <button type="button" class="omt-offset-btn omt-tip" id="omt-offset-p5"${tip('Offset +5 seconds')}>5${omtIcon('chevrons-right', 12)}</button>
+                <button type="button" class="omt-offset-btn omt-tip" id="omt-offset-m5"${tip('Offset −5s')}>${omtIcon('chevrons-left', 12)}5</button>
+                <button type="button" class="omt-offset-btn omt-tip" id="omt-offset-m1"${tip('Offset −1s')}>−1</button>
+                <button type="button" class="omt-offset-btn omt-tip" id="omt-offset-p1"${tip('Offset +1s')}>+1</button>
+                <button type="button" class="omt-offset-btn omt-tip" id="omt-offset-p5"${tip('Offset +5s')}>5${omtIcon('chevrons-right', 12)}</button>
             </div>
         </div>
 
         <div id="omt-examino-settings" class="omt-more-block omt-source-block" style="display:none;">
             <label class="omt-more-label" for="omt-examino-source">Source</label>
-            <select id="omt-examino-source" class="omt-tip"${tip('Examino stream source')}>
+            <select id="omt-examino-source" class="omt-tip"${tip('Stream source')}>
                 <option value="DVR">DVR</option>
                 <option value="VOD">VOD</option>
             </select>
-            <div class="omt-toggle-row omt-tip"${tip('Auto-switch to VOD when available')}>
+            <div class="omt-toggle-row omt-tip"${tip('Auto-switch to VOD')}>
                 <span>Auto VOD</span>
                 <label class="omt-switch" for="omt-examino-auto-vod">
                     <input type="checkbox" id="omt-examino-auto-vod" checked>
@@ -174,7 +174,7 @@
         </div>
 
         <div class="omt-more-block omt-shuttle-block">
-            <div class="omt-toggle-row omt-tip"${tip('Enable ShuttleXpress pairing on this browser')}>
+            <div class="omt-toggle-row omt-tip"${tip('ShuttleXpress on this browser')}>
                 <span>ShuttleXpress</span>
                 <label class="omt-switch" for="omt-shuttle-enable-toggle">
                     <input type="checkbox" id="omt-shuttle-enable-toggle">
@@ -269,6 +269,98 @@
         const flip = roomAbove < 36;
         controlsPanel.classList.toggle('omt-tips-flip-below', flip);
         omtRoot.classList.toggle('omt-tips-flip-below', flip);
+    }
+
+    /** Measure data-tip width for horizontal edge clamping. */
+    function measureOmtTipWidth(text) {
+        let probe = document.getElementById('omt-tip-measure');
+        if (!probe) {
+            probe = document.createElement('span');
+            probe.id = 'omt-tip-measure';
+            probe.setAttribute('aria-hidden', 'true');
+            probe.style.cssText = 'position:fixed;left:-9999px;top:0;font-size:11px;font-weight:500;' +
+                'font-family:system-ui,-apple-system,sans-serif;padding:4px 7px;white-space:nowrap;' +
+                'border:1px solid transparent;pointer-events:none;visibility:hidden;';
+            document.documentElement.appendChild(probe);
+        }
+        probe.textContent = text || '';
+        return probe.offsetWidth || 0;
+    }
+
+    /**
+     * Place a control tip with position:fixed so backdrop-filter on .glass-panel
+     * cannot clip it. Clamp inside #omt-root (and prefer staying over the card).
+     */
+    function clampOmtControlTip(el) {
+        if (!el || !omtRoot) return;
+        const text = el.getAttribute('data-tip');
+        if (!text) return;
+        const tipW = measureOmtTipWidth(text);
+        if (!tipW) return;
+        const tipH = 24;
+        const rootRect = omtRoot.getBoundingClientRect();
+        const panel = el.closest('#controls-panel');
+        const panelRect = panel ? panel.getBoundingClientRect() : rootRect;
+        const rect = el.getBoundingClientRect();
+        const pad = 8;
+        const flipBelow = !!(omtRoot.classList.contains('omt-tips-flip-below') ||
+            (panel && panel.classList.contains('omt-tips-flip-below')));
+        const inLeft = !!el.closest('.drag-side-left');
+        const inRight = !!el.closest('.drag-side-right');
+        let tipLeft;
+        if (inLeft) tipLeft = rect.left;
+        else if (inRight) tipLeft = rect.right - tipW;
+        else tipLeft = rect.left + rect.width / 2 - tipW / 2;
+        const minL = rootRect.left + pad;
+        const maxR = rootRect.right - pad;
+        // Prefer keeping tips over the card so they don’t look detached.
+        const preferL = Math.max(minL, panelRect.left + pad);
+        const preferR = Math.min(maxR, panelRect.right - pad);
+        if (tipLeft < preferL) tipLeft = preferL;
+        if (tipLeft + tipW > preferR) tipLeft = preferR - tipW;
+        if (tipLeft < minL) tipLeft = minL;
+        if (tipLeft + tipW > maxR) tipLeft = maxR - tipW;
+
+        let tipTop = flipBelow ? (rect.bottom + 8) : (rect.top - tipH - 8);
+        if (tipTop < rootRect.top + pad) tipTop = rect.bottom + 8;
+        if (tipTop + tipH > rootRect.bottom - pad) tipTop = Math.max(rootRect.top + pad, rect.top - tipH - 8);
+
+        el.classList.add('omt-tip-fixed');
+        el.style.setProperty('--omt-tip-left', Math.round(tipLeft) + 'px');
+        el.style.setProperty('--omt-tip-top', Math.round(tipTop) + 'px');
+        el.style.setProperty('--omt-tip-shift', '0px');
+    }
+
+    function clearOmtControlTip(el) {
+        if (!el) return;
+        el.classList.remove('omt-tip-fixed');
+        el.style.removeProperty('--omt-tip-left');
+        el.style.removeProperty('--omt-tip-top');
+        el.style.removeProperty('--omt-tip-shift');
+    }
+
+    function wireOmtTipEdgeClamp() {
+        if (!omtRoot || omtRoot.dataset.omtTipClamp === '1') return;
+        omtRoot.dataset.omtTipClamp = '1';
+        const onEnter = (e) => {
+            const t = e.target;
+            if (!t || !t.closest) return;
+            const el = t.closest('.omt-tip[data-tip]');
+            if (el && omtRoot.contains(el)) clampOmtControlTip(el);
+        };
+        const onLeave = (e) => {
+            const t = e.target;
+            if (!t || !t.closest) return;
+            const el = t.closest('.omt-tip[data-tip]');
+            if (!el || !omtRoot.contains(el)) return;
+            const next = e.relatedTarget;
+            if (next && el.contains(next)) return;
+            clearOmtControlTip(el);
+        };
+        omtRoot.addEventListener('pointerenter', onEnter, true);
+        omtRoot.addEventListener('pointerleave', onLeave, true);
+        omtRoot.addEventListener('focusin', onEnter, true);
+        omtRoot.addEventListener('focusout', onLeave, true);
     }
 
     function setMorePanelOpen(open) {

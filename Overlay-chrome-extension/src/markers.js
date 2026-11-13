@@ -1,13 +1,26 @@
-/* Kick-off / period bookmarks on the HUD timeline (redesign chrome). */
+/* Period ticks + match-clock hover tip on the HUD timeline (redesign chrome). */
     /* =========================================================
-       11. TIMELINE BOOKMARKS + PERIOD HOVER
+       11. TIMELINE PERIOD TICKS + HOVER TIP
        ========================================================= */
+    /** Full name for the floating tip. */
     function periodLabelForKey(key) {
         return ({
             '1': '1st Half',
             '2': '2nd Half',
             'custom1': 'ET1',
-            'custom2': 'ET2'
+            'custom2': 'ET2',
+            'pen': 'Pen'
+        })[key] || '';
+    }
+
+    /** Tiny label under the track (hover only). */
+    function periodShortLabelForKey(key) {
+        return ({
+            '1': '1st',
+            '2': '2nd',
+            'custom1': 'ET1',
+            'custom2': 'ET2',
+            'pen': 'Pen'
         })[key] || '';
     }
 
@@ -91,16 +104,23 @@
         };
     }
 
+    /** Active snap target while hovering near a period tick (~8px). */
+    let timelineSnapAnchor = null;
+
+    function getTimelineSnapAnchor() {
+        return timelineSnapAnchor;
+    }
+
     function atualizarMarcadores() {
         const markerContainer = q('omt-timeline-markers');
-        const bookmarkContainer = q('omt-timeline-bookmarks');
+        const tickContainer = q('omt-timeline-period-ticks') || q('omt-timeline-bookmarks');
         const btnK1 = q('omt-jump-k1');
         const btnK2 = q('omt-jump-k2');
         const btnKC1 = q('omt-jump-kc1');
         const btnKC2 = q('omt-jump-kc2');
 
         if (markerContainer) markerContainer.innerHTML = '';
-        if (bookmarkContainer) bookmarkContainer.innerHTML = '';
+        if (tickContainer) tickContainer.innerHTML = '';
 
         const duration = site.effectiveDuration(vid);
         if (!duration || !isFinite(duration)) {
@@ -111,7 +131,7 @@
         const btnMap = { '1': btnK1, '2': btnK2, 'custom1': btnKC1, 'custom2': btnKC2 };
         Object.values(btnMap).forEach((b) => { if (b) b.style.display = 'none'; });
 
-        if (!bookmarkContainer || !timelineSlider) return;
+        if (!tickContainer || !timelineSlider) return;
 
         const minVal = parseFloat(timelineSlider.min) || 0;
         const maxVal = parseFloat(timelineSlider.max) || duration;
@@ -119,32 +139,29 @@
         if (range <= 0) return;
 
         const anchors = collectPeriodAnchors().filter((a) => a.val >= minVal && a.val <= maxVal);
-        const icon = (typeof omtIcon === 'function') ? omtIcon('bookmark', 11) : '';
 
         anchors.forEach((a) => {
             const pct = ((a.val - minVal) / range) * 100;
-            const label = periodLabelForKey(a.key);
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'omt-timeline-bookmark';
-            btn.style.left = pct + '%';
-            btn.setAttribute('data-period', label);
-            btn.setAttribute('data-half', a.key);
-            btn.setAttribute('aria-label', 'Seek to ' + label);
-            btn.innerHTML = icon + '<span class="omt-bm-label">' + label + '</span>';
-            btn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                jumpToKickoff(a.key);
-            });
-            bookmarkContainer.appendChild(btn);
+            const short = periodShortLabelForKey(a.key);
+            const full = periodLabelForKey(a.key);
+            const el = document.createElement('div');
+            el.className = 'omt-period-tick';
+            el.style.left = pct + '%';
+            el.setAttribute('data-half', a.key);
+            el.setAttribute('data-period', full);
+            el.setAttribute('data-t', String(a.val));
+            el.innerHTML =
+                '<span class="omt-period-tick-mark" aria-hidden="true"></span>' +
+                '<span class="omt-period-tick-label">' + short + '</span>';
+            tickContainer.appendChild(el);
         });
-        bookmarkContainer.setAttribute('aria-hidden', anchors.length ? 'false' : 'true');
+        tickContainer.setAttribute('aria-hidden', anchors.length ? 'false' : 'true');
+        timelineSnapAnchor = null;
     }
 
     function jumpToKickoff(half) {
         const map = { '1': kickoff1, '2': kickoff2, 'custom1': kickoffC1, 'custom2': kickoffC2 };
-        const labels = { '1': '1st Half', '2': '2nd Half', 'custom1': 'Custom 1', 'custom2': 'Custom 2' };
+        const labels = { '1': '1st Half', '2': '2nd Half', 'custom1': 'Custom 1', 'custom2': 'Custom 2', 'pen': 'Pen' };
         const raw = map[half];
         if (raw == null) return;
         const t = getVideoTimeForPdt(raw);
@@ -158,11 +175,58 @@
                 }
             }
             seekTo(t);
-            mostrarOSD('Jumped to ' + labels[half] + ' Kickoff');
+            mostrarOSD('Jumped to ' + (labels[half] || half) + ' Kickoff');
         }
     }
 
-    /** Redesign-only: period + match-clock tip under the pointer on the timeline. */
+    /** Place the single tip above the scrubber; clamp horizontally inside #omt-root. */
+    function placeTimelineHoverTip(leftPx) {
+        const tip = q('omt-timeline-hover-tip');
+        const track = omtRoot ? omtRoot.querySelector('.omt-timeline-track') : null;
+        const bar = q('omt-timeline-bar');
+        if (!tip || !track || !bar || !omtRoot) return;
+        const trackRect = track.getBoundingClientRect();
+        const barRect = bar.getBoundingClientRect();
+        const rootRect = omtRoot.getBoundingClientRect();
+        tip.hidden = false;
+        bar.classList.add('is-timeline-hover');
+        // Lift bar above the floating card while the tip is shown.
+        bar.style.zIndex = '55';
+
+        // Tip sits above the track (labels are below) — inside the bar’s top padding.
+        tip.style.bottom = (barRect.bottom - trackRect.top + 10) + 'px';
+        tip.style.top = 'auto';
+        tip.style.transform = 'translateX(-50%)';
+
+        // Horizontal clamp inside the player root.
+        tip.style.left = leftPx + 'px';
+        // Force layout then clamp.
+        const tipRect = tip.getBoundingClientRect();
+        const pad = 6;
+        let shift = 0;
+        if (tipRect.left < rootRect.left + pad) shift = (rootRect.left + pad) - tipRect.left;
+        if (tipRect.right + shift > rootRect.right - pad) {
+            shift = (rootRect.right - pad) - tipRect.right;
+        }
+        if (shift) {
+            tip.style.left = (leftPx + shift) + 'px';
+        }
+    }
+
+    function clearPeriodTickSnap() {
+        const tickContainer = q('omt-timeline-period-ticks') || q('omt-timeline-bookmarks');
+        if (tickContainer) {
+            tickContainer.querySelectorAll('.omt-period-tick.is-snap').forEach((el) => {
+                el.classList.remove('is-snap');
+            });
+        }
+        timelineSnapAnchor = null;
+    }
+
+    /**
+     * Redesign-only: period + match-clock tip. Within ~8px of a tick, snap to that
+     * period start (highlight tick; click seeks exactly there).
+     */
     function updateTimelineHoverTip(clientX) {
         const tip = q('omt-timeline-hover-tip');
         const track = omtRoot ? omtRoot.querySelector('.omt-timeline-track') : null;
@@ -171,22 +235,49 @@
         const trackRect = track.getBoundingClientRect();
         const barRect = bar.getBoundingClientRect();
         if (trackRect.width <= 0) return;
-        const ratio = Math.max(0, Math.min(1, (clientX - trackRect.left) / trackRect.width));
+
         const min = parseFloat(timelineSlider.min) || 0;
         const max = parseFloat(timelineSlider.max) || 0;
-        const t = min + ratio * (max - min);
-        const info = matchClockAtVideoTime(t);
+        const range = max - min;
+        if (range <= 0) return;
+
+        const px = clientX - trackRect.left;
+        const anchors = collectPeriodAnchors().filter((a) => a.val >= min && a.val <= max);
+
+        clearPeriodTickSnap();
+        const SNAP_PX = 8;
+        let nearest = null;
+        let nearestDist = Infinity;
+        let nearestPct = 0;
+        anchors.forEach((a) => {
+            const ax = ((a.val - min) / range) * trackRect.width;
+            const d = Math.abs(px - ax);
+            if (d < nearestDist) {
+                nearestDist = d;
+                nearest = a;
+                nearestPct = ax;
+            }
+        });
+
+        let tipT;
+        let leftPx;
+        if (nearest && nearestDist <= SNAP_PX) {
+            timelineSnapAnchor = nearest;
+            tipT = nearest.val;
+            leftPx = (trackRect.left - barRect.left) + nearestPct;
+            const tickEl = bar.querySelector('.omt-period-tick[data-half="' + nearest.key + '"]');
+            if (tickEl) tickEl.classList.add('is-snap');
+        } else {
+            const ratio = Math.max(0, Math.min(1, px / trackRect.width));
+            tipT = min + ratio * range;
+            leftPx = (trackRect.left - barRect.left) + ratio * trackRect.width;
+        }
+
+        const info = matchClockAtVideoTime(tipT);
         if (info.period && info.clock) tip.textContent = info.period + ' · ' + info.clock;
         else if (info.clock) tip.textContent = info.clock;
-        else tip.textContent = (typeof formatarTempoVideo === 'function') ? formatarTempoVideo(t) : '';
-        tip.hidden = false;
-        bar.classList.add('is-timeline-hover');
-        // Lift bar above the floating card while the tip is shown (tip is pointer-events:none).
-        bar.style.zIndex = '55';
-        const leftPx = (trackRect.left - barRect.left) + ratio * trackRect.width;
-        tip.style.left = leftPx + 'px';
-        tip.style.bottom = (barRect.bottom - trackRect.top + 6) + 'px';
-        tip.style.top = 'auto';
+        else tip.textContent = (typeof formatarTempoVideo === 'function') ? formatarTempoVideo(tipT) : '';
+        placeTimelineHoverTip(leftPx);
     }
 
     function hideTimelineHoverTip() {
@@ -197,4 +288,5 @@
             bar.style.zIndex = '';
             bar.classList.remove('is-timeline-hover');
         }
+        clearPeriodTickSnap();
     }

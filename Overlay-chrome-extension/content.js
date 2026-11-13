@@ -875,7 +875,7 @@
 <!-- Timeline alone: full-width thin bar at the very bottom of the video -->
 <div id="omt-timeline-bar" class="omt-timeline-bar">
     <div class="omt-timeline-track">
-        <div id="omt-timeline-bookmarks" class="omt-timeline-bookmarks" aria-hidden="true"></div>
+        <div id="omt-timeline-period-ticks" class="omt-timeline-period-ticks" aria-hidden="true"></div>
         <input type="range" id="omt-timeline-slider" class="timeline-slider" min="0" max="100" value="0" step="0.01" aria-label="Timeline">
         <div id="omt-timeline-markers" aria-hidden="true"></div>
     </div>
@@ -895,7 +895,7 @@
                 <span class="omt-more-icon-collapsed">${omtIcon('chevrons-up', 16)}</span>
                 <span class="omt-more-icon-expanded" hidden>${omtIcon('chevrons-down', 16)}</span>
             </button>
-            <select id="omt-speed-select" class="top-select omt-tip"${tip('Playback speed (Z / C / X)')}>
+            <select id="omt-speed-select" class="top-select omt-tip"${tip('Speed (Z / C / X)')}>
                 <option value="0.25">0.25x</option>
                 <option value="0.5">0.50x</option>
                 <option value="0.75">0.75x</option>
@@ -923,7 +923,7 @@
     <div id="omt-more-panel" class="omt-more-panel" aria-hidden="true">
         <div id="omt-kickoff-bar" class="omt-more-block">
             <label class="omt-more-label" for="omt-half-select">Period</label>
-            <select id="omt-half-select" class="omt-tip" title="Match period"${tip('Match period')}>
+            <select id="omt-half-select" class="omt-tip" title="Match period"${tip('Period')}>
                 <option value="1">1st Half</option>
                 <option value="2">2nd Half</option>
                 <option value="custom1">Custom 1</option>
@@ -931,29 +931,29 @@
             </select>
             <div id="omt-custom-c1" class="omt-custom-minute" style="display:none;">
                 <label class="omt-more-label" for="omt-custom-minute-c1">Start min</label>
-                <input type="number" id="omt-custom-minute-c1" class="omt-tip" placeholder="e.g. 90" min="0"${tip('Custom 1 start minute')}>
+                <input type="number" id="omt-custom-minute-c1" class="omt-tip" placeholder="e.g. 90" min="0"${tip('Custom 1 start')}>
             </div>
             <div id="omt-custom-c2" class="omt-custom-minute" style="display:none;">
                 <label class="omt-more-label" for="omt-custom-minute-c2">Start min</label>
-                <input type="number" id="omt-custom-minute-c2" class="omt-tip" placeholder="e.g. 105" min="0"${tip('Custom 2 start minute')}>
+                <input type="number" id="omt-custom-minute-c2" class="omt-tip" placeholder="e.g. 105" min="0"${tip('Custom 2 start')}>
             </div>
-            <button type="button" class="btn-sync omt-tip" id="omt-btn-set-kickoff"${tip('Set kick-off at current frame (K)')}>Kick-off</button>
-            <button type="button" id="omt-btn-clear-timer" class="btn-clear-timer omt-tip"${tip('Clear match timer')}>${omtIcon('x', 13)}</button>
+            <button type="button" class="btn-sync omt-tip" id="omt-btn-set-kickoff"${tip('Set kick-off (K)')}>Kick-off</button>
+            <button type="button" id="omt-btn-clear-timer" class="btn-clear-timer omt-tip"${tip('Clear timer')}>${omtIcon('x', 13)}</button>
             <div class="omt-offset-nudge" aria-label="Kick-off offset">
-                <button type="button" class="omt-offset-btn omt-tip" id="omt-offset-m5"${tip('Offset −5 seconds')}>${omtIcon('chevrons-left', 12)}5</button>
-                <button type="button" class="omt-offset-btn omt-tip" id="omt-offset-m1"${tip('Offset −1 second')}>−1</button>
-                <button type="button" class="omt-offset-btn omt-tip" id="omt-offset-p1"${tip('Offset +1 second')}>+1</button>
-                <button type="button" class="omt-offset-btn omt-tip" id="omt-offset-p5"${tip('Offset +5 seconds')}>5${omtIcon('chevrons-right', 12)}</button>
+                <button type="button" class="omt-offset-btn omt-tip" id="omt-offset-m5"${tip('Offset −5s')}>${omtIcon('chevrons-left', 12)}5</button>
+                <button type="button" class="omt-offset-btn omt-tip" id="omt-offset-m1"${tip('Offset −1s')}>−1</button>
+                <button type="button" class="omt-offset-btn omt-tip" id="omt-offset-p1"${tip('Offset +1s')}>+1</button>
+                <button type="button" class="omt-offset-btn omt-tip" id="omt-offset-p5"${tip('Offset +5s')}>5${omtIcon('chevrons-right', 12)}</button>
             </div>
         </div>
 
         <div id="omt-examino-settings" class="omt-more-block omt-source-block" style="display:none;">
             <label class="omt-more-label" for="omt-examino-source">Source</label>
-            <select id="omt-examino-source" class="omt-tip"${tip('Examino stream source')}>
+            <select id="omt-examino-source" class="omt-tip"${tip('Stream source')}>
                 <option value="DVR">DVR</option>
                 <option value="VOD">VOD</option>
             </select>
-            <div class="omt-toggle-row omt-tip"${tip('Auto-switch to VOD when available')}>
+            <div class="omt-toggle-row omt-tip"${tip('Auto-switch to VOD')}>
                 <span>Auto VOD</span>
                 <label class="omt-switch" for="omt-examino-auto-vod">
                     <input type="checkbox" id="omt-examino-auto-vod" checked>
@@ -963,7 +963,7 @@
         </div>
 
         <div class="omt-more-block omt-shuttle-block">
-            <div class="omt-toggle-row omt-tip"${tip('Enable ShuttleXpress pairing on this browser')}>
+            <div class="omt-toggle-row omt-tip"${tip('ShuttleXpress on this browser')}>
                 <span>ShuttleXpress</span>
                 <label class="omt-switch" for="omt-shuttle-enable-toggle">
                     <input type="checkbox" id="omt-shuttle-enable-toggle">
@@ -1058,6 +1058,98 @@
         const flip = roomAbove < 36;
         controlsPanel.classList.toggle('omt-tips-flip-below', flip);
         omtRoot.classList.toggle('omt-tips-flip-below', flip);
+    }
+
+    /** Measure data-tip width for horizontal edge clamping. */
+    function measureOmtTipWidth(text) {
+        let probe = document.getElementById('omt-tip-measure');
+        if (!probe) {
+            probe = document.createElement('span');
+            probe.id = 'omt-tip-measure';
+            probe.setAttribute('aria-hidden', 'true');
+            probe.style.cssText = 'position:fixed;left:-9999px;top:0;font-size:11px;font-weight:500;' +
+                'font-family:system-ui,-apple-system,sans-serif;padding:4px 7px;white-space:nowrap;' +
+                'border:1px solid transparent;pointer-events:none;visibility:hidden;';
+            document.documentElement.appendChild(probe);
+        }
+        probe.textContent = text || '';
+        return probe.offsetWidth || 0;
+    }
+
+    /**
+     * Place a control tip with position:fixed so backdrop-filter on .glass-panel
+     * cannot clip it. Clamp inside #omt-root (and prefer staying over the card).
+     */
+    function clampOmtControlTip(el) {
+        if (!el || !omtRoot) return;
+        const text = el.getAttribute('data-tip');
+        if (!text) return;
+        const tipW = measureOmtTipWidth(text);
+        if (!tipW) return;
+        const tipH = 24;
+        const rootRect = omtRoot.getBoundingClientRect();
+        const panel = el.closest('#controls-panel');
+        const panelRect = panel ? panel.getBoundingClientRect() : rootRect;
+        const rect = el.getBoundingClientRect();
+        const pad = 8;
+        const flipBelow = !!(omtRoot.classList.contains('omt-tips-flip-below') ||
+            (panel && panel.classList.contains('omt-tips-flip-below')));
+        const inLeft = !!el.closest('.drag-side-left');
+        const inRight = !!el.closest('.drag-side-right');
+        let tipLeft;
+        if (inLeft) tipLeft = rect.left;
+        else if (inRight) tipLeft = rect.right - tipW;
+        else tipLeft = rect.left + rect.width / 2 - tipW / 2;
+        const minL = rootRect.left + pad;
+        const maxR = rootRect.right - pad;
+        // Prefer keeping tips over the card so they don’t look detached.
+        const preferL = Math.max(minL, panelRect.left + pad);
+        const preferR = Math.min(maxR, panelRect.right - pad);
+        if (tipLeft < preferL) tipLeft = preferL;
+        if (tipLeft + tipW > preferR) tipLeft = preferR - tipW;
+        if (tipLeft < minL) tipLeft = minL;
+        if (tipLeft + tipW > maxR) tipLeft = maxR - tipW;
+
+        let tipTop = flipBelow ? (rect.bottom + 8) : (rect.top - tipH - 8);
+        if (tipTop < rootRect.top + pad) tipTop = rect.bottom + 8;
+        if (tipTop + tipH > rootRect.bottom - pad) tipTop = Math.max(rootRect.top + pad, rect.top - tipH - 8);
+
+        el.classList.add('omt-tip-fixed');
+        el.style.setProperty('--omt-tip-left', Math.round(tipLeft) + 'px');
+        el.style.setProperty('--omt-tip-top', Math.round(tipTop) + 'px');
+        el.style.setProperty('--omt-tip-shift', '0px');
+    }
+
+    function clearOmtControlTip(el) {
+        if (!el) return;
+        el.classList.remove('omt-tip-fixed');
+        el.style.removeProperty('--omt-tip-left');
+        el.style.removeProperty('--omt-tip-top');
+        el.style.removeProperty('--omt-tip-shift');
+    }
+
+    function wireOmtTipEdgeClamp() {
+        if (!omtRoot || omtRoot.dataset.omtTipClamp === '1') return;
+        omtRoot.dataset.omtTipClamp = '1';
+        const onEnter = (e) => {
+            const t = e.target;
+            if (!t || !t.closest) return;
+            const el = t.closest('.omt-tip[data-tip]');
+            if (el && omtRoot.contains(el)) clampOmtControlTip(el);
+        };
+        const onLeave = (e) => {
+            const t = e.target;
+            if (!t || !t.closest) return;
+            const el = t.closest('.omt-tip[data-tip]');
+            if (!el || !omtRoot.contains(el)) return;
+            const next = e.relatedTarget;
+            if (next && el.contains(next)) return;
+            clearOmtControlTip(el);
+        };
+        omtRoot.addEventListener('pointerenter', onEnter, true);
+        omtRoot.addEventListener('pointerleave', onLeave, true);
+        omtRoot.addEventListener('focusin', onEnter, true);
+        omtRoot.addEventListener('focusout', onLeave, true);
     }
 
     function setMorePanelOpen(open) {
@@ -1235,6 +1327,14 @@
             if (typeof paintTimelineScrubberProgress === 'function') paintTimelineScrubberProgress(true);
         });
         timelineSlider.addEventListener('change', function () {
+            const snap = (typeof getTimelineSnapAnchor === 'function') ? getTimelineSnapAnchor() : null;
+            if (snap && typeof jumpToKickoff === 'function') {
+                jumpToKickoff(snap.key);
+                isDraggingTimeline = false;
+                this.blur();
+                resetControlsTimeout(false);
+                return;
+            }
             const t = parseFloat(this.value);
             if (typeof paintTimelineScrubberProgress === 'function') paintTimelineScrubberProgress(true);
             seekTo(t);
@@ -1243,7 +1343,7 @@
             resetControlsTimeout(false);
         });
 
-        // Period + time hover tip (redesign); no "Seek timeline" label on the slider.
+        // Period ticks + match-clock tip (redesign); snap-click seeks to period start.
         const timelineTrack = omtRoot ? omtRoot.querySelector('.omt-timeline-track') : null;
         if (timelineTrack) {
             timelineTrack.addEventListener('pointermove', (e) => {
@@ -1252,6 +1352,20 @@
             timelineTrack.addEventListener('pointerleave', () => {
                 if (typeof hideTimelineHoverTip === 'function') hideTimelineHoverTip();
             });
+            timelineTrack.addEventListener('pointerdown', (e) => {
+                const snap = (typeof getTimelineSnapAnchor === 'function') ? getTimelineSnapAnchor() : null;
+                if (!snap || typeof jumpToKickoff !== 'function') return;
+                // Refresh snap from this X in case move lagged the down.
+                if (typeof updateTimelineHoverTip === 'function') updateTimelineHoverTip(e.clientX);
+                const snap2 = getTimelineSnapAnchor();
+                if (!snap2) return;
+                e.preventDefault();
+                e.stopPropagation();
+                jumpToKickoff(snap2.key);
+                isDraggingTimeline = false;
+                if (timelineSlider) timelineSlider.blur();
+                resetControlsTimeout(false);
+            }, true);
         }
 
         // --- Video element events (AbortController so teardown detaches cleanly) ---
@@ -1383,6 +1497,7 @@
             updateControlsTipFlip();
             window.addEventListener('resize', updateControlsTipFlip, { passive: true });
         }
+        if (typeof wireOmtTipEdgeClamp === 'function') wireOmtTipEdgeClamp();
 
         // Match-clock click-to-edit is wired in customize.js (omtInstallClockClickEdit).
         // Fixed presets only — no drag.
@@ -2075,16 +2190,29 @@
         }, 200);
     }
 
-/* Kick-off / period bookmarks on the HUD timeline (redesign chrome). */
+/* Period ticks + match-clock hover tip on the HUD timeline (redesign chrome). */
     /* =========================================================
-       11. TIMELINE BOOKMARKS + PERIOD HOVER
+       11. TIMELINE PERIOD TICKS + HOVER TIP
        ========================================================= */
+    /** Full name for the floating tip. */
     function periodLabelForKey(key) {
         return ({
             '1': '1st Half',
             '2': '2nd Half',
             'custom1': 'ET1',
-            'custom2': 'ET2'
+            'custom2': 'ET2',
+            'pen': 'Pen'
+        })[key] || '';
+    }
+
+    /** Tiny label under the track (hover only). */
+    function periodShortLabelForKey(key) {
+        return ({
+            '1': '1st',
+            '2': '2nd',
+            'custom1': 'ET1',
+            'custom2': 'ET2',
+            'pen': 'Pen'
         })[key] || '';
     }
 
@@ -2168,16 +2296,23 @@
         };
     }
 
+    /** Active snap target while hovering near a period tick (~8px). */
+    let timelineSnapAnchor = null;
+
+    function getTimelineSnapAnchor() {
+        return timelineSnapAnchor;
+    }
+
     function atualizarMarcadores() {
         const markerContainer = q('omt-timeline-markers');
-        const bookmarkContainer = q('omt-timeline-bookmarks');
+        const tickContainer = q('omt-timeline-period-ticks') || q('omt-timeline-bookmarks');
         const btnK1 = q('omt-jump-k1');
         const btnK2 = q('omt-jump-k2');
         const btnKC1 = q('omt-jump-kc1');
         const btnKC2 = q('omt-jump-kc2');
 
         if (markerContainer) markerContainer.innerHTML = '';
-        if (bookmarkContainer) bookmarkContainer.innerHTML = '';
+        if (tickContainer) tickContainer.innerHTML = '';
 
         const duration = site.effectiveDuration(vid);
         if (!duration || !isFinite(duration)) {
@@ -2188,7 +2323,7 @@
         const btnMap = { '1': btnK1, '2': btnK2, 'custom1': btnKC1, 'custom2': btnKC2 };
         Object.values(btnMap).forEach((b) => { if (b) b.style.display = 'none'; });
 
-        if (!bookmarkContainer || !timelineSlider) return;
+        if (!tickContainer || !timelineSlider) return;
 
         const minVal = parseFloat(timelineSlider.min) || 0;
         const maxVal = parseFloat(timelineSlider.max) || duration;
@@ -2196,32 +2331,29 @@
         if (range <= 0) return;
 
         const anchors = collectPeriodAnchors().filter((a) => a.val >= minVal && a.val <= maxVal);
-        const icon = (typeof omtIcon === 'function') ? omtIcon('bookmark', 11) : '';
 
         anchors.forEach((a) => {
             const pct = ((a.val - minVal) / range) * 100;
-            const label = periodLabelForKey(a.key);
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'omt-timeline-bookmark';
-            btn.style.left = pct + '%';
-            btn.setAttribute('data-period', label);
-            btn.setAttribute('data-half', a.key);
-            btn.setAttribute('aria-label', 'Seek to ' + label);
-            btn.innerHTML = icon + '<span class="omt-bm-label">' + label + '</span>';
-            btn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                jumpToKickoff(a.key);
-            });
-            bookmarkContainer.appendChild(btn);
+            const short = periodShortLabelForKey(a.key);
+            const full = periodLabelForKey(a.key);
+            const el = document.createElement('div');
+            el.className = 'omt-period-tick';
+            el.style.left = pct + '%';
+            el.setAttribute('data-half', a.key);
+            el.setAttribute('data-period', full);
+            el.setAttribute('data-t', String(a.val));
+            el.innerHTML =
+                '<span class="omt-period-tick-mark" aria-hidden="true"></span>' +
+                '<span class="omt-period-tick-label">' + short + '</span>';
+            tickContainer.appendChild(el);
         });
-        bookmarkContainer.setAttribute('aria-hidden', anchors.length ? 'false' : 'true');
+        tickContainer.setAttribute('aria-hidden', anchors.length ? 'false' : 'true');
+        timelineSnapAnchor = null;
     }
 
     function jumpToKickoff(half) {
         const map = { '1': kickoff1, '2': kickoff2, 'custom1': kickoffC1, 'custom2': kickoffC2 };
-        const labels = { '1': '1st Half', '2': '2nd Half', 'custom1': 'Custom 1', 'custom2': 'Custom 2' };
+        const labels = { '1': '1st Half', '2': '2nd Half', 'custom1': 'Custom 1', 'custom2': 'Custom 2', 'pen': 'Pen' };
         const raw = map[half];
         if (raw == null) return;
         const t = getVideoTimeForPdt(raw);
@@ -2235,11 +2367,58 @@
                 }
             }
             seekTo(t);
-            mostrarOSD('Jumped to ' + labels[half] + ' Kickoff');
+            mostrarOSD('Jumped to ' + (labels[half] || half) + ' Kickoff');
         }
     }
 
-    /** Redesign-only: period + match-clock tip under the pointer on the timeline. */
+    /** Place the single tip above the scrubber; clamp horizontally inside #omt-root. */
+    function placeTimelineHoverTip(leftPx) {
+        const tip = q('omt-timeline-hover-tip');
+        const track = omtRoot ? omtRoot.querySelector('.omt-timeline-track') : null;
+        const bar = q('omt-timeline-bar');
+        if (!tip || !track || !bar || !omtRoot) return;
+        const trackRect = track.getBoundingClientRect();
+        const barRect = bar.getBoundingClientRect();
+        const rootRect = omtRoot.getBoundingClientRect();
+        tip.hidden = false;
+        bar.classList.add('is-timeline-hover');
+        // Lift bar above the floating card while the tip is shown.
+        bar.style.zIndex = '55';
+
+        // Tip sits above the track (labels are below) — inside the bar’s top padding.
+        tip.style.bottom = (barRect.bottom - trackRect.top + 10) + 'px';
+        tip.style.top = 'auto';
+        tip.style.transform = 'translateX(-50%)';
+
+        // Horizontal clamp inside the player root.
+        tip.style.left = leftPx + 'px';
+        // Force layout then clamp.
+        const tipRect = tip.getBoundingClientRect();
+        const pad = 6;
+        let shift = 0;
+        if (tipRect.left < rootRect.left + pad) shift = (rootRect.left + pad) - tipRect.left;
+        if (tipRect.right + shift > rootRect.right - pad) {
+            shift = (rootRect.right - pad) - tipRect.right;
+        }
+        if (shift) {
+            tip.style.left = (leftPx + shift) + 'px';
+        }
+    }
+
+    function clearPeriodTickSnap() {
+        const tickContainer = q('omt-timeline-period-ticks') || q('omt-timeline-bookmarks');
+        if (tickContainer) {
+            tickContainer.querySelectorAll('.omt-period-tick.is-snap').forEach((el) => {
+                el.classList.remove('is-snap');
+            });
+        }
+        timelineSnapAnchor = null;
+    }
+
+    /**
+     * Redesign-only: period + match-clock tip. Within ~8px of a tick, snap to that
+     * period start (highlight tick; click seeks exactly there).
+     */
     function updateTimelineHoverTip(clientX) {
         const tip = q('omt-timeline-hover-tip');
         const track = omtRoot ? omtRoot.querySelector('.omt-timeline-track') : null;
@@ -2248,22 +2427,49 @@
         const trackRect = track.getBoundingClientRect();
         const barRect = bar.getBoundingClientRect();
         if (trackRect.width <= 0) return;
-        const ratio = Math.max(0, Math.min(1, (clientX - trackRect.left) / trackRect.width));
+
         const min = parseFloat(timelineSlider.min) || 0;
         const max = parseFloat(timelineSlider.max) || 0;
-        const t = min + ratio * (max - min);
-        const info = matchClockAtVideoTime(t);
+        const range = max - min;
+        if (range <= 0) return;
+
+        const px = clientX - trackRect.left;
+        const anchors = collectPeriodAnchors().filter((a) => a.val >= min && a.val <= max);
+
+        clearPeriodTickSnap();
+        const SNAP_PX = 8;
+        let nearest = null;
+        let nearestDist = Infinity;
+        let nearestPct = 0;
+        anchors.forEach((a) => {
+            const ax = ((a.val - min) / range) * trackRect.width;
+            const d = Math.abs(px - ax);
+            if (d < nearestDist) {
+                nearestDist = d;
+                nearest = a;
+                nearestPct = ax;
+            }
+        });
+
+        let tipT;
+        let leftPx;
+        if (nearest && nearestDist <= SNAP_PX) {
+            timelineSnapAnchor = nearest;
+            tipT = nearest.val;
+            leftPx = (trackRect.left - barRect.left) + nearestPct;
+            const tickEl = bar.querySelector('.omt-period-tick[data-half="' + nearest.key + '"]');
+            if (tickEl) tickEl.classList.add('is-snap');
+        } else {
+            const ratio = Math.max(0, Math.min(1, px / trackRect.width));
+            tipT = min + ratio * range;
+            leftPx = (trackRect.left - barRect.left) + ratio * trackRect.width;
+        }
+
+        const info = matchClockAtVideoTime(tipT);
         if (info.period && info.clock) tip.textContent = info.period + ' · ' + info.clock;
         else if (info.clock) tip.textContent = info.clock;
-        else tip.textContent = (typeof formatarTempoVideo === 'function') ? formatarTempoVideo(t) : '';
-        tip.hidden = false;
-        bar.classList.add('is-timeline-hover');
-        // Lift bar above the floating card while the tip is shown (tip is pointer-events:none).
-        bar.style.zIndex = '55';
-        const leftPx = (trackRect.left - barRect.left) + ratio * trackRect.width;
-        tip.style.left = leftPx + 'px';
-        tip.style.bottom = (barRect.bottom - trackRect.top + 6) + 'px';
-        tip.style.top = 'auto';
+        else tip.textContent = (typeof formatarTempoVideo === 'function') ? formatarTempoVideo(tipT) : '';
+        placeTimelineHoverTip(leftPx);
     }
 
     function hideTimelineHoverTip() {
@@ -2274,6 +2480,7 @@
             bar.style.zIndex = '';
             bar.classList.remove('is-timeline-hover');
         }
+        clearPeriodTickSnap();
     }
 
 /* Transport: seek, play/pause, frames, speed, LIVE, mute, fullscreen. */
@@ -4804,7 +5011,7 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         const block = document.createElement('div');
         block.className = 'omt-more-block omt-local-file-block';
         block.innerHTML =
-            '<button type="button" id="omt-local-open-file" class="omt-local-open-file-btn omt-tip" data-tip="Open a local or NAS-mapped video file">' +
+            '<button type="button" id="omt-local-open-file" class="omt-local-open-file-btn omt-tip" data-tip="Open local or NAS video">' +
             omtIcon('folder-open', 13) +
             '<span class="omt-btn-label">Open file</span></button>' +
             '<span id="omt-local-filename" class="omt-local-filename">No file loaded</span>';
