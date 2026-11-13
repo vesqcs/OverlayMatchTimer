@@ -6,10 +6,12 @@
         autoVod: 'omtAutoSwitchVod',
         shuttle: 'shuttleXpressEnabled',
         autoPauseOnBlur: 'omtAutoPauseOnBlur',
-        // Personalizar keys reserved (popup writes; content ignores until implemented)
         clockPos: 'omtClockPosition',
         clockSize: 'omtClockSize',
-        clockShape: 'omtClockShape'
+        clockShape: 'omtClockShape',
+        clockCustom: 'omtClockCustomOffset',
+        hotkeys: 'omtHotkeys',
+        shuttlePrefs: 'omtShuttlePrefs'
     };
 
     function storageGetAutoPauseOnBlur() {
@@ -91,6 +93,13 @@
         } catch (_) {}
     }
 
+    function omtMirrorJsonKey(key, value) {
+        try {
+            if (value == null) localStorage.removeItem(key);
+            else localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+        } catch (_) {}
+    }
+
     // Popup / bridge → page sync
     window.addEventListener('message', (event) => {
         if (event.source !== window) return;
@@ -127,5 +136,31 @@
                     values[OMT_STORAGE_KEYS.autoPauseOnBlur] ? 'true' : 'false'
                 );
             } catch (_) {}
+        }
+
+        let customizeTouched = false;
+        [OMT_STORAGE_KEYS.clockPos, OMT_STORAGE_KEYS.clockSize, OMT_STORAGE_KEYS.clockShape].forEach((k) => {
+            if (Object.prototype.hasOwnProperty.call(values, k)) {
+                try {
+                    if (values[k] == null) localStorage.removeItem(k);
+                    else localStorage.setItem(k, String(values[k]));
+                } catch (_) {}
+                customizeTouched = true;
+            }
+        });
+        if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.clockCustom)) {
+            omtMirrorJsonKey(OMT_STORAGE_KEYS.clockCustom, values[OMT_STORAGE_KEYS.clockCustom]);
+            customizeTouched = true;
+        }
+        if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.hotkeys)) {
+            omtMirrorJsonKey(OMT_STORAGE_KEYS.hotkeys, values[OMT_STORAGE_KEYS.hotkeys]);
+            customizeTouched = true;
+        }
+        if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.shuttlePrefs)) {
+            omtMirrorJsonKey(OMT_STORAGE_KEYS.shuttlePrefs, values[OMT_STORAGE_KEYS.shuttlePrefs]);
+            customizeTouched = true;
+        }
+        if (customizeTouched && typeof omtApplyCustomizeFromStorage === 'function') {
+            omtApplyCustomizeFromStorage();
         }
     });

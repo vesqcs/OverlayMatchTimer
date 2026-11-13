@@ -2,7 +2,7 @@
 
 **Overlay MatchTimer** is a Chrome MV3 extension for professional football / sports match analysts. It injects a drift-aware match timer, HUD timeline, and playback controls over supported stream players.
 
-Supported by this extension build (**v1.5.1** — same v1.4.x HUD on InplayIP / Examino, plus a local file player):
+Supported by this extension build (**v1.6.0** — Customize tab for clock / shortcuts / ShuttleXpress, plus local player):
 
 * **InplayIP** (`*.inplayip.tv`) — Video.js Review/DVR sessions (v1.4.x UI unchanged)
 * **Examino** (`examino.statsperform.io/play/dvr/*` and `/play/vod/*`) — OpenPlayer DVR/VOD pages (no iframes / shadow roots)
@@ -10,7 +10,7 @@ Supported by this extension build (**v1.5.1** — same v1.4.x HUD on InplayIP / 
 
 Xeatre remains out of scope for the extension injector until Vasco provides material. A stub adapter lives under `Overlay-chrome-extension/src/adapters/xeatre.js`.
 
-**Layout:** editable sources are in `Overlay-chrome-extension/src/` (concatenated into committed `content.js`). See [`ARCHITECTURE.md`](./ARCHITECTURE.md). After editing sources: `node Overlay-chrome-extension/scripts/build-content.mjs`. Load unpacked still needs no build step. Toolbar popup General tab: **Open local player**, shortcuts, **Auto pause on Alt+Tab** (default off; resumes only if it caused the pause; never on ShuttleXpress pages). Customize tab remains Coming soon. In-video / local player: floating panel with Option A transport, symmetric speed chips `0.25x…1x…2x`, Hide controls (H), and bottom-only timeline; match controls live in the chevron group.
+**Layout:** editable sources are in `Overlay-chrome-extension/src/` (concatenated into committed `content.js`). See [`ARCHITECTURE.md`](./ARCHITECTURE.md). After editing sources: `node Overlay-chrome-extension/scripts/build-content.mjs`. Load unpacked still needs no build step. Toolbar popup General tab: **Open local player**, live shortcuts list, compact ShuttleXpress mapping, **Auto pause on Alt+Tab** (default off; resumes only if it caused the pause; never on ShuttleXpress pages). Customize tab: match-clock position/size/style (drag on video + reset), rebindable shortcuts with conflict warnings, collapsible ShuttleXpress prefs (skip seconds, play/pause button, jog/ring sensitivity) with Contour-faithful SVG diagram. In-video / local player: floating panel with Option A transport, symmetric speed chips `0.25x…1x…2x`, Hide controls (H), and bottom-only timeline; match controls live in the chevron group.
 
 The legacy companion app (`OverlayMatchTimer.html`) remains in the repo for reference / Xeatre URL paste; the extension local player is the supported path for post-match files.
 

@@ -214,8 +214,10 @@
         suppressNativeControls();
         injectUI();
         cacheUIRefs();
+        if (typeof omtApplyCustomizeFromStorage === 'function') omtApplyCustomizeFromStorage();
         wireEvents();
         restoreState();
+        if (typeof omtApplyClockAppearance === 'function') omtApplyClockAppearance();
         startSPAMonitor();
         initShuttleXpress();
         if (site.id === 'examino') {

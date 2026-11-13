@@ -14,67 +14,64 @@
         return tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA';
     }
 
-    function handleKeydown(e) {
-        // Don't intercept when user is typing in inputs / contenteditable
-        if (isEditableKeyTarget(e.target)) return;
-
-        const key = e.key.toLowerCase();
-        // L was free (not previously bound) — used for Go Live via irParaLive().
-        // K marks kick-off at the current frame via existing iniciarTimer().
-        const controlled = ['arrowright', 'arrowleft', 'arrowup', 'arrowdown', ' ', 'z', 'c', 'x', 'h', 'k', 'l'];
-        if (!controlled.includes(key)) return;
-
-        // Stop the event before Video.js / OpenPlayer / Examino handles it
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-
+    function runHotkeyAction(actionId) {
         if (!ensureLiveVideo()) return;
-
-        switch (key) {
-            case 'arrowright':
-                if (e.ctrlKey) saltarVideo(120);
-                else if (e.shiftKey) saltarVideo(10);
-                else saltarVideo(2);
-                break;
-            case 'arrowleft':
-                if (e.ctrlKey) saltarVideo(-120);
-                else if (e.shiftKey) saltarVideo(-10);
-                else saltarVideo(-2);
-                break;
-            case 'arrowup': avancarFrame(); break;
-            case 'arrowdown': retrocederFrame(); break;
-            case ' ': togglePlay(); break;
-            case 'z': {
+        switch (actionId) {
+            case 'skipFwd2': saltarVideo(2); break;
+            case 'skipBack2': saltarVideo(-2); break;
+            case 'skipFwd10': saltarVideo(10); break;
+            case 'skipBack10': saltarVideo(-10); break;
+            case 'skipFwd2m': saltarVideo(120); break;
+            case 'skipBack2m': saltarVideo(-120); break;
+            case 'frameFwd': avancarFrame(); break;
+            case 'frameBack': retrocederFrame(); break;
+            case 'playPause': togglePlay(); break;
+            case 'speedDown': {
                 const closestRate = closestSpeedRate(vid.playbackRate);
                 const currentIndex = OMT_SPEED_RATES.indexOf(closestRate);
                 const newIndex = Math.max(0, currentIndex - 1);
                 applyPlaybackSpeed(OMT_SPEED_RATES[newIndex]);
                 break;
             }
-            case 'c': {
+            case 'speedUp': {
                 const closestRate = closestSpeedRate(vid.playbackRate);
                 const currentIndex = OMT_SPEED_RATES.indexOf(closestRate);
                 const newIndex = Math.min(OMT_SPEED_RATES.length - 1, currentIndex + 1);
                 applyPlaybackSpeed(OMT_SPEED_RATES[newIndex]);
                 break;
             }
-            case 'x':
+            case 'speedReset':
                 applyPlaybackSpeed(1.0);
                 break;
-            case 'h':
+            case 'hide':
                 toggleManualControlsVisibility();
                 break;
-            case 'k':
-                // Same path as the Kick-off button (auto-captures current frame).
+            case 'kickoff':
                 iniciarTimer();
                 break;
-            case 'l':
-                // Same path as the LIVE button.
+            case 'live':
                 irParaLive();
                 break;
-
+            default:
+                break;
         }
+    }
+
+    function handleKeydown(e) {
+        // Don't intercept when user is typing in inputs / contenteditable
+        if (isEditableKeyTarget(e.target)) return;
+
+        const actionId = (typeof omtFindHotkeyAction === 'function')
+            ? omtFindHotkeyAction(e)
+            : null;
+        if (!actionId) return;
+
+        // Stop the event before Video.js / OpenPlayer / Examino handles it
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+
+        runHotkeyAction(actionId);
     }
 
     function toggleManualControlsVisibility() {

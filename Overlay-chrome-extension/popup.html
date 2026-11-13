@@ -32,47 +32,156 @@
       </div>
       <p class="omt-note">Default off. Skipped on pages with ShuttleXpress enabled (shared live monitor).</p>
     </div>
-    <div class="cheatsheet">
+
+    <div class="cheatsheet" id="omt-general-shortcuts">
       <div class="cheatsheet-title">Shortcuts</div>
-      <div class="shortcut-item"><span class="shortcut-label">Play / Pause</span><span class="shortcut-keys"><kbd>Space</kbd></span></div>
-      <div class="shortcut-item"><span class="shortcut-label">Skip ±2s</span><span class="shortcut-keys"><kbd>←</kbd><kbd>→</kbd></span></div>
-      <div class="shortcut-item"><span class="shortcut-label">Skip ±10s</span><span class="shortcut-keys"><kbd>Shift</kbd><kbd>→</kbd></span></div>
-      <div class="shortcut-item"><span class="shortcut-label">Skip ±2m</span><span class="shortcut-keys"><kbd>Ctrl</kbd><kbd>→</kbd></span></div>
-      <div class="shortcut-item"><span class="shortcut-label">Frame by Frame</span><span class="shortcut-keys"><kbd>↑</kbd><kbd>↓</kbd></span></div>
-      <div class="shortcut-item"><span class="shortcut-label">Speed ± / 1.0x</span><span class="shortcut-keys"><kbd>Z</kbd><kbd>C</kbd><kbd>X</kbd></span></div>
-      <div class="shortcut-item"><span class="shortcut-label">Mark kick-off</span><span class="shortcut-keys"><kbd>K</kbd></span></div>
-      <div class="shortcut-item"><span class="shortcut-label">Go to Live</span><span class="shortcut-keys"><kbd>L</kbd></span></div>
-      <div class="shortcut-item"><span class="shortcut-label">Hide/Show Controls</span><span class="shortcut-keys"><kbd>H</kbd></span></div>
+      <div id="omt-shortcut-list"></div>
+    </div>
+
+    <div class="cheatsheet omt-shuttle-summary" id="omt-general-shuttle">
+      <div class="cheatsheet-title">ShuttleXpress</div>
+      <div class="omt-shuttle-diagram-wrap omt-shuttle-diagram-wrap--general" id="omt-shuttle-summary-diagram" aria-label="ShuttleXpress shortcut map"></div>
+      <div id="omt-shuttle-summary-list" class="omt-shuttle-summary-list" hidden></div>
     </div>
   </section>
 
   <section class="omt-pane" data-pane="customize">
-    <div class="omt-soon-banner">Coming soon</div>
-    <label class="omt-field">Match clock position
-      <select id="clock-pos" disabled>
-        <option value="top-left">Top left (default)</option>
-        <option value="top-right">Top right</option>
-        <option value="bottom-left">Bottom left</option>
-      </select>
-    </label>
-    <label class="omt-field">Match clock size
-      <select id="clock-size" disabled>
-        <option value="medium">Medium (default)</option>
-        <option value="small">Small</option>
-        <option value="large">Large</option>
-      </select>
-    </label>
-    <label class="omt-field">Match clock shape
-      <select id="clock-shape" disabled>
-        <option value="rounded">Rounded rectangle (default)</option>
-        <option value="pill">Pill</option>
-        <option value="minimal">Minimal</option>
-      </select>
-    </label>
-    <p class="omt-note">Customisable shortcuts will save per user in chrome.storage. Defaults stay as today until this ships.</p>
+    <div class="omt-cust-section">
+      <div class="omt-cust-heading">Match clock</div>
+      <div class="omt-clock-preview" aria-hidden="true">
+        <div class="omt-clock-preview-stage" id="omt-clock-preview-stage">
+          <div class="omt-clock-preview-face" id="omt-clock-preview-face">45:00</div>
+        </div>
+      </div>
+      <label class="omt-field">Position
+        <select id="clock-pos">
+          <option value="top-left">Top left (default)</option>
+          <option value="top-right">Top right</option>
+          <option value="bottom-left">Bottom left</option>
+          <option value="bottom-right">Bottom right</option>
+        </select>
+      </label>
+      <label class="omt-field">Size
+        <select id="clock-size">
+          <option value="small">S</option>
+          <option value="medium" selected>M (default)</option>
+          <option value="large">L</option>
+          <option value="xlarge">XL</option>
+        </select>
+      </label>
+      <label class="omt-field">Style
+        <select id="clock-shape">
+          <option value="rounded" selected>Box (default)</option>
+          <option value="pill">Pill</option>
+          <option value="minimal">Transparent text</option>
+        </select>
+      </label>
+      <div class="omt-cust-actions">
+        <button type="button" id="omt-clock-reset-pos" class="omt-btn-secondary">Reset position</button>
+      </div>
+      <p class="omt-note">Drag the clock on video to place it anywhere; Reset position returns to the corner above.</p>
+    </div>
+
+    <div class="omt-cust-section">
+      <div class="omt-cust-heading">Shortcuts</div>
+      <p class="omt-note">Click a binding, then press a key (modifiers allowed). Conflicts warn inline.</p>
+      <div id="omt-hotkey-editor" class="omt-hotkey-editor"></div>
+      <div class="omt-cust-actions">
+        <button type="button" id="omt-hotkeys-reset-all" class="omt-btn-secondary">Reset all shortcuts</button>
+      </div>
+    </div>
+
+    <details class="omt-cust-details" id="omt-shuttle-details">
+      <summary class="omt-cust-summary">ShuttleXpress</summary>
+      <div class="omt-cust-details-body">
+        <div class="omt-shuttle-diagram-wrap omt-shuttle-diagram-wrap--edit" id="omt-shuttle-diagram-wrap" aria-label="ShuttleXpress diagram">
+          <!-- Outline SVG injected by popup.js (same component as General). Source: Vasco foto.png + Contour geometry. -->
+        </div>
+
+        <div class="omt-shuttle-edit-list" id="omt-shuttle-edit-list">
+          <label class="omt-field omt-shuttle-row" data-part="btn1">
+            <span>Btn 1 skip (−)</span>
+            <span class="omt-inline-edit">
+              <input type="number" id="omt-sx-skip1" min="1" max="600" step="1" />
+              <span class="omt-unit">s</span>
+              <button type="button" class="omt-btn-tiny" data-reset="skipBtn1">Reset</button>
+            </span>
+          </label>
+          <label class="omt-field omt-shuttle-row" data-part="btn2">
+            <span>Btn 2 skip (−)</span>
+            <span class="omt-inline-edit">
+              <input type="number" id="omt-sx-skip2" min="1" max="600" step="1" />
+              <span class="omt-unit">s</span>
+              <button type="button" class="omt-btn-tiny" data-reset="skipBtn2">Reset</button>
+            </span>
+          </label>
+          <label class="omt-field omt-shuttle-row" data-part="btn3">
+            <span>Play / Pause button</span>
+            <span class="omt-inline-edit">
+              <select id="omt-sx-playpause">
+                <option value="1">Btn 1</option>
+                <option value="2">Btn 2</option>
+                <option value="3">Btn 3 (default)</option>
+                <option value="4">Btn 4</option>
+                <option value="5">Btn 5</option>
+              </select>
+              <button type="button" class="omt-btn-tiny" data-reset="playPauseBtn">Reset</button>
+            </span>
+          </label>
+          <label class="omt-field omt-shuttle-row" data-part="btn4">
+            <span>Btn 4 skip (+)</span>
+            <span class="omt-inline-edit">
+              <input type="number" id="omt-sx-skip4" min="1" max="600" step="1" />
+              <span class="omt-unit">s</span>
+              <button type="button" class="omt-btn-tiny" data-reset="skipBtn4">Reset</button>
+            </span>
+          </label>
+          <label class="omt-field omt-shuttle-row" data-part="btn5">
+            <span>Btn 5 skip (+)</span>
+            <span class="omt-inline-edit">
+              <input type="number" id="omt-sx-skip5" min="1" max="600" step="1" />
+              <span class="omt-unit">s</span>
+              <button type="button" class="omt-btn-tiny" data-reset="skipBtn5">Reset</button>
+            </span>
+          </label>
+          <label class="omt-field omt-shuttle-row" data-part="jog">
+            <span>Jog step</span>
+            <span class="omt-inline-edit">
+              <select id="omt-sx-jog">
+                <option value="0.02">0.02s (fine)</option>
+                <option value="0.04">0.04s (~1 frame, default)</option>
+                <option value="0.08">0.08s</option>
+                <option value="0.12">0.12s</option>
+              </select>
+              <button type="button" class="omt-btn-tiny" data-reset="jogStep">Reset</button>
+            </span>
+          </label>
+          <label class="omt-field omt-shuttle-row" data-part="ring">
+            <span>Ring sensitivity</span>
+            <span class="omt-inline-edit">
+              <select id="omt-sx-scale">
+                <option value="0.5">0.5×</option>
+                <option value="1">1× (default)</option>
+                <option value="1.5">1.5×</option>
+                <option value="2">2×</option>
+              </select>
+              <button type="button" class="omt-btn-tiny" data-reset="shuttleScale">Reset</button>
+            </span>
+          </label>
+        </div>
+        <div class="omt-cust-actions">
+          <button type="button" id="omt-sx-reset-all" class="omt-btn-secondary">Reset all ShuttleXpress</button>
+        </div>
+        <p class="omt-note">Enable remains per window. Auto pause never applies while ShuttleXpress is on.</p>
+      </div>
+    </details>
+
+    <div class="omt-cust-actions omt-cust-actions--foot">
+      <button type="button" id="omt-reset-all-custom" class="omt-btn-secondary">Reset all customizations</button>
+    </div>
   </section>
 
-  <footer class="omt-popup-foot">v1.5.1</footer>
+  <footer class="omt-popup-foot">v1.6.0</footer>
   <script src="popup.js"></script>
 </body>
 </html>

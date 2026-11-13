@@ -558,8 +558,10 @@
         suppressNativeControls();
         injectUI();
         cacheUIRefs();
+        if (typeof omtApplyCustomizeFromStorage === 'function') omtApplyCustomizeFromStorage();
         wireEvents();
         restoreState();
+        if (typeof omtApplyClockAppearance === 'function') omtApplyClockAppearance();
         startSPAMonitor();
         initShuttleXpress();
         if (site.id === 'examino') {
@@ -2198,67 +2200,64 @@
         return tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA';
     }
 
-    function handleKeydown(e) {
-        // Don't intercept when user is typing in inputs / contenteditable
-        if (isEditableKeyTarget(e.target)) return;
-
-        const key = e.key.toLowerCase();
-        // L was free (not previously bound) — used for Go Live via irParaLive().
-        // K marks kick-off at the current frame via existing iniciarTimer().
-        const controlled = ['arrowright', 'arrowleft', 'arrowup', 'arrowdown', ' ', 'z', 'c', 'x', 'h', 'k', 'l'];
-        if (!controlled.includes(key)) return;
-
-        // Stop the event before Video.js / OpenPlayer / Examino handles it
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-
+    function runHotkeyAction(actionId) {
         if (!ensureLiveVideo()) return;
-
-        switch (key) {
-            case 'arrowright':
-                if (e.ctrlKey) saltarVideo(120);
-                else if (e.shiftKey) saltarVideo(10);
-                else saltarVideo(2);
-                break;
-            case 'arrowleft':
-                if (e.ctrlKey) saltarVideo(-120);
-                else if (e.shiftKey) saltarVideo(-10);
-                else saltarVideo(-2);
-                break;
-            case 'arrowup': avancarFrame(); break;
-            case 'arrowdown': retrocederFrame(); break;
-            case ' ': togglePlay(); break;
-            case 'z': {
+        switch (actionId) {
+            case 'skipFwd2': saltarVideo(2); break;
+            case 'skipBack2': saltarVideo(-2); break;
+            case 'skipFwd10': saltarVideo(10); break;
+            case 'skipBack10': saltarVideo(-10); break;
+            case 'skipFwd2m': saltarVideo(120); break;
+            case 'skipBack2m': saltarVideo(-120); break;
+            case 'frameFwd': avancarFrame(); break;
+            case 'frameBack': retrocederFrame(); break;
+            case 'playPause': togglePlay(); break;
+            case 'speedDown': {
                 const closestRate = closestSpeedRate(vid.playbackRate);
                 const currentIndex = OMT_SPEED_RATES.indexOf(closestRate);
                 const newIndex = Math.max(0, currentIndex - 1);
                 applyPlaybackSpeed(OMT_SPEED_RATES[newIndex]);
                 break;
             }
-            case 'c': {
+            case 'speedUp': {
                 const closestRate = closestSpeedRate(vid.playbackRate);
                 const currentIndex = OMT_SPEED_RATES.indexOf(closestRate);
                 const newIndex = Math.min(OMT_SPEED_RATES.length - 1, currentIndex + 1);
                 applyPlaybackSpeed(OMT_SPEED_RATES[newIndex]);
                 break;
             }
-            case 'x':
+            case 'speedReset':
                 applyPlaybackSpeed(1.0);
                 break;
-            case 'h':
+            case 'hide':
                 toggleManualControlsVisibility();
                 break;
-            case 'k':
-                // Same path as the Kick-off button (auto-captures current frame).
+            case 'kickoff':
                 iniciarTimer();
                 break;
-            case 'l':
-                // Same path as the LIVE button.
+            case 'live':
                 irParaLive();
                 break;
-
+            default:
+                break;
         }
+    }
+
+    function handleKeydown(e) {
+        // Don't intercept when user is typing in inputs / contenteditable
+        if (isEditableKeyTarget(e.target)) return;
+
+        const actionId = (typeof omtFindHotkeyAction === 'function')
+            ? omtFindHotkeyAction(e)
+            : null;
+        if (!actionId) return;
+
+        // Stop the event before Video.js / OpenPlayer / Examino handles it
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+
+        runHotkeyAction(actionId);
     }
 
     function toggleManualControlsVisibility() {
@@ -2367,15 +2366,55 @@
     let currentShuttleSpeed = 0;
 
     function getShuttleSpeedFactor(b0) {
+        const scale = (typeof omtGetShuttlePrefs === 'function')
+            ? (omtGetShuttlePrefs().shuttleScale || 1)
+            : 1;
         if (b0 >= 1 && b0 <= 7) {
             const factors = [0.2, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0];
-            return factors[b0 - 1];
+            return factors[b0 - 1] * scale;
         } else if (b0 >= 249 && b0 <= 255) {
             const factors = [-0.2, -0.5, -1.0, -2.0, -4.0, -8.0, -16.0];
             const index = 255 - b0;
-            return factors[index];
+            return factors[index] * scale;
         }
         return 0;
+    }
+
+    function shuttleButtonPressed(btn, prev3, prev4, bytes) {
+        if (btn === 1) return bytes[3] === 16 && prev3 !== 16;
+        if (btn === 2) return bytes[3] === 32 && prev3 !== 32;
+        if (btn === 3) return bytes[3] === 64 && prev3 !== 64;
+        if (btn === 4) return bytes[3] === 128 && prev3 !== 128;
+        if (btn === 5) return bytes[4] === 1 && prev4 !== 1;
+        return false;
+    }
+
+    function runShuttleButton(btn, prefs) {
+        if (!vid) return;
+        if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
+        if (btn === prefs.playPauseBtn) {
+            if (vid.paused) {
+                vid.play().catch(() => {});
+                mostrarOSD('Play');
+            } else {
+                vid.pause();
+                mostrarOSD('Pause');
+            }
+            return;
+        }
+        let secs = 0;
+        let sign = 1;
+        if (btn === 1) { secs = prefs.skipBtn1; sign = -1; }
+        else if (btn === 2) { secs = prefs.skipBtn2; sign = -1; }
+        else if (btn === 4) { secs = prefs.skipBtn4; sign = 1; }
+        else if (btn === 5) { secs = prefs.skipBtn5; sign = 1; }
+        else return;
+        const delta = sign * secs;
+        vid.currentTime = Math.max(0, (vid.currentTime || 0) + delta);
+        const label = Math.abs(delta) >= 60
+            ? ((delta < 0 ? 'Skip -' : 'Skip +') + (Math.abs(delta) / 60) + 'm')
+            : ((delta < 0 ? 'Skip -' : 'Skip +') + Math.abs(delta) + 's');
+        mostrarOSD(label);
     }
 
     function showShuttleCheatsheet(visible) {
@@ -2426,40 +2465,22 @@
         const { data } = event;
         const bytes = new Uint8Array(data.buffer);
 
-        // A) 5 Buttons edge detection
-        if (bytes[3] === 16 && prevBytes3 !== 16) {
-            if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
-            vid.currentTime -= 120;
-            mostrarOSD('Skip -2m');
-        } else if (bytes[3] === 32 && prevBytes3 !== 32) {
-            if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
-            vid.currentTime -= 10;
-            mostrarOSD('Skip -10s');
-        } else if (bytes[3] === 64 && prevBytes3 !== 64) {
-            if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
-            if (vid.paused) {
-                vid.play().catch(e => {});
-                mostrarOSD('Play');
-            } else {
-                vid.pause();
-                mostrarOSD('Pause');
-            }
-        } else if (bytes[3] === 128 && prevBytes3 !== 128) {
-            if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
-            vid.currentTime += 10;
-            mostrarOSD('Skip +10s');
-        }
+        const prefs = (typeof omtGetShuttlePrefs === 'function')
+            ? omtGetShuttlePrefs()
+            : { skipBtn1: 120, skipBtn2: 10, skipBtn4: 10, skipBtn5: 120, playPauseBtn: 3, jogStep: 0.04, shuttleScale: 1 };
 
-        if (bytes[4] === 1 && prevBytes4 !== 1) {
-            if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
-            vid.currentTime += 120;
-            mostrarOSD('Skip +2m');
+        // A) 5 Buttons edge detection (play/pause button configurable)
+        for (let btn = 1; btn <= 5; btn++) {
+            if (shuttleButtonPressed(btn, prevBytes3, prevBytes4, bytes)) {
+                runShuttleButton(btn, prefs);
+            }
         }
 
         prevBytes3 = bytes[3];
         prevBytes4 = bytes[4];
 
         // B) Inner Jog Wheel (Frame-by-frame)
+        const jogStep = prefs.jogStep || 0.04;
         const currentJog = bytes[1];
         if (lastJogValue !== null && currentJog !== lastJogValue) {
             if (!vid.paused) vid.pause();
@@ -2469,8 +2490,11 @@
             else if (delta < -128) delta += 256;
 
             if (delta !== 0) {
-                vid.currentTime += delta * 0.04;
-                mostrarOSD(delta > 0 ? `+${delta} Frame${delta > 1 ? 's' : ''}` : `${delta} Frame${delta < -1 ? 's' : ''}`);
+                vid.currentTime += delta * jogStep;
+                const framesApprox = Math.round(Math.abs(delta * jogStep / 0.04));
+                mostrarOSD(delta > 0
+                    ? `+${framesApprox || 1} Frame${(framesApprox || 1) > 1 ? 's' : ''}`
+                    : `-${framesApprox || 1} Frame${(framesApprox || 1) > 1 ? 's' : ''}`);
             }
         }
         lastJogValue = currentJog;
@@ -2672,10 +2696,12 @@
         autoVod: 'omtAutoSwitchVod',
         shuttle: 'shuttleXpressEnabled',
         autoPauseOnBlur: 'omtAutoPauseOnBlur',
-        // Personalizar keys reserved (popup writes; content ignores until implemented)
         clockPos: 'omtClockPosition',
         clockSize: 'omtClockSize',
-        clockShape: 'omtClockShape'
+        clockShape: 'omtClockShape',
+        clockCustom: 'omtClockCustomOffset',
+        hotkeys: 'omtHotkeys',
+        shuttlePrefs: 'omtShuttlePrefs'
     };
 
     function storageGetAutoPauseOnBlur() {
@@ -2757,6 +2783,13 @@
         } catch (_) {}
     }
 
+    function omtMirrorJsonKey(key, value) {
+        try {
+            if (value == null) localStorage.removeItem(key);
+            else localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+        } catch (_) {}
+    }
+
     // Popup / bridge → page sync
     window.addEventListener('message', (event) => {
         if (event.source !== window) return;
@@ -2794,7 +2827,340 @@
                 );
             } catch (_) {}
         }
+
+        let customizeTouched = false;
+        [OMT_STORAGE_KEYS.clockPos, OMT_STORAGE_KEYS.clockSize, OMT_STORAGE_KEYS.clockShape].forEach((k) => {
+            if (Object.prototype.hasOwnProperty.call(values, k)) {
+                try {
+                    if (values[k] == null) localStorage.removeItem(k);
+                    else localStorage.setItem(k, String(values[k]));
+                } catch (_) {}
+                customizeTouched = true;
+            }
+        });
+        if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.clockCustom)) {
+            omtMirrorJsonKey(OMT_STORAGE_KEYS.clockCustom, values[OMT_STORAGE_KEYS.clockCustom]);
+            customizeTouched = true;
+        }
+        if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.hotkeys)) {
+            omtMirrorJsonKey(OMT_STORAGE_KEYS.hotkeys, values[OMT_STORAGE_KEYS.hotkeys]);
+            customizeTouched = true;
+        }
+        if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.shuttlePrefs)) {
+            omtMirrorJsonKey(OMT_STORAGE_KEYS.shuttlePrefs, values[OMT_STORAGE_KEYS.shuttlePrefs]);
+            customizeTouched = true;
+        }
+        if (customizeTouched && typeof omtApplyCustomizeFromStorage === 'function') {
+            omtApplyCustomizeFromStorage();
+        }
     });
+
+/* Match-clock appearance + hotkey map (chrome.storage via bridge). */
+    const OMT_HOTKEY_DEFAULTS = {
+        playPause:   { key: ' ',         label: 'Play / Pause' },
+        skipBack2:   { key: 'arrowleft', label: 'Skip −2s' },
+        skipFwd2:    { key: 'arrowright', label: 'Skip +2s' },
+        skipBack10:  { key: 'arrowleft', shift: true, label: 'Skip −10s' },
+        skipFwd10:   { key: 'arrowright', shift: true, label: 'Skip +10s' },
+        skipBack2m:  { key: 'arrowleft', ctrl: true, label: 'Skip −2m' },
+        skipFwd2m:   { key: 'arrowright', ctrl: true, label: 'Skip +2m' },
+        frameBack:   { key: 'arrowdown', label: 'Frame back' },
+        frameFwd:    { key: 'arrowup', label: 'Frame forward' },
+        speedDown:   { key: 'z', label: 'Speed down' },
+        speedUp:     { key: 'c', label: 'Speed up' },
+        speedReset:  { key: 'x', label: 'Speed 1.0×' },
+        kickoff:     { key: 'k', label: 'Mark kick-off' },
+        live:        { key: 'l', label: 'Go to Live' },
+        hide:        { key: 'h', label: 'Hide/Show Controls' }
+    };
+
+    const OMT_HOTKEY_ORDER = [
+        'playPause', 'skipBack2', 'skipFwd2', 'skipBack10', 'skipFwd10',
+        'skipBack2m', 'skipFwd2m', 'frameBack', 'frameFwd',
+        'speedDown', 'speedReset', 'speedUp', 'kickoff', 'live', 'hide'
+    ];
+
+    const OMT_SHUTTLE_DEFAULTS = {
+        skipBtn1: 120,   // outer left (−)
+        skipBtn2: 10,    // inner left (−)
+        skipBtn4: 10,    // inner right (+)
+        skipBtn5: 120,   // outer right (+)
+        playPauseBtn: 3, // centre button (1–5)
+        jogStep: 0.04,   // seconds per jog tick (~1 frame @25fps)
+        shuttleScale: 1  // multiplies ring scrub factors
+    };
+
+    let omtHotkeyMap = null; // actionId → binding
+    let omtShuttlePrefs = null;
+    let omtClockDragInstalled = false;
+
+    function omtNormalizeKey(key) {
+        if (key == null) return '';
+        const k = String(key);
+        if (k === ' ') return ' ';
+        return k.toLowerCase();
+    }
+
+    function omtBindingFromEvent(e) {
+        const key = omtNormalizeKey(e.key);
+        if (!key || key === 'escape' || key === 'tab' || key === 'shift' ||
+            key === 'control' || key === 'alt' || key === 'meta') {
+            return null;
+        }
+        return {
+            key: key,
+            ctrl: !!e.ctrlKey,
+            shift: !!e.shiftKey,
+            alt: !!e.altKey,
+            meta: !!e.metaKey
+        };
+    }
+
+    function omtBindingEqual(a, b) {
+        if (!a || !b) return false;
+        return omtNormalizeKey(a.key) === omtNormalizeKey(b.key) &&
+            !!a.ctrl === !!b.ctrl &&
+            !!a.shift === !!b.shift &&
+            !!a.alt === !!b.alt &&
+            !!a.meta === !!b.meta;
+    }
+
+    function omtBindingScore(b) {
+        if (!b) return 0;
+        return (!!b.ctrl ? 1 : 0) + (!!b.shift ? 1 : 0) + (!!b.alt ? 1 : 0) + (!!b.meta ? 1 : 0);
+    }
+
+    function omtMergeHotkeys(stored) {
+        const out = {};
+        OMT_HOTKEY_ORDER.forEach((id) => {
+            const def = OMT_HOTKEY_DEFAULTS[id];
+            const raw = stored && stored[id];
+            if (raw && raw.key != null) {
+                out[id] = {
+                    key: omtNormalizeKey(raw.key),
+                    ctrl: !!raw.ctrl,
+                    shift: !!raw.shift,
+                    alt: !!raw.alt,
+                    meta: !!raw.meta,
+                    label: def.label
+                };
+            } else {
+                out[id] = {
+                    key: def.key,
+                    ctrl: !!def.ctrl,
+                    shift: !!def.shift,
+                    alt: !!def.alt,
+                    meta: !!def.meta,
+                    label: def.label
+                };
+            }
+        });
+        return out;
+    }
+
+    function omtLoadHotkeysFromLocal() {
+        let stored = null;
+        try {
+            const raw = localStorage.getItem(OMT_STORAGE_KEYS.hotkeys);
+            if (raw) stored = JSON.parse(raw);
+        } catch (_) {}
+        omtHotkeyMap = omtMergeHotkeys(stored);
+        return omtHotkeyMap;
+    }
+
+    function omtGetHotkeys() {
+        if (!omtHotkeyMap) omtLoadHotkeysFromLocal();
+        return omtHotkeyMap;
+    }
+
+    function omtFindHotkeyAction(e) {
+        const map = omtGetHotkeys();
+        const evt = omtBindingFromEvent(e);
+        if (!evt) return null;
+        let best = null;
+        let bestScore = -1;
+        OMT_HOTKEY_ORDER.forEach((id) => {
+            const b = map[id];
+            if (!omtBindingEqual(b, evt)) return;
+            const score = omtBindingScore(b);
+            if (score > bestScore) {
+                bestScore = score;
+                best = id;
+            }
+        });
+        return best;
+    }
+
+    function omtReadClockPrefs() {
+        let pos = localStorage.getItem(OMT_STORAGE_KEYS.clockPos) || 'top-left';
+        let size = localStorage.getItem(OMT_STORAGE_KEYS.clockSize) || 'medium';
+        let shape = localStorage.getItem(OMT_STORAGE_KEYS.clockShape) || 'rounded';
+        let custom = null;
+        try {
+            const raw = localStorage.getItem(OMT_STORAGE_KEYS.clockCustom);
+            if (raw) custom = JSON.parse(raw);
+        } catch (_) {}
+        if (!['top-left', 'top-right', 'bottom-left', 'bottom-right'].includes(pos)) {
+            pos = 'top-left';
+        }
+        if (!['small', 'medium', 'large', 'xlarge'].includes(size)) size = 'medium';
+        if (!['rounded', 'pill', 'minimal'].includes(shape)) shape = 'rounded';
+        if (custom && (typeof custom.top !== 'number' || typeof custom.left !== 'number')) {
+            custom = null;
+        }
+        return { pos, size, shape, custom };
+    }
+
+    function omtApplyClockAppearance() {
+        const wrap = typeof q === 'function' ? q('match-timer-wrap') : document.getElementById('match-timer-wrap');
+        if (!wrap || !omtRoot) return;
+        const prefs = omtReadClockPrefs();
+        const POS = ['top-left', 'top-right', 'bottom-left', 'bottom-right', 'custom'];
+        const SIZE = ['small', 'medium', 'large', 'xlarge'];
+        const STYLE = ['rounded', 'pill', 'minimal'];
+        POS.forEach((p) => wrap.classList.remove('omt-clock-pos-' + p));
+        SIZE.forEach((s) => wrap.classList.remove('omt-clock-size-' + s));
+        STYLE.forEach((s) => wrap.classList.remove('omt-clock-style-' + s));
+        wrap.classList.add('omt-clock-size-' + prefs.size);
+        wrap.classList.add('omt-clock-style-' + prefs.shape);
+
+        if (prefs.custom) {
+            wrap.classList.add('omt-clock-pos-custom');
+            wrap.style.top = prefs.custom.top + 'px';
+            wrap.style.left = prefs.custom.left + 'px';
+            wrap.style.right = 'auto';
+            wrap.style.bottom = 'auto';
+            wrap.style.transform = 'none';
+        } else {
+            wrap.classList.add('omt-clock-pos-' + prefs.pos);
+            wrap.style.top = '';
+            wrap.style.left = '';
+            wrap.style.right = '';
+            wrap.style.bottom = '';
+            wrap.style.transform = '';
+        }
+    }
+
+    function omtPersistClockCustom(top, left) {
+        const payload = { top: Math.round(top), left: Math.round(left) };
+        try {
+            localStorage.setItem(OMT_STORAGE_KEYS.clockCustom, JSON.stringify(payload));
+        } catch (_) {}
+        try {
+            window.postMessage({
+                source: 'omt-page',
+                type: 'OMT_STORAGE_SET',
+                key: OMT_STORAGE_KEYS.clockCustom,
+                value: payload
+            }, '*');
+        } catch (_) {}
+    }
+
+    function omtClearClockCustom() {
+        try { localStorage.removeItem(OMT_STORAGE_KEYS.clockCustom); } catch (_) {}
+        try {
+            window.postMessage({
+                source: 'omt-page',
+                type: 'OMT_STORAGE_SET',
+                key: OMT_STORAGE_KEYS.clockCustom,
+                value: null
+            }, '*');
+        } catch (_) {}
+        omtApplyClockAppearance();
+    }
+
+    function omtInstallClockDrag() {
+        if (omtClockDragInstalled) return;
+        const wrap = typeof q === 'function' ? q('match-timer-wrap') : null;
+        if (!wrap || !omtRoot) return;
+        omtClockDragInstalled = true;
+        let dragging = false;
+        let startX = 0, startY = 0, origTop = 0, origLeft = 0;
+
+        wrap.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return;
+            if (e.target && e.target.closest && e.target.closest('input, select, button, a')) return;
+            e.preventDefault();
+            dragging = true;
+            const rect = wrap.getBoundingClientRect();
+            const rootRect = omtRoot.getBoundingClientRect();
+            origTop = rect.top - rootRect.top;
+            origLeft = rect.left - rootRect.left;
+            wrap.classList.add('omt-clock-pos-custom');
+            wrap.classList.remove('omt-clock-pos-top-left', 'omt-clock-pos-top-right',
+                'omt-clock-pos-bottom-left', 'omt-clock-pos-bottom-right');
+            wrap.style.top = origTop + 'px';
+            wrap.style.left = origLeft + 'px';
+            wrap.style.right = 'auto';
+            wrap.style.bottom = 'auto';
+            wrap.style.transform = 'none';
+            startX = e.clientX;
+            startY = e.clientY;
+
+            const onMove = (ev) => {
+                if (!dragging) return;
+                const dx = ev.clientX - startX;
+                const dy = ev.clientY - startY;
+                let newTop = origTop + dy;
+                let newLeft = origLeft + dx;
+                const maxTop = Math.max(0, omtRoot.clientHeight - wrap.offsetHeight);
+                const maxLeft = Math.max(0, omtRoot.clientWidth - wrap.offsetWidth);
+                newTop = Math.max(0, Math.min(newTop, maxTop));
+                newLeft = Math.max(0, Math.min(newLeft, maxLeft));
+                wrap.style.top = newTop + 'px';
+                wrap.style.left = newLeft + 'px';
+            };
+            const onUp = () => {
+                dragging = false;
+                document.removeEventListener('mousemove', onMove, true);
+                document.removeEventListener('mouseup', onUp, true);
+                const top = parseFloat(wrap.style.top) || 0;
+                const left = parseFloat(wrap.style.left) || 0;
+                omtPersistClockCustom(top, left);
+            };
+            document.addEventListener('mousemove', onMove, true);
+            document.addEventListener('mouseup', onUp, true);
+        });
+        wrap.style.cursor = 'grab';
+    }
+
+    function omtMergeShuttlePrefs(stored) {
+        const out = Object.assign({}, OMT_SHUTTLE_DEFAULTS);
+        if (!stored || typeof stored !== 'object') return out;
+        ['skipBtn1', 'skipBtn2', 'skipBtn4', 'skipBtn5'].forEach((k) => {
+            const n = Number(stored[k]);
+            if (Number.isFinite(n) && n > 0 && n <= 600) out[k] = n;
+        });
+        const pp = Number(stored.playPauseBtn);
+        if ([1, 2, 3, 4, 5].includes(pp)) out.playPauseBtn = pp;
+        const jog = Number(stored.jogStep);
+        if (Number.isFinite(jog) && jog > 0 && jog <= 1) out.jogStep = jog;
+        const scale = Number(stored.shuttleScale);
+        if (Number.isFinite(scale) && scale > 0 && scale <= 4) out.shuttleScale = scale;
+        return out;
+    }
+
+    function omtLoadShuttlePrefsFromLocal() {
+        let stored = null;
+        try {
+            const raw = localStorage.getItem(OMT_STORAGE_KEYS.shuttlePrefs);
+            if (raw) stored = JSON.parse(raw);
+        } catch (_) {}
+        omtShuttlePrefs = omtMergeShuttlePrefs(stored);
+        return omtShuttlePrefs;
+    }
+
+    function omtGetShuttlePrefs() {
+        if (!omtShuttlePrefs) omtLoadShuttlePrefsFromLocal();
+        return omtShuttlePrefs;
+    }
+
+    function omtApplyCustomizeFromStorage() {
+        omtLoadHotkeysFromLocal();
+        omtLoadShuttlePrefsFromLocal();
+        omtApplyClockAppearance();
+        omtInstallClockDrag();
+    }
 
 /* Auto pause on Alt+Tab / tab hidden (popup General setting, default OFF).
  * Never touches ShuttleXpress pages; resumes only when we caused the pause.

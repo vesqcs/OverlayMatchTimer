@@ -13,6 +13,9 @@
   const KEY_CLOCK_POS = 'omtClockPosition';
   const KEY_CLOCK_SIZE = 'omtClockSize';
   const KEY_CLOCK_SHAPE = 'omtClockShape';
+  const KEY_CLOCK_CUSTOM = 'omtClockCustomOffset';
+  const KEY_HOTKEYS = 'omtHotkeys';
+  const KEY_SHUTTLE_PREFS = 'omtShuttlePrefs';
 
   const DEFAULTS = {
     [KEY_AUTO_VOD]: true,
@@ -20,24 +23,37 @@
     [KEY_AUTO_PAUSE]: false,
     [KEY_CLOCK_POS]: 'top-left',
     [KEY_CLOCK_SIZE]: 'medium',
-    [KEY_CLOCK_SHAPE]: 'rounded'
+    [KEY_CLOCK_SHAPE]: 'rounded',
+    [KEY_CLOCK_CUSTOM]: null,
+    [KEY_HOTKEYS]: null,
+    [KEY_SHUTTLE_PREFS]: null
   };
+
+  function writeLocal(key, value) {
+    try {
+      if (value == null) localStorage.removeItem(key);
+      else if (typeof value === 'boolean') localStorage.setItem(key, value ? 'true' : 'false');
+      else if (typeof value === 'object') localStorage.setItem(key, JSON.stringify(value));
+      else localStorage.setItem(key, String(value));
+    } catch (_) {}
+  }
 
   function syncToPage(values) {
     try {
       if (Object.prototype.hasOwnProperty.call(values, KEY_AUTO_VOD)) {
-        localStorage.setItem(KEY_AUTO_VOD, values[KEY_AUTO_VOD] ? 'true' : 'false');
+        writeLocal(KEY_AUTO_VOD, !!values[KEY_AUTO_VOD]);
       }
       if (Object.prototype.hasOwnProperty.call(values, KEY_SHUTTLE)) {
-        localStorage.setItem(KEY_SHUTTLE, values[KEY_SHUTTLE] ? 'true' : 'false');
+        writeLocal(KEY_SHUTTLE, !!values[KEY_SHUTTLE]);
       }
       if (Object.prototype.hasOwnProperty.call(values, KEY_AUTO_PAUSE)) {
-        localStorage.setItem(KEY_AUTO_PAUSE, values[KEY_AUTO_PAUSE] ? 'true' : 'false');
+        writeLocal(KEY_AUTO_PAUSE, !!values[KEY_AUTO_PAUSE]);
       }
       [KEY_CLOCK_POS, KEY_CLOCK_SIZE, KEY_CLOCK_SHAPE].forEach((k) => {
-        if (Object.prototype.hasOwnProperty.call(values, k) && values[k] != null) {
-          localStorage.setItem(k, String(values[k]));
-        }
+        if (Object.prototype.hasOwnProperty.call(values, k)) writeLocal(k, values[k]);
+      });
+      [KEY_CLOCK_CUSTOM, KEY_HOTKEYS, KEY_SHUTTLE_PREFS].forEach((k) => {
+        if (Object.prototype.hasOwnProperty.call(values, k)) writeLocal(k, values[k]);
       });
     } catch (_) {}
     try {

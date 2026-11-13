@@ -1499,19 +1499,36 @@ async function run() {
       await popupPage.screenshot({ path: path.join(ARTIFACTS, 'popup_logo_above.png') });
       const popupOk = await popupPage.evaluate(() => {
         const foot = (document.querySelector('.omt-popup-foot')?.textContent || '').trim();
-        const soon = (document.querySelector('.omt-soon-banner')?.textContent || '').trim();
+        const soon = document.querySelector('.omt-soon-banner');
+        const knob = (() => {
+          const sw = document.querySelector('.omt-switch');
+          const slider = document.querySelector('.omt-switch-slider');
+          if (!sw || !slider) return { ok: false };
+          const sr = sw.getBoundingClientRect();
+          const before = getComputedStyle(slider, '::before');
+          const kh = parseFloat(before.height) || 12;
+          const trackInner = sr.height;
+          const centered = before.top === before.bottom && kh === 12;
+          return {
+            ok: kh > 0 && trackInner >= 16 && trackInner <= 20 && centered,
+            trackH: trackInner,
+            knobH: kh,
+            top: before.top,
+            bottom: before.bottom
+          };
+        })();
         return {
           hasWordmark: !!document.querySelector('.omt-wordmark'),
           hasLogo: !!document.querySelector('.omt-sp-logo'),
           logoCount: document.querySelectorAll('.omt-sp-logo').length,
           hasCustomize: !!document.querySelector('[data-tab="customize"]'),
-          soonOk: soon === 'Coming soon',
-          noShuttle: !document.getElementById('shuttle-toggle'),
+          noSoonBanner: !soon,
+          noShuttleToggleInPopup: !document.getElementById('shuttle-toggle'),
           noSwap: !document.getElementById('brand-layout-toggle'),
           noCredit: !document.querySelector('.omt-brand-credit'),
           noPersonalizar: !document.body.textContent.includes('Personalizar') &&
             !document.body.textContent.includes('Em breve'),
-          footOk: foot === 'v1.5.1',
+          footOk: foot === 'v1.6.0',
           hasAutoPause: !!document.getElementById('omt-auto-pause-blur'),
           autoPauseDefaultOff: document.getElementById('omt-auto-pause-blur')
             ? document.getElementById('omt-auto-pause-blur').checked === false
@@ -1525,26 +1542,385 @@ async function run() {
             const cs = getComputedStyle(logo);
             const box = logo.getBoundingClientRect();
             const ar = box.width / Math.max(1, box.height);
-            // Official logo-dark.png is wide (240×63 ≈ 3.81) with Stats Perform wordmark
             return box.width >= 140 && ar > 3.2 && ar < 4.5 &&
               cs.objectFit === 'contain' && !/hidden/.test(cs.overflow) &&
               /stats-perform-logo-dark\.png/i.test(logo.getAttribute('src') || '');
           })(),
-          keyCaps: document.querySelectorAll('.shortcut-keys kbd').length >= 8
+          keyCaps: document.querySelectorAll('#omt-shortcut-list .shortcut-keys kbd').length >= 8,
+          hasShuttleSummary: !!document.getElementById('omt-general-shuttle'),
+          shuttleSummaryRows: document.querySelectorAll('#omt-shuttle-summary-list .shortcut-item').length,
+          generalDiagram: (() => {
+            const host = document.getElementById('omt-shuttle-summary-diagram');
+            const svg = host?.querySelector('.omt-shuttle-svg');
+            const labels = Array.from(host?.querySelectorAll('.omt-sx-label[data-part]') || [])
+              .map((el) => [el.getAttribute('data-part'), (el.textContent || '').trim()]);
+            const map = Object.fromEntries(labels);
+            return {
+              hasSvg: !!svg,
+              outline: !!host?.querySelector('.omt-sx-body') && !host?.querySelector('pattern'),
+              map,
+              ok: !!svg &&
+                /Play\/Pause/i.test(map.btn3 || '') &&
+                /^[−+\-]/.test(map.btn1 || '') &&
+                /^[−+\-]/.test(map.btn2 || '') &&
+                /^[−+\-]/.test(map.btn4 || '') &&
+                /^[−+\-]/.test(map.btn5 || '') &&
+                map.ring === 'Speed' &&
+                map.jog === 'Frame'
+            };
+          })(),
+          toggleKnob: knob
         };
+      });
+      await popupPage.evaluate(() => {
+        document.getElementById('omt-general-shuttle')?.scrollIntoView({ block: 'center' });
+      });
+      await popupPage.waitForTimeout(80);
+      await popupPage.screenshot({
+        path: path.join(ARTIFACTS, 'popup_shuttle_general_diagram.png'),
+        fullPage: true
       });
       results.push({
         name: 'popup-branding-and-personalizar',
         pass: popupOk.hasWordmark && popupOk.hasLogo && popupOk.logoCount === 1 &&
-          popupOk.hasCustomize && popupOk.soonOk && popupOk.noShuttle &&
+          popupOk.hasCustomize && popupOk.noSoonBanner && popupOk.noShuttleToggleInPopup &&
           popupOk.noSwap && popupOk.noCredit && popupOk.noPersonalizar &&
           popupOk.footOk && popupOk.keyCaps && popupOk.logoUncropped &&
           popupOk.hasAutoPause && popupOk.autoPauseDefaultOff &&
           popupOk.hasOpenLocal && popupOk.openLocalLabel === 'Open local player' &&
-          /stats-perform-logo-dark\.png/i.test(popupOk.logoSrc || ''),
+          /stats-perform-logo-dark\.png/i.test(popupOk.logoSrc || '') &&
+          popupOk.hasShuttleSummary && popupOk.shuttleSummaryRows >= 6 &&
+          popupOk.generalDiagram.ok === true &&
+          popupOk.toggleKnob.ok === true,
         detail: popupOk
       });
+      results.push({
+        name: 'popup-shuttle-general-diagram-labels',
+        pass: popupOk.generalDiagram.ok === true,
+        detail: popupOk.generalDiagram
+      });
+
+      // ---------- Customize tab (v1.6.0) ----------
+      await popupPage.click('[data-tab="customize"]');
+      await popupPage.waitForTimeout(150);
+      await popupPage.screenshot({ path: path.join(ARTIFACTS, 'popup_customize.png'), fullPage: true });
+
+      // Shuttle section collapsed screenshot
+      const shuttleCollapsed = await popupPage.evaluate(() => {
+        const d = document.getElementById('omt-shuttle-details');
+        if (d) d.open = false;
+        d?.scrollIntoView({ block: 'start' });
+        return { open: !!d?.open, hasSvg: !!document.getElementById('omt-shuttle-svg') };
+      });
+      await popupPage.waitForTimeout(80);
+      await popupPage.screenshot({ path: path.join(ARTIFACTS, 'popup_shuttle_collapsed.png'), fullPage: true });
+
+      // Expand Shuttle section
+      await popupPage.evaluate(() => {
+        const d = document.getElementById('omt-shuttle-details');
+        if (d) d.open = true;
+        d?.scrollIntoView({ block: 'start' });
+        document.getElementById('omt-shuttle-svg')?.scrollIntoView({ block: 'center' });
+      });
+      await popupPage.waitForTimeout(120);
+      await popupPage.screenshot({ path: path.join(ARTIFACTS, 'popup_shuttle_expanded.png'), fullPage: true });
+
+      // Clock prefs + live preview
+      await popupPage.selectOption('#clock-pos', 'top-right');
+      await popupPage.selectOption('#clock-size', 'large');
+      await popupPage.selectOption('#clock-shape', 'pill');
+      await popupPage.waitForTimeout(100);
+      const clockPreview = await popupPage.evaluate(() => {
+        const stage = document.getElementById('omt-clock-preview-stage');
+        const face = document.getElementById('omt-clock-preview-face');
+        return {
+          stageClass: stage?.className || '',
+          faceClass: face?.className || ''
+        };
+      });
+      results.push({
+        name: 'customize-clock-preview',
+        pass: /pos-top-right/.test(clockPreview.stageClass) &&
+          /size-large/.test(clockPreview.faceClass) &&
+          /style-pill/.test(clockPreview.faceClass),
+        detail: clockPreview
+      });
+
+      // Rebind Play/Pause to KeyF and verify General list updates
+      await popupPage.click('[data-bind="playPause"]');
+      await popupPage.keyboard.press('KeyF');
+      await popupPage.waitForTimeout(120);
+      await popupPage.click('[data-tab="general"]');
+      await popupPage.waitForTimeout(80);
+      const reboundGeneral = await popupPage.evaluate(() => {
+        const items = Array.from(document.querySelectorAll('#omt-shortcut-list .shortcut-item'));
+        const play = items.find((el) => /Play \/ Pause/i.test(el.textContent || ''));
+        return {
+          playText: (play?.textContent || '').trim(),
+          hasF: /F/.test(play?.textContent || '')
+        };
+      });
+      results.push({
+        name: 'customize-hotkey-rebind-general',
+        pass: reboundGeneral.hasF === true,
+        detail: reboundGeneral
+      });
+      await popupPage.screenshot({ path: path.join(ARTIFACTS, 'popup_rebound_shortcut.png') });
+
+      // Conflict: bind Live to F as well
+      await popupPage.click('[data-tab="customize"]');
+      await popupPage.waitForTimeout(80);
+      await popupPage.click('[data-bind="live"]');
+      await popupPage.keyboard.press('KeyF');
+      await popupPage.waitForTimeout(100);
+      const conflictOk = await popupPage.evaluate(() => {
+        const warns = Array.from(document.querySelectorAll('.omt-hotkey-warn')).map((w) => w.textContent || '');
+        return { warns, ok: warns.some((w) => /conflict/i.test(w)) };
+      });
+      results.push({
+        name: 'customize-hotkey-conflict',
+        pass: conflictOk.ok === true,
+        detail: conflictOk
+      });
+
+      // Reset all shortcuts
+      await popupPage.click('#omt-hotkeys-reset-all');
+      await popupPage.waitForTimeout(80);
+
+      // Shuttle highlight on hover/focus
+      await popupPage.evaluate(() => {
+        const d = document.getElementById('omt-shuttle-details');
+        if (d) d.open = true;
+      });
+      await popupPage.focus('#omt-sx-skip1');
+      await popupPage.waitForTimeout(60);
+      const highlight = await popupPage.evaluate(() => {
+        const wrap = document.getElementById('omt-shuttle-diagram-wrap');
+        const btn1 = wrap?.querySelector('.omt-sx-part[data-part="btn1"]');
+        const label = wrap?.querySelector('.omt-sx-label[data-part="btn1"]');
+        return {
+          active: !!btn1?.classList.contains('is-active'),
+          label: (label?.textContent || '').trim(),
+          hasLabels: (wrap?.querySelectorAll('.omt-sx-label[data-part]') || []).length >= 7
+        };
+      });
+      await popupPage.evaluate(() => {
+        document.getElementById('omt-shuttle-diagram-wrap')?.scrollIntoView({ block: 'center' });
+      });
+      await popupPage.waitForTimeout(80);
+      await popupPage.screenshot({
+        path: path.join(ARTIFACTS, 'popup_shuttle_customize_diagram.png'),
+        fullPage: true
+      });
+      results.push({
+        name: 'customize-shuttle-diagram-highlight',
+        pass: highlight.active === true &&
+          shuttleCollapsed.hasSvg === true &&
+          highlight.hasLabels === true &&
+          /^[−+\-]/.test(highlight.label || ''),
+        detail: { highlight, shuttleCollapsed }
+      });
+
+      // Change shuttle skip + play button + persist
+      await popupPage.fill('#omt-sx-skip1', '90');
+      await popupPage.selectOption('#omt-sx-playpause', '2');
+      await popupPage.selectOption('#omt-sx-jog', '0.08');
+      await popupPage.selectOption('#omt-sx-scale', '2');
+      await popupPage.waitForTimeout(100);
+      const liveLabels = await popupPage.evaluate(() => {
+        const wrap = document.getElementById('omt-shuttle-diagram-wrap');
+        const map = {};
+        wrap?.querySelectorAll('.omt-sx-label[data-part]').forEach((el) => {
+          map[el.getAttribute('data-part')] = (el.textContent || '').trim();
+        });
+        return map;
+      });
+      results.push({
+        name: 'customize-shuttle-diagram-live-labels',
+        pass: /Play\/Pause/i.test(liveLabels.btn2 || '') &&
+          /90s|−90s|−90/.test(liveLabels.btn1 || '') &&
+          liveLabels.ring === 'Speed' &&
+          liveLabels.jog === 'Frame',
+        detail: liveLabels
+      });
+      const shuttleStored = await popupPage.evaluate(async () => {
+        const prefs = await chrome.storage.local.get(['omtShuttlePrefs', 'omtHotkeys', 'omtClockPosition', 'omtClockSize', 'omtClockShape']);
+        return prefs;
+      });
+      results.push({
+        name: 'customize-persistence-storage',
+        pass: shuttleStored.omtClockPosition === 'top-right' &&
+          shuttleStored.omtClockSize === 'large' &&
+          shuttleStored.omtClockShape === 'pill' &&
+          shuttleStored.omtShuttlePrefs?.skipBtn1 === 90 &&
+          shuttleStored.omtShuttlePrefs?.playPauseBtn === 2 &&
+          shuttleStored.omtShuttlePrefs?.jogStep === 0.08 &&
+          shuttleStored.omtShuttlePrefs?.shuttleScale === 2,
+        detail: shuttleStored
+      });
+
       await popupPage.close();
+
+      // Live apply clock on Examino mock (reuse main page)
+      await page.bringToFront();
+      await page.evaluate(() => {
+        const btn = document.getElementById('omt-btn-set-kickoff');
+        if (btn) btn.click();
+      });
+      await page.waitForTimeout(200);
+      // Broadcast storage sync as bridge would
+      await page.evaluate(() => {
+        localStorage.setItem('omtClockPosition', 'top-right');
+        localStorage.setItem('omtClockSize', 'large');
+        localStorage.setItem('omtClockShape', 'pill');
+        window.postMessage({
+          source: 'omt-bridge',
+          type: 'OMT_STORAGE_SYNC',
+          values: {
+            omtClockPosition: 'top-right',
+            omtClockSize: 'large',
+            omtClockShape: 'pill'
+          }
+        }, '*');
+      });
+      await page.waitForTimeout(150);
+      await page.screenshot({ path: path.join(ARTIFACTS, 'clock_top_right_large_pill.png'), fullPage: true });
+      const clockApplied = await page.evaluate(() => {
+        const wrap = document.getElementById('match-timer-wrap');
+        return {
+          classes: wrap?.className || '',
+          visible: !!wrap && getComputedStyle(wrap).display !== 'none'
+        };
+      });
+      results.push({
+        name: 'customize-clock-live-apply',
+        pass: /omt-clock-pos-top-right/.test(clockApplied.classes) &&
+          /omt-clock-size-large/.test(clockApplied.classes) &&
+          /omt-clock-style-pill/.test(clockApplied.classes) &&
+          clockApplied.visible,
+        detail: clockApplied
+      });
+
+      // Other corners / sizes screenshots
+      for (const [pos, size, shape, file] of [
+        ['top-left', 'small', 'rounded', 'clock_top_left_small.png'],
+        ['bottom-left', 'medium', 'minimal', 'clock_bottom_left_minimal.png'],
+        ['bottom-right', 'xlarge', 'rounded', 'clock_bottom_right_xlarge.png']
+      ]) {
+        await page.evaluate(({ pos, size, shape }) => {
+          window.postMessage({
+            source: 'omt-bridge',
+            type: 'OMT_STORAGE_SYNC',
+            values: {
+              omtClockPosition: pos,
+              omtClockSize: size,
+              omtClockShape: shape,
+              omtClockCustomOffset: null
+            }
+          }, '*');
+          try {
+            localStorage.setItem('omtClockPosition', pos);
+            localStorage.setItem('omtClockSize', size);
+            localStorage.setItem('omtClockShape', shape);
+            localStorage.removeItem('omtClockCustomOffset');
+          } catch (_) {}
+        }, { pos, size, shape });
+        await page.waitForTimeout(120);
+        await page.screenshot({ path: path.join(ARTIFACTS, file), fullPage: true });
+      }
+
+      // Rebound hotkey F toggles play on page after applying hotkeys map
+      await page.evaluate(() => {
+        const map = {
+          playPause: { key: 'f' },
+          skipBack2: { key: 'arrowleft' },
+          skipFwd2: { key: 'arrowright' },
+          skipBack10: { key: 'arrowleft', shift: true },
+          skipFwd10: { key: 'arrowright', shift: true },
+          skipBack2m: { key: 'arrowleft', ctrl: true },
+          skipFwd2m: { key: 'arrowright', ctrl: true },
+          frameBack: { key: 'arrowdown' },
+          frameFwd: { key: 'arrowup' },
+          speedDown: { key: 'z' },
+          speedUp: { key: 'c' },
+          speedReset: { key: 'x' },
+          kickoff: { key: 'k' },
+          live: { key: 'l' },
+          hide: { key: 'h' }
+        };
+        localStorage.setItem('omtHotkeys', JSON.stringify(map));
+        window.postMessage({
+          source: 'omt-bridge',
+          type: 'OMT_STORAGE_SYNC',
+          values: { omtHotkeys: map }
+        }, '*');
+      });
+      await page.waitForTimeout(100);
+      await page.evaluate(() => {
+        const v = document.querySelector('video');
+        if (v) { v.pause(); }
+      });
+      await page.keyboard.press('KeyF');
+      await page.waitForTimeout(150);
+      const fPlay = await page.evaluate(() => {
+        const v = document.querySelector('video');
+        return { paused: !!v?.paused };
+      });
+      results.push({
+        name: 'customize-hotkey-live-rebind',
+        pass: fPlay.paused === false,
+        detail: fPlay
+      });
+      await page.screenshot({ path: path.join(ARTIFACTS, 'hotkey_rebound_f_play.png'), fullPage: true });
+
+      // In-panel toggle knob visual check (ShuttleXpress in expanded more panel)
+      await page.evaluate(() => {
+        const panel = document.getElementById('omt-more-panel');
+        if (panel) {
+          panel.classList.add('is-open');
+          panel.style.display = 'block';
+          panel.style.opacity = '1';
+          panel.style.pointerEvents = 'auto';
+        }
+        const root = document.getElementById('omt-root');
+        if (root) root.classList.add('omt-more-open');
+        // Ensure controls visible
+        const controls = document.getElementById('controls-panel');
+        if (controls) {
+          controls.style.opacity = '1';
+          controls.style.pointerEvents = 'auto';
+        }
+      });
+      await page.waitForTimeout(150);
+      const panelToggle = await page.evaluate(() => {
+        const sw = document.querySelector('#omt-shuttle-enable-toggle')?.closest('.omt-switch');
+        const slider = sw?.querySelector('.omt-switch-slider');
+        if (!sw || !slider) return { ok: false, reason: 'missing' };
+        const sr = sw.getBoundingClientRect();
+        const before = getComputedStyle(slider, '::before');
+        const w = parseFloat(before.width) || 0;
+        const h = parseFloat(before.height) || 0;
+        const top = before.top;
+        const bottom = before.bottom;
+        // Centred via top/bottom 0 + margin auto → equal insets
+        const centered = w === 12 && h === 12 && top === bottom;
+        return {
+          ok: sr.height >= 16 && sr.height <= 22 && sr.width >= 30 && centered && sr.height > h,
+          h: sr.height,
+          w: sr.width,
+          knobW: w,
+          knobH: h,
+          top,
+          bottom,
+          transform: before.transform
+        };
+      });
+      await page.screenshot({ path: path.join(ARTIFACTS, 'toggle_knob_centered.png'), fullPage: true });
+      results.push({
+        name: 'toggle-knob-centered',
+        pass: panelToggle.ok === true,
+        detail: panelToggle
+      });
     } else {
       results.push({ name: 'popup-branding-and-personalizar', pass: false, detail: { reason: 'no-extension-id' } });
     }
