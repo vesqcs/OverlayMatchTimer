@@ -564,6 +564,24 @@ body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
 .omt-shuttle-diagram-wrap--edit .omt-sx-part {
   cursor: pointer;
 }
+/*
+ * Customize diagram hit targets: invisible filled shapes (not stroke-only).
+ * Labels/nums/ticks/dimple stay pointer-events:none so they never steal clicks.
+ */
+.omt-shuttle-diagram-wrap--edit .omt-sx-part,
+.omt-shuttle-diagram-wrap--edit .omt-sx-part .omt-sx-ring-disk,
+.omt-shuttle-diagram-wrap--edit .omt-sx-part .omt-sx-jog-disk {
+  pointer-events: all;
+}
+.omt-shuttle-diagram-wrap--edit .omt-sx-part:not(.is-active):not(.is-hover),
+.omt-shuttle-diagram-wrap--edit .omt-sx-part:not(.is-active):not(.is-hover) .omt-sx-ring-disk,
+.omt-shuttle-diagram-wrap--edit .omt-sx-part:not(.is-active):not(.is-hover) .omt-sx-jog-disk {
+  /* Near-invisible fill so the whole disc / ring band / button wedge is hittable */
+  fill: rgba(255, 255, 255, 0.01) !important;
+}
+.omt-shuttle-diagram-wrap--edit .omt-sx-dimple {
+  pointer-events: none !important;
+}
 .omt-sx-part.is-hover {
   stroke: rgba(245, 131, 31, 0.8) !important;
   fill: rgba(245, 131, 31, 0.12) !important;
@@ -577,6 +595,7 @@ body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
 .omt-sx-part.is-hover .omt-sx-ring-disk,
 .omt-sx-part.is-hover .omt-sx-jog-disk {
   stroke: inherit !important;
+  fill: inherit !important;
 }
 .omt-sx-part[data-part="jog"].is-active .omt-sx-dimple,
 .omt-sx-part[data-part="jog"].is-hover .omt-sx-dimple {

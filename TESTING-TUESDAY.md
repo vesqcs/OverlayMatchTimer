@@ -1,8 +1,8 @@
 # Overlay MatchTimer — Tuesday manual test (~15 min)
 
-**Build:** v1.7.2 · **PC:** work machine · **Date:** ________ · **Tester:** ________
+**Build:** v1.7.3 · **PC:** work machine · **Date:** ________ · **Tester:** ________
 
-Install from the zip (`OverlayMatchTimer-v1.7.2.zip` → `Overlay-chrome-extension/`). Load unpacked in `chrome://extensions` (Developer mode). Do not use an old folder.
+Install from the zip (`OverlayMatchTimer-v1.7.3.zip` → `Overlay-chrome-extension/`). Load unpacked in `chrome://extensions` (Developer mode). Do not use an old folder.
 
 Mark each row: `[ ]` → `[x]` when pass. Use **Notes** for anything odd (screenshot path / console error).
 
@@ -12,9 +12,9 @@ Mark each row: `[ ]` → `[x]` when pass. Use **Notes** for anything odd (screen
 
 | # | Action | Expected | ✓ | Notes |
 |---|--------|----------|---|-------|
-| 0.1 | Load unpacked from zip’s `Overlay-chrome-extension` | Extension shows **1.7.2**, no errors on card | [ ] | |
+| 0.1 | Load unpacked from zip’s `Overlay-chrome-extension` | Extension shows **1.7.3**, no errors on card | [ ] | |
 | 0.2 | Check toolbar / extensions icon | Slash + **20:08** badge top-left (v2) on dark tile | [ ] | |
-| 0.3 | Open popup | Header: SP logo with **20:08** badge + OverlayMatchTimer; footer `v1.7.2` | [ ] | |
+| 0.3 | Open popup | Header: SP logo with **20:08** badge + OverlayMatchTimer; footer `v1.7.3` | [ ] | |
 | 0.4 | Customize tab | Sections: Match clock, Shortcuts, ShuttleXpress only — **no Kickoff sync** | [ ] | |
 
 ---
@@ -33,8 +33,10 @@ Open a live/VOD InplayIP match page with the overlay injected.
 | 1.6 | Edit: `45:70` | Stays open; **thin red outline**; hint **Seconds 0–59**; no commit | [ ] | |
 | 1.7 | Press **Esc** while editing | Edit cancels; previous valid time restored | [ ] | |
 | 1.8 | Popup → Customize → move clock through 6 positions × sizes S–XL × Box/Pill/Minimal | Clock stays clear of OSD/timeline; style matches choice | [ ] | |
-| 1.9 | Speed row / panel hide / autohide | Behave as usual; no layout break | [ ] | |
-| 1.10 | Trigger an OSD (skip / play) | OSD appears **at top**, not over clock oddly | [ ] | |
+| 1.9 | Speed row / **eye** Auto hide toggle | Eye-off = Auto hide on; eye = off; click does **not** hide panel; tooltip `Auto hide: on/off` | [ ] | |
+| 1.10 | Click **up** chevron (more) | Extras appear **above** the bar; main bar **pixel-stable** (no push down) | [ ] | |
+| 1.11 | Press **H** | Still hides/shows controls completely (original hotkey) | [ ] | |
+| 1.12 | Trigger an OSD (skip / play) | OSD appears **at top**, not over clock oddly | [ ] | |
 
 ---
 
@@ -53,7 +55,7 @@ Open a live/VOD InplayIP match page with the overlay injected.
 | # | Action | Expected | ✓ | Notes |
 |---|--------|----------|---|-------|
 | 3.1 | Popup → **Open local player** | New window; same HUD chrome | [ ] | |
-| 3.2 | Open a local / NAS-mapped file | Playback + clock + shortcuts work | [ ] | |
+| 3.2 | Open a local / NAS-mapped file | Playback + clock + shortcuts work; **no LIVE** button | [ ] | |
 | 3.3 | Enable ShuttleXpress only on this window if testing device | Toggle stays per-window | [ ] | |
 
 ---
@@ -75,7 +77,7 @@ Open a live/VOD InplayIP match page with the overlay injected.
 |---|--------|----------|---|-------|
 | 5.1 | Enable Shuttle on page; pair device | Connects; cheatsheet/controls as usual | [ ] | |
 | 5.2 | Press Btn 1–5, turn Jog, rock Shuttle ring | Correct skip / play-pause / frame / scrub; **OSD** labels unchanged | [ ] | |
-| 5.3 | Customize: click **Btn 5** on SVG | **Only** Btn 5 orange on diagram **and** its row; Jog/ring neutral; **Btn numbers 1–5 visible** around Customize diagram | [ ] | |
+| 5.3 | Customize: click **Btn 5** / **Jog disc** / **ring band** (not only the outline) | Correct piece + row highlight; generous hit area; **Btn numbers 1–5 visible** on Customize diagram | [ ] | |
 | 5.4 | Focus **Jog** select | **Only** Jog highlighted on SVG + row | [ ] | |
 | 5.5 | Move Play/Pause to **Btn 5** | Btn 5 = Play/Pause (no number field); Btn 3 = **+2m**; General diagram labels match | [ ] | |
 | 5.6 | Press physical Btn 5 / Btn 3 | 5 toggles play; 3 skips +2m; OSD correct | [ ] | |

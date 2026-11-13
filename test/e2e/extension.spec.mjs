@@ -691,6 +691,76 @@ async function run() {
       detail: chromeShape
     });
 
+    // More panel ABOVE the bar: main bar pixel-stable; extras overlay upward
+    const moreExpandUp = await page.evaluate(async () => {
+      const panel = document.getElementById('controls-panel');
+      const more = document.getElementById('omt-more-panel');
+      const handle = document.getElementById('controls-handle');
+      const transport = panel?.querySelector('.controls-content');
+      const btn = document.getElementById('omt-more-toggle');
+      if (!panel || !more || !handle || !transport || !btn) return { ok: false, reason: 'missing' };
+      if (more.classList.contains('is-open')) btn.click();
+      await new Promise((r) => setTimeout(r, 140));
+      const snap = () => {
+        const p = panel.getBoundingClientRect();
+        const h = handle.getBoundingClientRect();
+        const t = transport.getBoundingClientRect();
+        const m = more.getBoundingClientRect();
+        return {
+          panel: { top: p.top, bottom: p.bottom, height: p.height },
+          handle: { top: h.top, bottom: h.bottom },
+          transport: { top: t.top, bottom: t.bottom },
+          more: { top: m.top, bottom: m.bottom, height: m.height }
+        };
+      };
+      const before = snap();
+      btn.click();
+      await new Promise((r) => setTimeout(r, 160));
+      const after = snap();
+      const same = (a, b, tol = 1) => Math.abs(a - b) <= tol;
+      const barFixed =
+        same(before.panel.top, after.panel.top) &&
+        same(before.panel.bottom, after.panel.bottom) &&
+        same(before.panel.height, after.panel.height) &&
+        same(before.handle.top, after.handle.top) &&
+        same(before.handle.bottom, after.handle.bottom) &&
+        same(before.transport.top, after.transport.top) &&
+        same(before.transport.bottom, after.transport.bottom);
+      const moreAbove =
+        after.more.height > 20 &&
+        after.more.bottom <= after.handle.top + 2 &&
+        after.more.top < after.more.bottom;
+      return {
+        ok: more.classList.contains('is-open') && barFixed && moreAbove,
+        barFixed,
+        moreAbove,
+        before,
+        after
+      };
+    });
+    results.push({
+      name: 'overlay-more-panel-expands-up',
+      pass: moreExpandUp.ok === true,
+      detail: moreExpandUp
+    });
+    // Before/after comparison shots (bar must share the same Y)
+    await page.evaluate(() => {
+      const more = document.getElementById('omt-more-panel');
+      const btn = document.getElementById('omt-more-toggle');
+      if (more?.classList.contains('is-open')) btn?.click();
+    });
+    await page.waitForTimeout(160);
+    await page.screenshot({
+      path: path.join(ARTIFACTS, 'v173_overlay_panel_collapsed.png'),
+      fullPage: true
+    });
+    await page.evaluate(() => document.getElementById('omt-more-toggle')?.click());
+    await page.waitForTimeout(160);
+    await page.screenshot({
+      path: path.join(ARTIFACTS, 'v173_overlay_panel_expanded_up.png'),
+      fullPage: true
+    });
+
     // Force controls + timeline visible for polish screenshots
     await page.evaluate(() => {
       const panel = document.getElementById('controls-panel');
@@ -850,7 +920,7 @@ async function run() {
       pass: optionA.orderOk && optionA.flush && optionA.playProminent &&
         optionA.speedBelow &&
         optionA.chips.map((c) => c.text).join(',') === '0.25x,0.5x,0.75x,1x,1.25x,1.5x,2x' &&
-        optionA.hideBtn.present && /Hide controls \(H\)/.test(optionA.hideBtn.tip),
+        optionA.hideBtn.present && /Auto hide:\s*on/i.test(optionA.hideBtn.tip),
       detail: optionA
     });
 
@@ -983,33 +1053,71 @@ async function run() {
       detail: { speedAfterChip, speedAfterSelect, speedAfterX, speedAfterC, speedAfterZ, speedActiveStyle }
     });
 
-    // Hide panel button mirrors H hotkey
+    // Eye button = Auto hide toggle (does NOT hide immediately). H still hides completely.
     await page.evaluate(() => {
       const panel = document.getElementById('controls-panel');
       const timeline = document.getElementById('omt-timeline-bar');
-      if (panel) {
-        panel.style.opacity = '1';
-        panel.style.pointerEvents = 'auto';
-      }
-      if (timeline) {
-        timeline.style.opacity = '1';
-        timeline.style.pointerEvents = 'auto';
-      }
+      [panel, timeline].forEach((el) => {
+        if (!el) return;
+        el.style.opacity = '1';
+        el.style.pointerEvents = 'auto';
+      });
+      // Reset preference so default ON is measurable
+      try { localStorage.setItem('omtAutoHideChrome', 'true'); } catch (_) {}
+      window.postMessage({
+        source: 'omt-bridge',
+        type: 'OMT_STORAGE_SYNC',
+        values: { omtAutoHideChrome: true }
+      }, '*');
+    });
+    await page.waitForTimeout(40);
+    const autoHideOnShot = await page.evaluate(() => {
+      const btn = document.getElementById('omt-hide-panel');
+      return {
+        tip: btn?.getAttribute('data-tip') || '',
+        pressed: btn?.getAttribute('aria-pressed'),
+        hasEyeOff: !!(btn && btn.querySelector('.omt-icon') && /eye-off|M10\.733|m2 2 20 20/i.test(btn.innerHTML)),
+        iconHtml: btn?.innerHTML?.slice(0, 120) || ''
+      };
+    });
+    await page.locator('#omt-hide-panel').hover();
+    await page.waitForTimeout(120);
+    await page.screenshot({
+      path: path.join(ARTIFACTS, 'v173_auto_hide_on_tooltip.png'),
+      fullPage: true
     });
     await page.locator('#omt-hide-panel').click();
-    await page.waitForTimeout(80);
-    const afterHideBtn = await page.evaluate(() => {
+    await page.waitForTimeout(100);
+    const afterToggleOff = await page.evaluate(() => {
       const panel = document.getElementById('controls-panel');
       const timeline = document.getElementById('omt-timeline-bar');
+      const btn = document.getElementById('omt-hide-panel');
       return {
         panel: panel?.style.opacity,
         timeline: timeline?.style.opacity,
-        pe: panel?.style.pointerEvents
+        pe: panel?.style.pointerEvents,
+        tip: btn?.getAttribute('data-tip') || '',
+        pressed: btn?.getAttribute('aria-pressed'),
+        stored: localStorage.getItem('omtAutoHideChrome'),
+        hasEye: !!(btn && /M2\.062|circle cx="12"/i.test(btn.innerHTML) && !/m2 2 20 20/i.test(btn.innerHTML))
       };
+    });
+    await page.locator('#omt-hide-panel').hover();
+    await page.waitForTimeout(120);
+    await page.screenshot({
+      path: path.join(ARTIFACTS, 'v173_auto_hide_off_tooltip.png'),
+      fullPage: true
+    });
+    // H hotkey still hides completely (original)
+    await page.keyboard.press('KeyH');
+    await page.waitForTimeout(80);
+    const afterHHide = await page.evaluate(() => {
+      const panel = document.getElementById('controls-panel');
+      return { panel: panel?.style.opacity, pe: panel?.style.pointerEvents };
     });
     await page.keyboard.press('KeyH');
     await page.waitForTimeout(80);
-    const afterShowH = await page.evaluate(() => {
+    const afterHShow = await page.evaluate(() => {
       const panel = document.getElementById('controls-panel');
       return { panel: panel?.style.opacity, pe: panel?.style.pointerEvents };
     });
@@ -1021,12 +1129,23 @@ async function run() {
         el.style.opacity = '1';
         el.style.pointerEvents = 'auto';
       });
+      try { localStorage.setItem('omtAutoHideChrome', 'true'); } catch (_) {}
+      window.postMessage({
+        source: 'omt-bridge',
+        type: 'OMT_STORAGE_SYNC',
+        values: { omtAutoHideChrome: true }
+      }, '*');
     });
     results.push({
-      name: 'examino-hide-panel-button',
-      pass: afterHideBtn.panel === '0' && afterHideBtn.pe === 'none' &&
-        afterHideBtn.timeline === '0' && afterShowH.panel === '1',
-      detail: { afterHideBtn, afterShowH }
+      name: 'examino-auto-hide-toggle',
+      pass: /Auto hide:\s*on/i.test(autoHideOnShot.tip) &&
+        afterToggleOff.panel === '1' && afterToggleOff.pe === 'auto' &&
+        afterToggleOff.timeline === '1' &&
+        /Auto hide:\s*off/i.test(afterToggleOff.tip) &&
+        afterToggleOff.stored === 'false' &&
+        afterToggleOff.pressed === 'false' &&
+        afterHHide.panel === '0' && afterHShow.panel === '1',
+      detail: { autoHideOnShot, afterToggleOff, afterHHide, afterHShow }
     });
 
     // Play/pause centre button follows real media state; top OSD only (no centre flash)
@@ -1460,7 +1579,7 @@ async function run() {
     results.push({
       name: 'inplayip-v14-ui-identical',
       pass: inplayUi.optionAOk && inplayUi.speedOk && inplayUi.hasHide &&
-        /Hide controls \(H\)/.test(inplayUi.hideTip) &&
+        /Auto hide:\s*on/i.test(inplayUi.hideTip) &&
         inplayUi.hasTimeline && inplayUi.hasKickoff && inplayUi.hasPeriod &&
         inplayUi.halfOpts.includes('1') && inplayUi.halfOpts.includes('2') &&
         inplayUi.halfOpts.includes('custom1') && inplayUi.halfOpts.includes('custom2') &&
@@ -1601,7 +1720,7 @@ async function run() {
           noCredit: !document.querySelector('.omt-brand-credit'),
           noPersonalizar: !document.body.textContent.includes('Personalizar') &&
             !document.body.textContent.includes('Em breve'),
-          footOk: foot === 'v1.7.2',
+          footOk: foot === 'v1.7.3',
           hasAutoPause: !!document.getElementById('omt-auto-pause-blur'),
           autoPauseDefaultOff: document.getElementById('omt-auto-pause-blur')
             ? document.getElementById('omt-auto-pause-blur').checked === false
@@ -2000,6 +2119,64 @@ async function run() {
       });
       await popupPage.screenshot({
         path: path.join(ARTIFACTS, 'popup_shuttle_row_focus_jog.png'),
+        fullPage: true
+      });
+
+      // Generous hit targets: click interior of jog disc / ring band / button (real pointer, not stroke-only)
+      const hitAreas = await popupPage.evaluate(async () => {
+        const wrap = document.getElementById('omt-shuttle-diagram-wrap');
+        const svg = wrap?.querySelector('.omt-shuttle-svg');
+        if (!svg || !wrap) return { ok: false, reason: 'missing-svg' };
+        const svgRect = svg.getBoundingClientRect();
+        const toClient = (svgX, svgY) => {
+          const x = svgRect.left + (svgX / 200) * svgRect.width;
+          const y = svgRect.top + (svgY / 200) * svgRect.height;
+          return { x, y };
+        };
+        const clickAt = (svgX, svgY) => {
+          const { x, y } = toClient(svgX, svgY);
+          const el = document.elementFromPoint(x, y);
+          const part = el?.closest?.('.omt-sx-part[data-part]');
+          if (part) {
+            part.dispatchEvent(new MouseEvent('click', {
+              bubbles: true, cancelable: true, view: window, clientX: x, clientY: y
+            }));
+          }
+          return {
+            tag: el?.tagName || null,
+            className: typeof el?.getAttribute === 'function' ? (el.getAttribute('class') || '') : '',
+            part: part?.getAttribute('data-part') || null
+          };
+        };
+        const active = () => (wrap.querySelector('.omt-sx-part.is-active')?.getAttribute('data-part') || null);
+        // Jog centre (inside disc, not only the dimple stroke)
+        const jogHit = clickAt(100, 100);
+        await new Promise((r) => setTimeout(r, 30));
+        const jogActive = active();
+        // Ring band at 12 o'clock (between outer/inner radii ~51–69)
+        const ringHit = clickAt(100, 58);
+        await new Promise((r) => setTimeout(r, 30));
+        const ringActive = active();
+        // Button 3 wedge interior
+        const btn3Hit = clickAt(100, 38);
+        await new Promise((r) => setTimeout(r, 30));
+        const btn3Active = active();
+        // Fill style must not be stroke-only on edit parts
+        const jogDisk = wrap.querySelector('.omt-sx-jog-disk');
+        const fill = jogDisk ? getComputedStyle(jogDisk).fill : '';
+        const fillNone = /none/i.test(fill);
+        return {
+          ok: jogActive === 'jog' && ringActive === 'ring' && btn3Active === 'btn3' && !fillNone,
+          jogHit, jogActive, ringHit, ringActive, btn3Hit, btn3Active, fill, fillNone
+        };
+      });
+      results.push({
+        name: 'customize-shuttle-diagram-hit-areas',
+        pass: hitAreas.ok === true,
+        detail: hitAreas
+      });
+      await popupPage.screenshot({
+        path: path.join(ARTIFACTS, 'v173_popup_shuttle_piece_selected.png'),
         fullPage: true
       });
 
@@ -2675,13 +2852,37 @@ async function run() {
       results.push({
         name: 'local-ui-matches-v14',
         pass: localUi.optionAOk && localUi.speedOk && localUi.hasHide &&
-          /Hide controls \(H\)/.test(localUi.hideTip) &&
+          /Auto hide:\s*on/i.test(localUi.hideTip) &&
           localUi.hasTimeline && localUi.hasKickoff && localUi.hasPeriod &&
           localUi.halfOpts.includes('custom1') && localUi.halfOpts.includes('custom2') &&
           localUi.hasCustom1 && localUi.hasCustom2 && localUi.hasOffsetNudge &&
-          localUi.hasShuttle && localUi.hasOsd && localUi.hasLive && localUi.hasMore &&
+          localUi.hasShuttle && localUi.hasOsd && localUi.hasMore &&
           localUi.examinoHidden && localUi.siteClass.includes('omt-local'),
         detail: localUi
+      });
+
+      const localLiveHidden = await localPage.evaluate(() => {
+        const btn = document.getElementById('omt-live-btn');
+        const spacer = document.querySelector('#omt-root .omt-live-spacer');
+        const btnCs = btn ? getComputedStyle(btn) : null;
+        const spCs = spacer ? getComputedStyle(spacer) : null;
+        return {
+          hasBtnInDom: !!btn,
+          btnDisplay: btnCs ? btnCs.display : null,
+          spacerDisplay: spCs ? spCs.display : null,
+          btnHidden: !btn || btnCs.display === 'none',
+          spacerHidden: !spacer || spCs.display === 'none',
+          isLocal: !!document.getElementById('omt-root')?.classList.contains('omt-local')
+        };
+      });
+      results.push({
+        name: 'local-live-button-hidden',
+        pass: localLiveHidden.isLocal && localLiveHidden.btnHidden && localLiveHidden.spacerHidden,
+        detail: localLiveHidden
+      });
+      await localPage.screenshot({
+        path: path.join(ARTIFACTS, 'v173_local_no_live.png'),
+        fullPage: true
       });
 
       const localOpenFile = await localPage.evaluate(() => {
@@ -2882,18 +3083,20 @@ async function run() {
       });
       results.push({ name: 'local-timeline-seek', pass: localTimeline.ok === true, detail: localTimeline });
 
+      // LIVE button is hidden on local; L hotkey still seeks toward the end.
       const localLive = await localPage.evaluate(async () => {
         const v = document.getElementById('omt-local-video');
         try { v.currentTime = 1; } catch (_) {}
-        document.getElementById('omt-live-btn')?.click();
-        await new Promise((r) => setTimeout(r, 80));
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'l', code: 'KeyL', bubbles: true, cancelable: true }));
         await new Promise((r) => setTimeout(r, 80));
         const end = v.duration || (v.seekable?.length ? v.seekable.end(v.seekable.length - 1) : NaN);
+        const btn = document.getElementById('omt-live-btn');
+        const btnHidden = !btn || getComputedStyle(btn).display === 'none';
         return {
-          ok: typeof end === 'number' && isFinite(end) && v.currentTime >= end - 3,
+          ok: btnHidden && typeof end === 'number' && isFinite(end) && v.currentTime >= end - 3,
           currentTime: v.currentTime,
-          end
+          end,
+          btnHidden
         };
       });
       results.push({ name: 'local-live-and-l-hotkey', pass: localLive.ok === true, detail: localLive });
@@ -2901,31 +3104,46 @@ async function run() {
       const localHide = await localPage.evaluate(async () => {
         const panel = document.getElementById('controls-panel');
         const timeline = document.getElementById('omt-timeline-bar');
+        const btn = document.getElementById('omt-hide-panel');
         const read = () => ({
           panelOp: panel ? panel.style.opacity : null,
           panelPe: panel ? panel.style.pointerEvents : null,
-          timelineOp: timeline ? timeline.style.opacity : null
+          timelineOp: timeline ? timeline.style.opacity : null,
+          tip: btn ? (btn.getAttribute('data-tip') || '') : ''
         });
+        if (panel) { panel.style.opacity = '1'; panel.style.pointerEvents = 'auto'; }
+        if (timeline) { timeline.style.opacity = '1'; timeline.style.pointerEvents = 'auto'; }
+        try { localStorage.setItem('omtAutoHideChrome', 'true'); } catch (_) {}
+        window.postMessage({
+          source: 'omt-bridge',
+          type: 'OMT_STORAGE_SYNC',
+          values: { omtAutoHideChrome: true }
+        }, '*');
         const before = read();
-        document.getElementById('omt-hide-panel')?.click();
+        btn?.click(); // toggles auto-hide OFF — must not hide panel
         await new Promise((r) => setTimeout(r, 100));
-        const afterHide = read();
+        const afterToggle = read();
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'h', code: 'KeyH', bubbles: true, cancelable: true }));
         await new Promise((r) => setTimeout(r, 100));
-        const afterShow = read();
-        const osd = (document.getElementById('osd-message')?.innerText || '');
+        const afterHHide = read();
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'h', code: 'KeyH', bubbles: true, cancelable: true }));
+        await new Promise((r) => setTimeout(r, 100));
+        const afterHShow = read();
         return {
           before,
-          afterHide,
-          afterShow,
-          osd,
-          hidden: afterHide.panelOp === '0' || afterHide.panelPe === 'none',
-          shown: afterShow.panelOp === '1' || afterShow.panelPe === 'auto'
+          afterToggle,
+          afterHHide,
+          afterHShow,
+          toggleKeptVisible: afterToggle.panelOp === '1' && afterToggle.panelPe === 'auto',
+          tipOff: /Auto hide:\s*off/i.test(afterToggle.tip),
+          hHid: afterHHide.panelOp === '0' || afterHHide.panelPe === 'none',
+          hShowed: afterHShow.panelOp === '1' || afterHShow.panelPe === 'auto'
         };
       });
       results.push({
         name: 'local-hide-controls',
-        pass: localHide.hidden === true && localHide.shown === true,
+        pass: localHide.toggleKeptVisible === true && localHide.tipOff === true &&
+          localHide.hHid === true && localHide.hShowed === true,
         detail: localHide
       });
 
@@ -3025,6 +3243,7 @@ async function run() {
         'local-kickoff-period',
         'local-custom-periods',
         'local-timeline-seek',
+        'local-live-button-hidden',
         'local-live-and-l-hotkey',
         'local-hide-controls',
         'local-osd',
