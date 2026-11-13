@@ -1,5 +1,5 @@
 <svg class="omt-shuttle-svg" viewBox="0 0 200 200" role="img" aria-label="Contour ShuttleXpress">
-  <!-- v1.6.2 outline: Vasco foto.png — centred btn3, mirrored 2/4 & 1/5, dimple at 12 o'clock -->
+  <!-- v1.6.3 outline: Vasco foto.png — centred btn3, mirrored 2/4 & 1/5, dimple at 12 o'clock -->
   <g class="omt-sx-root">
     <circle class="omt-sx-body" cx="100" cy="100" r="80"/>
     <g class="omt-sx-part" data-part="ring" tabindex="-1" role="button" aria-label="Shuttle ring">
@@ -9,7 +9,7 @@
     </g>
     <g class="omt-sx-part" data-part="jog" tabindex="-1" role="button" aria-label="Jog">
       <circle cx="100" cy="100" r="27.5"/>
-      <circle class="omt-sx-dimple" cx="100" cy="78.0" r="4.2"/>
+      <circle class="omt-sx-dimple" cx="100" cy="84.0" r="4.2"/>
     </g>
     <path class="omt-sx-part omt-sx-btn" data-part="btn1" tabindex="-1" role="button" aria-label="Button 1" d="M32.28,134.50 A76,76 0 0,1 32.28,65.50 L52.78,75.94 A53,53 0 0,0 52.78,124.06 Z"/>
     <path class="omt-sx-part omt-sx-btn" data-part="btn2" tabindex="-1" role="button" aria-label="Button 2" d="M38.51,55.33 A76,76 0 0,1 66.68,31.69 L76.77,52.36 A53,53 0 0,0 57.12,68.85 Z"/>

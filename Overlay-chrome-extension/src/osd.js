@@ -11,3 +11,9 @@
         clearTimeout(osdTimeout);
         osdTimeout = setTimeout(() => { if (osd) osd.classList.remove('visible'); }, 1100);
     }
+
+    function limparOSD() {
+        if (!osd) return;
+        osd.classList.remove('visible');
+        clearTimeout(osdTimeout);
+    }

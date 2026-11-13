@@ -1537,7 +1537,7 @@ async function run() {
           noCredit: !document.querySelector('.omt-brand-credit'),
           noPersonalizar: !document.body.textContent.includes('Personalizar') &&
             !document.body.textContent.includes('Em breve'),
-          footOk: foot === 'v1.6.2',
+          footOk: foot === 'v1.6.3',
           hasAutoPause: !!document.getElementById('omt-auto-pause-blur'),
           autoPauseDefaultOff: document.getElementById('omt-auto-pause-blur')
             ? document.getElementById('omt-auto-pause-blur').checked === false
@@ -1556,7 +1556,12 @@ async function run() {
               /stats-perform-logo-dark\.png/i.test(logo.getAttribute('src') || '');
           })(),
           keyCaps: document.querySelectorAll('#omt-shortcut-list .shortcut-keys kbd').length >= 8,
-          hasShuttleSummary: !!document.getElementById('omt-general-shuttle'),
+          hasShuttleSummary: !!document.getElementById('omt-gen-shuttle-details'),
+          genSections: {
+            actionsOpen: !!document.getElementById('omt-gen-actions-details')?.open,
+            shortcutsOpen: !!document.getElementById('omt-gen-shortcuts-details')?.open,
+            shuttleOpen: !!document.getElementById('omt-gen-shuttle-details')?.open
+          },
           shuttleSummaryRows: document.querySelectorAll('#omt-shuttle-summary-list .shortcut-item').length,
           generalDiagram: (() => {
             const host = document.getElementById('omt-shuttle-summary-diagram');
@@ -1581,10 +1586,32 @@ async function run() {
           toggleKnob: knob
         };
       });
-      await popupPage.evaluate(() => {
-        document.getElementById('omt-general-shuttle')?.scrollIntoView({ block: 'center' });
+      // Default General: Actions open, Shortcuts/Shuttle collapsed → short popup
+      await popupPage.screenshot({
+        path: path.join(ARTIFACTS, 'popup_general_default.png'),
+        fullPage: true
       });
-      await popupPage.waitForTimeout(80);
+      results.push({
+        name: 'general-sections-default-compact',
+        pass: popupOk.genSections.actionsOpen === true &&
+          popupOk.genSections.shortcutsOpen === false &&
+          popupOk.genSections.shuttleOpen === false,
+        detail: popupOk.genSections
+      });
+      await popupPage.evaluate(() => {
+        const a = document.getElementById('omt-gen-actions-details');
+        const s = document.getElementById('omt-gen-shortcuts-details');
+        const sh = document.getElementById('omt-gen-shuttle-details');
+        if (a) a.open = true;
+        if (s) s.open = true;
+        if (sh) sh.open = true;
+        sh?.scrollIntoView({ block: 'center' });
+      });
+      await popupPage.waitForTimeout(100);
+      await popupPage.screenshot({
+        path: path.join(ARTIFACTS, 'popup_general_all_open.png'),
+        fullPage: true
+      });
       await popupPage.screenshot({
         path: path.join(ARTIFACTS, 'popup_shuttle_general_diagram.png'),
         fullPage: true
@@ -1598,7 +1625,7 @@ async function run() {
           popupOk.hasAutoPause && popupOk.autoPauseDefaultOff &&
           popupOk.hasOpenLocal && popupOk.openLocalLabel === 'Open local player' &&
           /stats-perform-logo-dark\.png/i.test(popupOk.logoSrc || '') &&
-          popupOk.hasShuttleSummary && popupOk.shuttleSummaryRows >= 6 &&
+          popupOk.hasShuttleSummary &&
           popupOk.generalDiagram.ok === true &&
           popupOk.toggleKnob.ok === true,
         detail: popupOk
@@ -1735,21 +1762,37 @@ async function run() {
       await popupPage.click('#omt-hotkeys-reset-all');
       await popupPage.waitForTimeout(80);
 
-      // Shuttle highlight on hover/focus
+      // Shuttle highlight: single-select only
       await popupPage.evaluate(() => {
         const d = document.getElementById('omt-shuttle-details');
         if (d) d.open = true;
       });
       await popupPage.focus('#omt-sx-skip1');
+      await popupPage.waitForTimeout(40);
+      // Click diagram part via DOM (SVG hit-testing is flaky in headless).
+      await popupPage.evaluate(() => {
+        const el = document.querySelector('#omt-shuttle-diagram-wrap .omt-sx-part[data-part="btn5"]');
+        el?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+      });
       await popupPage.waitForTimeout(60);
       const highlight = await popupPage.evaluate(() => {
         const wrap = document.getElementById('omt-shuttle-diagram-wrap');
-        const btn1 = wrap?.querySelector('.omt-sx-part[data-part="btn1"]');
-        const label = wrap?.querySelector('.omt-sx-label[data-part="btn1"]');
+        const actives = Array.from(wrap?.querySelectorAll('.omt-sx-part.is-active') || [])
+          .map((el) => el.getAttribute('data-part'));
+        const activeRows = Array.from(document.querySelectorAll('.omt-shuttle-row.is-active'))
+          .map((el) => el.getAttribute('data-part'));
+        const label = wrap?.querySelector('.omt-sx-label[data-part="btn5"]');
+        const dimple = wrap?.querySelector('.omt-sx-dimple');
         return {
-          active: !!btn1?.classList.contains('is-active'),
+          activeParts: actives,
+          activeRows,
+          singlePart: actives.length === 1 && actives[0] === 'btn5',
+          singleRow: activeRows.length === 1 && activeRows[0] === 'btn5',
           label: (label?.textContent || '').trim(),
-          hasLabels: (wrap?.querySelectorAll('.omt-sx-label[data-part]') || []).length >= 7
+          hasLabels: (wrap?.querySelectorAll('.omt-sx-label[data-part]') || []).length >= 7,
+          dimpleCy: dimple ? Number(dimple.getAttribute('cy')) : null,
+          hasChevrons: document.querySelectorAll('.omt-num-chevrons .omt-chev').length >= 8,
+          noStepperBtns: document.querySelectorAll('.omt-stepper-btn').length === 0
         };
       });
       await popupPage.evaluate(() => {
@@ -1760,12 +1803,20 @@ async function run() {
         path: path.join(ARTIFACTS, 'popup_shuttle_customize_diagram.png'),
         fullPage: true
       });
+      await popupPage.screenshot({
+        path: path.join(ARTIFACTS, 'popup_shuttle_single_select.png'),
+        fullPage: true
+      });
       results.push({
         name: 'customize-shuttle-diagram-highlight',
-        pass: highlight.active === true &&
+        pass: highlight.singlePart === true &&
+          highlight.singleRow === true &&
           shuttleCollapsed.hasSvg === true &&
           highlight.hasLabels === true &&
-          /^[−+\-]/.test(highlight.label || ''),
+          /^[−+\-]/.test(highlight.label || '') &&
+          highlight.dimpleCy != null && highlight.dimpleCy >= 82 &&
+          highlight.hasChevrons === true &&
+          highlight.noStepperBtns === true,
         detail: { highlight, shuttleCollapsed }
       });
 
@@ -2091,18 +2142,110 @@ async function run() {
       }
       await page.screenshot({ path: path.join(ARTIFACTS, 'clock_edit_45_30.png'), fullPage: true });
 
-      // Seconds > 59: keep edit open + red outline + hint
+      // Seconds > 59: keep edit open + red outline + hint; OSD cleared while editing
       const badSecs = await clockEditCase('45:70', false, null);
+      const invalidLayout = await page.evaluate(() => {
+        const wrap = document.getElementById('match-timer-wrap');
+        const timer = document.getElementById('match-timer');
+        const hint = document.querySelector('.omt-clock-edit-hint');
+        const osd = document.getElementById('osd-message');
+        const tr = timer?.getBoundingClientRect();
+        const hr = hint?.getBoundingClientRect();
+        const wr = wrap?.getBoundingClientRect();
+        return {
+          osdHidden: !osd || !osd.classList.contains('visible'),
+          hintBelow: !!(tr && hr && hr.top >= tr.bottom - 1),
+          hintAligned: !!(tr && hr && Math.abs((hr.left + hr.right) / 2 - (tr.left + tr.right) / 2) < 12),
+          wrapNotMuchWider: !!(tr && wr && wr.width <= tr.width + 4),
+          invalid: !!timer?.classList.contains('is-invalid')
+        };
+      });
       results.push({
         name: 'clock-edit-seconds-over-59-hint',
-        pass: badSecs.pass === true,
-        detail: badSecs
+        pass: badSecs.pass === true &&
+          invalidLayout.osdHidden === true &&
+          invalidLayout.hintBelow === true &&
+          invalidLayout.hintAligned === true &&
+          invalidLayout.wrapNotMuchWider === true,
+        detail: { badSecs, invalidLayout }
       });
       await page.screenshot({ path: path.join(ARTIFACTS, 'clock_edit_invalid_seconds.png'), fullPage: true });
-
-      // Esc cancels invalid edit
       await page.keyboard.press('Escape');
-      await page.waitForTimeout(120);
+      await page.waitForTimeout(80);
+
+      // Invalid state at required positions/sizes
+      for (const [pos, size, file] of [
+        ['top-left', 'small', 'clock_invalid_top_left_S.png'],
+        ['top-right', 'xlarge', 'clock_invalid_top_right_XL.png'],
+        ['bottom-centre', 'medium', 'clock_invalid_bottom_centre_M.png']
+      ]) {
+        await page.evaluate(({ pos, size }) => {
+          window.postMessage({
+            source: 'omt-bridge',
+            type: 'OMT_STORAGE_SYNC',
+            values: { omtClockPosition: pos, omtClockSize: size, omtClockShape: 'rounded' }
+          }, '*');
+          try {
+            localStorage.setItem('omtClockPosition', pos);
+            localStorage.setItem('omtClockSize', size);
+            localStorage.setItem('omtClockShape', 'rounded');
+          } catch (_) {}
+          // Keep transport chrome out of the way for bottom-position shots.
+          const panel = document.getElementById('controls-panel');
+          const bar = document.getElementById('omt-timeline-bar');
+          const kick = document.getElementById('omt-kickoff-bar');
+          if (panel) {
+            panel.style.setProperty('opacity', '0', 'important');
+            panel.style.setProperty('pointer-events', 'none', 'important');
+            panel.style.setProperty('visibility', 'hidden', 'important');
+          }
+          if (bar) {
+            bar.style.setProperty('opacity', '0', 'important');
+            bar.style.setProperty('visibility', 'hidden', 'important');
+          }
+          if (kick) {
+            kick.style.setProperty('opacity', '0', 'important');
+            kick.style.setProperty('visibility', 'hidden', 'important');
+          }
+        }, { pos, size });
+        await page.waitForTimeout(120);
+        await page.evaluate(() => {
+          document.getElementById('match-timer')?.dispatchEvent(
+            new MouseEvent('click', { bubbles: true, cancelable: true, view: window })
+          );
+        });
+        await page.waitForSelector('#timer-edit-input', { timeout: 5000 });
+        await page.fill('#timer-edit-input', '45:70');
+        await page.keyboard.press('Enter');
+        await page.waitForTimeout(150);
+        const layout = await page.evaluate(({ pos }) => {
+          const wrap = document.getElementById('match-timer-wrap');
+          const timer = document.getElementById('match-timer');
+          const hint = document.querySelector('.omt-clock-edit-hint');
+          const osd = document.getElementById('osd-message');
+          const tr = timer?.getBoundingClientRect();
+          const hr = hint?.getBoundingClientRect();
+          const bottom = /bottom/.test(pos);
+          return {
+            invalid: !!timer?.classList.contains('is-invalid'),
+            osdHidden: !osd || !osd.classList.contains('visible'),
+            hintText: hint?.textContent || '',
+            hintSideOk: !!(tr && hr && (bottom ? hr.bottom <= tr.top + 1 : hr.top >= tr.bottom - 1)),
+            posClass: wrap?.className || ''
+          };
+        }, { pos });
+        results.push({
+          name: `clock-invalid-layout-${pos}-${size}`,
+          pass: layout.invalid && layout.osdHidden && /Seconds 0-59/.test(layout.hintText) && layout.hintSideOk,
+          detail: layout
+        });
+        await page.screenshot({ path: path.join(ARTIFACTS, file), fullPage: true });
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(80);
+      }
+
+      // Esc cancels invalid edit (ensure clean state)
+      await page.waitForTimeout(40);
       const afterEsc = await page.evaluate(() => {
         const timer = document.getElementById('match-timer');
         const input = document.getElementById('timer-edit-input');

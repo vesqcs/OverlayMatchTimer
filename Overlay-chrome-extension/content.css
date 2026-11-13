@@ -109,6 +109,8 @@
 #match-timer-wrap.is-visible,
 #omt-root.omt-timer-on #match-timer-wrap {
     display: block;
+    width: max-content;
+    max-width: none;
 }
 /* Corners clear of centre OSD; bottoms clear of timeline (~48–56px) */
 #match-timer-wrap.omt-clock-pos-top-left { top: 14px; left: 14px; right: auto; bottom: auto; transform: none; }
@@ -120,15 +122,16 @@
     transform: translateX(-50%);
 }
 #match-timer-wrap.omt-clock-pos-top-right { top: 14px; right: 14px; left: auto; bottom: auto; transform: none; }
-#match-timer-wrap.omt-clock-pos-bottom-left { bottom: 56px; left: 14px; top: auto; right: auto; transform: none; }
+/* Bottom presets clear timeline + floating transport panel (~170–190px). */
+#match-timer-wrap.omt-clock-pos-bottom-left { bottom: 196px; left: 14px; top: auto; right: auto; transform: none; }
 #match-timer-wrap.omt-clock-pos-bottom-centre {
-    bottom: 56px;
+    bottom: 196px;
     left: 50%;
     top: auto;
     right: auto;
     transform: translateX(-50%);
 }
-#match-timer-wrap.omt-clock-pos-bottom-right { bottom: 56px; right: 14px; top: auto; left: auto; transform: none; }
+#match-timer-wrap.omt-clock-pos-bottom-right { bottom: 196px; right: 14px; top: auto; left: auto; transform: none; }
 #match-timer {
     position: relative;
     top: auto;
@@ -152,15 +155,25 @@
     cursor: text;
     user-select: text;
     border-color: rgba(245, 131, 31, 0.55);
+    box-sizing: border-box;
+    text-align: center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: auto;
+    max-width: none;
+    vertical-align: top;
 }
 #match-timer.is-invalid {
     border-color: #e57373 !important;
-    box-shadow: 0 0 0 1px rgba(229, 115, 115, 0.45);
+    box-shadow: 0 0 0 1px rgba(229, 115, 115, 0.55);
+    outline: none;
 }
+#omt-root #match-timer #timer-edit-input,
 #match-timer #timer-edit-input {
-    width: 4.6em;
-    min-width: 2.8em;
-    max-width: 7em;
+    width: 5.2ch;
+    min-width: 3.5ch;
+    max-width: 9ch;
     background: transparent;
     border: none;
     color: inherit;
@@ -173,19 +186,47 @@
     outline: none;
     padding: 0;
     margin: 0;
-    display: inline-block;
-    vertical-align: middle;
+    display: block;
     box-sizing: content-box;
+    line-height: 1;
+    overflow: hidden;
 }
+#omt-root #match-timer #timer-edit-input::selection,
+#match-timer #timer-edit-input::selection {
+    background: rgba(245, 131, 31, 0.45);
+    color: #fff;
+}
+#omt-root #match-timer #timer-edit-input::-moz-selection,
+#match-timer #timer-edit-input::-moz-selection {
+    background: rgba(245, 131, 31, 0.45);
+    color: #fff;
+}
+/* Hint is absolutely positioned so it never expands the clock face / red outline. */
 #match-timer-wrap .omt-clock-edit-hint {
-    margin-top: 4px;
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    top: calc(100% + 4px);
+    bottom: auto;
+    margin: 0;
+    padding: 0;
     font-size: 10px;
-    font-weight: 600;
+    font-weight: 650;
+    line-height: 1.2;
     color: #ef9a9a;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    white-space: nowrap;
     text-align: center;
     letter-spacing: 0.02em;
     pointer-events: none;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+    z-index: 2;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+}
+#match-timer-wrap.omt-clock-hint-above .omt-clock-edit-hint {
+    top: auto;
+    bottom: calc(100% + 5px);
 }
 #match-timer-wrap.omt-clock-size-small #match-timer { font-size: 18px; padding: 4px 8px; }
 #match-timer-wrap.omt-clock-size-medium #match-timer { font-size: 26px; padding: 7px 12px; }
@@ -1204,9 +1245,9 @@
 #omt-root.omt-examino.omt-compact #match-timer-wrap.omt-clock-pos-top-left { top: 8px; left: 8px; }
 #omt-root.omt-examino.omt-compact #match-timer-wrap.omt-clock-pos-top-centre { top: 36px; left: 50%; transform: translateX(-50%); }
 #omt-root.omt-examino.omt-compact #match-timer-wrap.omt-clock-pos-top-right { top: 8px; right: 8px; }
-#omt-root.omt-examino.omt-compact #match-timer-wrap.omt-clock-pos-bottom-left { bottom: 40px; left: 8px; }
-#omt-root.omt-examino.omt-compact #match-timer-wrap.omt-clock-pos-bottom-centre { bottom: 40px; left: 50%; transform: translateX(-50%); }
-#omt-root.omt-examino.omt-compact #match-timer-wrap.omt-clock-pos-bottom-right { bottom: 40px; right: 8px; }
+#omt-root.omt-examino.omt-compact #match-timer-wrap.omt-clock-pos-bottom-left { bottom: 150px; left: 8px; }
+#omt-root.omt-examino.omt-compact #match-timer-wrap.omt-clock-pos-bottom-centre { bottom: 150px; left: 50%; transform: translateX(-50%); }
+#omt-root.omt-examino.omt-compact #match-timer-wrap.omt-clock-pos-bottom-right { bottom: 150px; right: 8px; }
 #omt-root.omt-examino.omt-compact #controls-panel {
     bottom: 28px;
     width: min(560px, calc(100% - 16px));

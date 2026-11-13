@@ -12,7 +12,14 @@
     custSections: 'omtCustSectionsOpen'
   };
 
-  const CUST_SECTION_DEFAULTS = { clock: true, hotkeys: false, shuttle: false };
+  const CUST_SECTION_DEFAULTS = {
+    // Customize
+    clock: true, hotkeys: false, shuttle: false,
+    // General (v1.6.3) — actions open; reference lists collapsed
+    genActions: true, genShortcuts: false, genShuttle: false
+  };
+
+  let selectedShuttlePart = null;
 
   const HOTKEY_DEFAULTS = {
     playPause:   { key: ' ',         label: 'Play / Pause' },
@@ -44,7 +51,7 @@
   };
 
   const SHUTTLE_DIAGRAM_SVG = `<svg class="omt-shuttle-svg" viewBox="0 0 200 200" role="img" aria-label="Contour ShuttleXpress">
-  <!-- v1.6.2 outline: Vasco foto.png — centred btn3, mirrored 2/4 & 1/5, dimple at 12 o'clock -->
+  <!-- v1.6.3 outline: Vasco foto.png — centred btn3, mirrored 2/4 & 1/5, dimple at 12 o'clock -->
   <g class="omt-sx-root">
     <circle class="omt-sx-body" cx="100" cy="100" r="80"/>
     <g class="omt-sx-part" data-part="ring" tabindex="-1" role="button" aria-label="Shuttle ring">
@@ -54,7 +61,7 @@
     </g>
     <g class="omt-sx-part" data-part="jog" tabindex="-1" role="button" aria-label="Jog">
       <circle cx="100" cy="100" r="27.5"/>
-      <circle class="omt-sx-dimple" cx="100" cy="78.0" r="4.2"/>
+      <circle class="omt-sx-dimple" cx="100" cy="84.0" r="4.2"/>
     </g>
     <path class="omt-sx-part omt-sx-btn" data-part="btn1" tabindex="-1" role="button" aria-label="Button 1" d="M32.28,134.50 A76,76 0 0,1 32.28,65.50 L52.78,75.94 A53,53 0 0,0 52.78,124.06 Z"/>
     <path class="omt-sx-part omt-sx-btn" data-part="btn2" tabindex="-1" role="button" aria-label="Button 2" d="M38.51,55.33 A76,76 0 0,1 66.68,31.69 L76.77,52.36 A53,53 0 0,0 57.12,68.85 Z"/>
@@ -403,14 +410,19 @@
   }
 
   function setShuttleHighlight(part) {
+    // Single-select: clear every prior highlight, then activate one part/row.
+    selectedShuttlePart = part || null;
+    document.querySelectorAll('.omt-sx-part.is-active, .omt-sx-num.is-active, .omt-sx-label.is-active, .omt-shuttle-row.is-active')
+      .forEach((el) => el.classList.remove('is-active'));
     document.querySelectorAll('.omt-sx-part, .omt-sx-num, .omt-sx-label').forEach((el) => {
-      const match = !!part && el.getAttribute('data-part') === part;
-      el.classList.toggle('is-active', match);
-      el.classList.toggle('is-hover', false);
+      el.classList.remove('is-hover');
+      if (selectedShuttlePart && el.getAttribute('data-part') === selectedShuttlePart) {
+        el.classList.add('is-active');
+      }
     });
     document.querySelectorAll('.omt-shuttle-row').forEach((row) => {
       const rowPart = resolveShuttlePartFromRow(row);
-      row.classList.toggle('is-active', !!part && rowPart === part);
+      if (selectedShuttlePart && rowPart === selectedShuttlePart) row.classList.add('is-active');
     });
   }
 
@@ -418,6 +430,7 @@
     document.querySelectorAll('.omt-sx-part, .omt-sx-num, .omt-sx-label').forEach((el) => {
       const match = !!part && el.getAttribute('data-part') === part;
       if (!el.classList.contains('is-active')) el.classList.toggle('is-hover', match);
+      else el.classList.remove('is-hover');
     });
   }
 
@@ -583,21 +596,43 @@
   }
 
   document.getElementById('omt-shuttle-edit-list').addEventListener('click', (e) => {
-    const stepBtn = e.target.closest('.omt-stepper-btn');
-    if (!stepBtn) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const inputId = stepBtn.getAttribute('data-for');
-    const input = inputId ? document.getElementById(inputId) : null;
-    if (!input) return;
-    const step = Number(stepBtn.getAttribute('data-step')) || 0;
-    const min = Number(input.min) || 1;
-    const max = Number(input.max) || 600;
-    const cur = Number(input.value);
-    const next = Math.min(max, Math.max(min, (Number.isFinite(cur) ? cur : min) + step));
-    input.value = String(next);
-    readShuttleFromForm();
-    updateShuttleResetVisibility();
+    const chev = e.target.closest('.omt-chev');
+    if (chev) {
+      e.preventDefault();
+      e.stopPropagation();
+      const inputId = chev.getAttribute('data-for');
+      const input = inputId ? document.getElementById(inputId) : null;
+      if (!input) return;
+      const step = Number(chev.getAttribute('data-step')) || 0;
+      const min = Number(input.min) || 1;
+      const max = Number(input.max) || 600;
+      const cur = Number(input.value);
+      const next = Math.min(max, Math.max(min, (Number.isFinite(cur) ? cur : min) + step));
+      input.value = String(next);
+      readShuttleFromForm();
+      updateShuttleResetVisibility();
+      const row = chev.closest('.omt-shuttle-row');
+      if (row) setShuttleHighlight(resolveShuttlePartFromRow(row));
+      return;
+    }
+    const resetBtn = e.target.closest('[data-reset]');
+    if (resetBtn) {
+      const key = resetBtn.getAttribute('data-reset');
+      shuttlePrefs[key] = SHUTTLE_DEFAULTS[key];
+      fillShuttleForm();
+      saveShuttle();
+      renderGeneralShuttle();
+      updateShuttleDiagramLabels();
+      const partMap = {
+        skipBtn1: 'btn1', skipBtn2: 'btn2', skipBtn4: 'btn4', skipBtn5: 'btn5',
+        playPauseBtn: 'btn' + shuttlePrefs.playPauseBtn,
+        jogStep: 'jog', shuttleScale: 'ring'
+      };
+      setShuttleHighlight(partMap[key] || null);
+      return;
+    }
+    const row = e.target.closest('.omt-shuttle-row');
+    if (row) setShuttleHighlight(resolveShuttlePartFromRow(row));
   });
   document.getElementById('omt-shuttle-edit-list').addEventListener('change', (e) => {
     if (e.target.matches('input, select')) readShuttleFromForm();
@@ -616,22 +651,6 @@
   document.getElementById('omt-shuttle-edit-list').addEventListener('mouseout', (e) => {
     const row = e.target.closest('.omt-shuttle-row');
     if (row) setShuttleHover(null);
-  });
-  document.getElementById('omt-shuttle-edit-list').addEventListener('click', (e) => {
-    const resetBtn = e.target.closest('[data-reset]');
-    if (!resetBtn) return;
-    const key = resetBtn.getAttribute('data-reset');
-    shuttlePrefs[key] = SHUTTLE_DEFAULTS[key];
-    fillShuttleForm();
-    saveShuttle();
-    renderGeneralShuttle();
-    updateShuttleDiagramLabels();
-    const partMap = {
-      skipBtn1: 'btn1', skipBtn2: 'btn2', skipBtn4: 'btn4', skipBtn5: 'btn5',
-      playPauseBtn: 'btn' + shuttlePrefs.playPauseBtn,
-      jogStep: 'jog', shuttleScale: 'ring'
-    };
-    setShuttleHighlight(partMap[key] || null);
   });
 
 

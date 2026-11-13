@@ -20,29 +20,36 @@
   </nav>
 
   <section class="omt-pane is-active" data-pane="general">
-    <div class="omt-general-settings">
-      <button type="button" id="omt-open-local-player" class="omt-local-open-btn">Open local player</button>
-      <p class="omt-note">Standalone window for local / NAS-mapped match files. Same HUD as InplayIP &amp; Examino. Open multiple windows; enable ShuttleXpress only where needed.</p>
-      <div class="omt-toggle-row" title="Pause when the browser window loses focus or the tab is hidden. Resumes on return only if this feature paused playback. Never applies when ShuttleXpress is enabled on the page.">
-        <span class="omt-toggle-label">Auto pause on Alt+Tab</span>
-        <label class="omt-switch" for="omt-auto-pause-blur">
-          <input type="checkbox" id="omt-auto-pause-blur" />
-          <span class="omt-switch-slider"></span>
-        </label>
+    <details class="omt-cust-details" id="omt-gen-actions-details" data-section="genActions" open>
+      <summary class="omt-cust-summary">Actions</summary>
+      <div class="omt-cust-details-body">
+        <button type="button" id="omt-open-local-player" class="omt-local-open-btn">Open local player</button>
+        <p class="omt-note">Standalone window for local / NAS-mapped match files. Same HUD as InplayIP &amp; Examino. Open multiple windows; enable ShuttleXpress only where needed.</p>
+        <div class="omt-toggle-row" title="Pause when the browser window loses focus or the tab is hidden. Resumes on return only if this feature paused playback. Never applies when ShuttleXpress is enabled on the page.">
+          <span class="omt-toggle-label">Auto pause on Alt+Tab</span>
+          <label class="omt-switch" for="omt-auto-pause-blur">
+            <input type="checkbox" id="omt-auto-pause-blur" />
+            <span class="omt-switch-slider"></span>
+          </label>
+        </div>
+        <p class="omt-note">Default off. Skipped on pages with ShuttleXpress enabled (shared live monitor).</p>
       </div>
-      <p class="omt-note">Default off. Skipped on pages with ShuttleXpress enabled (shared live monitor).</p>
-    </div>
+    </details>
 
-    <div class="cheatsheet" id="omt-general-shortcuts">
-      <div class="cheatsheet-title">Shortcuts</div>
-      <div id="omt-shortcut-list"></div>
-    </div>
+    <details class="omt-cust-details" id="omt-gen-shortcuts-details" data-section="genShortcuts">
+      <summary class="omt-cust-summary">Shortcuts</summary>
+      <div class="omt-cust-details-body">
+        <div id="omt-shortcut-list"></div>
+      </div>
+    </details>
 
-    <div class="cheatsheet omt-shuttle-summary" id="omt-general-shuttle">
-      <div class="cheatsheet-title">ShuttleXpress</div>
-      <div class="omt-shuttle-diagram-wrap omt-shuttle-diagram-wrap--general" id="omt-shuttle-summary-diagram" aria-label="ShuttleXpress shortcut map"></div>
-      <div id="omt-shuttle-summary-list" class="omt-shuttle-summary-list" hidden></div>
-    </div>
+    <details class="omt-cust-details" id="omt-gen-shuttle-details" data-section="genShuttle">
+      <summary class="omt-cust-summary">ShuttleXpress</summary>
+      <div class="omt-cust-details-body">
+        <div class="omt-shuttle-diagram-wrap omt-shuttle-diagram-wrap--general" id="omt-shuttle-summary-diagram" aria-label="ShuttleXpress shortcut map"></div>
+        <div id="omt-shuttle-summary-list" class="omt-shuttle-summary-list" hidden></div>
+      </div>
+    </details>
   </section>
 
   <section class="omt-pane" data-pane="customize">
@@ -102,99 +109,99 @@
         </div>
 
         <div class="omt-shuttle-edit-list" id="omt-shuttle-edit-list">
-          <label class="omt-field omt-shuttle-row" data-part="btn1">
-            <span>Btn 1 skip (−)</span>
-            <span class="omt-inline-edit">
-              <span class="omt-stepper">
-                <button type="button" class="omt-stepper-btn" data-step="-1" data-for="omt-sx-skip1" aria-label="Decrease" tabindex="-1"><svg class="omt-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/></svg>
-                </button>
-                <input type="number" id="omt-sx-skip1" class="omt-stepper-input" min="1" max="600" step="1" />
-                <button type="button" class="omt-stepper-btn" data-step="1" data-for="omt-sx-skip1" aria-label="Increase" tabindex="-1"><svg class="omt-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-                </button>
+          <div class="omt-shuttle-row" data-part="btn1">
+            <span class="omt-shuttle-label">Btn 1 skip (−)</span>
+            <span class="omt-shuttle-control">
+              <span class="omt-num-field">
+                <input type="number" id="omt-sx-skip1" class="omt-control" min="1" max="600" step="1" />
+                <span class="omt-num-chevrons" aria-hidden="true">
+                  <button type="button" class="omt-chev" data-step="1" data-for="omt-sx-skip1" tabindex="-1" aria-label="Increase"></button>
+                  <button type="button" class="omt-chev" data-step="-1" data-for="omt-sx-skip1" tabindex="-1" aria-label="Decrease"></button>
+                </span>
               </span>
               <span class="omt-unit">s</span>
-              <button type="button" class="omt-btn-icon" data-reset="skipBtn1" title="Reset to default" aria-label="Reset to default"><svg class="omt-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
             </span>
-          </label>
-          <label class="omt-field omt-shuttle-row" data-part="btn2">
-            <span>Btn 2 skip (−)</span>
-            <span class="omt-inline-edit">
-              <span class="omt-stepper">
-                <button type="button" class="omt-stepper-btn" data-step="-1" data-for="omt-sx-skip2" aria-label="Decrease" tabindex="-1"><svg class="omt-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/></svg>
-                </button>
-                <input type="number" id="omt-sx-skip2" class="omt-stepper-input" min="1" max="600" step="1" />
-                <button type="button" class="omt-stepper-btn" data-step="1" data-for="omt-sx-skip2" aria-label="Increase" tabindex="-1"><svg class="omt-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-                </button>
+            <button type="button" class="omt-btn-icon" data-reset="skipBtn1" title="Reset to default" aria-label="Reset to default"><svg class="omt-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
+          </div>
+          <div class="omt-shuttle-row" data-part="btn2">
+            <span class="omt-shuttle-label">Btn 2 skip (−)</span>
+            <span class="omt-shuttle-control">
+              <span class="omt-num-field">
+                <input type="number" id="omt-sx-skip2" class="omt-control" min="1" max="600" step="1" />
+                <span class="omt-num-chevrons" aria-hidden="true">
+                  <button type="button" class="omt-chev" data-step="1" data-for="omt-sx-skip2" tabindex="-1" aria-label="Increase"></button>
+                  <button type="button" class="omt-chev" data-step="-1" data-for="omt-sx-skip2" tabindex="-1" aria-label="Decrease"></button>
+                </span>
               </span>
               <span class="omt-unit">s</span>
-              <button type="button" class="omt-btn-icon" data-reset="skipBtn2" title="Reset to default" aria-label="Reset to default"><svg class="omt-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
             </span>
-          </label>
-          <label class="omt-field omt-shuttle-row" data-part="btn3">
-            <span>Play / Pause button</span>
-            <span class="omt-inline-edit">
-              <select id="omt-sx-playpause">
+            <button type="button" class="omt-btn-icon" data-reset="skipBtn2" title="Reset to default" aria-label="Reset to default"><svg class="omt-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
+          </div>
+          <div class="omt-shuttle-row" data-part="btn3">
+            <span class="omt-shuttle-label">Play / Pause</span>
+            <span class="omt-shuttle-control">
+              <select id="omt-sx-playpause" class="omt-control">
                 <option value="1">Btn 1</option>
                 <option value="2">Btn 2</option>
                 <option value="3">Btn 3 (default)</option>
                 <option value="4">Btn 4</option>
                 <option value="5">Btn 5</option>
               </select>
-              <button type="button" class="omt-btn-icon" data-reset="playPauseBtn" title="Reset to default" aria-label="Reset to default"><svg class="omt-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
             </span>
-          </label>
-          <label class="omt-field omt-shuttle-row" data-part="btn4">
-            <span>Btn 4 skip (+)</span>
-            <span class="omt-inline-edit">
-              <span class="omt-stepper">
-                <button type="button" class="omt-stepper-btn" data-step="-1" data-for="omt-sx-skip4" aria-label="Decrease" tabindex="-1"><svg class="omt-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/></svg>
-                </button>
-                <input type="number" id="omt-sx-skip4" class="omt-stepper-input" min="1" max="600" step="1" />
-                <button type="button" class="omt-stepper-btn" data-step="1" data-for="omt-sx-skip4" aria-label="Increase" tabindex="-1"><svg class="omt-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-                </button>
+            <button type="button" class="omt-btn-icon" data-reset="playPauseBtn" title="Reset to default" aria-label="Reset to default"><svg class="omt-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
+          </div>
+          <div class="omt-shuttle-row" data-part="btn4">
+            <span class="omt-shuttle-label">Btn 4 skip (+)</span>
+            <span class="omt-shuttle-control">
+              <span class="omt-num-field">
+                <input type="number" id="omt-sx-skip4" class="omt-control" min="1" max="600" step="1" />
+                <span class="omt-num-chevrons" aria-hidden="true">
+                  <button type="button" class="omt-chev" data-step="1" data-for="omt-sx-skip4" tabindex="-1" aria-label="Increase"></button>
+                  <button type="button" class="omt-chev" data-step="-1" data-for="omt-sx-skip4" tabindex="-1" aria-label="Decrease"></button>
+                </span>
               </span>
               <span class="omt-unit">s</span>
-              <button type="button" class="omt-btn-icon" data-reset="skipBtn4" title="Reset to default" aria-label="Reset to default"><svg class="omt-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
             </span>
-          </label>
-          <label class="omt-field omt-shuttle-row" data-part="btn5">
-            <span>Btn 5 skip (+)</span>
-            <span class="omt-inline-edit">
-              <span class="omt-stepper">
-                <button type="button" class="omt-stepper-btn" data-step="-1" data-for="omt-sx-skip5" aria-label="Decrease" tabindex="-1"><svg class="omt-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/></svg>
-                </button>
-                <input type="number" id="omt-sx-skip5" class="omt-stepper-input" min="1" max="600" step="1" />
-                <button type="button" class="omt-stepper-btn" data-step="1" data-for="omt-sx-skip5" aria-label="Increase" tabindex="-1"><svg class="omt-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-                </button>
+            <button type="button" class="omt-btn-icon" data-reset="skipBtn4" title="Reset to default" aria-label="Reset to default"><svg class="omt-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
+          </div>
+          <div class="omt-shuttle-row" data-part="btn5">
+            <span class="omt-shuttle-label">Btn 5 skip (+)</span>
+            <span class="omt-shuttle-control">
+              <span class="omt-num-field">
+                <input type="number" id="omt-sx-skip5" class="omt-control" min="1" max="600" step="1" />
+                <span class="omt-num-chevrons" aria-hidden="true">
+                  <button type="button" class="omt-chev" data-step="1" data-for="omt-sx-skip5" tabindex="-1" aria-label="Increase"></button>
+                  <button type="button" class="omt-chev" data-step="-1" data-for="omt-sx-skip5" tabindex="-1" aria-label="Decrease"></button>
+                </span>
               </span>
               <span class="omt-unit">s</span>
-              <button type="button" class="omt-btn-icon" data-reset="skipBtn5" title="Reset to default" aria-label="Reset to default"><svg class="omt-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
             </span>
-          </label>
-          <label class="omt-field omt-shuttle-row" data-part="jog">
-            <span title="Frame by frame">Jog</span>
-            <span class="omt-inline-edit">
-              <select id="omt-sx-jog">
-                <option value="0.02">0.02s (fine)</option>
-                <option value="0.04">0.04s (~1 frame, default)</option>
+            <button type="button" class="omt-btn-icon" data-reset="skipBtn5" title="Reset to default" aria-label="Reset to default"><svg class="omt-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
+          </div>
+          <div class="omt-shuttle-row" data-part="jog">
+            <span class="omt-shuttle-label" title="Frame by frame">Jog</span>
+            <span class="omt-shuttle-control">
+              <select id="omt-sx-jog" class="omt-control">
+                <option value="0.02">0.02s fine</option>
+                <option value="0.04">0.04s ≈1f</option>
                 <option value="0.08">0.08s</option>
                 <option value="0.12">0.12s</option>
               </select>
-              <button type="button" class="omt-btn-icon" data-reset="jogStep" title="Reset to default" aria-label="Reset to default"><svg class="omt-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
             </span>
-          </label>
-          <label class="omt-field omt-shuttle-row" data-part="ring">
-            <span title="Speed">Shuttle ring</span>
-            <span class="omt-inline-edit">
-              <select id="omt-sx-scale">
+            <button type="button" class="omt-btn-icon" data-reset="jogStep" title="Reset to default" aria-label="Reset to default"><svg class="omt-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
+          </div>
+          <div class="omt-shuttle-row" data-part="ring">
+            <span class="omt-shuttle-label" title="Speed">Shuttle ring</span>
+            <span class="omt-shuttle-control">
+              <select id="omt-sx-scale" class="omt-control">
                 <option value="0.5">0.5×</option>
                 <option value="1">1× (default)</option>
                 <option value="1.5">1.5×</option>
                 <option value="2">2×</option>
               </select>
-              <button type="button" class="omt-btn-icon" data-reset="shuttleScale" title="Reset to default" aria-label="Reset to default"><svg class="omt-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
             </span>
-          </label>
+            <button type="button" class="omt-btn-icon" data-reset="shuttleScale" title="Reset to default" aria-label="Reset to default"><svg class="omt-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
+          </div>
         </div>
         <div class="omt-cust-actions">
           <button type="button" id="omt-sx-reset-all" class="omt-btn-secondary">Reset all ShuttleXpress</button>
@@ -208,7 +215,7 @@
     </div>
   </section>
 
-  <footer class="omt-popup-foot">v1.6.2</footer>
+  <footer class="omt-popup-foot">v1.6.3</footer>
   <script src="popup.js"></script>
 </body>
 </html>

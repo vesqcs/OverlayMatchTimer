@@ -1829,9 +1829,13 @@
     function omtClockEditHint(show, text) {
         const wrap = typeof q === 'function' ? q('match-timer-wrap') : null;
         if (!wrap) return;
+        const isBottom = /omt-clock-pos-bottom/.test(wrap.className || '');
+        wrap.classList.toggle('omt-clock-hint-above', !!show && isBottom);
+        wrap.classList.toggle('omt-clock-hint-below', !!show && !isBottom);
         let hint = wrap.querySelector('.omt-clock-edit-hint');
         if (!show) {
             if (hint) hint.remove();
+            wrap.classList.remove('omt-clock-hint-above', 'omt-clock-hint-below');
             return;
         }
         if (!hint) {
@@ -1852,10 +1856,13 @@
         timerUI.classList.add('is-editing');
         timerUI.classList.remove('is-invalid');
         omtClockEditHint(false);
+        if (typeof limparOSD === 'function') limparOSD();
 
+        // Keep the face the same size as a normal mm:ss readout while editing.
+        const faceLabel = String(minAtual).padStart(2, '0') + ':00';
         timerUI.innerHTML =
             '<input type="text" id="timer-edit-input" inputmode="decimal" autocomplete="off" ' +
-            'spellcheck="false" value="' + String(minAtual) + '">';
+            'spellcheck="false" size="1" value="' + String(minAtual) + '" aria-label="Match time">';
 
         const input = omtRoot.querySelector('#timer-edit-input');
         if (!input) {
@@ -1864,6 +1871,15 @@
             atualizarRelogio();
             return;
         }
+
+        // Keep the face hugging the typed value (ch units). Native inputs default to ~20ch
+        // and would otherwise blow out the red invalid outline.
+        function syncEditWidth() {
+            const len = Math.max(String(input.value || '').length, faceLabel.length, 4);
+            input.style.width = (len + 0.4) + 'ch';
+        }
+        syncEditWidth();
+        input.addEventListener('input', syncEditWidth);
 
         input.focus();
         input.select();
@@ -2188,6 +2204,12 @@
         osd.classList.add('visible');
         clearTimeout(osdTimeout);
         osdTimeout = setTimeout(() => { if (osd) osd.classList.remove('visible'); }, 1100);
+    }
+
+    function limparOSD() {
+        if (!osd) return;
+        osd.classList.remove('visible');
+        clearTimeout(osdTimeout);
     }
 
 /* Controls auto-hide: activity tracking, hover keep-visible, idle fade. */
