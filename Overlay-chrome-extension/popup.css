@@ -42,64 +42,33 @@ body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
   text-align: center;
   position: relative;
 }
-/* v1.6.4 design: 20:08 chip beside logo (Box clock style). Variant A = default in popup. */
+/* v1.6.5: v2 treatment — 20:08 Box badge overlaid top-left on the SP mark (logo file untouched). */
+.omt-brand-logo-wrap {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+  flex-shrink: 0;
+}
 .omt-header-clock {
+  position: absolute;
+  /* Sit over the slash mark (left of the 240×63 logo), proportioned like v2 @48 */
+  left: 0;
+  top: -2px;
+  z-index: 1;
   font-family: var(--omt-mono);
   font-variant-numeric: tabular-nums;
   font-weight: 650;
-  font-size: 13px;
-  letter-spacing: 0.03em;
+  font-size: 9px;
+  letter-spacing: 0.02em;
   line-height: 1;
   color: #f3f3f3;
-  background: rgba(0, 0, 0, 0.62);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 3px;
-  padding: 4px 7px;
+  background: rgba(0, 0, 0, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 2px;
+  padding: 2px 4px;
   user-select: none;
-  flex-shrink: 0;
-}
-.omt-brand--chip-beside {
-  display: grid;
-  grid-template-columns: auto auto;
-  grid-template-rows: auto auto;
-  align-items: center;
-  justify-content: center;
-  column-gap: 10px;
-  row-gap: 8px;
-}
-.omt-brand--chip-beside .omt-header-clock {
-  grid-column: 1;
-  grid-row: 1;
-  align-self: center;
-}
-.omt-brand--chip-beside .omt-sp-logo {
-  grid-column: 2;
-  grid-row: 1;
-}
-.omt-brand--chip-beside .omt-wordmark {
-  grid-column: 1 / -1;
-  grid-row: 2;
-  text-align: center;
-}
-/* Variant B (design exploration): chip top-left over brand row — applied via design mock only */
-.omt-brand--chip-topleft {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-}
-.omt-brand--chip-topleft .omt-brand-logo-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 8px;
-  width: 100%;
-  position: relative;
-}
-.omt-brand--chip-topleft .omt-header-clock {
-  position: absolute;
-  left: 0;
-  top: 0;
+  pointer-events: none;
+  white-space: nowrap;
 }
 .omt-sp-logo {
   /* Official Stats Perform logo (mark + wordmark) — assets/stats-perform-logo-dark.png 240×63 */
@@ -113,7 +82,8 @@ body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
   flex-shrink: 0;
 }
 .omt-popup-header,
-.omt-brand {
+.omt-brand,
+.omt-brand-logo-wrap {
   overflow: visible;
 }
 .omt-wordmark { font-size: 14px; font-weight: 700; letter-spacing: 0.02em; }
