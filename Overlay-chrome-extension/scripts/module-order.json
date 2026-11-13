@@ -3,11 +3,13 @@
   "src/adapters/interface.js",
   "src/adapters/inplayip.js",
   "src/adapters/examino.js",
+  "src/adapters/local.js",
   "src/adapters/xeatre.js",
   "src/adapters/detect.js",
   "src/boot.js",
   "src/hls.js",
   "src/suppress.js",
+  "src/icons.js",
   "src/ui.js",
   "src/wire.js",
   "src/anti-snap.js",
@@ -23,6 +25,9 @@
   "src/shuttle.js",
   "src/restore.js",
   "src/storage.js",
+  "src/customize.js",
+  "src/auto-pause.js",
   "src/examino-features.js",
+  "src/local-features.js",
   "src/entry.js"
 ]

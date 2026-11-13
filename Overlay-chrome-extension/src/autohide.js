@@ -10,11 +10,25 @@
         if (!target || !omtRoot) return false;
         const el = target.nodeType === 1 ? target : target.parentElement;
         if (!el || !omtRoot.contains(el)) return false;
-        return !!el.closest('.glass-panel, #match-timer, #osd-message, button, input, select, label, a, .timeline-container');
+        return !!el.closest('.glass-panel, #controls-panel, #match-timer-wrap, #match-timer, #omt-timeline-bar, #omt-more-panel, #omt-kickoff-bar, #omt-examino-settings, #osd-message, button, input, select, label, a, .omt-hud-chip');
     }
 
     function noteOmtUiActivity(showPanel = true) {
         resetControlsTimeout(showPanel);
+    }
+
+    function setChromeVisible(visible) {
+        const opacity = visible ? '1' : '0';
+        const pe = visible ? 'auto' : 'none';
+        if (controlsPanel) {
+            controlsPanel.style.opacity = opacity;
+            controlsPanel.style.pointerEvents = pe;
+        }
+        const timelineBar = omtRoot ? omtRoot.querySelector('#omt-timeline-bar') : null;
+        if (timelineBar) {
+            timelineBar.style.opacity = opacity;
+            timelineBar.style.pointerEvents = pe;
+        }
     }
 
     function wireOmtUiActivityTracking() {
@@ -42,6 +56,8 @@
         };
         trackHover(controlsPanel);
         trackHover(setupPanel);
+        const timelineBar = omtRoot.querySelector('#omt-timeline-bar');
+        trackHover(timelineBar);
         if (timerUI) trackHover(timerUI);
     }
 
@@ -57,8 +73,7 @@
         if (vid && !site.mediaReady(vid)) return;
 
         if (showPanel && controlsPanel) {
-            controlsPanel.style.opacity = '1';
-            controlsPanel.style.pointerEvents = 'auto';
+            setChromeVisible(true);
         }
 
         // Only schedule the hide timer when the panel is already visible.
@@ -73,9 +88,6 @@
                 resetControlsTimeout(false);
                 return;
             }
-            if (controlsPanel) {
-                controlsPanel.style.opacity = '0';
-                controlsPanel.style.pointerEvents = 'none';
-            }
+            setChromeVisible(false);
         }, 2500);
     }

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Privacy Policy — Overlay MatchTimer</title>
+  <style>
+    :root { color-scheme: dark; --bg:#121212; --text:#f1f1f1; --muted:#aaa; --orange:#F5831F; }
+    body { margin:0; font-family: "Segoe UI", system-ui, sans-serif; background:var(--bg); color:var(--text); line-height:1.5; }
+    main { max-width: 720px; margin: 0 auto; padding: 32px 20px 64px; }
+    h1 { font-size: 1.6rem; margin: 0 0 8px; }
+    h2 { font-size: 1.1rem; color: var(--orange); margin-top: 1.6em; }
+    p, li { color: var(--text); }
+    .meta { color: var(--muted); font-size: 0.9rem; }
+    a { color: var(--orange); }
+    ul { padding-left: 1.2em; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Privacy Policy — Overlay MatchTimer</h1>
+    <p class="meta">Last updated: 2026-11-13 · Developer: Vasco Oliveira</p>
+
+    <h2>Summary</h2>
+    <p>Overlay MatchTimer does <strong>not</strong> collect, sell, or send personal data to a developer-operated server. It runs locally in Chrome to overlay a match clock and controls on supported video pages.</p>
+
+    <h2>Data stored on your device</h2>
+    <p>Preferences may be stored in Chrome local extension storage and mirrored in page <code>localStorage</code> where the content script runs:</p>
+    <ul>
+      <li>Match clock position, size, and style</li>
+      <li>Custom keyboard shortcuts</li>
+      <li>ShuttleXpress skips, Play/Pause assignment, jog/ring settings</li>
+      <li>Popup section open-state and per-window Shuttle enable flag</li>
+    </ul>
+    <p>This data stays on the machine/profile that installed the extension.</p>
+
+    <h2>Data we do not collect</h2>
+    <ul>
+      <li>No analytics SDKs or advertising identifiers</li>
+      <li>No developer-backend account login</li>
+      <li>No transmission of video, keystrokes, or preferences to an Overlay MatchTimer server</li>
+    </ul>
+
+    <h2>Cloud sync (future)</h2>
+    <p>If optional Supabase (or similar) sync is added later, it will be <strong>off by default</strong> and covered by an updated policy before enablement. It is not present in v1.6.6.</p>
+
+    <h2>Third parties</h2>
+    <p>Video comes from InplayIP / Examino / local files under your existing access. This extension does not share additional data with those services.</p>
+
+    <h2>Host access</h2>
+    <p>Scripts inject only on declared hosts: InplayIP, Examino play URLs, and localhost/127.0.0.1 for local player / test pages.</p>
+
+    <h2>Changes</h2>
+    <p>Material privacy changes will update this page and the date above.</p>
+  </main>
+</body>
+</html>

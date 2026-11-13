@@ -2,26 +2,28 @@
 
 **Overlay MatchTimer** is a Chrome MV3 extension for professional football / sports match analysts. It injects a drift-aware match timer, HUD timeline, and playback controls over supported stream players.
 
-Supported by this extension build (**v1.3.0**, behaviour-identical to **v1.2.2**):
+Supported by this extension build (**v1.6.6** — Customize tab for clock / shortcuts / ShuttleXpress, plus local player):
 
-* **InplayIP** (`*.inplayip.tv`) — Video.js Review/DVR sessions (unchanged known-good behaviour)
+* **InplayIP** (`*.inplayip.tv`) — Video.js Review/DVR sessions (v1.4.x UI unchanged)
 * **Examino** (`examino.statsperform.io/play/dvr/*` and `/play/vod/*`) — OpenPlayer DVR/VOD pages (no iframes / shadow roots)
+* **Local player** (`chrome-extension://…/player.html`) — offline / NAS-mapped match files (toolbar **Open local player**; file picker + drag-and-drop; multi-window; per-window ShuttleXpress)
 
-Xeatre remains out of scope for the extension injector (use the local HTML companion to load copied DVR URLs). A stub adapter lives under `Overlay-chrome-extension/src/adapters/xeatre.js`.
+Xeatre remains out of scope for the extension injector until Vasco provides material. A stub adapter lives under `Overlay-chrome-extension/src/adapters/xeatre.js`.
 
-**Layout:** editable sources are in `Overlay-chrome-extension/src/` (concatenated into committed `content.js`). See [`ARCHITECTURE.md`](./ARCHITECTURE.md). After editing sources: `node Overlay-chrome-extension/scripts/build-content.mjs`. Load unpacked still needs no build step.
+**Layout:** editable sources are in `Overlay-chrome-extension/src/` (concatenated into committed `content.js`). See [`ARCHITECTURE.md`](./ARCHITECTURE.md). After editing sources: `node Overlay-chrome-extension/scripts/build-content.mjs`. Load unpacked still needs no build step. Toolbar popup General tab: **Open local player**, live shortcuts list, compact ShuttleXpress mapping, **Auto pause on Alt+Tab** (default off; resumes only if it caused the pause; never on ShuttleXpress pages). Customize tab: match-clock position/size/style (six fixed presets — top/bottom × left/centre/right), rebindable shortcuts with conflict warnings, collapsible ShuttleXpress prefs (skip seconds, play/pause button, jog/ring sensitivity) with Contour-faithful SVG diagram. In-video / local player: floating panel with Option A transport, symmetric speed chips `0.25x…1x…2x`, Hide controls (H), and bottom-only timeline; match controls live in the chevron group. Click the match clock to edit time (production-style free input: minutes alone, or minutes + any separator + seconds).
 
-The local companion app (`OverlayMatchTimer.html`) and the user guide (`Overlay MatchTimer Guideline.pdf`) document kick-off sync, halves, hotkeys, the draggable auto-hiding panel, HUD timeline jumps, and ShuttleXpress.
+The legacy companion app (`OverlayMatchTimer.html`) remains in the repo for reference / Xeatre URL paste; the extension local player is the supported path for post-match files.
 
 ---
 
 ## Key features
 
 * Kick-off sync with half / custom period selection and persistent `localStorage` state
-* Capture-phase hotkeys (Space, arrows, Z/C/X, H) that override host player shortcuts
+* Capture-phase hotkeys (Space, arrows, Z/C/X, H, **K** mark kick-off, **L** go live) that override host player shortcuts
 * Draggable glass setup + controls panels with auto-hide
 * HUD match clock with click-to-jump minute editing
 * Contour ShuttleXpress via WebHID
+* Optional **Auto pause on Alt+Tab** (toolbar General; chrome.storage.local) — pauses on blur/tab-hidden, auto-resumes only when that feature paused playback; skipped when ShuttleXpress is enabled
 * HLS PDT sync + anti-live-snap when a VHS / hls.js instance is present (InplayIP)
 
 ### Examino-specific behaviour
@@ -32,7 +34,7 @@ The local companion app (`OverlayMatchTimer.html`) and the user guide (`Overlay 
 * Native OpenPlayer + Examino chrome hidden (3 bottom button rows, hamburger, gear, OpenPlayer bars); main player expands into the freed space
 * **Window capture-phase hotkeys** installed at `document_start` so OpenPlayer/Examino shortcuts never win
 * **Click-to-toggle** play/pause on the **video surface only** (never the whole `.op-player` tree — that broke OpenPlayer Source switching in v1.2.1)
-* Setup panel keeps a compact **Source (DVR/VOD)** control + **Auto-switch to VOD** checkbox (chrome.storage via `bridge.js`, default ON). Options are exact `DVR`/`VOD` only; label tracks the live Source; MutationObserver drives faster auto-VOD. Manual DVR choice wins for the page session; settle-to-live runs only after VOD→DVR
+* Expandable in-panel controls keep a compact **Source (DVR/VOD)** control + **Auto-switch to VOD** toggle (chrome.storage via `bridge.js`, default ON). Options are exact `DVR`/`VOD` only; label tracks the live Source; MutationObserver drives faster auto-VOD. Manual DVR choice wins for the page session; settle-to-live runs only after VOD→DVR
 * Auto-hide treats clicks / wheel / keys on our UI as activity and never hides while the pointer is over the controls (InplayIP included)
 
 ---
@@ -47,7 +49,7 @@ The local companion app (`OverlayMatchTimer.html`) and the user guide (`Overlay 
 5. The Overlay MatchTimer HUD should appear over the player within a couple of seconds after the `<video>` mounts.
 6. On Examino, confirm native bottom bars are gone, hotkeys work, and Source auto-switches to **VOD** (toggle under Setup → Examino Player).
 
-Optional: the local HTML companion (`OverlayMatchTimer.html`) can still be used for offline files and for pasting Xeatre/Examino DVR URLs into the dashboard player.
+Use the toolbar **Open local player** for offline / NAS files. Optional: the legacy HTML companion (`OverlayMatchTimer.html`) can still paste Xeatre/Examino DVR URLs.
 
 ---
 
@@ -65,7 +67,8 @@ xvfb-run -a npm run test:e2e   # or omit xvfb-run on a machine with a display
 What the harness checks:
 
 * Examino mock: late video inject + one replacement, overlay appears, compact mode, kick-off sync, Space / seek hotkeys, panel drag, fullscreen keeps overlay
-* InplayIP mock: overlay regression + kick-off sync
+* InplayIP mock: overlay regression + kick-off sync + v1.4.x UI parity (Option A / speed / hide / shuttle)
+* Local player: file load, same HUD feature matrix, per-window Shuttle enablement
 
 Fixtures live under `test/fixtures/`. Screenshots are written to `/opt/cursor/artifacts/` when run in the Cloud Agent environment (or adjust the path in `test/e2e/extension.spec.mjs`).
 
@@ -77,10 +80,10 @@ Fixtures live under `test/fixtures/`. Screenshots are written to `/opt/cursor/ar
 
 | Path | Purpose |
 | --- | --- |
-| `Overlay-chrome-extension/` | MV3 extension (`manifest.json`, committed `content.js`, `content.css`, `bridge.js`) |
+| `Overlay-chrome-extension/` | MV3 extension (`manifest.json`, committed `content.js`, `content.css`, `bridge.js`, `player.html`) |
 | `Overlay-chrome-extension/src/` | Content-script fragments (adapters, timer, playback, hotkeys, …) |
 | `ARCHITECTURE.md` | Module map + site adapter interface |
-| `OverlayMatchTimer.html` | Local companion dashboard |
+| `OverlayMatchTimer.html` | Legacy local companion dashboard |
 | `Overlay MatchTimer Guideline.pdf` | End-user guide |
 | `test/fixtures/` | Examino OpenPlayer + InplayIP Video.js mocks |
 | `test/e2e/` | Playwright extension smoke tests |
@@ -97,6 +100,8 @@ Fixtures live under `test/fixtures/`. Screenshots are written to `/opt/cursor/ar
 | Skip ±2m | `Ctrl` + `→` / `←` |
 | Next / previous frame | `↑` / `↓` |
 | Speed ±0.25× / reset | `C` / `Z` / `X` |
+| Mark kick-off (current frame) | `K` |
+| Go to Live | `L` |
 | Toggle controls visibility | `H` |
 
 ---

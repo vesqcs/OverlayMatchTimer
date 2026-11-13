@@ -36,12 +36,11 @@
 
         markers.forEach(({ val, btn, cls, label }) => {
             if (!btn) return;
+            // Jump targets stay wired but never shown as a chip row (period is top-right).
+            btn.style.display = 'none';
             if (val !== null && val >= minVal && val <= maxVal && range > 0) {
-                btn.style.display = 'inline-flex';
                 const pct = ((val - minVal) / range) * 100;
                 markerContainer.innerHTML += `<div class="timeline-marker-tick ${cls}" style="left:${pct}%;" title="${label}"></div>`;
-            } else {
-                btn.style.display = 'none';
             }
         });
     }
@@ -54,6 +53,6 @@
         const t = getVideoTimeForPdt(raw);
         if (t !== null && t >= 0) {
             seekTo(t);
-            mostrarOSD(`⚽ Jumped to ${labels[half]} Kickoff`);
+            mostrarOSD('Jumped to ' + labels[half] + ' Kickoff');
         }
     }

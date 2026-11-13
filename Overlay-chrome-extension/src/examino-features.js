@@ -84,12 +84,13 @@
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
+        if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
         if (media.paused) {
             media.play().catch(() => {});
-            mostrarOSD('▶ Play');
+            mostrarOSD('Play');
         } else {
             media.pause();
-            mostrarOSD('⏸ Pause');
+            mostrarOSD('Pause');
         }
         noteOmtUiActivity(false);
     }
@@ -105,7 +106,8 @@
 
     function settleExaminoMediaAfterBind() {
         if (site.id !== 'examino' || !vid) return;
-        // Only used after VOD→DVR. Clear seek-lock; clamp into DVR seekable once.
+        // Only used after VOD→DVR (examinoPendingDvrSettle). Always snap once to the
+        // DVR live edge so a carried VOD playhead cannot leave playback frozen.
         userIntendedTime = null;
         seekLockUntil = 0;
         let settled = false;
@@ -117,13 +119,8 @@
                 const start = vid.seekable.start(0);
                 const end = vid.seekable.end(vid.seekable.length - 1);
                 if (!isFinite(start) || !isFinite(end)) return;
-                const ct = vid.currentTime;
-                if (ct > end || ct < start) {
-                    settled = true;
-                    vid.currentTime = Math.max(start, end - 2);
-                } else {
-                    settled = true;
-                }
+                settled = true;
+                vid.currentTime = Math.max(start, end - 2);
             } catch (_) {}
         };
 
@@ -561,7 +558,7 @@
     async function refreshExaminoSourceSelect() {
         if (site.id !== 'examino' || !omtRoot) return;
         const section = q('omt-examino-settings');
-        if (section) section.style.display = 'block';
+        if (section) section.style.display = 'flex';
         const source = await scrapeOpSourceOptions();
         fillSourceSelect(source);
         const autoBox = q('omt-examino-auto-vod');
@@ -572,7 +569,7 @@
 
     function wireExaminoSettingsUI() {
         const section = q('omt-examino-settings');
-        if (section) section.style.display = 'block';
+        if (section) section.style.display = 'flex';
 
         const autoBox = q('omt-examino-auto-vod');
         if (autoBox) {

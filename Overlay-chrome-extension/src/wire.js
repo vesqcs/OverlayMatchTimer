@@ -3,12 +3,23 @@
        6. WIRE ALL EVENTS
        ========================================================= */
     function wireEvents() {
-        // --- Setup panel buttons ---
-        q('omt-btn-close-setup').addEventListener('click', esconderSetup);
+        // --- Kick-off / more panel (in-video expandable group) ---
         q('omt-btn-set-kickoff').addEventListener('click', () => { iniciarTimer(); });
         q('omt-btn-clear-timer').addEventListener('click', () => { limparTimer(); });
-        q('omt-btn-show-setup').addEventListener('click', mostrarSetup);
         q('omt-btn-fullscreen').addEventListener('click', toggleFullScreen);
+        const moreToggle = q('omt-more-toggle');
+        if (moreToggle) moreToggle.addEventListener('click', () => toggleMorePanel());
+
+        // --- Kick-off offset nudge (same offsetEmSegundos / kickoff state) ---
+        const nudge = (sec) => () => nudgeKickoffOffset(sec);
+        const nM5 = q('omt-offset-m5');
+        const nM1 = q('omt-offset-m1');
+        const nP1 = q('omt-offset-p1');
+        const nP5 = q('omt-offset-p5');
+        if (nM5) nM5.addEventListener('click', nudge(-5));
+        if (nM1) nM1.addEventListener('click', nudge(-1));
+        if (nP1) nP1.addEventListener('click', nudge(1));
+        if (nP5) nP5.addEventListener('click', nudge(5));
 
         // --- Half selector memory ---
         q('omt-half-select').addEventListener('change', function () {
@@ -28,8 +39,8 @@
             } else {
                 q('omt-sync-hr').value = q('omt-sync-min').value = q('omt-sync-sec').value = '';
             }
-            q('omt-custom-c1').style.display = (newHalf === 'custom1') ? 'block' : 'none';
-            q('omt-custom-c2').style.display = (newHalf === 'custom2') ? 'block' : 'none';
+            q('omt-custom-c1').style.display = (newHalf === 'custom1') ? 'inline-flex' : 'none';
+            q('omt-custom-c2').style.display = (newHalf === 'custom2') ? 'inline-flex' : 'none';
             previousHalf = newHalf;
             this.blur();
         });
@@ -61,8 +72,23 @@
         q('omt-jump-kc1').addEventListener('click', () => jumpToKickoff('custom1'));
         q('omt-jump-kc2').addEventListener('click', () => jumpToKickoff('custom2'));
 
-        // --- Speed selector ---
+        // --- Speed selector + quick chips ---
         speedSelect.addEventListener('change', selecionarVelocidade);
+        omtRoot.querySelectorAll('.omt-speed-chip').forEach((chip) => {
+            chip.addEventListener('click', () => {
+                applyPlaybackSpeed(chip.getAttribute('data-speed'));
+                noteOmtUiActivity(true);
+            });
+        });
+        syncSpeedChips();
+
+        // --- Hide panel (same as H hotkey) ---
+        const hidePanelBtn = q('omt-hide-panel');
+        if (hidePanelBtn) {
+            hidePanelBtn.addEventListener('click', () => {
+                toggleManualControlsVisibility();
+            });
+        }
 
         // --- Live button ---
         liveBtn.addEventListener('click', irParaLive);
@@ -145,38 +171,47 @@
         }, vsig);
 
         vid.addEventListener('play', () => {
-            if (!btnMainPlay || !controlsPanel) return; // null-guard: UI may have been torn down
-            btnMainPlay.innerHTML = '⏸ Pause';
-            btnMainPlay.classList.add('playing');
-            controlsPanel.classList.add('playing-state');
+            // External/manual play cancels a pending auto-resume (our resume sets in-progress).
+            if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
+            syncPlayButtonFromVideo();
             // Don't reveal the panel — ShuttleXpress triggers play() silently.
             resetControlsTimeout(false);
         }, vsig);
         vid.addEventListener('pause', () => {
-            if (!btnMainPlay || !controlsPanel) return; // null-guard: UI may have been torn down
-            btnMainPlay.innerHTML = '⏯ Play';
-            btnMainPlay.classList.remove('playing');
-            controlsPanel.classList.remove('playing-state');
+            // Do not clear auto-pause flag here — auto-pause itself fires pause.
+            // Manual pause clears via togglePlay / click / Shuttle handlers.
+            syncPlayButtonFromVideo();
         }, vsig);
+        vid.addEventListener('ended', () => {
+            if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
+            syncPlayButtonFromVideo();
+        }, vsig);
+        vid.addEventListener('seeking', () => {
+            if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
+        }, vsig);
+        vid.addEventListener('seeked', () => {
+            if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
+            syncPlayButtonFromVideo();
+        }, vsig);
+        // Initial icon/colour from the real media state (no centre-screen flash).
+        syncPlayButtonFromVideo();
+        if (typeof installAutoPauseOnBlur === 'function') installAutoPauseOnBlur();
 
-        // --- Drag system for both panels ---
-        fazerArrastavel(setupPanel, q('setup-handle'));
-        fazerArrastavel(controlsPanel, q('controls-handle'));
+        // Floating control panel is draggable via the top handle (timeline stays fixed at bottom).
+        if (controlsPanel) {
+            const handle = q('controls-handle');
+            if (handle) fazerArrastavel(controlsPanel, handle);
+        }
 
         // --- Auto-hide controls: mouse move + clicks/keys/wheel on our UI ---
-        // Never hide while the pointer is over our interactive chrome.
         vid.addEventListener('mousemove', () => resetControlsTimeout(true), vsig);
         wireOmtUiActivityTracking();
-        resetControlsTimeout(false); // bootstrap: start timer, don't force-show
+        resetControlsTimeout(false);
 
-        // --- Keyboard shortcuts (capture phase, highest priority) ---
-        // Examino: persistent window listener installed at document_start.
-        // InplayIP: document capture listener (baseline behaviour).
         if (site.id === 'examino') {
             installExaminoHotkeys();
             installExaminoClickToToggle();
             wireExaminoSettingsUI();
-            // Only settle to live-edge after an explicit VOD→DVR switch — never on every bind.
             if (examinoPendingDvrSettle) {
                 examinoPendingDvrSettle = false;
                 settleExaminoMediaAfterBind();
@@ -185,22 +220,21 @@
             document.addEventListener('keydown', handleKeydown, true);
         }
 
-        // Auto-blur our own buttons after click (prevent shortcut hijack)
         omtRoot.addEventListener('click', function (e) {
             noteOmtUiActivity(true);
             const el = e.target.closest('button');
             if (el) setTimeout(() => el.blur(), 50);
         });
 
-        // Show live button immediately (always a stream)
         liveBtn.style.display = 'flex';
 
-        // Click listener for interactive timer
-        timerUI.addEventListener('click', iniciarEdicaoTimer);
+        // Match-clock click-to-edit is wired in customize.js (omtInstallClockClickEdit).
+        // Fixed presets only — no drag.
 
-        // ShuttleXpress toggle change listener
+        // Shuttle toggle lives in the in-video more panel (analyst browser only).
         if (shuttleToggle) {
             shuttleToggle.addEventListener('change', handleToggleChange);
-            shuttleToggle.addEventListener('click', () => shuttleToggle.blur());
         }
+        syncShuttleToggleFromStorage();
+        setMorePanelOpen(false);
     }

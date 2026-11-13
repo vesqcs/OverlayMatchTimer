@@ -95,6 +95,8 @@
             // --- SE FOR DVR (REVIEW): Mostra os controlos (caso não tenham sido escondidos pelo H) ---
             if (controlsPanel && !isManuallyHidden) {
                 controlsPanel.style.display = ''; // Limpa o 'none' e usa o layout padrão do CSS
+                const timelineBar = omtRoot ? omtRoot.querySelector('#omt-timeline-bar') : null;
+                if (timelineBar) timelineBar.style.display = '';
                 resetControlsTimeout(false);
             }
         } else {
@@ -107,6 +109,8 @@
             if (controlsPanel) {
                 controlsPanel.style.display = 'none';
             }
+            const timelineBar = omtRoot ? omtRoot.querySelector('#omt-timeline-bar') : null;
+            if (timelineBar) timelineBar.style.display = 'none';
         }
         atualizarMarcadores();
     }

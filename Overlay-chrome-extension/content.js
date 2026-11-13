@@ -49,6 +49,7 @@
     let isDraggingTimeline = false;
     let isManuallyHidden = false;
     let mouseMoveTimeout = null;
+    // Set when Auto pause on Alt+Tab pauses playback; cleared on manual play/pause/seek.
     let controlsObserver = null; // MutationObserver watching the video 'controls' attribute
     let isEditingTimer = false;
     const isLocalVideo = false; // Extension always targets a live/DVR stream
@@ -229,6 +230,54 @@
         }
     };
 
+/* Local player page (chrome-extension://…/player.html) — file / NAS mapped drive. */
+    const SITE_LOCAL = {
+        id: 'local',
+        rootClass: 'omt-local',
+
+        findVideo() {
+            return document.getElementById('omt-local-video') ||
+                document.querySelector('#omt-local-stage video') ||
+                document.querySelector('video');
+        },
+
+        findAnchor(videoEl) {
+            return document.getElementById('omt-local-stage') ||
+                videoEl.parentElement ||
+                document.body;
+        },
+
+        findFullscreenTarget(videoEl) {
+            return document.getElementById('omt-local-stage') ||
+                videoEl.parentElement ||
+                videoEl;
+        },
+
+        isReviewStream() { return true; },
+        isLiveStream() { return false; },
+
+        suppressHostControls() {
+            // Standalone page — no host chrome to hide.
+        },
+
+        mediaReady(videoEl) {
+            // Allow auto-hide / activity even before a file is chosen so the
+            // empty-state drop zone + HUD stay interactive.
+            return !!videoEl;
+        },
+
+        effectiveDuration(videoEl) {
+            if (!videoEl) return NaN;
+            if (videoEl.duration && isFinite(videoEl.duration)) return videoEl.duration;
+            try {
+                if (videoEl.seekable && videoEl.seekable.length > 0) {
+                    return videoEl.seekable.end(videoEl.seekable.length - 1);
+                }
+            } catch (_) {}
+            return NaN;
+        }
+    };
+
 /* Xeatre stub — out of scope for injection; URL paste stays in the HTML companion. */
     // Xeatre works differently (URL paste into the HTML app). Out of scope —
     // leave a stub so a future adapter can plug in without another rewrite.
@@ -252,11 +301,21 @@
         const host = (location.hostname || '').toLowerCase();
         const path = location.pathname || '';
         const forced = (document.documentElement.dataset.omtSite || '').toLowerCase();
+        const proto = (location.protocol || '').toLowerCase();
+
+        // Extension local player page (chrome-extension://…/player.html)
+        if (
+            forced === 'local' ||
+            /\/player\.html$/i.test(path) ||
+            (proto === 'chrome-extension:' && /player\.html/i.test(path))
+        ) {
+            return SITE_LOCAL;
+        }
 
         if (forced === 'examino' || host.includes('examino') || /examino/i.test(path)) {
             return SITE_EXAMINO;
         }
-        // TODO(xeatre): enable when bringing Xeatre injection back
+        // TODO(xeatre): enable when Vasco provides material
         if (forced === 'xeatre' || host.includes('xeatre')) {
             return SITE_XEATRE;
         }
@@ -267,6 +326,7 @@
         if (host === 'localhost' || host === '127.0.0.1') {
             if (/examino/i.test(path)) return SITE_EXAMINO;
             if (/inplay/i.test(path)) return SITE_INPLAYIP;
+            if (/player\.html/i.test(path) || forced === 'local') return SITE_LOCAL;
         }
         return null;
     }
@@ -372,6 +432,7 @@
         timerAtivo = false;
         offsetEmSegundos = 0;
         tempoBase = 0;
+        if (typeof omtResetClockClickEditFlag === 'function') omtResetClockClickEditFlag();
     }
 
     /* =========================================================
@@ -498,14 +559,19 @@
         suppressNativeControls();
         injectUI();
         cacheUIRefs();
+        if (typeof omtApplyCustomizeFromStorage === 'function') omtApplyCustomizeFromStorage();
         wireEvents();
         restoreState();
+        if (typeof omtApplyClockAppearance === 'function') omtApplyClockAppearance();
         startSPAMonitor();
         initShuttleXpress();
         if (site.id === 'examino') {
             initExaminoPlayerFeatures();
         }
-        console.log('[OMT] Overlay MatchTimer active — Review/DVR mode.');
+        if (site.id === 'local') {
+            installLocalPlayerFeatures();
+        }
+        console.log('[OMT] Overlay MatchTimer active — ' + (site.id === 'local' ? 'local player' : 'Review/DVR') + ' mode.');
     }
 
 /* Locate hls.js / VHS and soften live-edge snap for DVR. */
@@ -597,16 +663,135 @@
         site.suppressHostControls(vid);
     }
 
+/* Lucide icons (ISC) — inline SVG snippets for MV3 MAIN world.
+ * License: Overlay-chrome-extension/vendor/lucide-LICENSE
+ * Icons sourced from lucide-static@0.468.0 (https://lucide.dev)
+ */
+    const OMT_LUCIDE_PATHS = {
+        "play": `<polygon points="6 3 20 12 6 21 6 3" />`,
+        "pause": `<rect x="14" y="4" width="4" height="16" rx="1" />
+  <rect x="6" y="4" width="4" height="16" rx="1" />`,
+        "skip-back": `<polygon points="19 20 9 12 19 4 19 20" />
+  <line x1="5" x2="5" y1="19" y2="5" />`,
+        "skip-forward": `<polygon points="5 4 15 12 5 20 5 4" />
+  <line x1="19" x2="19" y1="5" y2="19" />`,
+        "rewind": `<polygon points="11 19 2 12 11 5 11 19" />
+  <polygon points="22 19 13 12 22 5 22 19" />`,
+        "fast-forward": `<polygon points="13 19 22 12 13 5 13 19" />
+  <polygon points="2 19 11 12 2 5 2 19" />`,
+        "volume-2": `<path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z" />
+  <path d="M16 9a5 5 0 0 1 0 6" />
+  <path d="M19.364 18.364a9 9 0 0 0 0-12.728" />`,
+        "volume-1": `<path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z" />
+  <path d="M16 9a5 5 0 0 1 0 6" />`,
+        "volume-x": `<path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z" />
+  <line x1="22" x2="16" y1="9" y2="15" />
+  <line x1="16" x2="22" y1="9" y2="15" />`,
+        "settings": `<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+  <circle cx="12" cy="12" r="3" />`,
+        "maximize": `<path d="M8 3H5a2 2 0 0 0-2 2v3" />
+  <path d="M21 8V5a2 2 0 0 0-2-2h-3" />
+  <path d="M3 16v3a2 2 0 0 0 2 2h3" />
+  <path d="M16 21h3a2 2 0 0 0 2-2v-3" />`,
+        "minimize": `<path d="M8 3v3a2 2 0 0 1-2 2H3" />
+  <path d="M21 8h-3a2 2 0 0 1-2-2V3" />
+  <path d="M3 16h3a2 2 0 0 1 2 2v3" />
+  <path d="M16 21v-3a2 2 0 0 1 2-2h3" />`,
+        "grip-horizontal": `<circle cx="12" cy="9" r="1" />
+  <circle cx="19" cy="9" r="1" />
+  <circle cx="5" cy="9" r="1" />
+  <circle cx="12" cy="15" r="1" />
+  <circle cx="19" cy="15" r="1" />
+  <circle cx="5" cy="15" r="1" />`,
+        "x": `<path d="M18 6 6 18" />
+  <path d="m6 6 12 12" />`,
+        "chevron-up": `<path d="m18 15-6-6-6 6" />`,
+        "chevron-down": `<path d="m6 9 6 6 6-6" />`,
+        "circle": `<circle cx="12" cy="12" r="10" />`,
+        "step-back": `<line x1="18" x2="18" y1="20" y2="4" />
+  <polygon points="14,20 4,12 14,4" />`,
+        "step-forward": `<line x1="6" x2="6" y1="4" y2="20" />
+  <polygon points="10,4 20,12 10,20" />`,
+        "gauge": `<path d="m12 14 4-4" />
+  <path d="M3.34 19a10 10 0 1 1 17.32 0" />`,
+        "keyboard": `<path d="M10 8h.01" />
+  <path d="M12 12h.01" />
+  <path d="M14 8h.01" />
+  <path d="M16 12h.01" />
+  <path d="M18 8h.01" />
+  <path d="M6 8h.01" />
+  <path d="M7 16h10" />
+  <path d="M8 12h.01" />
+  <rect width="20" height="16" x="2" y="4" rx="2" />`,
+        "sliders-horizontal": `<line x1="21" x2="14" y1="4" y2="4" />
+  <line x1="10" x2="3" y1="4" y2="4" />
+  <line x1="21" x2="12" y1="12" y2="12" />
+  <line x1="8" x2="3" y1="12" y2="12" />
+  <line x1="21" x2="16" y1="20" y2="20" />
+  <line x1="12" x2="3" y1="20" y2="20" />
+  <line x1="14" x2="14" y1="2" y2="6" />
+  <line x1="8" x2="8" y1="10" y2="14" />
+  <line x1="16" x2="16" y1="18" y2="22" />`
+,
+        "chevrons-left": `<path d="m11 17-5-5 5-5" />
+  <path d="m18 17-5-5 5-5" />`
+,
+        "chevrons-right": `<path d="m6 17 5-5-5-5" />
+  <path d="m13 17 5-5-5-5" />`
+,
+        "chevrons-up": `<path d="m17 11-5-5-5 5" />
+  <path d="m17 18-5-5-5 5" />`
+,
+        "chevrons-down": `<path d="m7 13 5 5 5-5" />
+  <path d="m7 6 5 5 5-5" />`
+,
+        "eye-off": `<path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49" />
+  <path d="M14.084 14.158a3 3 0 0 1-4.242-4.242" />
+  <path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143" />
+  <path d="m2 2 20 20" />`
+,
+        "folder-open": `<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" />`
+    };
+
+    function omtIcon(name, size = 16, extraClass = '') {
+        const inner = OMT_LUCIDE_PATHS[name];
+        if (!inner) return '';
+        const cls = ('omt-icon' + (extraClass ? ' ' + extraClass : '')).trim();
+        return '<svg class="' + cls + '" xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + inner + '</svg>';
+    }
+
+    function omtIconBtnLabel(iconName, text, size = 14) {
+        return omtIcon(iconName, size) + (text ? ('<span class="omt-btn-label">' + text + '</span>') : '');
+    }
+
+    // Official Stats Perform 2021 primary logo (dark-UI recolor of public brand asset).
+    // Source file mirrored under assets/; embedded as data-URI because MAIN world
+    // cannot resolve chrome-extension:// URLs for <img src>.
+    const OMT_STATS_PERFORM_LOGO_SRC = 'data:image/png;base64,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';
+
+    function omtBrandBlock(layout) {
+        // layout: 'logo-above' | 'wordmark-above'
+        const logo = '<img class="omt-sp-logo" src="' + OMT_STATS_PERFORM_LOGO_SRC + '" alt="Stats Perform" width="168" height="44" />';
+        const word = '<div class="omt-wordmark">OverlayMatchTimer</div>';
+        const credit = '<div class="omt-brand-credit">Internal analysis tool</div>';
+        if (layout === 'wordmark-above') {
+            return '<div class="omt-brand omt-brand--wordmark-above">' + word + logo + credit + '</div>';
+        }
+        return '<div class="omt-brand omt-brand--logo-above">' + logo + word + credit + '</div>';
+    }
+
 /* Inject Overlay MatchTimer HUD, cache element refs, compact layout, fullscreen reparent. */
     /* =========================================================
        4. INJECT UI INTO THE PAGE
+       Plain match clock top-left. Floating draggable control panel
+       (v1.2.2 structure, dark restyle). Timeline alone at the video
+       bottom edge. Expandable more panel lives inside the floating box.
        ========================================================= */
     function injectUI() {
         const anchor = site.findAnchor(vid);
 
         if (!anchor) { console.error('[OMT] Could not find anchor element.'); return; }
 
-        // Ensure relative positioning so absolute children work
         const cs = getComputedStyle(anchor);
         if (cs.position === 'static') anchor.style.position = 'relative';
 
@@ -622,7 +807,6 @@
 
     function updateCompactLayout() {
         if (!omtRoot) return;
-        // Examino popup players are often ~465×261 — shrink chrome so the HUD fits.
         const anchor = omtRoot.parentElement;
         const w = (anchor && anchor.clientWidth) || window.innerWidth;
         const h = (anchor && anchor.clientHeight) || window.innerHeight;
@@ -636,8 +820,6 @@
         document.addEventListener('fullscreenchange', () => {
             if (!vid || !omtRoot) return;
             updateCompactLayout();
-            // If OpenPlayer (or the browser) fullscreens a parent that does not
-            // contain our root, reparent so the overlay stays visible.
             const fs = document.fullscreenElement;
             if (fs && fs.contains(vid) && !fs.contains(omtRoot)) {
                 fs.appendChild(omtRoot);
@@ -653,186 +835,157 @@
         window.addEventListener('resize', () => updateCompactLayout());
     }
 
+    function tip(text) {
+        return ' data-tip="' + String(text).replace(/"/g, '&quot;') + '"';
+    }
+
     function buildHTML() {
         return `
-<div id="match-timer">00:00</div>
+<div id="match-timer-wrap">
+    <div id="match-timer">00:00</div>
+</div>
 <div id="osd-message">MatchTimer</div>
 
-<!-- SETUP PANEL -->
-<div id="setup-panel" class="glass-panel">
-    <div class="drag-handle" id="setup-handle">
+<!-- Hidden whistle-time fields: kept for iniciarTimer / restore (no visible UI) -->
+<div id="omt-hidden-sync" hidden aria-hidden="true">
+    <input type="number" id="omt-sync-hr" value="">
+    <input type="number" id="omt-sync-min" value="">
+    <input type="number" id="omt-sync-sec" value="">
+</div>
+
+<!-- Legacy ids kept for null-guards / restore -->
+<div id="setup-panel" class="glass-panel" style="display:none;" hidden></div>
+<div id="omt-shuttle-cheatsheet" style="display:none;" hidden></div>
+
+<!-- Kick-off jump targets stay in DOM for wire/markers; no visible chip row -->
+<div id="omt-kickoff-jumps" hidden aria-hidden="true">
+    <button id="omt-jump-k1" type="button" style="display:none;"></button>
+    <button id="omt-jump-k2" type="button" style="display:none;"></button>
+    <button id="omt-jump-kc1" type="button" style="display:none;"></button>
+    <button id="omt-jump-kc2" type="button" style="display:none;"></button>
+</div>
+
+<!-- Timeline alone: full-width thin bar at the very bottom of the video -->
+<div id="omt-timeline-bar" class="omt-timeline-bar">
+    <div class="omt-timeline-track">
+        <input type="range" id="omt-timeline-slider" class="timeline-slider omt-tip" min="0" max="100" value="0" step="0.01"${tip('Seek timeline')}>
+        <div id="omt-timeline-markers"></div>
+    </div>
+    <div class="omt-timeline-times">
+        <span id="omt-v-time-current" class="omt-time-text omt-tip"${tip('Current video time')}>00:00:00</span>
+        <span class="omt-time-sep" aria-hidden="true">/</span>
+        <span id="omt-v-time-duration" class="omt-time-text omt-tip"${tip('Duration / live edge')}>00:00:00</span>
+    </div>
+</div>
+
+<!-- Floating draggable control panel (Option A transport + speed row) -->
+<div id="controls-panel" class="glass-panel">
+    <div class="drag-handle" id="controls-handle">
         <div class="drag-side-left">
-            <button class="handle-btn" style="cursor:default;opacity:0.6;">⚙️</button>
+            <button type="button" id="omt-more-toggle" class="omt-more-toggle handle-btn omt-tip" aria-expanded="false"${tip('Match controls')}>
+                <span class="omt-more-icon-collapsed">${omtIcon('chevrons-up', 16)}</span>
+                <span class="omt-more-icon-expanded" hidden>${omtIcon('chevrons-down', 16)}</span>
+            </button>
+            <select id="omt-speed-select" class="top-select omt-tip"${tip('Playback speed (Z / C / X)')}>
+                <option value="0.25">0.25x</option>
+                <option value="0.5">0.50x</option>
+                <option value="0.75">0.75x</option>
+                <option value="1.0" selected>1.00x</option>
+                <option value="1.25">1.25x</option>
+                <option value="1.5">1.50x</option>
+                <option value="2.0">2.00x</option>
+            </select>
+            <button type="button" id="omt-hide-panel" class="handle-btn omt-tip"${tip('Hide controls (H)')}>
+                ${omtIcon('eye-off', 16)}
+            </button>
         </div>
-        <div class="drag-center-grip">≡</div>
+        <div class="drag-center-grip" aria-hidden="true">${omtIcon('grip-horizontal', 16)}</div>
         <div class="drag-side-right">
-            <button class="handle-btn" id="omt-btn-close-setup" style="color:#ff4444;font-weight:bold;" title="Close">✕</button>
+            <button id="omt-live-btn" class="omt-tip" type="button"${tip('Go to live edge (L)')}>
+                <span class="live-dot"></span><span class="live-label">LIVE</span>
+            </button>
+            <span class="omt-live-spacer" aria-hidden="true"></span>
+            <button class="handle-btn omt-tip" id="omt-volume-icon-btn" type="button"${tip('Mute / Unmute')}>${omtIcon('volume-2', 16)}</button>
+            <input type="range" id="omt-volume-range" class="omt-tip" min="0" max="1" step="0.05" value="1"${tip('Volume')}>
+            <button class="handle-btn omt-tip" id="omt-btn-fullscreen" type="button"${tip('Fullscreen')}>${omtIcon('maximize', 16)}</button>
         </div>
     </div>
-    <div class="setup-content">
 
-        <div class="brand-container">
-            <svg width="260" height="50" viewBox="0 0 260 50" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <g transform="translate(5,4)">
-                    <circle cx="20" cy="23" r="17" fill="#151515" stroke="#66b3ff" stroke-width="2.5"/>
-                    <rect x="16" y="2" width="8" height="4" rx="1" fill="#66b3ff"/>
-                    <path d="M33 9 L36 6" stroke="#66b3ff" stroke-width="2.5" stroke-linecap="round"/>
-                    <rect x="10" y="15" width="20" height="14" rx="1" stroke="#00ff88" stroke-width="1.2" fill="none"/>
-                    <line x1="20" y1="15" x2="20" y2="29" stroke="#00ff88" stroke-width="1.2"/>
-                    <circle cx="20" cy="22" r="3" stroke="#00ff88" stroke-width="1.2" fill="none"/>
-                    <line x1="20" y1="22" x2="26" y2="15" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
-                    <circle cx="20" cy="22" r="2" fill="#ffffff"/>
-                </g>
-                <text x="56" y="25" fill="#ffffff" font-family="'Segoe UI',sans-serif" font-size="16" font-weight="800" letter-spacing="1">OVERLAY</text>
-                <text x="138" y="25" fill="#00ff88" font-family="'Segoe UI',sans-serif" font-size="16" font-weight="800" letter-spacing="1">MATCHTIMER</text>
-                <text x="56" y="39" fill="#888" font-family="'Segoe UI',sans-serif" font-size="9" font-weight="600" letter-spacing="0.5">DEVELOPED BY VASCO OLIVEIRA</text>
-            </svg>
+    <div id="omt-more-panel" class="omt-more-panel" aria-hidden="true">
+        <div id="omt-kickoff-bar" class="omt-more-block">
+            <label class="omt-more-label" for="omt-half-select">Period</label>
+            <select id="omt-half-select" class="omt-tip" title="Match period"${tip('Match period')}>
+                <option value="1">1st Half</option>
+                <option value="2">2nd Half</option>
+                <option value="custom1">Custom 1</option>
+                <option value="custom2">Custom 2</option>
+            </select>
+            <div id="omt-custom-c1" class="omt-custom-minute" style="display:none;">
+                <label class="omt-more-label" for="omt-custom-minute-c1">Start min</label>
+                <input type="number" id="omt-custom-minute-c1" class="omt-tip" placeholder="e.g. 90" min="0"${tip('Custom 1 start minute')}>
+            </div>
+            <div id="omt-custom-c2" class="omt-custom-minute" style="display:none;">
+                <label class="omt-more-label" for="omt-custom-minute-c2">Start min</label>
+                <input type="number" id="omt-custom-minute-c2" class="omt-tip" placeholder="e.g. 105" min="0"${tip('Custom 2 start minute')}>
+            </div>
+            <button type="button" class="btn-sync omt-tip" id="omt-btn-set-kickoff"${tip('Set kick-off at current frame (K)')}>Kick-off</button>
+            <button type="button" id="omt-btn-clear-timer" class="btn-clear-timer omt-tip"${tip('Clear match timer')}>${omtIcon('x', 13)}</button>
+            <div class="omt-offset-nudge" aria-label="Kick-off offset">
+                <button type="button" class="omt-offset-btn omt-tip" id="omt-offset-m5"${tip('Offset −5 seconds')}>${omtIcon('chevrons-left', 12)}5</button>
+                <button type="button" class="omt-offset-btn omt-tip" id="omt-offset-m1"${tip('Offset −1 second')}>−1</button>
+                <button type="button" class="omt-offset-btn omt-tip" id="omt-offset-p1"${tip('Offset +1 second')}>+1</button>
+                <button type="button" class="omt-offset-btn omt-tip" id="omt-offset-p5"${tip('Offset +5 seconds')}>5${omtIcon('chevrons-right', 12)}</button>
+            </div>
         </div>
 
-        <div class="control-group" id="omt-examino-settings" style="display:none;border:1px solid rgba(0,255,136,0.18);border-radius:6px;padding:8px 10px;background:rgba(0,255,136,0.04);">
-            <label style="font-size:11px;color:#aaa;display:block;margin-bottom:4px;">0. Source (Examino)</label>
-            <select id="omt-examino-source" style="width:100%;box-sizing:border-box;padding:6px;background:rgba(0,0,0,0.35);border:1px solid #444;color:white;border-radius:4px;font-size:12px;">
+        <div id="omt-examino-settings" class="omt-more-block omt-source-block" style="display:none;">
+            <label class="omt-more-label" for="omt-examino-source">Source</label>
+            <select id="omt-examino-source" class="omt-tip"${tip('Examino stream source')}>
                 <option value="DVR">DVR</option>
                 <option value="VOD">VOD</option>
             </select>
-            <label style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px;color:#ddd;margin-top:8px;">
-                <span>Auto-switch to VOD</span>
-                <input type="checkbox" id="omt-examino-auto-vod" checked>
-            </label>
-        </div>
-
-        <div class="control-group">
-            <label>1. Match Half</label>
-            <select id="omt-half-select">
-                <option value="1">1st Half (Starts at 00:00)</option>
-                <option value="2">2nd Half (Starts at 45:00)</option>
-                <option value="custom1">Custom 1 &mdash; 1st Extra Time / Youth 2nd Half</option>
-                <option value="custom2">Custom 2 &mdash; 2nd Extra Time</option>
-            </select>
-            <div id="omt-custom-c1" style="display:none;margin-top:5px;">
-                <input type="number" id="omt-custom-minute-c1" placeholder="Starting minute for Custom 1 (e.g. 90)" min="0"
-                    style="width:100%;box-sizing:border-box;padding:8px;background:rgba(0,0,0,0.3);border:1px solid #444;color:white;border-radius:4px;font-size:12px;outline:none;">
-            </div>
-            <div id="omt-custom-c2" style="display:none;margin-top:5px;">
-                <input type="number" id="omt-custom-minute-c2" placeholder="Starting minute for Custom 2 (e.g. 105)" min="0"
-                    style="width:100%;box-sizing:border-box;padding:8px;background:rgba(0,0,0,0.3);border:1px solid #444;color:white;border-radius:4px;font-size:12px;outline:none;">
-            </div>
-        </div>
-
-        <div class="control-group">
-            <label>2. Whistle Time (Hr : Min : Sec)</label>
-            <div class="time-inputs">
-                <input type="number" id="omt-sync-hr"  placeholder="0" min="0"> :
-                <input type="number" id="omt-sync-min" placeholder="0" min="0"> :
-                <input type="number" id="omt-sync-sec" placeholder="0" min="0" max="59">
-            </div>
-        </div>
-
-        <div style="display:flex;gap:5px;">
-            <button class="btn-sync" id="omt-btn-set-kickoff" style="flex:1;">SET KICK-OFF TIME</button>
-            <button id="omt-btn-clear-timer"
-                style="background:rgba(255,68,68,0.15);color:#ff4444;border:1px solid rgba(255,68,68,0.3);
-                       padding:10px;font-weight:bold;border-radius:4px;cursor:pointer;transition:0.2s;
-                       margin-top:5px;display:flex;align-items:center;justify-content:center;font-family:inherit;"
-                title="Clear/Disable Timer">✕</button>
-        </div>
-
-        <div class="control-group" id="omt-shuttle-toggle-group" style="margin-top:10px;border-top:1px solid rgba(255,255,255,0.08);padding-top:10px;">
-            <div style="display:flex;align-items:center;justify-content:space-between;width:100%;">
-                <span style="font-size:11px;color:#ddd;user-select:none;">Enable ShuttleXpress</span>
-                <label class="omt-shuttle-switch" style="position:relative;display:inline-block;width:38px;height:20px;margin:0;">
-                    <input type="checkbox" id="omt-shuttle-enable-toggle" style="opacity:0;width:0;height:0;margin:0;position:absolute;">
-                    <span class="omt-shuttle-slider"></span>
+            <div class="omt-toggle-row omt-tip"${tip('Auto-switch to VOD when available')}>
+                <span>Auto VOD</span>
+                <label class="omt-switch" for="omt-examino-auto-vod">
+                    <input type="checkbox" id="omt-examino-auto-vod" checked>
+                    <span class="omt-switch-slider"></span>
                 </label>
             </div>
         </div>
 
-        <div class="cheatsheet" id="omt-shuttle-cheatsheet" style="display:none;margin-top:10px;">
-            <div class="cheatsheet-title" style="color:#00ff88;border-bottom-color:rgba(0,255,136,0.15);">ShuttleXpress Controls</div>
-            <div class="shortcut-item"><span>Button 1 (Far Left)</span><span class="shortcut-key">-2 min</span></div>
-            <div class="shortcut-item"><span>Button 2</span><span class="shortcut-key">-10 sec</span></div>
-            <div class="shortcut-item"><span>Button 3 (Center)</span><span class="shortcut-key">Play / Pause</span></div>
-            <div class="shortcut-item"><span>Button 4</span><span class="shortcut-key">+10 sec</span></div>
-            <div class="shortcut-item"><span>Button 5 (Far Right)</span><span class="shortcut-key">+2 min</span></div>
-            <div class="shortcut-item"><span>Inner Wheel</span><span class="shortcut-key">Frame by Frame</span></div>
-            <div class="shortcut-item"><span>Outer Ring</span><span class="shortcut-key">Fast Fwd / Rewind</span></div>
-        </div>
-
-        <div class="cheatsheet">
-            <div class="cheatsheet-title">Shortcuts</div>
-            <div class="shortcut-item"><span>Play / Pause</span><span class="shortcut-key">Space</span></div>
-            <div class="shortcut-item"><span>Skip ±2s</span><span class="shortcut-key">← / →</span></div>
-            <div class="shortcut-item"><span>Skip ±10s</span><span class="shortcut-key">Shift + →</span></div>
-            <div class="shortcut-item"><span>Skip ±2m</span><span class="shortcut-key">Ctrl + →</span></div>
-            <div class="shortcut-item"><span>Frame by Frame</span><span class="shortcut-key">↑ / ↓</span></div>
-            <div class="shortcut-item"><span>Speed ±</span><span class="shortcut-key">Z / C</span></div>
-            <div class="shortcut-item"><span>Speed 1.0x</span><span class="shortcut-key">X</span></div>
-            <div class="shortcut-item"><span>Hide/Show Controls</span><span class="shortcut-key">H</span></div>
-        </div>
-    </div>
-</div>
-
-<!-- CONTROLS PANEL -->
-<div id="controls-panel" class="glass-panel">
-    <div class="drag-handle" id="controls-handle">
-        <div class="drag-side-left">
-            <button class="handle-btn" id="omt-btn-show-setup" title="Settings">⚙️</button>
-            <select id="omt-speed-select" class="top-select">
-                <option value="0.25">0.25x</option>
-                <option value="0.5">0.50x</option>
-                <option value="1.0" selected>1.00x</option>
-                <option value="1.5">1.50x</option>
-                <option value="2.0">2.00x</option>
-            </select>
-        </div>
-        <div class="drag-center-grip">≡</div>
-        <div class="drag-side-right">
-            <div style="display:flex;align-items:center;gap:6px;margin-right:10px;">
-                <button id="omt-live-btn" title="Go to Live Edge">
-                    <span class="live-dot"></span> LIVE
-                </button>
-                <span class="omt-live-spacer" aria-hidden="true"></span>
-                <button class="handle-btn" id="omt-volume-icon-btn" title="Mute/Unmute" style="font-size:12px;padding:0 2px;">🔊</button>
-                <input type="range" id="omt-volume-range" min="0" max="1" step="0.05" value="1" style="-webkit-appearance: none; appearance: none; width: 60px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.2); outline: none; cursor: pointer;">
+        <div class="omt-more-block omt-shuttle-block">
+            <div class="omt-toggle-row omt-tip"${tip('Enable ShuttleXpress pairing on this browser')}>
+                <span>ShuttleXpress</span>
+                <label class="omt-switch" for="omt-shuttle-enable-toggle">
+                    <input type="checkbox" id="omt-shuttle-enable-toggle">
+                    <span class="omt-switch-slider"></span>
+                </label>
             </div>
-            <button class="handle-btn" id="omt-btn-fullscreen" title="Fullscreen">⛶</button>
-        </div>
-    </div>
-
-    <div class="timeline-container">
-        <div class="timeline-badges-row" id="omt-kickoff-jumps">
-            <button id="omt-jump-k1"  class="kickoff-badge k1"  style="display:none;" title="Jump to 1st Half Kickoff">⚽ 1st</button>
-            <button id="omt-jump-k2"  class="kickoff-badge k2"  style="display:none;" title="Jump to 2nd Half Kickoff">⚽ 2nd</button>
-            <button id="omt-jump-kc1" class="kickoff-badge kc1" style="display:none;" title="Jump to Custom 1 Kickoff">⚽ C1</button>
-            <button id="omt-jump-kc2" class="kickoff-badge kc2" style="display:none;" title="Jump to Custom 2 Kickoff">⚽ C2</button>
-        </div>
-        <div class="timeline-slider-row">
-            <span id="omt-v-time-current">00:00:00</span>
-            <div style="position:relative;flex:1;display:flex;align-items:center;">
-                <input type="range" id="omt-timeline-slider" class="timeline-slider" min="0" max="100" value="0" step="0.01">
-                <div id="omt-timeline-markers" style="position:absolute;left:6px;right:6px;height:6px;top:50%;transform:translateY(-50%);pointer-events:none;"></div>
-            </div>
-            <span id="omt-v-time-duration">00:00:00</span>
         </div>
     </div>
 
     <div class="controls-content">
-        <div class="ctrl-group-left">
-            <button class="ctrl-btn" id="omt-m120">2m ⏪</button>
-            <button class="ctrl-btn" id="omt-m10">10s ⏪</button>
-            <button class="ctrl-btn" id="omt-m2">2s ◀</button>
+        <div class="omt-transport-seg" role="group" aria-label="Playback transport">
+            <button class="ctrl-btn omt-tip" id="omt-m120" type="button"${tip('Skip −2 minutes (Ctrl + ←)')}>${omtIcon('rewind', 18)}<span class="omt-btn-label">2m</span></button>
+            <button class="ctrl-btn omt-tip" id="omt-m10" type="button"${tip('Skip −10 seconds (Shift + ←)')}>${omtIcon('skip-back', 18)}<span class="omt-btn-label">10s</span></button>
+            <button class="ctrl-btn omt-tip" id="omt-m2" type="button"${tip('Skip −2 seconds (←)')}>${omtIcon('skip-back', 17)}<span class="omt-btn-label">2s</span></button>
+            <span class="omt-seg-divider" aria-hidden="true"></span>
+            <button class="ctrl-btn btn-frame omt-tip" id="omt-prev-frame" type="button"${tip('Previous frame (↓)')}>${omtIcon('step-back', 18)}</button>
+            <button class="ctrl-btn btn-play omt-tip" id="omt-btn-play" type="button"${tip('Play / Pause (Space)')}>${omtIcon('play', 22)}</button>
+            <button class="ctrl-btn btn-frame omt-tip" id="omt-next-frame" type="button"${tip('Next frame (↑)')}>${omtIcon('step-forward', 18)}</button>
+            <span class="omt-seg-divider" aria-hidden="true"></span>
+            <button class="ctrl-btn omt-tip" id="omt-p2" type="button"${tip('Skip +2 seconds (→)')}><span class="omt-btn-label">2s</span>${omtIcon('skip-forward', 16)}</button>
+            <button class="ctrl-btn omt-tip" id="omt-p10" type="button"${tip('Skip +10 seconds (Shift + →)')}><span class="omt-btn-label">10s</span>${omtIcon('skip-forward', 16)}</button>
+            <button class="ctrl-btn omt-tip" id="omt-p120" type="button"${tip('Skip +2 minutes (Ctrl + →)')}><span class="omt-btn-label">2m</span>${omtIcon('fast-forward', 16)}</button>
         </div>
-        <div class="ctrl-group-center">
-            <div class="separator"></div>
-            <button class="ctrl-btn btn-frame" id="omt-prev-frame" title="Previous Frame">|⏴</button>
-            <button class="ctrl-btn btn-play"  id="omt-btn-play">⏯ Play</button>
-            <button class="ctrl-btn btn-frame" id="omt-next-frame" title="Next Frame">⏵|</button>
-            <div class="separator"></div>
-        </div>
-        <div class="ctrl-group-right">
-            <button class="ctrl-btn" id="omt-p2">2s ▶</button>
-            <button class="ctrl-btn" id="omt-p10">10s ⏩</button>
-            <button class="ctrl-btn" id="omt-p120">2m ⏩</button>
+        <div class="omt-speed-row" role="group" aria-label="Playback speed">
+            <button type="button" class="omt-speed-chip omt-tip" data-speed="0.25"${tip('Speed 0.25x')}>0.25x</button>
+            <button type="button" class="omt-speed-chip omt-tip" data-speed="0.5"${tip('Speed 0.5x')}>0.5x</button>
+            <button type="button" class="omt-speed-chip omt-tip" data-speed="0.75"${tip('Speed 0.75x')}>0.75x</button>
+            <button type="button" class="omt-speed-chip omt-tip is-active" data-speed="1.0"${tip('Speed 1x (X)')}>1x</button>
+            <button type="button" class="omt-speed-chip omt-tip" data-speed="1.25"${tip('Speed 1.25x')}>1.25x</button>
+            <button type="button" class="omt-speed-chip omt-tip" data-speed="1.5"${tip('Speed 1.5x')}>1.5x</button>
+            <button type="button" class="omt-speed-chip omt-tip" data-speed="2.0"${tip('Speed 2x')}>2x</button>
         </div>
     </div>
 </div>`;
@@ -841,7 +994,7 @@
     /* =========================================================
        5. CACHE UI ELEMENT REFERENCES
        ========================================================= */
-    function q(id) { return omtRoot.querySelector('#' + id); }
+    function q(id) { return omtRoot ? omtRoot.querySelector('#' + id) : null; }
 
     function cacheUIRefs() {
         timerUI = q('match-timer');
@@ -860,17 +1013,50 @@
         shuttleCheatsheet = q('omt-shuttle-cheatsheet');
     }
 
+    function setMorePanelOpen(open) {
+        const panel = q('omt-more-panel');
+        const btn = q('omt-more-toggle');
+        if (!panel || !btn) return;
+        const next = !!open;
+        panel.classList.toggle('is-open', next);
+        panel.setAttribute('aria-hidden', next ? 'false' : 'true');
+        btn.setAttribute('aria-expanded', next ? 'true' : 'false');
+        btn.classList.toggle('is-open', next);
+        const collapsedIcon = btn.querySelector('.omt-more-icon-collapsed');
+        const expandedIcon = btn.querySelector('.omt-more-icon-expanded');
+        if (collapsedIcon) collapsedIcon.hidden = next;
+        if (expandedIcon) expandedIcon.hidden = !next;
+        if (controlsPanel) controlsPanel.classList.toggle('omt-more-open', next);
+    }
+
+    function toggleMorePanel() {
+        const panel = q('omt-more-panel');
+        if (!panel) return;
+        setMorePanelOpen(!panel.classList.contains('is-open'));
+    }
+
 /* Wire UI controls to timer / playback / auto-hide / site extras. */
     /* =========================================================
        6. WIRE ALL EVENTS
        ========================================================= */
     function wireEvents() {
-        // --- Setup panel buttons ---
-        q('omt-btn-close-setup').addEventListener('click', esconderSetup);
+        // --- Kick-off / more panel (in-video expandable group) ---
         q('omt-btn-set-kickoff').addEventListener('click', () => { iniciarTimer(); });
         q('omt-btn-clear-timer').addEventListener('click', () => { limparTimer(); });
-        q('omt-btn-show-setup').addEventListener('click', mostrarSetup);
         q('omt-btn-fullscreen').addEventListener('click', toggleFullScreen);
+        const moreToggle = q('omt-more-toggle');
+        if (moreToggle) moreToggle.addEventListener('click', () => toggleMorePanel());
+
+        // --- Kick-off offset nudge (same offsetEmSegundos / kickoff state) ---
+        const nudge = (sec) => () => nudgeKickoffOffset(sec);
+        const nM5 = q('omt-offset-m5');
+        const nM1 = q('omt-offset-m1');
+        const nP1 = q('omt-offset-p1');
+        const nP5 = q('omt-offset-p5');
+        if (nM5) nM5.addEventListener('click', nudge(-5));
+        if (nM1) nM1.addEventListener('click', nudge(-1));
+        if (nP1) nP1.addEventListener('click', nudge(1));
+        if (nP5) nP5.addEventListener('click', nudge(5));
 
         // --- Half selector memory ---
         q('omt-half-select').addEventListener('change', function () {
@@ -890,8 +1076,8 @@
             } else {
                 q('omt-sync-hr').value = q('omt-sync-min').value = q('omt-sync-sec').value = '';
             }
-            q('omt-custom-c1').style.display = (newHalf === 'custom1') ? 'block' : 'none';
-            q('omt-custom-c2').style.display = (newHalf === 'custom2') ? 'block' : 'none';
+            q('omt-custom-c1').style.display = (newHalf === 'custom1') ? 'inline-flex' : 'none';
+            q('omt-custom-c2').style.display = (newHalf === 'custom2') ? 'inline-flex' : 'none';
             previousHalf = newHalf;
             this.blur();
         });
@@ -923,8 +1109,23 @@
         q('omt-jump-kc1').addEventListener('click', () => jumpToKickoff('custom1'));
         q('omt-jump-kc2').addEventListener('click', () => jumpToKickoff('custom2'));
 
-        // --- Speed selector ---
+        // --- Speed selector + quick chips ---
         speedSelect.addEventListener('change', selecionarVelocidade);
+        omtRoot.querySelectorAll('.omt-speed-chip').forEach((chip) => {
+            chip.addEventListener('click', () => {
+                applyPlaybackSpeed(chip.getAttribute('data-speed'));
+                noteOmtUiActivity(true);
+            });
+        });
+        syncSpeedChips();
+
+        // --- Hide panel (same as H hotkey) ---
+        const hidePanelBtn = q('omt-hide-panel');
+        if (hidePanelBtn) {
+            hidePanelBtn.addEventListener('click', () => {
+                toggleManualControlsVisibility();
+            });
+        }
 
         // --- Live button ---
         liveBtn.addEventListener('click', irParaLive);
@@ -1007,38 +1208,47 @@
         }, vsig);
 
         vid.addEventListener('play', () => {
-            if (!btnMainPlay || !controlsPanel) return; // null-guard: UI may have been torn down
-            btnMainPlay.innerHTML = '⏸ Pause';
-            btnMainPlay.classList.add('playing');
-            controlsPanel.classList.add('playing-state');
+            // External/manual play cancels a pending auto-resume (our resume sets in-progress).
+            if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
+            syncPlayButtonFromVideo();
             // Don't reveal the panel — ShuttleXpress triggers play() silently.
             resetControlsTimeout(false);
         }, vsig);
         vid.addEventListener('pause', () => {
-            if (!btnMainPlay || !controlsPanel) return; // null-guard: UI may have been torn down
-            btnMainPlay.innerHTML = '⏯ Play';
-            btnMainPlay.classList.remove('playing');
-            controlsPanel.classList.remove('playing-state');
+            // Do not clear auto-pause flag here — auto-pause itself fires pause.
+            // Manual pause clears via togglePlay / click / Shuttle handlers.
+            syncPlayButtonFromVideo();
         }, vsig);
+        vid.addEventListener('ended', () => {
+            if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
+            syncPlayButtonFromVideo();
+        }, vsig);
+        vid.addEventListener('seeking', () => {
+            if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
+        }, vsig);
+        vid.addEventListener('seeked', () => {
+            if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
+            syncPlayButtonFromVideo();
+        }, vsig);
+        // Initial icon/colour from the real media state (no centre-screen flash).
+        syncPlayButtonFromVideo();
+        if (typeof installAutoPauseOnBlur === 'function') installAutoPauseOnBlur();
 
-        // --- Drag system for both panels ---
-        fazerArrastavel(setupPanel, q('setup-handle'));
-        fazerArrastavel(controlsPanel, q('controls-handle'));
+        // Floating control panel is draggable via the top handle (timeline stays fixed at bottom).
+        if (controlsPanel) {
+            const handle = q('controls-handle');
+            if (handle) fazerArrastavel(controlsPanel, handle);
+        }
 
         // --- Auto-hide controls: mouse move + clicks/keys/wheel on our UI ---
-        // Never hide while the pointer is over our interactive chrome.
         vid.addEventListener('mousemove', () => resetControlsTimeout(true), vsig);
         wireOmtUiActivityTracking();
-        resetControlsTimeout(false); // bootstrap: start timer, don't force-show
+        resetControlsTimeout(false);
 
-        // --- Keyboard shortcuts (capture phase, highest priority) ---
-        // Examino: persistent window listener installed at document_start.
-        // InplayIP: document capture listener (baseline behaviour).
         if (site.id === 'examino') {
             installExaminoHotkeys();
             installExaminoClickToToggle();
             wireExaminoSettingsUI();
-            // Only settle to live-edge after an explicit VOD→DVR switch — never on every bind.
             if (examinoPendingDvrSettle) {
                 examinoPendingDvrSettle = false;
                 settleExaminoMediaAfterBind();
@@ -1047,24 +1257,23 @@
             document.addEventListener('keydown', handleKeydown, true);
         }
 
-        // Auto-blur our own buttons after click (prevent shortcut hijack)
         omtRoot.addEventListener('click', function (e) {
             noteOmtUiActivity(true);
             const el = e.target.closest('button');
             if (el) setTimeout(() => el.blur(), 50);
         });
 
-        // Show live button immediately (always a stream)
         liveBtn.style.display = 'flex';
 
-        // Click listener for interactive timer
-        timerUI.addEventListener('click', iniciarEdicaoTimer);
+        // Match-clock click-to-edit is wired in customize.js (omtInstallClockClickEdit).
+        // Fixed presets only — no drag.
 
-        // ShuttleXpress toggle change listener
+        // Shuttle toggle lives in the in-video more panel (analyst browser only).
         if (shuttleToggle) {
             shuttleToggle.addEventListener('change', handleToggleChange);
-            shuttleToggle.addEventListener('click', () => shuttleToggle.blur());
         }
+        syncShuttleToggleFromStorage();
+        setMorePanelOpen(false);
     }
 
 /* Keep seeks inside seekable range; resist VHS live-edge snap. */
@@ -1202,6 +1411,8 @@
             // --- SE FOR DVR (REVIEW): Mostra os controlos (caso não tenham sido escondidos pelo H) ---
             if (controlsPanel && !isManuallyHidden) {
                 controlsPanel.style.display = ''; // Limpa o 'none' e usa o layout padrão do CSS
+                const timelineBar = omtRoot ? omtRoot.querySelector('#omt-timeline-bar') : null;
+                if (timelineBar) timelineBar.style.display = '';
                 resetControlsTimeout(false);
             }
         } else {
@@ -1214,6 +1425,8 @@
             if (controlsPanel) {
                 controlsPanel.style.display = 'none';
             }
+            const timelineBar = omtRoot ? omtRoot.querySelector('#omt-timeline-bar') : null;
+            if (timelineBar) timelineBar.style.display = 'none';
         }
         atualizarMarcadores();
     }
@@ -1236,7 +1449,7 @@
             q('omt-sync-hr').value = hInput;
             q('omt-sync-min').value = mInput;
             q('omt-sync-sec').value = sInput;
-            mostrarOSD('🎯 Captured: ' + formatarTempoVideo(ct));
+            mostrarOSD('Captured: ' + formatarTempoVideo(ct));
         }
 
         const h = parseInt(hInput) || 0;
@@ -1258,7 +1471,10 @@
 
         offsetEmSegundos = kickoffVal;
         timerAtivo = true;
-        timerUI.style.display = 'block';
+        if (timerUI) timerUI.style.display = 'block';
+        const wrap = q('match-timer-wrap');
+        if (wrap) wrap.style.display = 'flex';
+        if (omtRoot) omtRoot.classList.add('omt-timer-on');
         previousHalf = parte;
 
         // Persist
@@ -1283,21 +1499,17 @@
         atualizarMarcadores();
         atualizarRelogio();
         esconderSetup();
-        // Mark the button as permanently active (stays green until cleared).
-        // Class + inline style together beat any host-page CSS override.
         const _kickoffBtn = q('omt-btn-set-kickoff');
-        _kickoffBtn.classList.add('kickoff-set');
-        _kickoffBtn.style.setProperty('background', '#00cc6a', 'important');
-        _kickoffBtn.style.setProperty('color', '#000', 'important');
-        _kickoffBtn.style.setProperty('opacity', '1', 'important');
-        _kickoffBtn.style.setProperty('box-shadow', '0 0 14px rgba(0,255,136,0.5)', 'important');
-        _kickoffBtn.style.setProperty('border', '1px solid rgba(0,255,136,0.4)', 'important');
-        mostrarOSD('\u23f1 Timer Synced');
+        if (_kickoffBtn) _kickoffBtn.classList.add('kickoff-set');
+        mostrarOSD('Timer Synced');
     }
 
     function limparTimer() {
         timerAtivo = false;
-        timerUI.style.display = 'none';
+        if (timerUI) timerUI.style.display = 'none';
+        const wrapClear = q('match-timer-wrap');
+        if (wrapClear) wrapClear.style.display = 'none';
+        if (omtRoot) omtRoot.classList.remove('omt-timer-on');
         offsetEmSegundos = 0;
         tempoBase = 0;
         previousHalf = '1';
@@ -1322,15 +1534,56 @@
 
         inicializarMetadadosTimeline();
         atualizarMarcadores();
-        // Remove the active state from the kick-off button and clear inline overrides
         const _kickoffBtnClear = q('omt-btn-set-kickoff');
-        _kickoffBtnClear.classList.remove('kickoff-set');
-        _kickoffBtnClear.style.removeProperty('background');
-        _kickoffBtnClear.style.removeProperty('color');
-        _kickoffBtnClear.style.removeProperty('opacity');
-        _kickoffBtnClear.style.removeProperty('box-shadow');
-        _kickoffBtnClear.style.removeProperty('border');
-        mostrarOSD('\u2715 Timer Cleared');
+        if (_kickoffBtnClear) _kickoffBtnClear.classList.remove('kickoff-set');
+        mostrarOSD('Timer Cleared');
+    }
+
+    /** Nudge kick-off offset by ±seconds using existing offset/kickoff state (no new math). */
+    function nudgeKickoffOffset(deltaSec) {
+        if (!timerAtivo || !deltaSec) return;
+        const applyDelta = (val) => {
+            if (val === null || val === undefined || val === '') return val;
+            const n = Number(val);
+            if (!isFinite(n)) return val;
+            return isPdtTimestamp(n) ? (n + deltaSec * 1000) : (n + deltaSec);
+        };
+
+        offsetEmSegundos = applyDelta(offsetEmSegundos);
+        localStorage.setItem('matchTimerOffset', offsetEmSegundos);
+
+        const parte = previousHalf || (q('omt-half-select') && q('omt-half-select').value) || '1';
+        if (parte === '1' && kickoff1 !== null) {
+            kickoff1 = applyDelta(kickoff1);
+            localStorage.setItem('matchTimerKickoff1', kickoff1);
+        } else if (parte === '2' && kickoff2 !== null) {
+            kickoff2 = applyDelta(kickoff2);
+            localStorage.setItem('matchTimerKickoff2', kickoff2);
+        } else if (parte === 'custom1' && kickoffC1 !== null) {
+            kickoffC1 = applyDelta(kickoffC1);
+            localStorage.setItem('matchTimerKickoffC1', kickoffC1);
+        } else if (parte === 'custom2' && kickoffC2 !== null) {
+            kickoffC2 = applyDelta(kickoffC2);
+            localStorage.setItem('matchTimerKickoffC2', kickoffC2);
+        }
+
+        // Keep hidden whistle fields aligned when offset is plain video seconds.
+        if (!isPdtTimestamp(offsetEmSegundos)) {
+            const ct = Math.max(0, Number(offsetEmSegundos) || 0);
+            const hrEl = q('omt-sync-hr');
+            const minEl = q('omt-sync-min');
+            const secEl = q('omt-sync-sec');
+            if (hrEl) hrEl.value = String(Math.floor(ct / 3600));
+            if (minEl) minEl.value = String(Math.floor((ct % 3600) / 60));
+            if (secEl) secEl.value = String(Math.floor(ct % 60));
+            localStorage.setItem('matchTimerSyncHr', hrEl ? hrEl.value : '0');
+            localStorage.setItem('matchTimerSyncMin', minEl ? minEl.value : '0');
+            localStorage.setItem('matchTimerSyncSec', secEl ? secEl.value : '0');
+        }
+
+        atualizarMarcadores();
+        atualizarRelogio();
+        mostrarOSD('Offset ' + (deltaSec > 0 ? '+' : '') + deltaSec + 's');
     }
 
     function atualizarRelogio() {
@@ -1529,60 +1782,175 @@
                 targetVideoTime = Math.min(targetVideoTime, vid.duration);
             }
             seekTo(targetVideoTime);
-            mostrarOSD(`↪️ Jumped to Min ${minutoAlvo}`);
+            // OSD label set by caller when coming from clock edit; fallback for other callers
+            if (!isEditingTimer) mostrarOSD('Jumped to Min ' + minutoAlvo);
         }
     }
 
+    /**
+     * Production clock-edit parsing (analysts usually type digits):
+     *   "45"        → 45:00
+     *   "45:30" / "45.30" / "45,30" / "45 30" / "45-30" → 45:30
+     * Seconds must be 0–59; otherwise keep editing open.
+     */
+    function omtParseClockEditInput(raw) {
+        const s = String(raw || '').trim();
+        if (!s) return { ok: true, empty: true };
+
+        // Minutes only
+        if (/^\d{1,4}$/.test(s)) {
+            const minutes = parseInt(s, 10);
+            return {
+                ok: true,
+                label: String(minutes).padStart(2, '0') + ':00',
+                minuteFloat: minutes
+            };
+        }
+
+        // Minutes + any common separator + seconds
+        const m = /^(\d{1,4})[\s:.,\-–—_/]+(\d{1,2})$/.exec(s);
+        if (!m) return { ok: false, reason: 'format' };
+
+        const minutes = parseInt(m[1], 10);
+        const seconds = parseInt(m[2], 10);
+        if (!Number.isFinite(minutes) || !Number.isFinite(seconds)) {
+            return { ok: false, reason: 'format' };
+        }
+        if (seconds > 59) {
+            return { ok: false, reason: 'seconds', seconds };
+        }
+        return {
+            ok: true,
+            label: String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0'),
+            minuteFloat: minutes + (seconds / 60)
+        };
+    }
+
+    function omtClockEditHint(show, text) {
+        const wrap = typeof q === 'function' ? q('match-timer-wrap') : null;
+        if (!wrap) return;
+        const isBottom = /omt-clock-pos-bottom/.test(wrap.className || '');
+        wrap.classList.toggle('omt-clock-hint-above', !!show && isBottom);
+        wrap.classList.toggle('omt-clock-hint-below', !!show && !isBottom);
+        let hint = wrap.querySelector('.omt-clock-edit-hint');
+        if (!show) {
+            if (hint) hint.remove();
+            wrap.classList.remove('omt-clock-hint-above', 'omt-clock-hint-below');
+            return;
+        }
+        if (!hint) {
+            hint = document.createElement('div');
+            hint.className = 'omt-clock-edit-hint';
+            wrap.appendChild(hint);
+        }
+        hint.textContent = text || '';
+    }
+
     function iniciarEdicaoTimer() {
-        if (isEditingTimer || !timerAtivo) return;
+        // Production behaviour: inline text field prefilled with current match minute (integer).
+        if (isEditingTimer || !timerAtivo || !timerUI) return;
+        if (/pre-match/i.test(timerUI.textContent || '')) return;
 
         const minAtual = obterMinutoAtualJogo();
         isEditingTimer = true;
+        timerUI.classList.add('is-editing');
+        timerUI.classList.remove('is-invalid');
+        omtClockEditHint(false);
+        if (typeof limparOSD === 'function') limparOSD();
 
-        timerUI.innerHTML = `<input type="text" id="timer-edit-input" value="${minAtual}" style="width: 70px; background: transparent; border: none; color: white; font-size: inherit; font-family: inherit; font-weight: inherit; text-align: center; outline: none; padding: 0; margin: 0; display: inline-block; vertical-align: middle;">`;
+        // Keep the face the same size as a normal mm:ss readout while editing.
+        const faceLabel = String(minAtual).padStart(2, '0') + ':00';
+        timerUI.innerHTML =
+            '<input type="text" id="timer-edit-input" inputmode="decimal" autocomplete="off" ' +
+            'spellcheck="false" size="1" value="' + String(minAtual) + '" aria-label="Match time">';
 
         const input = omtRoot.querySelector('#timer-edit-input');
-        if (input) {
+        if (!input) {
+            isEditingTimer = false;
+            timerUI.classList.remove('is-editing');
+            atualizarRelogio();
+            return;
+        }
+
+        // Keep the face hugging the typed value (ch units). Native inputs default to ~20ch
+        // and would otherwise blow out the red invalid outline.
+        function syncEditWidth() {
+            const len = Math.max(String(input.value || '').length, faceLabel.length, 4);
+            input.style.width = (len + 0.4) + 'ch';
+        }
+        syncEditWidth();
+        input.addEventListener('input', syncEditWidth);
+
+        input.focus();
+        input.select();
+
+        let isCommitted = false;
+
+        function markInvalid(reason) {
+            timerUI.classList.remove('is-invalid');
+            void timerUI.offsetWidth;
+            timerUI.classList.add('is-invalid');
+            if (reason === 'seconds') omtClockEditHint(true, 'Seconds 0-59');
+            else omtClockEditHint(false);
             input.focus();
             input.select();
-
-            let isCommitted = false;
-
-            function salvarEdicao() {
-                if (isCommitted) return;
-                isCommitted = true;
-                const val = input.value.trim();
-                if (val !== '') {
-                    const targetMin = parseFloat(val);
-                    if (!isNaN(targetMin) && targetMin >= 0) {
-                        navegarParaMinutoDeJogo(targetMin);
-                    }
-                }
-                isEditingTimer = false;
-                atualizarRelogio();
-            }
-
-            function cancelarEdicao() {
-                if (isCommitted) return;
-                isCommitted = true;
-                isEditingTimer = false;
-                atualizarRelogio();
-            }
-
-            input.addEventListener('keydown', function (e) {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    salvarEdicao();
-                } else if (e.key === 'Escape') {
-                    e.preventDefault();
-                    cancelarEdicao();
-                }
-            });
-
-            input.addEventListener('blur', function () {
-                setTimeout(salvarEdicao, 150);
-            });
         }
+
+        function finishEdit() {
+            isEditingTimer = false;
+            timerUI.classList.remove('is-editing', 'is-invalid');
+            omtClockEditHint(false);
+            atualizarRelogio();
+        }
+
+        function salvarEdicao() {
+            if (isCommitted) return;
+            const parsed = omtParseClockEditInput(input.value);
+            if (!parsed.ok) {
+                markInvalid(parsed.reason);
+                return;
+            }
+            isCommitted = true;
+            if (!parsed.empty) {
+                navegarParaMinutoDeJogo(parsed.minuteFloat);
+                mostrarOSD('Clock set ' + parsed.label);
+            }
+            finishEdit();
+        }
+
+        function cancelarEdicao() {
+            if (isCommitted) return;
+            isCommitted = true;
+            finishEdit();
+        }
+
+        input.addEventListener('input', function () {
+            timerUI.classList.remove('is-invalid');
+            omtClockEditHint(false);
+        });
+
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                e.stopPropagation();
+                salvarEdicao();
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                cancelarEdicao();
+            }
+        });
+
+        // Production: blur commits. Defer binding so the opening click cannot
+        // immediately dismiss the field before the analyst types.
+        setTimeout(function () {
+            if (isCommitted || !input.isConnected) return;
+            input.addEventListener('blur', function () {
+                setTimeout(function () {
+                    if (!isCommitted) salvarEdicao();
+                }, 150);
+            });
+        }, 200);
     }
 
 /* Kick-off markers on the HUD timeline. */
@@ -1623,12 +1991,11 @@
 
         markers.forEach(({ val, btn, cls, label }) => {
             if (!btn) return;
+            // Jump targets stay wired but never shown as a chip row (period is top-right).
+            btn.style.display = 'none';
             if (val !== null && val >= minVal && val <= maxVal && range > 0) {
-                btn.style.display = 'inline-flex';
                 const pct = ((val - minVal) / range) * 100;
                 markerContainer.innerHTML += `<div class="timeline-marker-tick ${cls}" style="left:${pct}%;" title="${label}"></div>`;
-            } else {
-                btn.style.display = 'none';
             }
         });
     }
@@ -1641,7 +2008,7 @@
         const t = getVideoTimeForPdt(raw);
         if (t !== null && t >= 0) {
             seekTo(t);
-            mostrarOSD(`⚽ Jumped to ${labels[half]} Kickoff`);
+            mostrarOSD('Jumped to ' + labels[half] + ' Kickoff');
         }
     }
 
@@ -1649,37 +2016,114 @@
     /* =========================================================
        12. PLAYBACK CONTROLS
        ========================================================= */
+    // Symmetric speed ladder (1x centre). Shared by chips, select, Z/C/X.
+    const OMT_SPEED_RATES = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+    const OMT_SPEED_SELECT_VALUES = {
+        0.25: '0.25',
+        0.5: '0.5',
+        0.75: '0.75',
+        1.0: '1.0',
+        1.25: '1.25',
+        1.5: '1.5',
+        2.0: '2.0'
+    };
+
+    // Examino OpenPlayer may replace <video> during DVR/VOD switches.
+    // Prefer the live connected element so transport/speed always hit the player.
+    function ensureLiveVideo() {
+        if (vid && vid.isConnected) return vid;
+        const found = (site && typeof site.findVideo === 'function')
+            ? site.findVideo()
+            : document.querySelector('video');
+        if (found) vid = found;
+        return vid;
+    }
+
+    function closestSpeedRate(rate) {
+        const current = parseFloat(rate);
+        if (!isFinite(current)) return 1.0;
+        return OMT_SPEED_RATES.reduce((prev, curr) =>
+            Math.abs(curr - current) < Math.abs(prev - current) ? curr : prev, 1.0);
+    }
+
     function saltarVideo(segundos) {
+        if (!ensureLiveVideo()) return;
+        if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
         seekTo(vid.currentTime + segundos);
-        mostrarOSD(`${segundos > 0 ? '⏩' : '⏪'} ${segundos > 0 ? '+' : ''}${segundos}s`);
+        mostrarOSD((segundos > 0 ? '+' : '') + segundos + 's');
     }
 
     function togglePlay() {
-        if (vid.paused) { vid.play(); mostrarOSD('▶ Play'); }
-        else { vid.pause(); mostrarOSD('⏸ Pause'); }
+        if (!ensureLiveVideo()) return;
+        if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
+        if (vid.paused || vid.ended) { vid.play(); mostrarOSD('Play'); }
+        else { vid.pause(); mostrarOSD('Pause'); }
     }
 
     function avancarFrame() {
+        if (!ensureLiveVideo()) return;
+        if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
         vid.pause();
         vid.currentTime += 0.04;
-        mostrarOSD('🎞 +1 Frame');
+        mostrarOSD('+1 Frame');
     }
 
     function retrocederFrame() {
+        if (!ensureLiveVideo()) return;
+        if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
         vid.pause();
         vid.currentTime -= 0.04;
-        mostrarOSD('🎞 -1 Frame');
+        mostrarOSD('-1 Frame');
     }
 
     function selecionarVelocidade() {
-        const valor = parseFloat(speedSelect.value);
-        vid.playbackRate = valor;
-        mostrarOSD('⚡ Speed: ' + valor.toFixed(2) + 'x');
+        if (!ensureLiveVideo() || !speedSelect) return;
+        applyPlaybackSpeed(speedSelect.value);
         speedSelect.blur();
+    }
+
+    function applyPlaybackSpeed(rate, { announce = true } = {}) {
+        const valor = parseFloat(rate);
+        if (!ensureLiveVideo() || !isFinite(valor) || valor <= 0) return;
+        const closest = closestSpeedRate(valor);
+        vid.playbackRate = closest;
+        if (speedSelect) {
+            speedSelect.value = OMT_SPEED_SELECT_VALUES[closest] || String(closest);
+        }
+        syncSpeedChips();
+        if (announce) mostrarOSD('Speed: ' + closest.toFixed(2) + 'x');
+    }
+
+    function syncSpeedChips() {
+        if (!omtRoot || !ensureLiveVideo()) return;
+        const rate = closestSpeedRate(vid.playbackRate || 1);
+        const chips = omtRoot.querySelectorAll('.omt-speed-chip');
+        chips.forEach((chip) => {
+            const chipRate = parseFloat(chip.getAttribute('data-speed'));
+            const active = Math.abs(chipRate - rate) < 0.05;
+            chip.classList.toggle('is-active', active);
+            chip.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
+    }
+
+    function atualizarBotaoPlay(playing) {
+        if (!btnMainPlay) return;
+        // Playing → orange pause icon; paused → grey/white play icon.
+        btnMainPlay.innerHTML = playing ? omtIcon('pause', 22) : omtIcon('play', 22);
+        btnMainPlay.classList.toggle('playing', !!playing);
+        btnMainPlay.setAttribute('aria-pressed', playing ? 'true' : 'false');
+    }
+
+    function syncPlayButtonFromVideo() {
+        if (!ensureLiveVideo()) return;
+        const playing = !vid.paused && !vid.ended;
+        atualizarBotaoPlay(playing);
+        if (controlsPanel) controlsPanel.classList.toggle('playing-state', playing);
     }
 
     function irParaLive() {
         // Try to read the live sync position from hls.js directly
+        // (seek target / timing logic unchanged from v1.2.2 / v1.3.0)
         if (hlsInstance && typeof hlsInstance.liveSyncPosition === 'number') {
             seekTo(hlsInstance.liveSyncPosition);
         } else if (vid.seekable && vid.seekable.length > 0) {
@@ -1689,7 +2133,7 @@
         }
         // After going live, clear seek lock so stream can advance normally
         setTimeout(() => { userIntendedTime = null; seekLockUntil = 0; }, 3000);
-        mostrarOSD('📡 Going Live');
+        mostrarOSD('Going Live');
         liveBtn.blur();
     }
 
@@ -1702,7 +2146,19 @@
             liveEdge = vid.duration;
         }
         const dist = liveEdge - vid.currentTime;
-        liveBtn.classList.toggle('is-live', liveEdge > 0 && dist <= 8);
+        const atLive = liveEdge > 0 && dist <= 8;
+        liveBtn.classList.toggle('is-live', atLive);
+        // Presentation only: drive scrubber colour (red at live / grey behind)
+        const timelineBar = omtRoot ? omtRoot.querySelector('#omt-timeline-bar') : null;
+        if (timelineBar) timelineBar.classList.toggle('omt-at-live', atLive);
+        if (controlsPanel) controlsPanel.classList.toggle('omt-at-live', atLive);
+        if (timelineSlider) {
+            const min = parseFloat(timelineSlider.min) || 0;
+            const max = parseFloat(timelineSlider.max) || 0;
+            const val = parseFloat(timelineSlider.value) || 0;
+            const pct = max > min ? ((val - min) / (max - min)) * 100 : 0;
+            timelineSlider.style.setProperty('--omt-progress', Math.max(0, Math.min(100, pct)) + '%');
+        }
     }
 
     function toggleFullScreen() {
@@ -1731,7 +2187,9 @@
     }
 
     function atualizarIconeVolume(vol) {
-        volumeIconBtn.innerText = vol === 0 ? '🔇' : vol < 0.5 ? '🔉' : '🔊';
+        if (!volumeIconBtn) return;
+        const name = vol === 0 ? 'volume-x' : vol < 0.5 ? 'volume-1' : 'volume-2';
+        volumeIconBtn.innerHTML = omtIcon(name, 15);
     }
 
 /* Transient OSD toast messages. */
@@ -1745,7 +2203,13 @@
         void osd.offsetWidth; // reflow
         osd.classList.add('visible');
         clearTimeout(osdTimeout);
-        osdTimeout = setTimeout(() => { if (osd) osd.classList.remove('visible'); }, 1800);
+        osdTimeout = setTimeout(() => { if (osd) osd.classList.remove('visible'); }, 1100);
+    }
+
+    function limparOSD() {
+        if (!osd) return;
+        osd.classList.remove('visible');
+        clearTimeout(osdTimeout);
     }
 
 /* Controls auto-hide: activity tracking, hover keep-visible, idle fade. */
@@ -1760,11 +2224,25 @@
         if (!target || !omtRoot) return false;
         const el = target.nodeType === 1 ? target : target.parentElement;
         if (!el || !omtRoot.contains(el)) return false;
-        return !!el.closest('.glass-panel, #match-timer, #osd-message, button, input, select, label, a, .timeline-container');
+        return !!el.closest('.glass-panel, #controls-panel, #match-timer-wrap, #match-timer, #omt-timeline-bar, #omt-more-panel, #omt-kickoff-bar, #omt-examino-settings, #osd-message, button, input, select, label, a, .omt-hud-chip');
     }
 
     function noteOmtUiActivity(showPanel = true) {
         resetControlsTimeout(showPanel);
+    }
+
+    function setChromeVisible(visible) {
+        const opacity = visible ? '1' : '0';
+        const pe = visible ? 'auto' : 'none';
+        if (controlsPanel) {
+            controlsPanel.style.opacity = opacity;
+            controlsPanel.style.pointerEvents = pe;
+        }
+        const timelineBar = omtRoot ? omtRoot.querySelector('#omt-timeline-bar') : null;
+        if (timelineBar) {
+            timelineBar.style.opacity = opacity;
+            timelineBar.style.pointerEvents = pe;
+        }
     }
 
     function wireOmtUiActivityTracking() {
@@ -1792,6 +2270,8 @@
         };
         trackHover(controlsPanel);
         trackHover(setupPanel);
+        const timelineBar = omtRoot.querySelector('#omt-timeline-bar');
+        trackHover(timelineBar);
         if (timerUI) trackHover(timerUI);
     }
 
@@ -1807,8 +2287,7 @@
         if (vid && !site.mediaReady(vid)) return;
 
         if (showPanel && controlsPanel) {
-            controlsPanel.style.opacity = '1';
-            controlsPanel.style.pointerEvents = 'auto';
+            setChromeVisible(true);
         }
 
         // Only schedule the hide timer when the panel is already visible.
@@ -1823,10 +2302,7 @@
                 resetControlsTimeout(false);
                 return;
             }
-            if (controlsPanel) {
-                controlsPanel.style.opacity = '0';
-                controlsPanel.style.pointerEvents = 'none';
-            }
+            setChromeVisible(false);
         }, 2500);
     }
 
@@ -1846,98 +2322,96 @@
         return tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA';
     }
 
+    function runHotkeyAction(actionId) {
+        if (!ensureLiveVideo()) return;
+        switch (actionId) {
+            case 'skipFwd2': saltarVideo(2); break;
+            case 'skipBack2': saltarVideo(-2); break;
+            case 'skipFwd10': saltarVideo(10); break;
+            case 'skipBack10': saltarVideo(-10); break;
+            case 'skipFwd2m': saltarVideo(120); break;
+            case 'skipBack2m': saltarVideo(-120); break;
+            case 'frameFwd': avancarFrame(); break;
+            case 'frameBack': retrocederFrame(); break;
+            case 'playPause': togglePlay(); break;
+            case 'speedDown': {
+                const closestRate = closestSpeedRate(vid.playbackRate);
+                const currentIndex = OMT_SPEED_RATES.indexOf(closestRate);
+                const newIndex = Math.max(0, currentIndex - 1);
+                applyPlaybackSpeed(OMT_SPEED_RATES[newIndex]);
+                break;
+            }
+            case 'speedUp': {
+                const closestRate = closestSpeedRate(vid.playbackRate);
+                const currentIndex = OMT_SPEED_RATES.indexOf(closestRate);
+                const newIndex = Math.min(OMT_SPEED_RATES.length - 1, currentIndex + 1);
+                applyPlaybackSpeed(OMT_SPEED_RATES[newIndex]);
+                break;
+            }
+            case 'speedReset':
+                applyPlaybackSpeed(1.0);
+                break;
+            case 'hide':
+                toggleManualControlsVisibility();
+                break;
+            case 'kickoff':
+                iniciarTimer();
+                break;
+            case 'live':
+                irParaLive();
+                break;
+            default:
+                break;
+        }
+    }
+
     function handleKeydown(e) {
         // Don't intercept when user is typing in inputs / contenteditable
         if (isEditableKeyTarget(e.target)) return;
 
-        const key = e.key.toLowerCase();
-        const controlled = ['arrowright', 'arrowleft', 'arrowup', 'arrowdown', ' ', 'z', 'c', 'x', 'h'];
-        if (!controlled.includes(key)) return;
+        const actionId = (typeof omtFindHotkeyAction === 'function')
+            ? omtFindHotkeyAction(e)
+            : null;
+        if (!actionId) return;
 
         // Stop the event before Video.js / OpenPlayer / Examino handles it
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
 
-        if (!vid) return;
+        runHotkeyAction(actionId);
+    }
 
-        switch (key) {
-            case 'arrowright':
-                if (e.ctrlKey) saltarVideo(120);
-                else if (e.shiftKey) saltarVideo(10);
-                else saltarVideo(2);
-                break;
-            case 'arrowleft':
-                if (e.ctrlKey) saltarVideo(-120);
-                else if (e.shiftKey) saltarVideo(-10);
-                else saltarVideo(-2);
-                break;
-            case 'arrowup': avancarFrame(); break;
-            case 'arrowdown': retrocederFrame(); break;
-            case ' ': togglePlay(); break;
-            case 'z': {
-                const allowedRates = [0.25, 0.5, 1.0, 1.5, 2.0];
-                const currentRate = vid.playbackRate;
-                const closestRate = allowedRates.reduce((prev, curr) => 
-                    Math.abs(curr - currentRate) < Math.abs(prev - currentRate) ? curr : prev
-                );
-                const currentIndex = allowedRates.indexOf(closestRate);
-                const newIndex = Math.max(0, currentIndex - 1);
-                vid.playbackRate = allowedRates[newIndex];
-                syncSpeedSelect();
-                mostrarOSD('⚡ Speed: ' + vid.playbackRate.toFixed(2) + 'x');
-                break;
-            }
-            case 'c': {
-                const allowedRates = [0.25, 0.5, 1.0, 1.5, 2.0];
-                const currentRate = vid.playbackRate;
-                const closestRate = allowedRates.reduce((prev, curr) => 
-                    Math.abs(curr - currentRate) < Math.abs(prev - currentRate) ? curr : prev
-                );
-                const currentIndex = allowedRates.indexOf(closestRate);
-                const newIndex = Math.min(allowedRates.length - 1, currentIndex + 1);
-                vid.playbackRate = allowedRates[newIndex];
-                syncSpeedSelect();
-                mostrarOSD('⚡ Speed: ' + vid.playbackRate.toFixed(2) + 'x');
-                break;
-            }
-            case 'x':
-                vid.playbackRate = 1.0;
-                syncSpeedSelect();
-                mostrarOSD('⚡ Speed: 1.00x');
-                break;
-            case 'h':
-                if (controlsPanel) {
-                    if (isManuallyHidden) {
-                        isManuallyHidden = false;
-                        resetControlsTimeout();
-                        mostrarOSD('🖥️ Controls Visible');
-                    } else {
-                        isManuallyHidden = true;
-                        if (mouseMoveTimeout) {
-                            clearTimeout(mouseMoveTimeout);
-                            mouseMoveTimeout = null;
-                        }
-                        controlsPanel.style.opacity = '0';
-                        controlsPanel.style.pointerEvents = 'none';
-                        mostrarOSD('🙈 Controls Hidden');
-                    }
-                }
-                break;
-
+    function toggleManualControlsVisibility() {
+        if (!controlsPanel) return;
+        if (isManuallyHidden) {
+            isManuallyHidden = false;
+            resetControlsTimeout();
+            mostrarOSD('Controls Visible');
+            return;
         }
+        isManuallyHidden = true;
+        if (mouseMoveTimeout) {
+            clearTimeout(mouseMoveTimeout);
+            mouseMoveTimeout = null;
+        }
+        controlsPanel.style.opacity = '0';
+        controlsPanel.style.pointerEvents = 'none';
+        const timelineBar = omtRoot ? omtRoot.querySelector('#omt-timeline-bar') : null;
+        if (timelineBar) {
+            timelineBar.style.opacity = '0';
+            timelineBar.style.pointerEvents = 'none';
+        }
+        mostrarOSD('Controls Hidden');
     }
 
     function syncSpeedSelect() {
-        const currentRate = vid.playbackRate;
-        const allowedRates = [0.25, 0.5, 1.0, 1.5, 2.0];
-        const closestRate = allowedRates.reduce((prev, curr) => 
-            Math.abs(curr - currentRate) < Math.abs(prev - currentRate) ? curr : prev
-        );
-        const rateStrings = { 0.25: "0.25", 0.5: "0.5", 1.0: "1.0", 1.5: "1.5", 2.0: "2.0" };
+        if (!ensureLiveVideo()) return;
+        const closestRate = closestSpeedRate(vid.playbackRate);
         if (speedSelect) {
-            speedSelect.value = rateStrings[closestRate] || closestRate.toString();
+            speedSelect.value = OMT_SPEED_SELECT_VALUES[closestRate] || String(closestRate);
         }
+        if (typeof syncSpeedChips === 'function') syncSpeedChips();
     }
 
 /* Draggable glass panels. */
@@ -1990,12 +2464,17 @@
         }
     }
 
-/* Show / hide the setup panel. */
+/* Show / hide the legacy setup panel (unused in-video; kept null-safe). */
     /* =========================================================
        16. SETUP PANEL VISIBILITY
        ========================================================= */
-    function esconderSetup() { setupPanel.style.display = 'none'; }
-    function mostrarSetup() { setupPanel.style.display = 'flex'; }
+    function esconderSetup() {
+        if (setupPanel) setupPanel.style.display = 'none';
+    }
+    function mostrarSetup() {
+        // Branding / Personalizar moved to the Chrome toolbar popup.
+        if (setupPanel) setupPanel.style.display = 'none';
+    }
 
 /* Contour ShuttleXpress via WebHID. */
     /* =========================================================
@@ -2009,15 +2488,53 @@
     let currentShuttleSpeed = 0;
 
     function getShuttleSpeedFactor(b0) {
+        const scale = (typeof omtGetShuttlePrefs === 'function')
+            ? (omtGetShuttlePrefs().shuttleScale || 1)
+            : 1;
         if (b0 >= 1 && b0 <= 7) {
             const factors = [0.2, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0];
-            return factors[b0 - 1];
+            return factors[b0 - 1] * scale;
         } else if (b0 >= 249 && b0 <= 255) {
             const factors = [-0.2, -0.5, -1.0, -2.0, -4.0, -8.0, -16.0];
             const index = 255 - b0;
-            return factors[index];
+            return factors[index] * scale;
         }
         return 0;
+    }
+
+    function shuttleButtonPressed(btn, prev3, prev4, bytes) {
+        if (btn === 1) return bytes[3] === 16 && prev3 !== 16;
+        if (btn === 2) return bytes[3] === 32 && prev3 !== 32;
+        if (btn === 3) return bytes[3] === 64 && prev3 !== 64;
+        if (btn === 4) return bytes[3] === 128 && prev3 !== 128;
+        if (btn === 5) return bytes[4] === 1 && prev4 !== 1;
+        return false;
+    }
+
+    function runShuttleButton(btn, prefs) {
+        if (!vid) return;
+        if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
+        if (btn === prefs.playPauseBtn) {
+            if (vid.paused) {
+                vid.play().catch(() => {});
+                mostrarOSD('Play');
+            } else {
+                vid.pause();
+                mostrarOSD('Pause');
+            }
+            return;
+        }
+        const secs = Number(prefs['skipBtn' + btn]);
+        if (!Number.isFinite(secs) || secs <= 0) return;
+        const sign = (typeof omtSkipSignForButton === 'function')
+            ? omtSkipSignForButton(btn, prefs)
+            : ((btn === 1 || btn === 2) ? -1 : 1);
+        const delta = sign * secs;
+        vid.currentTime = Math.max(0, (vid.currentTime || 0) + delta);
+        const label = Math.abs(delta) >= 60
+            ? ((delta < 0 ? 'Skip -' : 'Skip +') + (Math.abs(delta) / 60) + 'm')
+            : ((delta < 0 ? 'Skip -' : 'Skip +') + Math.abs(delta) + 's');
+        mostrarOSD(label);
     }
 
     function showShuttleCheatsheet(visible) {
@@ -2055,43 +2572,35 @@
         prevBytes4 = 0;
 
         updateToggleUI(false);
-        localStorage.setItem('shuttleXpressEnabled', 'false');
+        if (typeof storageSetShuttleEnabled === 'function') {
+            storageSetShuttleEnabled(false);
+        } else {
+            try { localStorage.setItem('shuttleXpressEnabled', 'false'); } catch (_) {}
+        }
         showShuttleCheatsheet(false);
     }
 
     function handleInputReport(event) {
+        if (typeof noteShuttleActivity === 'function') noteShuttleActivity();
         const { data } = event;
         const bytes = new Uint8Array(data.buffer);
 
-        // A) 5 Buttons edge detection
-        if (bytes[3] === 16 && prevBytes3 !== 16) {
-            vid.currentTime -= 120;
-            mostrarOSD('⏪ Skip -2m');
-        } else if (bytes[3] === 32 && prevBytes3 !== 32) {
-            vid.currentTime -= 10;
-            mostrarOSD('⏪ Skip -10s');
-        } else if (bytes[3] === 64 && prevBytes3 !== 64) {
-            if (vid.paused) {
-                vid.play().catch(e => {});
-                mostrarOSD('▶ Play');
-            } else {
-                vid.pause();
-                mostrarOSD('⏸ Pause');
-            }
-        } else if (bytes[3] === 128 && prevBytes3 !== 128) {
-            vid.currentTime += 10;
-            mostrarOSD('⏩ Skip +10s');
-        }
+        const prefs = (typeof omtGetShuttlePrefs === 'function')
+            ? omtGetShuttlePrefs()
+            : { skipBtn1: 120, skipBtn2: 10, skipBtn3: 120, skipBtn4: 10, skipBtn5: 120, playPauseBtn: 3, centreSkipSign: 1, jogStep: 0.04, shuttleScale: 1 };
 
-        if (bytes[4] === 1 && prevBytes4 !== 1) {
-            vid.currentTime += 120;
-            mostrarOSD('⏩ Skip +2m');
+        // A) 5 Buttons edge detection (play/pause button configurable)
+        for (let btn = 1; btn <= 5; btn++) {
+            if (shuttleButtonPressed(btn, prevBytes3, prevBytes4, bytes)) {
+                runShuttleButton(btn, prefs);
+            }
         }
 
         prevBytes3 = bytes[3];
         prevBytes4 = bytes[4];
 
         // B) Inner Jog Wheel (Frame-by-frame)
+        const jogStep = prefs.jogStep || 0.04;
         const currentJog = bytes[1];
         if (lastJogValue !== null && currentJog !== lastJogValue) {
             if (!vid.paused) vid.pause();
@@ -2101,8 +2610,11 @@
             else if (delta < -128) delta += 256;
 
             if (delta !== 0) {
-                vid.currentTime += delta * 0.04;
-                mostrarOSD(delta > 0 ? `🎞 +${delta} Frame${delta > 1 ? 's' : ''}` : `🎞 ${delta} Frame${delta < -1 ? 's' : ''}`);
+                vid.currentTime += delta * jogStep;
+                const framesApprox = Math.round(Math.abs(delta * jogStep / 0.04));
+                mostrarOSD(delta > 0
+                    ? `+${framesApprox || 1} Frame${(framesApprox || 1) > 1 ? 's' : ''}`
+                    : `-${framesApprox || 1} Frame${(framesApprox || 1) > 1 ? 's' : ''}`);
             }
         }
         lastJogValue = currentJog;
@@ -2200,7 +2712,7 @@
 
     async function handleToggleChange() {
         if (shuttleToggle.checked) {
-            localStorage.setItem('shuttleXpressEnabled', 'true');
+            storageSetShuttleEnabled(true);
             try {
                 const devices = await navigator.hid.getDevices();
                 let device = devices.find(d => d.vendorId === 0x0b33);
@@ -2217,15 +2729,15 @@
                     await connectDevice(device);
                 } else {
                     updateToggleUI(false);
-                    localStorage.setItem('shuttleXpressEnabled', 'false');
+                    storageSetShuttleEnabled(false);
                 }
             } catch (err) {
                 console.error('[OMT] Failed to request ShuttleXpress:', err);
                 updateToggleUI(false);
-                localStorage.setItem('shuttleXpressEnabled', 'false');
+                storageSetShuttleEnabled(false);
             }
         } else {
-            localStorage.setItem('shuttleXpressEnabled', 'false');
+            storageSetShuttleEnabled(false);
             cleanupShuttle();
         }
     }
@@ -2242,7 +2754,10 @@
 
         navigator.hid.addEventListener('disconnect', handleHidDisconnect);
 
-        if (localStorage.getItem('shuttleXpressEnabled') === 'true') {
+        const shuttleOn = (typeof storageGetShuttleEnabled === 'function')
+            ? storageGetShuttleEnabled()
+            : (localStorage.getItem('shuttleXpressEnabled') === 'true');
+        if (shuttleOn) {
             try {
                 const devices = await navigator.hid.getDevices();
                 const device = devices.find(d => d.vendorId === 0x0b33);
@@ -2266,7 +2781,10 @@
         timerAtivo = true;
         offsetEmSegundos = parseFloat(localStorage.getItem('matchTimerOffset')) || 0;
         tempoBase = parseFloat(localStorage.getItem('matchTimerTempoBase')) || 0;
-        timerUI.style.display = 'block';
+        if (timerUI) timerUI.style.display = 'block';
+        const wrap = q('match-timer-wrap');
+        if (wrap) wrap.style.display = 'flex';
+        if (omtRoot) omtRoot.classList.add('omt-timer-on');
 
         q('omt-sync-hr').value = localStorage.getItem('matchTimerSyncHr') || '';
         q('omt-sync-min').value = localStorage.getItem('matchTimerSyncMin') || '';
@@ -2275,8 +2793,8 @@
         const savedHalf = localStorage.getItem('matchTimerHalf');
         if (savedHalf) {
             q('omt-half-select').value = savedHalf;
-            q('omt-custom-c1').style.display = (savedHalf === 'custom1') ? 'block' : 'none';
-            q('omt-custom-c2').style.display = (savedHalf === 'custom2') ? 'block' : 'none';
+            q('omt-custom-c1').style.display = (savedHalf === 'custom1') ? 'inline-flex' : 'none';
+            q('omt-custom-c2').style.display = (savedHalf === 'custom2') ? 'inline-flex' : 'none';
         }
 
         const savedCMin1 = localStorage.getItem('matchTimerCustomMinC1');
@@ -2284,38 +2802,535 @@
         if (savedCMin1) q('omt-custom-minute-c1').value = savedCMin1;
         if (savedCMin2) q('omt-custom-minute-c2').value = savedCMin2;
 
-        // Restore the permanent active state on the kick-off button
         const _kickoffBtnRestore = q('omt-btn-set-kickoff');
-        _kickoffBtnRestore.classList.add('kickoff-set');
-        _kickoffBtnRestore.style.setProperty('background', '#00cc6a', 'important');
-        _kickoffBtnRestore.style.setProperty('color', '#000', 'important');
-        _kickoffBtnRestore.style.setProperty('opacity', '1', 'important');
-        _kickoffBtnRestore.style.setProperty('box-shadow', '0 0 14px rgba(0,255,136,0.5)', 'important');
-        _kickoffBtnRestore.style.setProperty('border', '1px solid rgba(0,255,136,0.4)', 'important');
+        if (_kickoffBtnRestore) _kickoffBtnRestore.classList.add('kickoff-set');
         esconderSetup();
-        mostrarOSD('\u23f1 Timer Restored');
+        mostrarOSD('Timer Restored');
     }
 
 /* Settings / storage bridge client (MAIN world).
  * chrome.storage is only reachable from bridge.js (ISOLATED).
- * Auto-VOD preference is mirrored via localStorage + postMessage.
+ * Prefs are mirrored via localStorage + postMessage.
  */
+    const OMT_STORAGE_KEYS = {
+        autoVod: 'omtAutoSwitchVod',
+        shuttle: 'shuttleXpressEnabled',
+        autoPauseOnBlur: 'omtAutoPauseOnBlur',
+        clockPos: 'omtClockPosition',
+        clockSize: 'omtClockSize',
+        clockShape: 'omtClockShape',
+        clockCustom: 'omtClockCustomOffset',
+        hotkeys: 'omtHotkeys',
+        shuttlePrefs: 'omtShuttlePrefs'
+    };
+
+    function storageGetAutoPauseOnBlur() {
+        const v = localStorage.getItem(OMT_STORAGE_KEYS.autoPauseOnBlur);
+        if (v === null || v === undefined || v === '') return false; // default OFF
+        return v === 'true';
+    }
+
+    function storageSetAutoPauseOnBlur(enabled) {
+        localStorage.setItem(OMT_STORAGE_KEYS.autoPauseOnBlur, enabled ? 'true' : 'false');
+        try {
+            window.postMessage({
+                source: 'omt-page',
+                type: 'OMT_STORAGE_SET',
+                key: OMT_STORAGE_KEYS.autoPauseOnBlur,
+                value: !!enabled
+            }, '*');
+        } catch (_) {}
+    }
+
     function storageGetAutoVod() {
-        const v = localStorage.getItem('omtAutoSwitchVod');
+        const v = localStorage.getItem(OMT_STORAGE_KEYS.autoVod);
         if (v === null || v === undefined || v === '') return true; // default ON
         return v === 'true';
     }
 
     function storageSetAutoVod(enabled) {
-        localStorage.setItem('omtAutoSwitchVod', enabled ? 'true' : 'false');
+        localStorage.setItem(OMT_STORAGE_KEYS.autoVod, enabled ? 'true' : 'false');
         try {
             window.postMessage({
                 source: 'omt-page',
                 type: 'OMT_STORAGE_SET',
-                key: 'omtAutoSwitchVod',
+                key: OMT_STORAGE_KEYS.autoVod,
                 value: !!enabled
             }, '*');
         } catch (_) {}
+    }
+
+    function storageGetShuttleEnabled() {
+        // Local player windows must not share Shuttle enablement (upper shared
+        // monitor vs personal file window). sessionStorage is per-window.
+        if (site && site.id === 'local') {
+            try {
+                return sessionStorage.getItem('omtLocalShuttleEnabled') === 'true';
+            } catch (_) {
+                return false;
+            }
+        }
+        const v = localStorage.getItem(OMT_STORAGE_KEYS.shuttle);
+        if (v === null || v === undefined || v === '') return false;
+        return v === 'true';
+    }
+
+    function storageSetShuttleEnabled(enabled) {
+        if (site && site.id === 'local') {
+            try {
+                sessionStorage.setItem('omtLocalShuttleEnabled', enabled ? 'true' : 'false');
+            } catch (_) {}
+            return;
+        }
+        localStorage.setItem(OMT_STORAGE_KEYS.shuttle, enabled ? 'true' : 'false');
+        try {
+            window.postMessage({
+                source: 'omt-page',
+                type: 'OMT_STORAGE_SET',
+                key: OMT_STORAGE_KEYS.shuttle,
+                value: !!enabled
+            }, '*');
+        } catch (_) {}
+    }
+
+    function syncShuttleToggleFromStorage() {
+        if (!shuttleToggle) return;
+        const on = storageGetShuttleEnabled();
+        shuttleToggle.checked = on;
+        // Reuse existing Shuttle wiring without changing behaviour.
+        try {
+            if (typeof updateToggleUI === 'function') updateToggleUI(on);
+        } catch (_) {}
+    }
+
+    function omtMirrorJsonKey(key, value) {
+        try {
+            if (value == null) localStorage.removeItem(key);
+            else localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+        } catch (_) {}
+    }
+
+    // Popup / bridge → page sync
+    window.addEventListener('message', (event) => {
+        if (event.source !== window) return;
+        const data = event.data;
+        if (!data || data.source !== 'omt-bridge' || data.type !== 'OMT_STORAGE_SYNC') return;
+        const values = data.values || {};
+        if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.shuttle)) {
+            // Never let shared chrome.storage shuttle prefs override a local player window.
+            if (site && site.id === 'local') {
+                // ignore
+            } else {
+                try {
+                    localStorage.setItem(OMT_STORAGE_KEYS.shuttle, values[OMT_STORAGE_KEYS.shuttle] ? 'true' : 'false');
+                } catch (_) {}
+                syncShuttleToggleFromStorage();
+                if (values[OMT_STORAGE_KEYS.shuttle] && typeof initShuttleXpress === 'function') {
+                    initShuttleXpress().catch(() => {});
+                } else if (!values[OMT_STORAGE_KEYS.shuttle] && typeof cleanupShuttle === 'function') {
+                    cleanupShuttle();
+                }
+            }
+        }
+        if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.autoVod)) {
+            try {
+                localStorage.setItem(OMT_STORAGE_KEYS.autoVod, values[OMT_STORAGE_KEYS.autoVod] ? 'true' : 'false');
+            } catch (_) {}
+            const autoBox = omtRoot && omtRoot.querySelector('#omt-examino-auto-vod');
+            if (autoBox) autoBox.checked = !!values[OMT_STORAGE_KEYS.autoVod] && examinoManualSourceChoice !== 'DVR';
+        }
+        if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.autoPauseOnBlur)) {
+            try {
+                localStorage.setItem(
+                    OMT_STORAGE_KEYS.autoPauseOnBlur,
+                    values[OMT_STORAGE_KEYS.autoPauseOnBlur] ? 'true' : 'false'
+                );
+            } catch (_) {}
+        }
+
+        let customizeTouched = false;
+        [OMT_STORAGE_KEYS.clockPos, OMT_STORAGE_KEYS.clockSize, OMT_STORAGE_KEYS.clockShape].forEach((k) => {
+            if (Object.prototype.hasOwnProperty.call(values, k)) {
+                try {
+                    if (values[k] == null) localStorage.removeItem(k);
+                    else localStorage.setItem(k, String(values[k]));
+                } catch (_) {}
+                customizeTouched = true;
+            }
+        });
+        if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.clockCustom)) {
+            omtMirrorJsonKey(OMT_STORAGE_KEYS.clockCustom, values[OMT_STORAGE_KEYS.clockCustom]);
+            customizeTouched = true;
+        }
+        if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.hotkeys)) {
+            omtMirrorJsonKey(OMT_STORAGE_KEYS.hotkeys, values[OMT_STORAGE_KEYS.hotkeys]);
+            customizeTouched = true;
+        }
+        if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.shuttlePrefs)) {
+            omtMirrorJsonKey(OMT_STORAGE_KEYS.shuttlePrefs, values[OMT_STORAGE_KEYS.shuttlePrefs]);
+            customizeTouched = true;
+        }
+        if (customizeTouched && typeof omtApplyCustomizeFromStorage === 'function') {
+            omtApplyCustomizeFromStorage();
+        }
+    });
+
+/* Match-clock appearance + hotkey map (chrome.storage via bridge). */
+    const OMT_HOTKEY_DEFAULTS = {
+        playPause:   { key: ' ',         label: 'Play / Pause' },
+        skipBack2:   { key: 'arrowleft', label: 'Skip −2s' },
+        skipFwd2:    { key: 'arrowright', label: 'Skip +2s' },
+        skipBack10:  { key: 'arrowleft', shift: true, label: 'Skip −10s' },
+        skipFwd10:   { key: 'arrowright', shift: true, label: 'Skip +10s' },
+        skipBack2m:  { key: 'arrowleft', ctrl: true, label: 'Skip −2m' },
+        skipFwd2m:   { key: 'arrowright', ctrl: true, label: 'Skip +2m' },
+        frameBack:   { key: 'arrowdown', label: 'Frame back' },
+        frameFwd:    { key: 'arrowup', label: 'Frame forward' },
+        speedDown:   { key: 'z', label: 'Speed down' },
+        speedUp:     { key: 'c', label: 'Speed up' },
+        speedReset:  { key: 'x', label: 'Speed 1.0×' },
+        kickoff:     { key: 'k', label: 'Mark kick-off' },
+        live:        { key: 'l', label: 'Go to Live' },
+        hide:        { key: 'h', label: 'Hide/Show Controls' }
+    };
+
+    const OMT_HOTKEY_ORDER = [
+        'playPause', 'skipBack2', 'skipFwd2', 'skipBack10', 'skipFwd10',
+        'skipBack2m', 'skipFwd2m', 'frameBack', 'frameFwd',
+        'speedDown', 'speedReset', 'speedUp', 'kickoff', 'live', 'hide'
+    ];
+
+    const OMT_SHUTTLE_DEFAULTS = {
+        skipBtn1: 120,   // outer left (−)
+        skipBtn2: 10,    // inner left (−)
+        skipBtn3: 120,   // centre skip when Play/Pause moved away
+        skipBtn4: 10,    // inner right (+)
+        skipBtn5: 120,   // outer right (+)
+        playPauseBtn: 3, // centre button (1–5)
+        centreSkipSign: 1, // +1 / −1 when btn 3 holds a skip
+        jogStep: 0.04,   // seconds per jog tick (~1 frame @25fps)
+        shuttleScale: 1  // multiplies ring scrub factors
+    };
+
+    let omtHotkeyMap = null; // actionId → binding
+    let omtShuttlePrefs = null;
+    let omtClockClickInstalled = false;
+
+    /** Allow re-bind after SPA teardown / UI reinject (same document). */
+    function omtResetClockClickEditFlag() {
+        omtClockClickInstalled = false;
+    }
+
+    const OMT_CLOCK_POSITIONS = [
+        'top-left', 'top-centre', 'top-right',
+        'bottom-left', 'bottom-centre', 'bottom-right'
+    ];
+
+    function omtNormalizeKey(key) {
+        if (key == null) return '';
+        const k = String(key);
+        if (k === ' ') return ' ';
+        return k.toLowerCase();
+    }
+
+    function omtBindingFromEvent(e) {
+        const key = omtNormalizeKey(e.key);
+        if (!key || key === 'escape' || key === 'tab' || key === 'shift' ||
+            key === 'control' || key === 'alt' || key === 'meta') {
+            return null;
+        }
+        return {
+            key: key,
+            ctrl: !!e.ctrlKey,
+            shift: !!e.shiftKey,
+            alt: !!e.altKey,
+            meta: !!e.metaKey
+        };
+    }
+
+    function omtBindingEqual(a, b) {
+        if (!a || !b) return false;
+        return omtNormalizeKey(a.key) === omtNormalizeKey(b.key) &&
+            !!a.ctrl === !!b.ctrl &&
+            !!a.shift === !!b.shift &&
+            !!a.alt === !!b.alt &&
+            !!a.meta === !!b.meta;
+    }
+
+    function omtBindingScore(b) {
+        if (!b) return 0;
+        return (!!b.ctrl ? 1 : 0) + (!!b.shift ? 1 : 0) + (!!b.alt ? 1 : 0) + (!!b.meta ? 1 : 0);
+    }
+
+    function omtMergeHotkeys(stored) {
+        const out = {};
+        OMT_HOTKEY_ORDER.forEach((id) => {
+            const def = OMT_HOTKEY_DEFAULTS[id];
+            const raw = stored && stored[id];
+            if (raw && raw.key != null) {
+                out[id] = {
+                    key: omtNormalizeKey(raw.key),
+                    ctrl: !!raw.ctrl,
+                    shift: !!raw.shift,
+                    alt: !!raw.alt,
+                    meta: !!raw.meta,
+                    label: def.label
+                };
+            } else {
+                out[id] = {
+                    key: def.key,
+                    ctrl: !!def.ctrl,
+                    shift: !!def.shift,
+                    alt: !!def.alt,
+                    meta: !!def.meta,
+                    label: def.label
+                };
+            }
+        });
+        return out;
+    }
+
+    function omtLoadHotkeysFromLocal() {
+        let stored = null;
+        try {
+            const raw = localStorage.getItem(OMT_STORAGE_KEYS.hotkeys);
+            if (raw) stored = JSON.parse(raw);
+        } catch (_) {}
+        omtHotkeyMap = omtMergeHotkeys(stored);
+        return omtHotkeyMap;
+    }
+
+    function omtGetHotkeys() {
+        if (!omtHotkeyMap) omtLoadHotkeysFromLocal();
+        return omtHotkeyMap;
+    }
+
+    function omtFindHotkeyAction(e) {
+        const map = omtGetHotkeys();
+        const evt = omtBindingFromEvent(e);
+        if (!evt) return null;
+        let best = null;
+        let bestScore = -1;
+        OMT_HOTKEY_ORDER.forEach((id) => {
+            const b = map[id];
+            if (!omtBindingEqual(b, evt)) return;
+            const score = omtBindingScore(b);
+            if (score > bestScore) {
+                bestScore = score;
+                best = id;
+            }
+        });
+        return best;
+    }
+
+    function omtReadClockPrefs() {
+        let pos = localStorage.getItem(OMT_STORAGE_KEYS.clockPos) || 'top-left';
+        let size = localStorage.getItem(OMT_STORAGE_KEYS.clockSize) || 'medium';
+        let shape = localStorage.getItem(OMT_STORAGE_KEYS.clockShape) || 'rounded';
+        // Migrate removed custom drag offsets / unknown values → top-left
+        if (pos === 'top-center') pos = 'top-centre';
+        if (pos === 'bottom-center') pos = 'bottom-centre';
+        if (!OMT_CLOCK_POSITIONS.includes(pos)) pos = 'top-left';
+        if (!['small', 'medium', 'large', 'xlarge'].includes(size)) size = 'medium';
+        if (!['rounded', 'pill', 'minimal'].includes(shape)) shape = 'rounded';
+        return { pos, size, shape };
+    }
+
+    function omtClearLegacyClockCustom() {
+        try { localStorage.removeItem(OMT_STORAGE_KEYS.clockCustom); } catch (_) {}
+        try {
+            window.postMessage({
+                source: 'omt-page',
+                type: 'OMT_STORAGE_SET',
+                key: OMT_STORAGE_KEYS.clockCustom,
+                value: null
+            }, '*');
+        } catch (_) {}
+    }
+
+    function omtApplyClockAppearance() {
+        const wrap = typeof q === 'function' ? q('match-timer-wrap') : document.getElementById('match-timer-wrap');
+        if (!wrap || !omtRoot) return;
+        const prefs = omtReadClockPrefs();
+        const SIZE = ['small', 'medium', 'large', 'xlarge'];
+        const STYLE = ['rounded', 'pill', 'minimal'];
+        OMT_CLOCK_POSITIONS.concat(['custom']).forEach((p) => wrap.classList.remove('omt-clock-pos-' + p));
+        SIZE.forEach((s) => wrap.classList.remove('omt-clock-size-' + s));
+        STYLE.forEach((s) => wrap.classList.remove('omt-clock-style-' + s));
+        wrap.classList.add('omt-clock-size-' + prefs.size);
+        wrap.classList.add('omt-clock-style-' + prefs.shape);
+        wrap.classList.add('omt-clock-pos-' + prefs.pos);
+        wrap.style.top = '';
+        wrap.style.left = '';
+        wrap.style.right = '';
+        wrap.style.bottom = '';
+        wrap.style.transform = '';
+        wrap.style.cursor = 'pointer';
+    }
+
+    function omtInstallClockClickEdit() {
+        if (omtClockClickInstalled) return;
+        const wrap = typeof q === 'function' ? q('match-timer-wrap') : null;
+        if (!wrap) return;
+        omtClockClickInstalled = true;
+        wrap.addEventListener('click', (e) => {
+            if (e.target && e.target.closest && e.target.closest('input, select, button, a')) return;
+            if (typeof isEditingTimer !== 'undefined' && isEditingTimer) return;
+            if (typeof iniciarEdicaoTimer === 'function') iniciarEdicaoTimer();
+        });
+    }
+
+    function omtPositionalSkipSign(btn) {
+        if (btn === 1 || btn === 2) return -1;
+        if (btn === 4 || btn === 5) return 1;
+        return 1;
+    }
+
+    function omtSkipSignForButton(btn, prefs) {
+        if (btn === 3) {
+            const s = Number(prefs && prefs.centreSkipSign);
+            return s < 0 ? -1 : 1;
+        }
+        return omtPositionalSkipSign(btn);
+    }
+
+    function omtMergeShuttlePrefs(stored) {
+        const out = Object.assign({}, OMT_SHUTTLE_DEFAULTS);
+        if (!stored || typeof stored !== 'object') return out;
+        ['skipBtn1', 'skipBtn2', 'skipBtn3', 'skipBtn4', 'skipBtn5'].forEach((k) => {
+            const n = Number(stored[k]);
+            if (Number.isFinite(n) && n > 0 && n <= 600) out[k] = n;
+        });
+        const pp = Number(stored.playPauseBtn);
+        if ([1, 2, 3, 4, 5].includes(pp)) out.playPauseBtn = pp;
+        const cSign = Number(stored.centreSkipSign);
+        if (cSign === -1 || cSign === 1) out.centreSkipSign = cSign;
+        const jog = Number(stored.jogStep);
+        if (Number.isFinite(jog) && jog > 0 && jog <= 1) out.jogStep = jog;
+        const scale = Number(stored.shuttleScale);
+        if (Number.isFinite(scale) && scale > 0 && scale <= 4) out.shuttleScale = scale;
+        if (stored.skipBtn3 == null && out.playPauseBtn !== 3) {
+            out.skipBtn3 = OMT_SHUTTLE_DEFAULTS.skipBtn3;
+            out.centreSkipSign = omtPositionalSkipSign(out.playPauseBtn);
+        }
+        return out;
+    }
+
+    function omtLoadShuttlePrefsFromLocal() {
+        let stored = null;
+        try {
+            const raw = localStorage.getItem(OMT_STORAGE_KEYS.shuttlePrefs);
+            if (raw) stored = JSON.parse(raw);
+        } catch (_) {}
+        omtShuttlePrefs = omtMergeShuttlePrefs(stored);
+        return omtShuttlePrefs;
+    }
+
+    function omtGetShuttlePrefs() {
+        if (!omtShuttlePrefs) omtLoadShuttlePrefsFromLocal();
+        return omtShuttlePrefs;
+    }
+
+    function omtApplyCustomizeFromStorage() {
+        omtLoadHotkeysFromLocal();
+        omtLoadShuttlePrefsFromLocal();
+        omtClearLegacyClockCustom();
+        omtApplyClockAppearance();
+        omtInstallClockClickEdit();
+    }
+
+/* Auto pause on Alt+Tab / tab hidden (popup General setting, default OFF).
+ * Never touches ShuttleXpress pages; resumes only when we caused the pause.
+ */
+    let autoPauseInstalled = false;
+    let autoPausedByBlur = false;
+    let autoPauseInProgress = false;
+    let autoResumeInProgress = false;
+    let lastShuttleActivityAt = 0;
+
+    function noteShuttleActivity() {
+        lastShuttleActivityAt = Date.now();
+    }
+
+    function clearAutoPauseFlag() {
+        if (autoPauseInProgress || autoResumeInProgress) return;
+        autoPausedByBlur = false;
+    }
+
+    function shouldBypassAutoPause() {
+        // Setting off, Shuttle enabled on this page, or recent WebHID/shuttle input.
+        if (typeof storageGetAutoPauseOnBlur === 'function' && !storageGetAutoPauseOnBlur()) {
+            return true;
+        }
+        if (typeof storageGetShuttleEnabled === 'function' && storageGetShuttleEnabled()) {
+            return true;
+        }
+        if (Date.now() - lastShuttleActivityAt < 1000) return true;
+        return false;
+    }
+
+    function maybeAutoPauseOnAway() {
+        if (shouldBypassAutoPause()) return;
+        if (!ensureLiveVideo()) return;
+        // Already paused (manual or ended) — do not claim an auto-pause resume.
+        if (vid.paused || vid.ended) return;
+        autoPauseInProgress = true;
+        try {
+            vid.pause();
+            // Set after pause so the pause listener's clear (if any) is skipped via in-progress.
+            if (vid.paused) {
+                autoPausedByBlur = true;
+                mostrarOSD('Auto paused');
+            }
+        } finally {
+            autoPauseInProgress = false;
+        }
+        syncPlayButtonFromVideo();
+    }
+
+    function maybeAutoResumeOnReturn() {
+        if (!autoPausedByBlur) return;
+        // Shuttle pages never auto-pause; if shuttle was enabled while away, drop resume.
+        if (typeof storageGetShuttleEnabled === 'function' && storageGetShuttleEnabled()) {
+            autoPausedByBlur = false;
+            return;
+        }
+        if (!ensureLiveVideo()) return;
+        if (!vid.paused) {
+            autoPausedByBlur = false;
+            return;
+        }
+        autoResumeInProgress = true;
+        autoPausedByBlur = false;
+        Promise.resolve(vid.play())
+            .catch(() => {})
+            .finally(() => {
+                autoResumeInProgress = false;
+                syncPlayButtonFromVideo();
+            });
+    }
+
+    function onDocumentVisibilityChange() {
+        if (document.visibilityState === 'hidden') maybeAutoPauseOnAway();
+        else if (document.visibilityState === 'visible') maybeAutoResumeOnReturn();
+    }
+
+    function onWindowBlur() {
+        // visibilitychange usually covers Alt+Tab; blur covers focus loss while visible.
+        if (document.visibilityState === 'hidden') return;
+        maybeAutoPauseOnAway();
+    }
+
+    function onWindowFocus() {
+        maybeAutoResumeOnReturn();
+    }
+
+    function installAutoPauseOnBlur() {
+        if (autoPauseInstalled) return;
+        autoPauseInstalled = true;
+        document.addEventListener('visibilitychange', onDocumentVisibilityChange);
+        window.addEventListener('blur', onWindowBlur);
+        window.addEventListener('focus', onWindowFocus);
     }
 
 /* Examino-only: hotkeys install, click-to-toggle, hide native chrome,
@@ -2404,12 +3419,13 @@
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
+        if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
         if (media.paused) {
             media.play().catch(() => {});
-            mostrarOSD('▶ Play');
+            mostrarOSD('Play');
         } else {
             media.pause();
-            mostrarOSD('⏸ Pause');
+            mostrarOSD('Pause');
         }
         noteOmtUiActivity(false);
     }
@@ -2425,7 +3441,8 @@
 
     function settleExaminoMediaAfterBind() {
         if (site.id !== 'examino' || !vid) return;
-        // Only used after VOD→DVR. Clear seek-lock; clamp into DVR seekable once.
+        // Only used after VOD→DVR (examinoPendingDvrSettle). Always snap once to the
+        // DVR live edge so a carried VOD playhead cannot leave playback frozen.
         userIntendedTime = null;
         seekLockUntil = 0;
         let settled = false;
@@ -2437,13 +3454,8 @@
                 const start = vid.seekable.start(0);
                 const end = vid.seekable.end(vid.seekable.length - 1);
                 if (!isFinite(start) || !isFinite(end)) return;
-                const ct = vid.currentTime;
-                if (ct > end || ct < start) {
-                    settled = true;
-                    vid.currentTime = Math.max(start, end - 2);
-                } else {
-                    settled = true;
-                }
+                settled = true;
+                vid.currentTime = Math.max(start, end - 2);
             } catch (_) {}
         };
 
@@ -2881,7 +3893,7 @@
     async function refreshExaminoSourceSelect() {
         if (site.id !== 'examino' || !omtRoot) return;
         const section = q('omt-examino-settings');
-        if (section) section.style.display = 'block';
+        if (section) section.style.display = 'flex';
         const source = await scrapeOpSourceOptions();
         fillSourceSelect(source);
         const autoBox = q('omt-examino-auto-vod');
@@ -2892,7 +3904,7 @@
 
     function wireExaminoSettingsUI() {
         const section = q('omt-examino-settings');
-        if (section) section.style.display = 'block';
+        if (section) section.style.display = 'flex';
 
         const autoBox = q('omt-examino-auto-vod');
         if (autoBox) {
@@ -3044,6 +4056,136 @@
         startExaminoNativeChromeObserver();
         if (examinoManualSourceChoice === 'DVR') return;
         startAutoVodWatcher();
+    }
+
+/* Local player: file picker, drag-and-drop, per-window open-file control. */
+    let localObjectUrl = null;
+    let localFeaturesInstalled = false;
+
+    function revokeLocalObjectUrl() {
+        if (localObjectUrl) {
+            try { URL.revokeObjectURL(localObjectUrl); } catch (_) {}
+            localObjectUrl = null;
+        }
+    }
+
+    function setLocalDropVisible(visible) {
+        const drop = document.getElementById('omt-local-drop');
+        if (drop) drop.hidden = !visible;
+        const stage = document.getElementById('omt-local-stage');
+        if (stage) stage.classList.toggle('omt-has-media', !visible);
+    }
+
+    function loadLocalVideoFile(file) {
+        if (!file || (!/^video\//i.test(file.type) && !/\.(mp4|webm|mkv|mov|m4v|avi)$/i.test(file.name || ''))) {
+            mostrarOSD('Unsupported file');
+            return;
+        }
+        if (!ensureLiveVideo()) return;
+        revokeLocalObjectUrl();
+        localObjectUrl = URL.createObjectURL(file);
+        try { vid.pause(); } catch (_) {}
+        vid.src = localObjectUrl;
+        vid.load();
+        setLocalDropVisible(false);
+        const nameEl = document.getElementById('omt-local-filename');
+        if (nameEl) nameEl.textContent = file.name || 'Local video';
+        mostrarOSD('Loaded: ' + (file.name || 'video'));
+        const playPromise = vid.play();
+        if (playPromise && typeof playPromise.catch === 'function') {
+            playPromise.catch(() => {});
+        }
+        // Refresh timeline bounds once metadata is ready.
+        const onMeta = () => {
+            try {
+                if (typeof inicializarMetadadosTimeline === 'function') inicializarMetadadosTimeline();
+            } catch (_) {}
+            syncPlayButtonFromVideo();
+            noteOmtUiActivity(true);
+        };
+        vid.addEventListener('loadedmetadata', onMeta, { once: true });
+        vid.addEventListener('durationchange', onMeta, { once: true });
+    }
+
+    function openLocalFilePicker() {
+        const input = document.getElementById('omt-local-file-input');
+        if (input) input.click();
+    }
+
+    function ensureLocalOpenFileControl() {
+        if (!omtRoot || site.id !== 'local') return;
+        const more = omtRoot.querySelector('#omt-more-panel');
+        if (!more || more.querySelector('#omt-local-open-file')) return;
+        const block = document.createElement('div');
+        block.className = 'omt-more-block omt-local-file-block';
+        block.innerHTML =
+            '<button type="button" id="omt-local-open-file" class="omt-local-open-file-btn omt-tip" data-tip="Open a local or NAS-mapped video file">' +
+            omtIcon('folder-open', 13) +
+            '<span class="omt-btn-label">Open file</span></button>' +
+            '<span id="omt-local-filename" class="omt-local-filename">No file loaded</span>';
+        const shuttle = more.querySelector('.omt-shuttle-block');
+        if (shuttle) more.insertBefore(block, shuttle);
+        else more.appendChild(block);
+        block.querySelector('#omt-local-open-file').addEventListener('click', () => {
+            openLocalFilePicker();
+            noteOmtUiActivity(true);
+        });
+    }
+
+    function installLocalPlayerFeatures() {
+        if (localFeaturesInstalled || site.id !== 'local') return;
+        localFeaturesInstalled = true;
+
+        ensureLocalOpenFileControl();
+
+        const input = document.getElementById('omt-local-file-input');
+        if (input) {
+            input.addEventListener('change', () => {
+                const file = input.files && input.files[0];
+                if (file) loadLocalVideoFile(file);
+                input.value = '';
+            });
+        }
+
+        const drop = document.getElementById('omt-local-drop');
+        const stage = document.getElementById('omt-local-stage');
+        const target = drop || stage;
+        if (target) {
+            const onDrag = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (drop) drop.classList.add('is-dragover');
+            };
+            const onLeave = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (drop) drop.classList.remove('is-dragover');
+            };
+            ['dragenter', 'dragover'].forEach((ev) => target.addEventListener(ev, onDrag));
+            ['dragleave', 'dragend'].forEach((ev) => target.addEventListener(ev, onLeave));
+            target.addEventListener('drop', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (drop) drop.classList.remove('is-dragover');
+                const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+                if (file) loadLocalVideoFile(file);
+            });
+        }
+        if (drop) {
+            drop.addEventListener('click', (e) => {
+                if (e.target.closest('button, input, a, label')) return;
+                openLocalFilePicker();
+            });
+            const browse = drop.querySelector('#omt-local-browse');
+            if (browse) browse.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                openLocalFilePicker();
+            });
+        }
+
+        setLocalDropVisible(!(vid && vid.src));
+        console.log('[OMT] Local player file/dnd installed.');
     }
 
 /* Content-script entry: early Examino hooks, then boot. */

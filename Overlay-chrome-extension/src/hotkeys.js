@@ -14,96 +14,94 @@
         return tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA';
     }
 
+    function runHotkeyAction(actionId) {
+        if (!ensureLiveVideo()) return;
+        switch (actionId) {
+            case 'skipFwd2': saltarVideo(2); break;
+            case 'skipBack2': saltarVideo(-2); break;
+            case 'skipFwd10': saltarVideo(10); break;
+            case 'skipBack10': saltarVideo(-10); break;
+            case 'skipFwd2m': saltarVideo(120); break;
+            case 'skipBack2m': saltarVideo(-120); break;
+            case 'frameFwd': avancarFrame(); break;
+            case 'frameBack': retrocederFrame(); break;
+            case 'playPause': togglePlay(); break;
+            case 'speedDown': {
+                const closestRate = closestSpeedRate(vid.playbackRate);
+                const currentIndex = OMT_SPEED_RATES.indexOf(closestRate);
+                const newIndex = Math.max(0, currentIndex - 1);
+                applyPlaybackSpeed(OMT_SPEED_RATES[newIndex]);
+                break;
+            }
+            case 'speedUp': {
+                const closestRate = closestSpeedRate(vid.playbackRate);
+                const currentIndex = OMT_SPEED_RATES.indexOf(closestRate);
+                const newIndex = Math.min(OMT_SPEED_RATES.length - 1, currentIndex + 1);
+                applyPlaybackSpeed(OMT_SPEED_RATES[newIndex]);
+                break;
+            }
+            case 'speedReset':
+                applyPlaybackSpeed(1.0);
+                break;
+            case 'hide':
+                toggleManualControlsVisibility();
+                break;
+            case 'kickoff':
+                iniciarTimer();
+                break;
+            case 'live':
+                irParaLive();
+                break;
+            default:
+                break;
+        }
+    }
+
     function handleKeydown(e) {
         // Don't intercept when user is typing in inputs / contenteditable
         if (isEditableKeyTarget(e.target)) return;
 
-        const key = e.key.toLowerCase();
-        const controlled = ['arrowright', 'arrowleft', 'arrowup', 'arrowdown', ' ', 'z', 'c', 'x', 'h'];
-        if (!controlled.includes(key)) return;
+        const actionId = (typeof omtFindHotkeyAction === 'function')
+            ? omtFindHotkeyAction(e)
+            : null;
+        if (!actionId) return;
 
         // Stop the event before Video.js / OpenPlayer / Examino handles it
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
 
-        if (!vid) return;
+        runHotkeyAction(actionId);
+    }
 
-        switch (key) {
-            case 'arrowright':
-                if (e.ctrlKey) saltarVideo(120);
-                else if (e.shiftKey) saltarVideo(10);
-                else saltarVideo(2);
-                break;
-            case 'arrowleft':
-                if (e.ctrlKey) saltarVideo(-120);
-                else if (e.shiftKey) saltarVideo(-10);
-                else saltarVideo(-2);
-                break;
-            case 'arrowup': avancarFrame(); break;
-            case 'arrowdown': retrocederFrame(); break;
-            case ' ': togglePlay(); break;
-            case 'z': {
-                const allowedRates = [0.25, 0.5, 1.0, 1.5, 2.0];
-                const currentRate = vid.playbackRate;
-                const closestRate = allowedRates.reduce((prev, curr) => 
-                    Math.abs(curr - currentRate) < Math.abs(prev - currentRate) ? curr : prev
-                );
-                const currentIndex = allowedRates.indexOf(closestRate);
-                const newIndex = Math.max(0, currentIndex - 1);
-                vid.playbackRate = allowedRates[newIndex];
-                syncSpeedSelect();
-                mostrarOSD('⚡ Speed: ' + vid.playbackRate.toFixed(2) + 'x');
-                break;
-            }
-            case 'c': {
-                const allowedRates = [0.25, 0.5, 1.0, 1.5, 2.0];
-                const currentRate = vid.playbackRate;
-                const closestRate = allowedRates.reduce((prev, curr) => 
-                    Math.abs(curr - currentRate) < Math.abs(prev - currentRate) ? curr : prev
-                );
-                const currentIndex = allowedRates.indexOf(closestRate);
-                const newIndex = Math.min(allowedRates.length - 1, currentIndex + 1);
-                vid.playbackRate = allowedRates[newIndex];
-                syncSpeedSelect();
-                mostrarOSD('⚡ Speed: ' + vid.playbackRate.toFixed(2) + 'x');
-                break;
-            }
-            case 'x':
-                vid.playbackRate = 1.0;
-                syncSpeedSelect();
-                mostrarOSD('⚡ Speed: 1.00x');
-                break;
-            case 'h':
-                if (controlsPanel) {
-                    if (isManuallyHidden) {
-                        isManuallyHidden = false;
-                        resetControlsTimeout();
-                        mostrarOSD('🖥️ Controls Visible');
-                    } else {
-                        isManuallyHidden = true;
-                        if (mouseMoveTimeout) {
-                            clearTimeout(mouseMoveTimeout);
-                            mouseMoveTimeout = null;
-                        }
-                        controlsPanel.style.opacity = '0';
-                        controlsPanel.style.pointerEvents = 'none';
-                        mostrarOSD('🙈 Controls Hidden');
-                    }
-                }
-                break;
-
+    function toggleManualControlsVisibility() {
+        if (!controlsPanel) return;
+        if (isManuallyHidden) {
+            isManuallyHidden = false;
+            resetControlsTimeout();
+            mostrarOSD('Controls Visible');
+            return;
         }
+        isManuallyHidden = true;
+        if (mouseMoveTimeout) {
+            clearTimeout(mouseMoveTimeout);
+            mouseMoveTimeout = null;
+        }
+        controlsPanel.style.opacity = '0';
+        controlsPanel.style.pointerEvents = 'none';
+        const timelineBar = omtRoot ? omtRoot.querySelector('#omt-timeline-bar') : null;
+        if (timelineBar) {
+            timelineBar.style.opacity = '0';
+            timelineBar.style.pointerEvents = 'none';
+        }
+        mostrarOSD('Controls Hidden');
     }
 
     function syncSpeedSelect() {
-        const currentRate = vid.playbackRate;
-        const allowedRates = [0.25, 0.5, 1.0, 1.5, 2.0];
-        const closestRate = allowedRates.reduce((prev, curr) => 
-            Math.abs(curr - currentRate) < Math.abs(prev - currentRate) ? curr : prev
-        );
-        const rateStrings = { 0.25: "0.25", 0.5: "0.5", 1.0: "1.0", 1.5: "1.5", 2.0: "2.0" };
+        if (!ensureLiveVideo()) return;
+        const closestRate = closestSpeedRate(vid.playbackRate);
         if (speedSelect) {
-            speedSelect.value = rateStrings[closestRate] || closestRate.toString();
+            speedSelect.value = OMT_SPEED_SELECT_VALUES[closestRate] || String(closestRate);
         }
+        if (typeof syncSpeedChips === 'function') syncSpeedChips();
     }

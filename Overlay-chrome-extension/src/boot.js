@@ -88,6 +88,7 @@
         timerAtivo = false;
         offsetEmSegundos = 0;
         tempoBase = 0;
+        if (typeof omtResetClockClickEditFlag === 'function') omtResetClockClickEditFlag();
     }
 
     /* =========================================================
@@ -214,12 +215,17 @@
         suppressNativeControls();
         injectUI();
         cacheUIRefs();
+        if (typeof omtApplyCustomizeFromStorage === 'function') omtApplyCustomizeFromStorage();
         wireEvents();
         restoreState();
+        if (typeof omtApplyClockAppearance === 'function') omtApplyClockAppearance();
         startSPAMonitor();
         initShuttleXpress();
         if (site.id === 'examino') {
             initExaminoPlayerFeatures();
         }
-        console.log('[OMT] Overlay MatchTimer active — Review/DVR mode.');
+        if (site.id === 'local') {
+            installLocalPlayerFeatures();
+        }
+        console.log('[OMT] Overlay MatchTimer active — ' + (site.id === 'local' ? 'local player' : 'Review/DVR') + ' mode.');
     }

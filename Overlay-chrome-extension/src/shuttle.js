@@ -10,15 +10,53 @@
     let currentShuttleSpeed = 0;
 
     function getShuttleSpeedFactor(b0) {
+        const scale = (typeof omtGetShuttlePrefs === 'function')
+            ? (omtGetShuttlePrefs().shuttleScale || 1)
+            : 1;
         if (b0 >= 1 && b0 <= 7) {
             const factors = [0.2, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0];
-            return factors[b0 - 1];
+            return factors[b0 - 1] * scale;
         } else if (b0 >= 249 && b0 <= 255) {
             const factors = [-0.2, -0.5, -1.0, -2.0, -4.0, -8.0, -16.0];
             const index = 255 - b0;
-            return factors[index];
+            return factors[index] * scale;
         }
         return 0;
+    }
+
+    function shuttleButtonPressed(btn, prev3, prev4, bytes) {
+        if (btn === 1) return bytes[3] === 16 && prev3 !== 16;
+        if (btn === 2) return bytes[3] === 32 && prev3 !== 32;
+        if (btn === 3) return bytes[3] === 64 && prev3 !== 64;
+        if (btn === 4) return bytes[3] === 128 && prev3 !== 128;
+        if (btn === 5) return bytes[4] === 1 && prev4 !== 1;
+        return false;
+    }
+
+    function runShuttleButton(btn, prefs) {
+        if (!vid) return;
+        if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
+        if (btn === prefs.playPauseBtn) {
+            if (vid.paused) {
+                vid.play().catch(() => {});
+                mostrarOSD('Play');
+            } else {
+                vid.pause();
+                mostrarOSD('Pause');
+            }
+            return;
+        }
+        const secs = Number(prefs['skipBtn' + btn]);
+        if (!Number.isFinite(secs) || secs <= 0) return;
+        const sign = (typeof omtSkipSignForButton === 'function')
+            ? omtSkipSignForButton(btn, prefs)
+            : ((btn === 1 || btn === 2) ? -1 : 1);
+        const delta = sign * secs;
+        vid.currentTime = Math.max(0, (vid.currentTime || 0) + delta);
+        const label = Math.abs(delta) >= 60
+            ? ((delta < 0 ? 'Skip -' : 'Skip +') + (Math.abs(delta) / 60) + 'm')
+            : ((delta < 0 ? 'Skip -' : 'Skip +') + Math.abs(delta) + 's');
+        mostrarOSD(label);
     }
 
     function showShuttleCheatsheet(visible) {
@@ -56,43 +94,35 @@
         prevBytes4 = 0;
 
         updateToggleUI(false);
-        localStorage.setItem('shuttleXpressEnabled', 'false');
+        if (typeof storageSetShuttleEnabled === 'function') {
+            storageSetShuttleEnabled(false);
+        } else {
+            try { localStorage.setItem('shuttleXpressEnabled', 'false'); } catch (_) {}
+        }
         showShuttleCheatsheet(false);
     }
 
     function handleInputReport(event) {
+        if (typeof noteShuttleActivity === 'function') noteShuttleActivity();
         const { data } = event;
         const bytes = new Uint8Array(data.buffer);
 
-        // A) 5 Buttons edge detection
-        if (bytes[3] === 16 && prevBytes3 !== 16) {
-            vid.currentTime -= 120;
-            mostrarOSD('⏪ Skip -2m');
-        } else if (bytes[3] === 32 && prevBytes3 !== 32) {
-            vid.currentTime -= 10;
-            mostrarOSD('⏪ Skip -10s');
-        } else if (bytes[3] === 64 && prevBytes3 !== 64) {
-            if (vid.paused) {
-                vid.play().catch(e => {});
-                mostrarOSD('▶ Play');
-            } else {
-                vid.pause();
-                mostrarOSD('⏸ Pause');
-            }
-        } else if (bytes[3] === 128 && prevBytes3 !== 128) {
-            vid.currentTime += 10;
-            mostrarOSD('⏩ Skip +10s');
-        }
+        const prefs = (typeof omtGetShuttlePrefs === 'function')
+            ? omtGetShuttlePrefs()
+            : { skipBtn1: 120, skipBtn2: 10, skipBtn3: 120, skipBtn4: 10, skipBtn5: 120, playPauseBtn: 3, centreSkipSign: 1, jogStep: 0.04, shuttleScale: 1 };
 
-        if (bytes[4] === 1 && prevBytes4 !== 1) {
-            vid.currentTime += 120;
-            mostrarOSD('⏩ Skip +2m');
+        // A) 5 Buttons edge detection (play/pause button configurable)
+        for (let btn = 1; btn <= 5; btn++) {
+            if (shuttleButtonPressed(btn, prevBytes3, prevBytes4, bytes)) {
+                runShuttleButton(btn, prefs);
+            }
         }
 
         prevBytes3 = bytes[3];
         prevBytes4 = bytes[4];
 
         // B) Inner Jog Wheel (Frame-by-frame)
+        const jogStep = prefs.jogStep || 0.04;
         const currentJog = bytes[1];
         if (lastJogValue !== null && currentJog !== lastJogValue) {
             if (!vid.paused) vid.pause();
@@ -102,8 +132,11 @@
             else if (delta < -128) delta += 256;
 
             if (delta !== 0) {
-                vid.currentTime += delta * 0.04;
-                mostrarOSD(delta > 0 ? `🎞 +${delta} Frame${delta > 1 ? 's' : ''}` : `🎞 ${delta} Frame${delta < -1 ? 's' : ''}`);
+                vid.currentTime += delta * jogStep;
+                const framesApprox = Math.round(Math.abs(delta * jogStep / 0.04));
+                mostrarOSD(delta > 0
+                    ? `+${framesApprox || 1} Frame${(framesApprox || 1) > 1 ? 's' : ''}`
+                    : `-${framesApprox || 1} Frame${(framesApprox || 1) > 1 ? 's' : ''}`);
             }
         }
         lastJogValue = currentJog;
@@ -201,7 +234,7 @@
 
     async function handleToggleChange() {
         if (shuttleToggle.checked) {
-            localStorage.setItem('shuttleXpressEnabled', 'true');
+            storageSetShuttleEnabled(true);
             try {
                 const devices = await navigator.hid.getDevices();
                 let device = devices.find(d => d.vendorId === 0x0b33);
@@ -218,15 +251,15 @@
                     await connectDevice(device);
                 } else {
                     updateToggleUI(false);
-                    localStorage.setItem('shuttleXpressEnabled', 'false');
+                    storageSetShuttleEnabled(false);
                 }
             } catch (err) {
                 console.error('[OMT] Failed to request ShuttleXpress:', err);
                 updateToggleUI(false);
-                localStorage.setItem('shuttleXpressEnabled', 'false');
+                storageSetShuttleEnabled(false);
             }
         } else {
-            localStorage.setItem('shuttleXpressEnabled', 'false');
+            storageSetShuttleEnabled(false);
             cleanupShuttle();
         }
     }
@@ -243,7 +276,10 @@
 
         navigator.hid.addEventListener('disconnect', handleHidDisconnect);
 
-        if (localStorage.getItem('shuttleXpressEnabled') === 'true') {
+        const shuttleOn = (typeof storageGetShuttleEnabled === 'function')
+            ? storageGetShuttleEnabled()
+            : (localStorage.getItem('shuttleXpressEnabled') === 'true');
+        if (shuttleOn) {
             try {
                 const devices = await navigator.hid.getDevices();
                 const device = devices.find(d => d.vendorId === 0x0b33);
