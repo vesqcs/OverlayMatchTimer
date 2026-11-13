@@ -86,6 +86,7 @@
 <!-- Timeline alone: full-width thin bar at the very bottom of the video -->
 <div id="omt-timeline-bar" class="omt-timeline-bar">
     <div class="omt-timeline-track">
+        <div id="omt-timeline-bookmarks" class="omt-timeline-bookmarks" aria-hidden="true"></div>
         <input type="range" id="omt-timeline-slider" class="timeline-slider" min="0" max="100" value="0" step="0.01" aria-label="Timeline">
         <div id="omt-timeline-markers" aria-hidden="true"></div>
     </div>
@@ -101,7 +102,7 @@
 <div id="controls-panel" class="glass-panel">
     <div class="drag-handle" id="controls-handle">
         <div class="drag-side-left">
-            <button type="button" id="omt-more-toggle" class="omt-more-toggle handle-btn omt-tip" aria-expanded="false"${tip('Match controls')}>
+            <button type="button" id="omt-more-toggle" class="omt-more-toggle handle-btn omt-tip" aria-expanded="false"${tip('More controls')}>
                 <span class="omt-more-icon-collapsed">${omtIcon('chevrons-up', 16)}</span>
                 <span class="omt-more-icon-expanded" hidden>${omtIcon('chevrons-down', 16)}</span>
             </button>
@@ -256,6 +257,18 @@
             const overflow = rootRect.top - after.top;
             controlsPanel.style.bottom = Math.max(0, bottomPx - overflow) + 'px';
         }
+        updateControlsTipFlip();
+    }
+
+    /** Flip top-row tips below the controls when the card sits near the player top. */
+    function updateControlsTipFlip() {
+        if (!controlsPanel || !omtRoot) return;
+        const rootRect = omtRoot.getBoundingClientRect();
+        const rect = controlsPanel.getBoundingClientRect();
+        const roomAbove = rect.top - rootRect.top;
+        const flip = roomAbove < 36;
+        controlsPanel.classList.toggle('omt-tips-flip-below', flip);
+        omtRoot.classList.toggle('omt-tips-flip-below', flip);
     }
 
     function setMorePanelOpen(open) {
@@ -277,6 +290,7 @@
         panel.classList.toggle('is-open', next);
         panel.setAttribute('aria-hidden', next ? 'false' : 'true');
         btn.setAttribute('aria-expanded', next ? 'true' : 'false');
+        btn.setAttribute('data-tip', next ? 'Less controls' : 'More controls');
         btn.classList.toggle('is-open', next);
         const collapsedIcon = btn.querySelector('.omt-more-icon-collapsed');
         const expandedIcon = btn.querySelector('.omt-more-icon-expanded');
@@ -287,6 +301,7 @@
         // After layout, re-assert bottom + clamp top of viewport.
         requestAnimationFrame(() => {
             anchorControlsPanelBottom(bottomPx);
+            updateControlsTipFlip();
         });
     }
 

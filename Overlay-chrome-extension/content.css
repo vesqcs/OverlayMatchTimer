@@ -12,8 +12,9 @@
     --omt-muted: #aaaaaa;
     --omt-orange: #F5831F;          /* Stats Perform accent — Brandfetch */
     --omt-orange-dim: rgba(245, 131, 31, 0.18);
-    --omt-live: #e0201b;            /* YouTube-like live red */
-    --omt-behind: #909090;          /* scrubber when behind live */
+    --omt-live: #e0201b;            /* LIVE pill accent (button only) */
+    --omt-behind: #909090;          /* legacy alias */
+    --omt-scrub: #b0b0b0;           /* single timeline fill — never period/live coloured */
     --omt-font: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
     --omt-mono: "Segoe UI", system-ui, ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
@@ -77,10 +78,18 @@
 #omt-root #controls-panel,
 #omt-root #match-timer-wrap,
 #omt-root #match-timer,
-#omt-root #omt-timeline-bar,
 #omt-root #omt-more-panel,
 #omt-root #omt-kickoff-bar,
 #omt-root #omt-examino-settings {
+    pointer-events: auto;
+}
+/* Timeline shell is pointer-events:none so the tip/padding zone does not
+   steal idle auto-hide; interactive children re-enable hits. */
+#omt-root #omt-timeline-bar {
+    pointer-events: none;
+}
+#omt-root #omt-timeline-bar .omt-timeline-track,
+#omt-root #omt-timeline-bar .omt-timeline-times {
     pointer-events: auto;
 }
 
@@ -321,7 +330,8 @@
     z-index: 50;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    /* visible so top-row data-tip tooltips are not clipped by the card edge */
+    overflow: visible;
     height: fit-content;
 }
 
@@ -726,12 +736,17 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 0 10px 4px;
+    /* Keep the hit strip short (v1.7.2-sized). Hover tip escapes above via absolute + overflow visible. */
+    padding: 8px 10px 4px;
     box-sizing: border-box;
     transition: opacity 0.3s ease;
     background: linear-gradient(to top, rgba(0, 0, 0, 0.55) 0%, rgba(0, 0, 0, 0) 100%);
-    /* Extra top padding so the period hover tip stays inside this bar (not under the card). */
-    padding-top: 30px;
+    pointer-events: none;
+}
+.omt-timeline-bar.omt-chrome-hidden .omt-timeline-track,
+.omt-timeline-bar.omt-chrome-hidden .omt-timeline-times,
+.omt-timeline-bar.omt-chrome-hidden .omt-timeline-bookmark {
+    pointer-events: none !important;
 }
 
 .omt-timeline-track {
@@ -756,28 +771,72 @@
     position: absolute;
     left: 0;
     right: 0;
-    height: 10px;
+    height: 0;
     top: 50%;
-    transform: translateY(-50%);
     pointer-events: none;
-    z-index: 1;
-    overflow: hidden;
-    border-radius: 2px;
+    z-index: 0;
 }
 
-/* Soft period bands — low-sat, dark/orange UI (not rainbow blocks). */
-.timeline-period-seg {
+/* Period-start bookmarks sit just above the scrubber. */
+.omt-timeline-bookmarks {
     position: absolute;
-    top: 2px;
-    bottom: 2px;
-    border-radius: 1px;
+    left: 0;
+    right: 0;
+    bottom: calc(100% - 1px);
+    height: 18px;
+    z-index: 3;
     pointer-events: none;
 }
-.timeline-period-seg.tone-a {
-    background: rgba(245, 131, 31, 0.22);
+.omt-timeline-bookmark {
+    position: absolute;
+    bottom: 0;
+    transform: translateX(-50%);
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    padding: 0;
+    margin: 0;
+    border: none;
+    background: transparent;
+    color: rgba(245, 131, 31, 0.55);
+    cursor: pointer;
+    pointer-events: auto;
+    opacity: 0.4;
+    transition: opacity 0.12s ease, color 0.12s ease;
 }
-.timeline-period-seg.tone-b {
-    background: rgba(255, 255, 255, 0.09);
+.omt-timeline-bookmark .omt-icon {
+    display: block;
+}
+.omt-timeline-bookmark .omt-bm-label {
+    font-size: 9px;
+    font-weight: 700;
+    font-family: var(--omt-font);
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    color: #f0f0f0;
+    background: rgba(20, 20, 20, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 3px;
+    padding: 1px 4px;
+    opacity: 0;
+    transform: translateY(2px);
+    transition: opacity 0.12s ease, transform 0.12s ease;
+    pointer-events: none;
+}
+.omt-timeline-bar:hover .omt-timeline-bookmark,
+.omt-timeline-bar.is-timeline-hover .omt-timeline-bookmark,
+.omt-timeline-bookmark:hover,
+.omt-timeline-bookmark:focus-visible {
+    opacity: 1;
+    color: var(--omt-orange);
+}
+.omt-timeline-bar:hover .omt-timeline-bookmark .omt-bm-label,
+.omt-timeline-bar.is-timeline-hover .omt-timeline-bookmark .omt-bm-label,
+.omt-timeline-bookmark:hover .omt-bm-label,
+.omt-timeline-bookmark:focus-visible .omt-bm-label {
+    opacity: 1;
+    transform: translateY(0);
 }
 
 .omt-timeline-hover-tip {
@@ -802,7 +861,7 @@
     display: none !important;
 }
 
-/* Thin scrubber; thickens on hover. Red at live, grey when behind. */
+/* Thin scrubber; thickens on hover. ONE fill colour for the whole match. */
 .timeline-slider {
     -webkit-appearance: none;
     appearance: none;
@@ -813,22 +872,21 @@
     border-radius: 1px;
     outline: none;
     cursor: pointer;
-    background: rgba(255, 255, 255, 0.2);
-    transition: height 0.12s ease;
-}
-#omt-timeline-bar.omt-at-live .timeline-slider {
     background: linear-gradient(
         to right,
-        var(--omt-live) 0%,
-        var(--omt-live) var(--omt-progress, 100%),
-        rgba(255, 255, 255, 0.2) var(--omt-progress, 100%)
+        var(--omt-scrub) 0%,
+        var(--omt-scrub) var(--omt-progress, 0%),
+        rgba(255, 255, 255, 0.2) var(--omt-progress, 0%)
     );
+    transition: height 0.12s ease;
 }
+/* Keep class hooks for LIVE pill / tests; fill colour stays constant. */
+#omt-timeline-bar.omt-at-live .timeline-slider,
 #omt-timeline-bar:not(.omt-at-live) .timeline-slider {
     background: linear-gradient(
         to right,
-        var(--omt-behind) 0%,
-        var(--omt-behind) var(--omt-progress, 0%),
+        var(--omt-scrub) 0%,
+        var(--omt-scrub) var(--omt-progress, 0%),
         rgba(255, 255, 255, 0.2) var(--omt-progress, 0%)
     );
 }
@@ -973,7 +1031,7 @@
     height: 16px;
 }
 
-/* Dark minimal tooltips */
+/* Dark minimal tooltips — escape the card (overflow:visible on .glass-panel). */
 .omt-tip {
     position: relative;
 }
@@ -997,7 +1055,7 @@
     opacity: 0;
     visibility: hidden;
     transition: opacity 80ms ease, transform 80ms ease, visibility 80ms ease;
-    z-index: 100;
+    z-index: 400;
 }
 .omt-tip[data-tip]:hover::after,
 .omt-tip[data-tip]:focus-visible::after {
@@ -1005,6 +1063,7 @@
     visibility: visible;
     transform: translateX(-50%) translateY(0);
 }
+/* Top-row right cluster: keep tip inside horizontally near the card edge. */
 .drag-side-right .omt-tip[data-tip]::after {
     left: auto;
     right: 0;
@@ -1013,6 +1072,49 @@
 .drag-side-right .omt-tip[data-tip]:hover::after,
 .drag-side-right .omt-tip[data-tip]:focus-visible::after {
     transform: translateY(0);
+}
+/* Top-row left cluster: keep tip from spilling past the left card edge. */
+.drag-side-left .omt-tip[data-tip]::after {
+    left: 0;
+    right: auto;
+    transform: translateX(0) translateY(2px);
+}
+.drag-side-left .omt-tip[data-tip]:hover::after,
+.drag-side-left .omt-tip[data-tip]:focus-visible::after {
+    transform: translateX(0) translateY(0);
+}
+/* When the card sits near the top of the player, flip tips below the control. */
+#omt-root.omt-tips-flip-below #controls-panel .omt-tip[data-tip]::after,
+#controls-panel.omt-tips-flip-below .omt-tip[data-tip]::after {
+    bottom: auto;
+    top: calc(100% + 8px);
+    transform: translateX(-50%) translateY(-2px);
+}
+#omt-root.omt-tips-flip-below #controls-panel .omt-tip[data-tip]:hover::after,
+#omt-root.omt-tips-flip-below #controls-panel .omt-tip[data-tip]:focus-visible::after,
+#controls-panel.omt-tips-flip-below .omt-tip[data-tip]:hover::after,
+#controls-panel.omt-tips-flip-below .omt-tip[data-tip]:focus-visible::after {
+    transform: translateX(-50%) translateY(0);
+}
+#omt-root.omt-tips-flip-below #controls-panel .drag-side-right .omt-tip[data-tip]::after,
+#controls-panel.omt-tips-flip-below .drag-side-right .omt-tip[data-tip]::after {
+    transform: translateY(-2px);
+}
+#omt-root.omt-tips-flip-below #controls-panel .drag-side-right .omt-tip[data-tip]:hover::after,
+#omt-root.omt-tips-flip-below #controls-panel .drag-side-right .omt-tip[data-tip]:focus-visible::after,
+#controls-panel.omt-tips-flip-below .drag-side-right .omt-tip[data-tip]:hover::after,
+#controls-panel.omt-tips-flip-below .drag-side-right .omt-tip[data-tip]:focus-visible::after {
+    transform: translateY(0);
+}
+#omt-root.omt-tips-flip-below #controls-panel .drag-side-left .omt-tip[data-tip]::after,
+#controls-panel.omt-tips-flip-below .drag-side-left .omt-tip[data-tip]::after {
+    transform: translateX(0) translateY(-2px);
+}
+#omt-root.omt-tips-flip-below #controls-panel .drag-side-left .omt-tip[data-tip]:hover::after,
+#omt-root.omt-tips-flip-below #controls-panel .drag-side-left .omt-tip[data-tip]:focus-visible::after,
+#controls-panel.omt-tips-flip-below .drag-side-left .omt-tip[data-tip]:hover::after,
+#controls-panel.omt-tips-flip-below .drag-side-left .omt-tip[data-tip]:focus-visible::after {
+    transform: translateX(0) translateY(0);
 }
 
 .omt-time-text {
@@ -1275,17 +1377,8 @@
     min-width: 36px;
 }
 
-/* Period boundaries: thin muted separators (same style for all halves). */
-.timeline-marker-tick {
-    position: absolute;
-    top: 0;
-    width: 1px;
-    height: 100%;
-    background: rgba(245, 131, 31, 0.75);
-    transform: translateX(-50%);
-    opacity: 1;
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
-}
+/* Legacy tick class unused (bookmarks replace colour bands/ticks). */
+.timeline-marker-tick { display: none; }
 /* Compact Examino — keep corner insets; size/style classes still apply */
 #omt-root.omt-examino.omt-compact #match-timer-wrap.omt-clock-pos-top-left { top: 8px; left: 8px; }
 #omt-root.omt-examino.omt-compact #match-timer-wrap.omt-clock-pos-top-centre { top: 36px; left: 50%; transform: translateX(-50%); }

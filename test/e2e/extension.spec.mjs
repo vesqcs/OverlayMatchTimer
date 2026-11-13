@@ -844,8 +844,10 @@ async function run() {
       };
     });
     results.push({
-      name: 'examino-timeline-red-at-live',
-      pass: atLiveState.atLive && atLiveState.liveOn && /e0201b|rgb\(224,\s*32,\s*27\)/i.test(atLiveState.bg),
+      name: 'examino-timeline-fill-constant-at-live',
+      pass: atLiveState.atLive && atLiveState.liveOn &&
+        /b0b0b0|rgb\(176,\s*176,\s*176\)/i.test(atLiveState.bg) &&
+        !/e0201b|rgb\(224,\s*32,\s*27\)/i.test(atLiveState.bg),
       detail: atLiveState
     });
     await page.screenshot({ path: path.join(ARTIFACTS, 'examino_at_live.png'), fullPage: true });
@@ -1153,6 +1155,99 @@ async function run() {
         afterToggleOff.pressed === 'false' &&
         afterHHide.panel === '0' && afterHShow.panel === '1',
       detail: { autoHideOnShot, afterToggleOff, afterHHide, afterHShow }
+    });
+
+    // Auto hide ON: idle over the video fades chrome; mouse move restores; OFF stays visible
+    await page.evaluate(() => {
+      const panel = document.getElementById('controls-panel');
+      const timeline = document.getElementById('omt-timeline-bar');
+      [panel, timeline].forEach((el) => {
+        if (!el) return;
+        el.style.opacity = '1';
+        if (el === panel) el.style.pointerEvents = 'auto';
+      });
+      // Leave any hover keep-alive
+      panel?.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }));
+      timeline?.querySelector('.omt-timeline-track')?.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }));
+      timeline?.querySelector('.omt-timeline-times')?.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }));
+      try { localStorage.setItem('omtAutoHideChrome', 'true'); } catch (_) {}
+      window.postMessage({
+        source: 'omt-bridge',
+        type: 'OMT_STORAGE_SYNC',
+        values: { omtAutoHideChrome: true }
+      }, '*');
+    });
+    await page.waitForTimeout(80);
+    const vidBox = await page.locator('video').boundingBox();
+    if (vidBox) {
+      // Aim at upper-centre of the video — clear of the timeline strip and card
+      await page.mouse.move(vidBox.x + vidBox.width * 0.5, vidBox.y + vidBox.height * 0.28);
+      await page.waitForTimeout(80);
+      await page.mouse.move(vidBox.x + vidBox.width * 0.52, vidBox.y + vidBox.height * 0.30);
+    }
+    await page.waitForTimeout(2800);
+    const idleOn = await page.evaluate(() => {
+      const panel = document.getElementById('controls-panel');
+      const timeline = document.getElementById('omt-timeline-bar');
+      const btn = document.getElementById('omt-hide-panel');
+      return {
+        panel: panel?.style.opacity,
+        timeline: timeline?.style.opacity,
+        tip: btn?.getAttribute('data-tip') || '',
+        stored: localStorage.getItem('omtAutoHideChrome')
+      };
+    });
+    if (vidBox) {
+      await page.mouse.move(vidBox.x + vidBox.width * 0.55, vidBox.y + vidBox.height * 0.32);
+    }
+    await page.waitForTimeout(120);
+    const afterMove = await page.evaluate(() => {
+      const panel = document.getElementById('controls-panel');
+      return { panel: panel?.style.opacity };
+    });
+    // Toggle Auto hide OFF and confirm idle no longer fades
+    await page.evaluate(() => {
+      const panel = document.getElementById('controls-panel');
+      if (panel) { panel.style.opacity = '1'; panel.style.pointerEvents = 'auto'; }
+      document.getElementById('omt-hide-panel')?.click();
+    });
+    await page.waitForTimeout(80);
+    if (vidBox) {
+      await page.mouse.move(vidBox.x + vidBox.width * 0.5, vidBox.y + vidBox.height * 0.28);
+      await page.waitForTimeout(60);
+      await page.mouse.move(vidBox.x + vidBox.width * 0.51, vidBox.y + vidBox.height * 0.29);
+    }
+    await page.waitForTimeout(2800);
+    const idleOff = await page.evaluate(() => {
+      const panel = document.getElementById('controls-panel');
+      const btn = document.getElementById('omt-hide-panel');
+      return {
+        panel: panel?.style.opacity,
+        tip: btn?.getAttribute('data-tip') || '',
+        stored: localStorage.getItem('omtAutoHideChrome')
+      };
+    });
+    results.push({
+      name: 'examino-auto-hide-idle-fade',
+      pass: idleOn.panel === '0' && idleOn.timeline === '0' &&
+        /Auto hide:\s*on/i.test(idleOn.tip) &&
+        afterMove.panel === '1' &&
+        idleOff.panel === '1' &&
+        /Auto hide:\s*off/i.test(idleOff.tip),
+      detail: { idleOn, afterMove, idleOff }
+    });
+    // Restore Auto hide ON for later tests
+    await page.evaluate(() => {
+      try { localStorage.setItem('omtAutoHideChrome', 'true'); } catch (_) {}
+      window.postMessage({
+        source: 'omt-bridge',
+        type: 'OMT_STORAGE_SYNC',
+        values: { omtAutoHideChrome: true }
+      }, '*');
+      const panel = document.getElementById('controls-panel');
+      const timeline = document.getElementById('omt-timeline-bar');
+      if (panel) { panel.style.opacity = '1'; panel.style.pointerEvents = 'auto'; }
+      if (timeline) { timeline.style.opacity = '1'; timeline.classList.remove('omt-chrome-hidden'); }
     });
 
     // Play/pause centre button follows real media state; top OSD only (no centre flash)
@@ -1481,9 +1576,9 @@ async function run() {
       };
     });
     results.push({
-      name: 'examino-timeline-grey-behind',
+      name: 'examino-timeline-fill-constant-behind',
       pass: !behindState.atLive && !behindState.liveOn &&
-        /909090|rgb\(144,\s*144,\s*144\)/i.test(behindState.bg) &&
+        /b0b0b0|rgb\(176,\s*176,\s*176\)/i.test(behindState.bg) &&
         Math.abs(parseFloat(behindState.progress || '0') - 55) < 0.1,
       detail: behindState
     });
@@ -1508,24 +1603,121 @@ async function run() {
     await page.screenshot({ path: path.join(ARTIFACTS, 'examino_hover.png'), fullPage: true });
     await page.screenshot({ path: path.join(ARTIFACTS, 'ui_timeline_hover.png'), fullPage: true });
 
-    // v1.7.4 timeline: no "Seek timeline" tip; optimistic fill; period hover label
+    // Volume tooltip must escape the card (not clipped by overflow)
+    await page.evaluate(() => {
+      const panel = document.getElementById('controls-panel');
+      const bar = document.getElementById('omt-timeline-bar');
+      if (panel) { panel.style.opacity = '1'; panel.style.pointerEvents = 'auto'; }
+      if (bar) { bar.style.opacity = '1'; bar.style.pointerEvents = 'auto'; }
+      const more = document.getElementById('omt-more-panel');
+      const btn = document.getElementById('omt-more-toggle');
+      if (more?.classList.contains('is-open')) btn?.click();
+    });
+    await page.waitForTimeout(120);
+    // "Volume" tip is on the range, not the mute icon ("Mute / Unmute")
+    const volBox = await page.locator('#omt-volume-range').boundingBox();
+    if (volBox) {
+      await page.mouse.move(volBox.x + volBox.width / 2, volBox.y + volBox.height / 2);
+      await page.waitForTimeout(160);
+    }
+    const volumeTip = await page.evaluate(() => {
+      const el = document.getElementById('omt-volume-range');
+      const panel = document.getElementById('controls-panel');
+      const root = document.getElementById('omt-root');
+      if (!el || !panel) return { ok: false, reason: 'missing' };
+      const tip = getComputedStyle(el, '::after');
+      const content = (tip.content || '').replace(/"/g, '');
+      const visible = tip.opacity !== '0' && tip.visibility !== 'hidden' && content && content !== 'none';
+      const panelOverflow = getComputedStyle(panel).overflow;
+      const isVolume = /Volume/i.test((el.getAttribute('data-tip') || '')) && /Volume/i.test(content);
+      const elRect = el.getBoundingClientRect();
+      const panelRect = panel.getBoundingClientRect();
+      const rootRect = root ? root.getBoundingClientRect() : panelRect;
+      const flip = panel.classList.contains('omt-tips-flip-below') ||
+        !!(root && root.classList.contains('omt-tips-flip-below'));
+      // Tip renders above the control (~22px) unless flipped below.
+      const tipAboveOk = flip || (elRect.top - rootRect.top) >= 20;
+      return {
+        ok: visible && isVolume && panelOverflow === 'visible' && tipAboveOk,
+        visible,
+        isVolume,
+        panelOverflow,
+        flip,
+        tipContent: tip.content,
+        tipAboveOk,
+        elTop: elRect.top,
+        panelTop: panelRect.top,
+        rootTop: rootRect.top,
+        roomAboveRoot: elRect.top - rootRect.top
+      };
+    });
+    results.push({
+      name: 'controls-volume-tooltip-not-clipped',
+      pass: volumeTip.ok === true,
+      detail: volumeTip
+    });
+    // Crop tightly around the volume control so the tip is clearly visible in the artifact
+    if (volBox) {
+      await page.screenshot({
+        path: path.join(ARTIFACTS, 'v175_volume_tooltip_visible.png'),
+        clip: {
+          x: Math.max(0, volBox.x - 40),
+          y: Math.max(0, volBox.y - 48),
+          width: Math.min(320, volBox.width + 120),
+          height: Math.min(120, volBox.height + 90)
+        }
+      });
+    } else {
+      await page.screenshot({
+        path: path.join(ARTIFACTS, 'v175_volume_tooltip_visible.png'),
+        fullPage: true
+      });
+    }
+
+    // More chevron tip: More controls ↔ Less controls
+    const moreTip = await page.evaluate(async () => {
+      const btn = document.getElementById('omt-more-toggle');
+      const panel = document.getElementById('omt-more-panel');
+      const card = document.getElementById('controls-panel');
+      if (!btn || !panel || !card) return { ok: false, reason: 'missing' };
+      if (panel.classList.contains('is-open')) btn.click();
+      await new Promise((r) => setTimeout(r, 80));
+      const collapsedTip = btn.getAttribute('data-tip') || '';
+      btn.click();
+      await new Promise((r) => setTimeout(r, 80));
+      const expandedTip = btn.getAttribute('data-tip') || '';
+      btn.click();
+      await new Promise((r) => setTimeout(r, 40));
+      const overflow = getComputedStyle(card).overflow;
+      return {
+        ok: /More controls/i.test(collapsedTip) && /Less controls/i.test(expandedTip) &&
+          overflow === 'visible',
+        collapsedTip,
+        expandedTip,
+        overflow
+      };
+    });
+    results.push({
+      name: 'controls-more-chevron-tooltip',
+      pass: moreTip.ok === true,
+      detail: moreTip
+    });
+
+    // v1.7.5 timeline: no Seek label; no colour bands; bookmarks; match-clock tip; constant fill
     const seekTipGone = await page.evaluate(() => {
       const slider = document.getElementById('omt-timeline-slider');
-      const html = document.documentElement.innerHTML;
       return {
         noDataTip: !slider?.hasAttribute('data-tip'),
-        noSeekText: !/Seek timeline/i.test(slider?.getAttribute('data-tip') || '') &&
-          !/#omt-timeline-slider[^>]*>[\s\S]*Seek timeline/i.test(html),
         tipAttr: slider?.getAttribute('data-tip')
       };
     });
     results.push({
       name: 'timeline-no-seek-label',
-      pass: seekTipGone.noDataTip === true && seekTipGone.noSeekText === true,
+      pass: seekTipGone.noDataTip === true,
       detail: seekTipGone
     });
 
-    // Ensure kickoffs exist so period bands + hover labels resolve
+    // Set 1st + 2nd half kickoffs
     await page.evaluate(() => {
       const half = document.getElementById('omt-half-select');
       const moreBtn = document.getElementById('omt-more-toggle');
@@ -1550,19 +1742,49 @@ async function run() {
       }
       document.getElementById('omt-btn-set-kickoff')?.click();
     });
-    await page.waitForTimeout(100);
+    await page.waitForTimeout(120);
 
     await page.evaluate(() => {
       const bar = document.getElementById('omt-timeline-bar');
       if (bar) { bar.style.opacity = '1'; bar.style.pointerEvents = 'auto'; }
-      // Collapse more so the timeline shot is clean
       const more = document.getElementById('omt-more-panel');
       const btn = document.getElementById('omt-more-toggle');
       if (more?.classList.contains('is-open')) btn?.click();
+      const v = document.querySelector('video');
+      const slider = document.getElementById('omt-timeline-slider');
+      if (v && slider) {
+        const max = parseFloat(slider.max) || v.duration || 100;
+        const min = parseFloat(slider.min) || 0;
+        const t = min + (max - min) * 0.7;
+        try { v.currentTime = t; } catch (_) {}
+        slider.value = String(t);
+        slider.dispatchEvent(new Event('input', { bubbles: true }));
+      }
     });
-    await page.waitForTimeout(120);
+    await page.waitForTimeout(140);
+
+    const noBands = await page.evaluate(() => {
+      const segs = document.querySelectorAll('.timeline-period-seg');
+      const bookmarks = document.querySelectorAll('.omt-timeline-bookmark');
+      const labels = [...bookmarks].map((b) => b.getAttribute('data-period'));
+      const slider = document.getElementById('omt-timeline-slider');
+      const bg = slider ? (getComputedStyle(slider).backgroundImage || '') : '';
+      return {
+        segCount: segs.length,
+        bookmarkCount: bookmarks.length,
+        labels,
+        fillHasRed: /e0201b|rgb\(224,\s*32,\s*27\)/i.test(bg),
+        fillNeutral: /b0b0b0|rgb\(176,\s*176,\s*176\)/i.test(bg),
+        bg
+      };
+    });
+    results.push({
+      name: 'timeline-no-colour-bands',
+      pass: noBands.segCount === 0 && noBands.bookmarkCount >= 2 && !noBands.fillHasRed && noBands.fillNeutral,
+      detail: noBands
+    });
     await page.screenshot({
-      path: path.join(ARTIFACTS, 'v174_timeline_at_rest.png'),
+      path: path.join(ARTIFACTS, 'v175_timeline_at_rest_2nd_half.png'),
       fullPage: true
     });
 
@@ -1572,21 +1794,21 @@ async function run() {
       const min = parseFloat(slider.min) || 0;
       const max = parseFloat(slider.max) || 100;
       const target = min + (max - min) * 0.72;
-      // Simulate click/drag: set value + input (optimistic paint) before any timeupdate.
       slider.value = String(target);
       slider.dispatchEvent(new Event('input', { bubbles: true }));
-      // Read fill immediately — must match thumb without waiting for seek/timeupdate.
       const progressStr = slider.style.getPropertyValue('--omt-progress') || '';
       const progressPct = parseFloat(progressStr);
       const thumbPct = max > min ? ((parseFloat(slider.value) - min) / (max - min)) * 100 : 0;
       slider.dispatchEvent(new Event('change', { bubbles: true }));
       const progressAfterChange = parseFloat(slider.style.getPropertyValue('--omt-progress') || '');
+      const bg = getComputedStyle(slider).backgroundImage || '';
       return {
-        ok: Math.abs(progressPct - thumbPct) <= 0.6 && Math.abs(progressAfterChange - thumbPct) <= 0.6,
+        ok: Math.abs(progressPct - thumbPct) <= 0.6 && Math.abs(progressAfterChange - thumbPct) <= 0.6 &&
+          /b0b0b0|rgb\(176,\s*176,\s*176\)/i.test(bg),
         progressPct,
         thumbPct,
         progressAfterChange,
-        progressStr
+        bg
       };
     });
     results.push({
@@ -1598,65 +1820,62 @@ async function run() {
     const periodHover = await page.evaluate(() => {
       const track = document.querySelector('.omt-timeline-track');
       const tip = document.getElementById('omt-timeline-hover-tip');
-      const segs = document.querySelectorAll('.timeline-period-seg');
-      const ticks = document.querySelectorAll('.timeline-marker-tick');
+      const bar = document.getElementById('omt-timeline-bar');
+      const bookmarks = document.querySelectorAll('.omt-timeline-bookmark');
       if (!track || !tip) return { ok: false, reason: 'missing' };
       const rect = track.getBoundingClientRect();
-      // Hover toward mid-late timeline (likely 2nd Half after second kickoff).
-      const x = rect.left + rect.width * 0.7;
+      const b0 = bookmarks[0]?.getBoundingClientRect();
+      const x = b0 ? (b0.left + b0.width / 2 + Math.min(40, rect.width * 0.08)) : (rect.left + rect.width * 0.25);
       track.dispatchEvent(new PointerEvent('pointermove', { clientX: x, clientY: rect.top + 4, bubbles: true }));
       const text = (tip.textContent || '').trim();
       const visible = tip.hidden === false && getComputedStyle(tip).display !== 'none';
-      const hasPeriod = /1st Half|2nd Half|ET1|ET2/i.test(text);
-      const hasTime = /\d{2}:\d{2}:\d{2}/.test(text);
-      // Soft segments (no rainbow class names)
-      const noRainbow = ![...ticks].some((t) => /k1|k2|kc1|kc2/.test(t.className));
+      const hasPeriod = /1st Half/i.test(text);
+      const hasMatchClock = /\d{2}:\d{2}$/.test(text) && !/\d{2}:\d{2}:\d{2}/.test(text);
+      const hoverClass = !!(bar && bar.classList.contains('is-timeline-hover'));
       return {
-        ok: visible && hasPeriod && hasTime && segs.length >= 1 && noRainbow,
+        ok: visible && hasPeriod && hasMatchClock && bookmarks.length >= 2 && hoverClass,
         text,
         visible,
         hasPeriod,
-        hasTime,
-        segCount: segs.length,
-        tickCount: ticks.length,
-        noRainbow
+        hasMatchClock,
+        bookmarkCount: bookmarks.length,
+        hoverClass
       };
     });
-    results.push({
-      name: 'timeline-hover-shows-period-label',
-      pass: periodHover.ok === true,
-      detail: periodHover
-    });
-    // Demo screenshot with tip painted (bar z-index lifts above the card while tip is open).
-    const tipShot = await page.evaluate(() => {
-      const track = document.querySelector('.omt-timeline-track');
-      const tip = document.getElementById('omt-timeline-hover-tip');
+    // Bookmarks go subtle → solid on bar hover (CSS transition); wait then sample
+    await page.waitForTimeout(160);
+    const bookmarkHover = await page.evaluate(() => {
+      const bookmarks = document.querySelectorAll('.omt-timeline-bookmark');
       const bar = document.getElementById('omt-timeline-bar');
-      const panel = document.getElementById('controls-panel');
-      if (panel) { panel.style.opacity = '1'; panel.style.pointerEvents = 'auto'; }
-      if (bar) { bar.style.opacity = '1'; bar.style.pointerEvents = 'auto'; }
-      if (track && tip) {
-        const rect = track.getBoundingClientRect();
-        const x = rect.left + rect.width * 0.7;
-        track.dispatchEvent(new PointerEvent('pointermove', { clientX: x, clientY: rect.top + 4, bubbles: true }));
-      }
+      const bmOpacity = bookmarks[0] ? parseFloat(getComputedStyle(bookmarks[0]).opacity) : 0;
+      const labelOp = bookmarks[0]?.querySelector('.omt-bm-label')
+        ? parseFloat(getComputedStyle(bookmarks[0].querySelector('.omt-bm-label')).opacity)
+        : 0;
       return {
-        text: tip?.textContent || '',
-        hidden: tip?.hidden,
-        rect: tip ? tip.getBoundingClientRect() : null,
-        barZ: bar ? getComputedStyle(bar).zIndex : null,
-        track: track ? track.getBoundingClientRect() : null
+        ok: (bookmarks.length >= 2) && bmOpacity > 0.8 && labelOp > 0.8 &&
+          !!(bar && bar.classList.contains('is-timeline-hover')),
+        bmOpacity,
+        labelOp,
+        bookmarkCount: bookmarks.length
       };
     });
     results.push({
-      name: 'timeline-hover-tip-geometry',
-      pass: !!tipShot.text && tipShot.hidden === false && (tipShot.rect?.height || 0) > 10 &&
-        Number(tipShot.barZ) >= 55,
-      detail: tipShot
+      name: 'timeline-hover-shows-match-clock',
+      pass: periodHover.ok === true && bookmarkHover.ok === true,
+      detail: { periodHover, bookmarkHover }
+    });
+    results.push({
+      name: 'timeline-bookmarks-at-period-starts',
+      pass: (periodHover.bookmarkCount || 0) >= 2,
+      detail: { bookmarkCount: periodHover.bookmarkCount }
     });
     await page.waitForTimeout(100);
     await page.screenshot({
-      path: path.join(ARTIFACTS, 'v174_timeline_hover_period.png'),
+      path: path.join(ARTIFACTS, 'v175_timeline_hover_1st_half_match_clock.png'),
+      fullPage: true
+    });
+    await page.screenshot({
+      path: path.join(ARTIFACTS, 'v175_timeline_bookmarks_visible.png'),
       fullPage: true
     });
 
@@ -1705,6 +1924,44 @@ async function run() {
       detail: inplayState
     });
     results.push({ name: 'inplayip-no-examino-section', pass: inplayState.examinoHidden === true });
+
+    // Click-to-toggle on video surface (not controls)
+    await page.evaluate(() => {
+      const panel = document.getElementById('controls-panel');
+      const bar = document.getElementById('omt-timeline-bar');
+      if (panel) { panel.style.opacity = '0'; panel.style.pointerEvents = 'none'; }
+      if (bar) { bar.style.opacity = '0'; bar.style.pointerEvents = 'none'; }
+      const v = document.querySelector('video');
+      try { v?.play(); } catch (_) {}
+    });
+    await page.waitForTimeout(80);
+    const inplayVideoBox = await page.locator('video').boundingBox();
+    if (inplayVideoBox) {
+      await page.mouse.click(inplayVideoBox.x + inplayVideoBox.width / 2, inplayVideoBox.y + inplayVideoBox.height / 2);
+      await page.waitForTimeout(180);
+    }
+    const inplayClickPause = await page.evaluate(() => {
+      const v = document.querySelector('video');
+      return { paused: !!(v && v.paused) };
+    });
+    results.push({
+      name: 'inplayip-click-pauses',
+      pass: inplayClickPause.paused === true,
+      detail: inplayClickPause
+    });
+    if (inplayVideoBox) {
+      await page.mouse.click(inplayVideoBox.x + inplayVideoBox.width / 2, inplayVideoBox.y + inplayVideoBox.height / 2);
+      await page.waitForTimeout(180);
+    }
+    const inplayClickPlay = await page.evaluate(() => {
+      const v = document.querySelector('video');
+      return { paused: !!(v && v.paused) };
+    });
+    results.push({
+      name: 'inplayip-click-plays',
+      pass: inplayClickPlay.paused === false,
+      detail: inplayClickPlay
+    });
 
     const inplayAutohide = await page.evaluate(async () => {
       const panel = document.getElementById('controls-panel');
@@ -1879,7 +2136,7 @@ async function run() {
           noCredit: !document.querySelector('.omt-brand-credit'),
           noPersonalizar: !document.body.textContent.includes('Personalizar') &&
             !document.body.textContent.includes('Em breve'),
-          footOk: foot === 'v1.7.4',
+          footOk: foot === 'v1.7.5',
           hasAutoPause: !!document.getElementById('omt-auto-pause-blur'),
           autoPauseDefaultOff: document.getElementById('omt-auto-pause-blur')
             ? document.getElementById('omt-auto-pause-blur').checked === false
@@ -3067,6 +3324,63 @@ async function run() {
           localOpenFile.dropHidden && localOpenFile.compact && localOpenFile.notOrangeFill &&
           localOpenFile.classOk,
         detail: localOpenFile
+      });
+
+      // Click-to-toggle on <video> (original HTML dashboard behaviour)
+      await localPage.evaluate(() => {
+        const panel = document.getElementById('controls-panel');
+        const bar = document.getElementById('omt-timeline-bar');
+        if (panel) { panel.style.opacity = '0'; panel.style.pointerEvents = 'none'; }
+        if (bar) { bar.style.opacity = '0'; bar.style.pointerEvents = 'none'; }
+      });
+      await localPage.evaluate(async () => {
+        const v = document.getElementById('omt-local-video');
+        try { await v.play(); } catch (_) {}
+      });
+      await localPage.waitForTimeout(80);
+      const localVideoBox = await localPage.locator('#omt-local-video').boundingBox();
+      if (localVideoBox) {
+        await localPage.mouse.click(localVideoBox.x + localVideoBox.width / 2, localVideoBox.y + localVideoBox.height / 2);
+        await localPage.waitForTimeout(180);
+      }
+      const localClickPause = await localPage.evaluate(() => {
+        const v = document.getElementById('omt-local-video');
+        return { paused: !!(v && v.paused), osd: document.getElementById('osd-message')?.innerText || '' };
+      });
+      results.push({
+        name: 'local-click-pauses',
+        pass: localClickPause.paused === true,
+        detail: localClickPause
+      });
+      if (localVideoBox) {
+        await localPage.mouse.click(localVideoBox.x + localVideoBox.width / 2, localVideoBox.y + localVideoBox.height / 2);
+        await localPage.waitForTimeout(180);
+      }
+      const localClickPlay = await localPage.evaluate(() => {
+        const v = document.getElementById('omt-local-video');
+        return { paused: !!(v && v.paused) };
+      });
+      results.push({
+        name: 'local-click-plays',
+        pass: localClickPlay.paused === false,
+        detail: localClickPlay
+      });
+      // Click on controls must NOT toggle
+      await localPage.evaluate(() => {
+        const panel = document.getElementById('controls-panel');
+        if (panel) { panel.style.opacity = '1'; panel.style.pointerEvents = 'auto'; }
+        const v = document.getElementById('omt-local-video');
+        try { v.pause(); } catch (_) {}
+      });
+      await localPage.waitForTimeout(60);
+      const beforeCtrlClick = await localPage.evaluate(() => document.getElementById('omt-local-video')?.paused);
+      await localPage.locator('#omt-speed-select').click({ force: true });
+      await localPage.waitForTimeout(100);
+      const afterCtrlClick = await localPage.evaluate(() => document.getElementById('omt-local-video')?.paused);
+      results.push({
+        name: 'local-controls-click-does-not-toggle',
+        pass: beforeCtrlClick === true && afterCtrlClick === true,
+        detail: { beforeCtrlClick, afterCtrlClick }
       });
 
       // Space / seek / speed / kickoff / period / custom / OSD / timeline / hide / LIVE

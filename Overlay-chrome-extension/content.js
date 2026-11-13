@@ -756,6 +756,8 @@
   <path d="m2 2 20 20" />`
 ,
         "folder-open": `<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" />`
+,
+        "bookmark": `<path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" />`
     };
 
     function omtIcon(name, size = 16, extraClass = '') {
@@ -873,6 +875,7 @@
 <!-- Timeline alone: full-width thin bar at the very bottom of the video -->
 <div id="omt-timeline-bar" class="omt-timeline-bar">
     <div class="omt-timeline-track">
+        <div id="omt-timeline-bookmarks" class="omt-timeline-bookmarks" aria-hidden="true"></div>
         <input type="range" id="omt-timeline-slider" class="timeline-slider" min="0" max="100" value="0" step="0.01" aria-label="Timeline">
         <div id="omt-timeline-markers" aria-hidden="true"></div>
     </div>
@@ -888,7 +891,7 @@
 <div id="controls-panel" class="glass-panel">
     <div class="drag-handle" id="controls-handle">
         <div class="drag-side-left">
-            <button type="button" id="omt-more-toggle" class="omt-more-toggle handle-btn omt-tip" aria-expanded="false"${tip('Match controls')}>
+            <button type="button" id="omt-more-toggle" class="omt-more-toggle handle-btn omt-tip" aria-expanded="false"${tip('More controls')}>
                 <span class="omt-more-icon-collapsed">${omtIcon('chevrons-up', 16)}</span>
                 <span class="omt-more-icon-expanded" hidden>${omtIcon('chevrons-down', 16)}</span>
             </button>
@@ -1043,6 +1046,18 @@
             const overflow = rootRect.top - after.top;
             controlsPanel.style.bottom = Math.max(0, bottomPx - overflow) + 'px';
         }
+        updateControlsTipFlip();
+    }
+
+    /** Flip top-row tips below the controls when the card sits near the player top. */
+    function updateControlsTipFlip() {
+        if (!controlsPanel || !omtRoot) return;
+        const rootRect = omtRoot.getBoundingClientRect();
+        const rect = controlsPanel.getBoundingClientRect();
+        const roomAbove = rect.top - rootRect.top;
+        const flip = roomAbove < 36;
+        controlsPanel.classList.toggle('omt-tips-flip-below', flip);
+        omtRoot.classList.toggle('omt-tips-flip-below', flip);
     }
 
     function setMorePanelOpen(open) {
@@ -1064,6 +1079,7 @@
         panel.classList.toggle('is-open', next);
         panel.setAttribute('aria-hidden', next ? 'false' : 'true');
         btn.setAttribute('aria-expanded', next ? 'true' : 'false');
+        btn.setAttribute('data-tip', next ? 'Less controls' : 'More controls');
         btn.classList.toggle('is-open', next);
         const collapsedIcon = btn.querySelector('.omt-more-icon-collapsed');
         const expandedIcon = btn.querySelector('.omt-more-icon-expanded');
@@ -1074,6 +1090,7 @@
         // After layout, re-assert bottom + clamp top of viewport.
         requestAnimationFrame(() => {
             anchorControlsPanelBottom(bottomPx);
+            updateControlsTipFlip();
         });
     }
 
@@ -1318,6 +1335,40 @@
             }
         } else {
             document.addEventListener('keydown', handleKeydown, true);
+            // Click-to-play/pause on the <video> surface — same mechanism as
+            // OverlayMatchTimer.html (local dashboard). Examino uses its own
+            // capture-phase installer above. #omt-root is pointer-events:none so
+            // clicks reach <video>; our panels restore pointer-events:auto and
+            // never hit this handler (e.target !== vid).
+            // Regression: local player (v1.5.0+) never got this ported from the
+            // HTML dashboard, so video clicks did nothing.
+            // Capture + stop so host players (e.g. Video.js) cannot also toggle
+            // (would net to a no-op) — same exclusivity idea as Examino.
+            vid.addEventListener('click', function (e) {
+                if (e.target !== vid) return;
+                // Allow blob/http src and MediaStream (srcObject) — mocks / some hosts
+                // have empty currentSrc when only srcObject is set.
+                if (!vid.src && !vid.currentSrc && !vid.srcObject) return;
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                togglePlay();
+            }, { capture: true, signal: vidAbortController.signal });
+            vid.addEventListener('dblclick', function (e) {
+                if (e.target !== vid) return;
+                toggleFullScreen();
+            }, vsig);
+            // Click fires once before dblclick — reverse that toggle so
+            // play/pause is unchanged after going fullscreen (original HTML).
+            vid.addEventListener('dblclick', function (e) {
+                if (e.target !== vid) return;
+                if (!vid.src && !vid.currentSrc && !vid.srcObject) return;
+                if (vid.paused) {
+                    vid.play().catch(() => {});
+                } else {
+                    vid.pause();
+                }
+            }, vsig);
         }
 
         omtRoot.addEventListener('click', function (e) {
@@ -1327,6 +1378,11 @@
         });
 
         liveBtn.style.display = 'flex';
+
+        if (typeof updateControlsTipFlip === 'function') {
+            updateControlsTipFlip();
+            window.addEventListener('resize', updateControlsTipFlip, { passive: true });
+        }
 
         // Match-clock click-to-edit is wired in customize.js (omtInstallClockClickEdit).
         // Fixed presets only — no drag.
@@ -2019,9 +2075,9 @@
         }, 200);
     }
 
-/* Kick-off / period markers on the HUD timeline (redesign chrome). */
+/* Kick-off / period bookmarks on the HUD timeline (redesign chrome). */
     /* =========================================================
-       11. TIMELINE MARKERS + PERIOD HOVER
+       11. TIMELINE BOOKMARKS + PERIOD HOVER
        ========================================================= */
     function periodLabelForKey(key) {
         return ({
@@ -2057,15 +2113,71 @@
         return label;
     }
 
+    /**
+     * Redesign-only: match-clock mm:ss the on-video timer would show at video time t.
+     * Mirrors atualizarRelogio period/base selection; does not touch original hooks.
+     */
+    function matchClockAtVideoTime(t) {
+        if (!isFinite(t)) return { period: '', clock: '' };
+        const k1 = getVideoTimeForPdt(kickoff1);
+        const k2 = getVideoTimeForPdt(kickoff2);
+        const kC1 = getVideoTimeForPdt(kickoffC1);
+        const kC2 = getVideoTimeForPdt(kickoffC2);
+
+        if (k1 === null && k2 === null && kC1 === null && kC2 === null) {
+            return {
+                period: '',
+                clock: (typeof formatarTempoVideo === 'function') ? formatarTempoVideo(t) : ''
+            };
+        }
+
+        if (k1 !== null && t < k1) {
+            return {
+                period: '',
+                clock: 'Pre-match'
+            };
+        }
+
+        let kickoffUsar = k1;
+        let baseUsar = 0;
+        if (kC2 !== null && t >= kC2) {
+            kickoffUsar = kC2;
+            baseUsar = (parseInt(localStorage.getItem('matchTimerCustomMinC2'), 10) || 105) * 60;
+        } else if (kC1 !== null && t >= kC1) {
+            kickoffUsar = kC1;
+            baseUsar = (parseInt(localStorage.getItem('matchTimerCustomMinC1'), 10) || 90) * 60;
+        } else if (k2 !== null && t >= k2) {
+            kickoffUsar = k2;
+            baseUsar = 45 * 60;
+        } else if (k1 !== null) {
+            kickoffUsar = k1;
+            baseUsar = 0;
+        } else {
+            return {
+                period: '',
+                clock: (typeof formatarTempoVideo === 'function') ? formatarTempoVideo(t) : ''
+            };
+        }
+
+        const totalSeconds = (t - kickoffUsar) + baseUsar;
+        const mm = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+        const ss = Math.floor(totalSeconds % 60).toString().padStart(2, '0');
+        return {
+            period: resolvePeriodAtVideoTime(t),
+            clock: mm + ':' + ss
+        };
+    }
+
     function atualizarMarcadores() {
         const markerContainer = q('omt-timeline-markers');
+        const bookmarkContainer = q('omt-timeline-bookmarks');
         const btnK1 = q('omt-jump-k1');
         const btnK2 = q('omt-jump-k2');
         const btnKC1 = q('omt-jump-kc1');
         const btnKC2 = q('omt-jump-kc2');
 
-        if (!markerContainer) return;
-        markerContainer.innerHTML = '';
+        if (markerContainer) markerContainer.innerHTML = '';
+        if (bookmarkContainer) bookmarkContainer.innerHTML = '';
 
         const duration = site.effectiveDuration(vid);
         if (!duration || !isFinite(duration)) {
@@ -2076,35 +2188,35 @@
         const btnMap = { '1': btnK1, '2': btnK2, 'custom1': btnKC1, 'custom2': btnKC2 };
         Object.values(btnMap).forEach((b) => { if (b) b.style.display = 'none'; });
 
+        if (!bookmarkContainer || !timelineSlider) return;
+
         const minVal = parseFloat(timelineSlider.min) || 0;
         const maxVal = parseFloat(timelineSlider.max) || duration;
         const range = maxVal - minVal;
         if (range <= 0) return;
 
         const anchors = collectPeriodAnchors().filter((a) => a.val >= minVal && a.val <= maxVal);
-        const parts = [];
+        const icon = (typeof omtIcon === 'function') ? omtIcon('bookmark', 11) : '';
 
-        // Soft period bands between anchors (and to the end). Low-sat, dark UI.
-        for (let i = 0; i < anchors.length; i++) {
-            const start = anchors[i].val;
-            const end = (i + 1 < anchors.length) ? anchors[i + 1].val : maxVal;
-            const left = ((start - minVal) / range) * 100;
-            const width = Math.max(0, ((end - start) / range) * 100);
-            const tone = (i % 2 === 0) ? 'a' : 'b';
-            parts.push(
-                `<div class="timeline-period-seg tone-${tone}" style="left:${left}%;width:${width}%;" data-period="${periodLabelForKey(anchors[i].key)}"></div>`
-            );
-        }
-
-        // Thin boundary markers at each kickoff (single muted style — no rainbow blocks).
         anchors.forEach((a) => {
             const pct = ((a.val - minVal) / range) * 100;
-            parts.push(
-                `<div class="timeline-marker-tick" style="left:${pct}%;" data-period="${periodLabelForKey(a.key)}"></div>`
-            );
+            const label = periodLabelForKey(a.key);
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'omt-timeline-bookmark';
+            btn.style.left = pct + '%';
+            btn.setAttribute('data-period', label);
+            btn.setAttribute('data-half', a.key);
+            btn.setAttribute('aria-label', 'Seek to ' + label);
+            btn.innerHTML = icon + '<span class="omt-bm-label">' + label + '</span>';
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                jumpToKickoff(a.key);
+            });
+            bookmarkContainer.appendChild(btn);
         });
-
-        markerContainer.innerHTML = parts.join('');
+        bookmarkContainer.setAttribute('aria-hidden', anchors.length ? 'false' : 'true');
     }
 
     function jumpToKickoff(half) {
@@ -2114,12 +2226,20 @@
         if (raw == null) return;
         const t = getVideoTimeForPdt(raw);
         if (t !== null && t >= 0) {
+            if (typeof paintTimelineScrubberProgress === 'function' && timelineSlider) {
+                const min = parseFloat(timelineSlider.min) || 0;
+                const max = parseFloat(timelineSlider.max) || 0;
+                if (max > min) {
+                    timelineSlider.value = String(Math.max(min, Math.min(max, t)));
+                    paintTimelineScrubberProgress(true);
+                }
+            }
             seekTo(t);
             mostrarOSD('Jumped to ' + labels[half] + ' Kickoff');
         }
     }
 
-    /** Redesign-only: period + time tip under the pointer on the timeline. */
+    /** Redesign-only: period + match-clock tip under the pointer on the timeline. */
     function updateTimelineHoverTip(clientX) {
         const tip = q('omt-timeline-hover-tip');
         const track = omtRoot ? omtRoot.querySelector('.omt-timeline-track') : null;
@@ -2132,10 +2252,12 @@
         const min = parseFloat(timelineSlider.min) || 0;
         const max = parseFloat(timelineSlider.max) || 0;
         const t = min + ratio * (max - min);
-        const period = resolvePeriodAtVideoTime(t);
-        const timeStr = (typeof formatarTempoVideo === 'function') ? formatarTempoVideo(t) : '';
-        tip.textContent = period ? (period + ' · ' + timeStr) : timeStr;
+        const info = matchClockAtVideoTime(t);
+        if (info.period && info.clock) tip.textContent = info.period + ' · ' + info.clock;
+        else if (info.clock) tip.textContent = info.clock;
+        else tip.textContent = (typeof formatarTempoVideo === 'function') ? formatarTempoVideo(t) : '';
         tip.hidden = false;
+        bar.classList.add('is-timeline-hover');
         // Lift bar above the floating card while the tip is shown (tip is pointer-events:none).
         bar.style.zIndex = '55';
         const leftPx = (trackRect.left - barRect.left) + ratio * trackRect.width;
@@ -2148,7 +2270,10 @@
         const tip = q('omt-timeline-hover-tip');
         const bar = q('omt-timeline-bar');
         if (tip) tip.hidden = true;
-        if (bar) bar.style.zIndex = '';
+        if (bar) {
+            bar.style.zIndex = '';
+            bar.classList.remove('is-timeline-hover');
+        }
     }
 
 /* Transport: seek, play/pause, frames, speed, LIVE, mute, fullscreen. */
@@ -2396,7 +2521,11 @@
         const timelineBar = omtRoot ? omtRoot.querySelector('#omt-timeline-bar') : null;
         if (timelineBar) {
             timelineBar.style.opacity = opacity;
-            timelineBar.style.pointerEvents = pe;
+            // Shell stays pointer-events:none (CSS); children hit when visible.
+            // Inline 'none' when hidden is a belt-and-braces for hosts that
+            // rewrite CSS — class disables interactive children.
+            timelineBar.style.pointerEvents = 'none';
+            timelineBar.classList.toggle('omt-chrome-hidden', !visible);
         }
     }
 
@@ -2425,8 +2554,13 @@
         };
         trackHover(controlsPanel);
         trackHover(setupPanel);
+        // Hover the interactive timeline pieces only — not the full-width
+        // padded bar shell (that was keeping auto-hide stuck ON in v1.7.4).
         const timelineBar = omtRoot.querySelector('#omt-timeline-bar');
-        trackHover(timelineBar);
+        if (timelineBar) {
+            trackHover(timelineBar.querySelector('.omt-timeline-track'));
+            trackHover(timelineBar.querySelector('.omt-timeline-times'));
+        }
         if (timerUI) trackHover(timerUI);
     }
 
@@ -2655,6 +2789,9 @@
             // Store as bottom-anchored so a later more-panel expand grows UP.
             if (panel === controlsPanel && typeof anchorControlsPanelBottom === 'function') {
                 anchorControlsPanelBottom();
+            }
+            if (panel === controlsPanel && typeof updateControlsTipFlip === 'function') {
+                updateControlsTipFlip();
             }
         }
     }
