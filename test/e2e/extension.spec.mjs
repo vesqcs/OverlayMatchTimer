@@ -2845,6 +2845,10 @@ async function run() {
         fullPage: true
       });
       await popupPage.screenshot({
+        path: path.join(ARTIFACTS, 'v201_popup_general_full.png'),
+        fullPage: true
+      });
+      await popupPage.screenshot({
         path: path.join(ARTIFACTS, 'popup_shuttle_general_diagram.png'),
         fullPage: true
       });
@@ -2852,6 +2856,16 @@ async function run() {
         path: path.join(ARTIFACTS, 'popup_general_shuttle_open.png'),
         fullPage: true
       });
+      // Restore General defaults before Customize default checks
+      await popupPage.evaluate(() => {
+        const a = document.getElementById('omt-gen-actions-details');
+        const s = document.getElementById('omt-gen-shortcuts-details');
+        const sh = document.getElementById('omt-gen-shuttle-details');
+        if (a) a.open = true;
+        if (s) s.open = false;
+        if (sh) sh.open = false;
+      });
+      await popupPage.waitForTimeout(60);
       results.push({
         name: 'popup-branding-and-personalizar',
         pass: popupOk.hasWordmark && popupOk.hasLogo && popupOk.logoCount === 1 &&
@@ -2924,6 +2938,27 @@ async function run() {
           noSyncLabel: sectionsDefault.noSyncLabel
         }
       });
+      // Full Customize capture with short help copy (all sections open)
+      await popupPage.evaluate(() => {
+        ['omt-clock-details', 'omt-panel-details', 'omt-hotkeys-details', 'omt-shuttle-details'].forEach((id) => {
+          const el = document.getElementById(id);
+          if (el) el.open = true;
+        });
+      });
+      await popupPage.waitForTimeout(120);
+      await popupPage.screenshot({ path: path.join(ARTIFACTS, 'v201_popup_customize_full.png'), fullPage: true });
+      // Restore Customize defaults for later section-sensitive steps
+      await popupPage.evaluate(() => {
+        const clock = document.getElementById('omt-clock-details');
+        const panel = document.getElementById('omt-panel-details');
+        const hotkeys = document.getElementById('omt-hotkeys-details');
+        const shuttle = document.getElementById('omt-shuttle-details');
+        if (clock) clock.open = true;
+        if (panel) panel.open = false;
+        if (hotkeys) hotkeys.open = false;
+        if (shuttle) shuttle.open = false;
+      });
+      await popupPage.waitForTimeout(60);
 
       // Feature flag off → zero sync network even if page tries e2e harness messages
       mockSb.reset();
@@ -3067,28 +3102,45 @@ async function run() {
         const ids = ['skipBack2', 'skipFwd2', 'skipBack10', 'skipFwd10', 'skipBack2m', 'skipFwd2m'];
         const vals = {};
         const labels = {};
+        const labelFits = {};
         ids.forEach((id) => {
           vals[id] = document.getElementById('omt-skip-' + id)?.value || '';
           const row = document.querySelector('.omt-hotkey-row[data-id="' + id + '"]');
-          labels[id] = (row?.querySelector('.omt-hotkey-label')?.textContent || '').trim();
+          const labelEl = row?.querySelector('.omt-hotkey-label');
+          labels[id] = (labelEl?.textContent || '').trim();
+          // Measure rendered text vs available width (avoids false pass from stretched grid item).
+          let fits = false;
+          if (labelEl) {
+            const range = document.createRange();
+            range.selectNodeContents(labelEl);
+            const textW = range.getBoundingClientRect().width;
+            const avail = labelEl.getBoundingClientRect().width;
+            const cs = getComputedStyle(labelEl);
+            fits = textW <= avail + 1 && cs.textOverflow !== 'ellipsis';
+          }
+          labelFits[id] = fits;
         });
         return {
           vals,
           labels,
+          labelFits,
           hasInputs: ids.every((id) => !!document.getElementById('omt-skip-' + id)),
-          hasSkipReset: !!document.querySelector('[data-reset-skip="skipBack2"]')
+          hasSkipReset: !!document.querySelector('[data-reset-skip="skipBack2"]'),
+          hasSkipTools: !!document.querySelector('.omt-hotkey-row--skip .omt-hotkey-skip-tools')
         };
       });
       results.push({
         name: 'customize-shortcut-skip-defaults',
         pass: skipRowDefaults.hasInputs
           && skipRowDefaults.hasSkipReset
+          && skipRowDefaults.hasSkipTools
           && skipRowDefaults.vals.skipBack2 === '2'
           && skipRowDefaults.vals.skipBack10 === '10'
           && skipRowDefaults.vals.skipBack2m === '120'
           && skipRowDefaults.labels.skipBack2 === 'Skip back 2 s'
           && skipRowDefaults.labels.skipFwd10 === 'Skip forward 10 s'
-          && skipRowDefaults.labels.skipBack2m === 'Skip back 2 min',
+          && skipRowDefaults.labels.skipBack2m === 'Skip back 2 min'
+          && Object.values(skipRowDefaults.labelFits).every(Boolean),
         detail: skipRowDefaults
       });
       await popupPage.fill('#omt-skip-skipBack2', '0');
@@ -3122,7 +3174,29 @@ async function run() {
       await popupPage.fill('#omt-skip-skipFwd2m', '2');
       await popupPage.locator('#omt-skip-skipFwd2m').blur();
       await popupPage.waitForTimeout(120);
-      await popupPage.screenshot({ path: path.join(ARTIFACTS, 'v201_customize_shortcuts_skips.png'), fullPage: true });
+      // Focus Shortcuts; expand editor so all six skip rows are visible
+      await popupPage.evaluate(() => {
+        document.getElementById('omt-clock-details') && (document.getElementById('omt-clock-details').open = false);
+        document.getElementById('omt-panel-details') && (document.getElementById('omt-panel-details').open = false);
+        document.getElementById('omt-shuttle-details') && (document.getElementById('omt-shuttle-details').open = false);
+        const d = document.getElementById('omt-hotkeys-details');
+        if (d) d.open = true;
+        d?.scrollIntoView({ block: 'start' });
+        const editor = document.getElementById('omt-hotkey-editor');
+        if (editor) {
+          editor.style.maxHeight = 'none';
+          const firstSkip = document.querySelector('.omt-hotkey-row--skip');
+          if (firstSkip) editor.scrollTop = Math.max(0, firstSkip.offsetTop - 2);
+        }
+      });
+      await popupPage.waitForTimeout(80);
+      await popupPage.locator('#omt-hotkeys-details').screenshot({
+        path: path.join(ARTIFACTS, 'v201_customize_shortcuts_skips.png')
+      });
+      await popupPage.evaluate(() => {
+        const editor = document.getElementById('omt-hotkey-editor');
+        if (editor) editor.style.maxHeight = '';
+      });
 
       // General list shows live times
       await popupPage.click('[data-tab="general"]');
@@ -3148,8 +3222,14 @@ async function run() {
       });
       await popupPage.screenshot({ path: path.join(ARTIFACTS, 'v201_general_shortcuts_skips.png'), fullPage: true });
       await popupPage.click('[data-tab="customize"]');
-      await popupPage.selectOption('#panel-size', 'medium');
       await popupPage.evaluate(() => {
+        const panel = document.getElementById('omt-panel-details');
+        if (panel) panel.open = true;
+        const size = document.getElementById('panel-size');
+        if (size) {
+          size.value = 'medium';
+          size.dispatchEvent(new Event('change', { bubbles: true }));
+        }
         const c = document.getElementById('panel-compact');
         if (c) {
           c.checked = false;
@@ -3452,7 +3532,7 @@ async function run() {
         return {
           map,
           dirtyReset: !!skip1Reset?.classList.contains('is-dirty'),
-          compactHotkeyScroll: !!hkCs && Number.isFinite(maxH) && maxH > 0 && maxH <= 240 &&
+          compactHotkeyScroll: !!hkCs && Number.isFinite(maxH) && maxH > 0 && maxH <= 300 &&
             /auto|scroll/.test(hkCs.overflowY || ''),
           sxNeutral: !!sxCs && !/rgb\(245,\s*131,\s*31\)/.test(sxCs.backgroundColor || ''),
           svgWide: !!svgBox && svgBox.width >= 250

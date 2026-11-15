@@ -431,7 +431,7 @@ body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-height: 200px;
+  max-height: 280px;
   overflow-y: auto;
   overflow-x: hidden;
   padding-right: 2px;
@@ -457,11 +457,16 @@ body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
   min-height: 28px;
 }
 .omt-hotkey-row--skip {
-  grid-template-columns: minmax(0, 1fr) 72px auto 24px 24px;
-  column-gap: 6px;
-  padding: 3px 2px;
+  grid-template-columns: 1fr;
+  grid-template-rows: auto auto;
+  row-gap: 4px;
+  column-gap: 0;
+  padding: 5px 4px;
   border-radius: 4px;
   border: 1px solid transparent;
+  min-height: 52px;
+  align-items: stretch;
+  flex-shrink: 0;
 }
 .omt-hotkey-row--skip:hover {
   border-color: rgba(255,255,255,0.08);
@@ -472,6 +477,21 @@ body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.omt-hotkey-row--skip .omt-hotkey-label {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--omt-muted);
+  line-height: 1.25;
+}
+.omt-hotkey-skip-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 24px 24px;
+  column-gap: 6px;
+  align-items: center;
+  min-width: 0;
 }
 .omt-hotkey-skip-control {
   display: grid;

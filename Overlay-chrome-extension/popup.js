@@ -576,8 +576,11 @@
       if (isSkipAction(id)) {
         const sec = skipSeconds[id];
         const dirtySkip = sec !== SKIP_ACTION_DEFAULTS[id];
+        // Label on its own line so "Skip back 2 min" stays fully readable;
+        // seconds + key chip + resets sit on the second line (Shuttle-style controls).
         return '<div class="omt-hotkey-row omt-hotkey-row--skip" data-id="' + id + '">' +
           '<span class="omt-hotkey-label">' + label + '</span>' +
+          '<div class="omt-hotkey-skip-tools">' +
           '<span class="omt-hotkey-skip-control">' + numFieldHtml('omt-skip-' + id, sec, 999) + '</span>' +
           '<button type="button" class="' + cls + '" data-bind="' + id + '">' +
           (listening ? 'Press key…' : formatBinding(b)) + '</button>' +
@@ -587,6 +590,7 @@
           '<button type="button" class="omt-btn-icon' + (dirtyBind ? ' is-dirty' : '') +
           '" data-reset-hotkey="' + id + '" title="Reset key binding" aria-label="Reset key binding">' +
           ICON_RESET + '</button>' +
+          '</div>' +
           warn + '</div>';
       }
       return '<div class="omt-hotkey-row" data-id="' + id + '">' +
