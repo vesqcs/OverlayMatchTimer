@@ -113,31 +113,10 @@
       </div>
     </details>
 
-    <details class="omt-cust-details" id="omt-skips-details" data-section="skips">
-      <summary class="omt-cust-summary">Skip times</summary>
-      <div class="omt-cust-details-body">
-        <p class="omt-note">Whole seconds (1 to 999). Same values drive the panel skip buttons and matching keyboard / ShuttleXpress skip bindings.</p>
-        <div class="omt-skip-fields">
-          <label class="omt-field">Short skip (s)
-            <input type="number" id="skip-short" min="1" max="999" step="1" value="2">
-          </label>
-          <label class="omt-field">Medium skip (s)
-            <input type="number" id="skip-medium" min="1" max="999" step="1" value="10">
-          </label>
-          <label class="omt-field">Long skip (s)
-            <input type="number" id="skip-long" min="1" max="999" step="1" value="120">
-          </label>
-        </div>
-        <div class="omt-cust-actions">
-          <button type="button" id="omt-skips-reset" class="omt-btn-secondary">Reset to defaults</button>
-        </div>
-      </div>
-    </details>
-
     <details class="omt-cust-details" id="omt-hotkeys-details" data-section="hotkeys">
       <summary class="omt-cust-summary">Shortcuts</summary>
       <div class="omt-cust-details-body">
-        <p class="omt-note">Click a binding, then press a key (modifiers allowed). Conflicts warn inline.</p>
+        <p class="omt-note">Click a binding, then press a key (modifiers allowed). Conflicts warn inline. Skip rows include a seconds value (1 to 999); the panel orders skip buttons by size (smallest next to play).</p>
         <div id="omt-hotkey-editor" class="omt-hotkey-editor"></div>
         <div class="omt-cust-actions">
           <button type="button" id="omt-hotkeys-reset-all" class="omt-btn-secondary">Reset all shortcuts</button>

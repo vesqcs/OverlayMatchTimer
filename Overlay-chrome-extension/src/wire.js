@@ -55,13 +55,13 @@
             }
         });
 
-        // --- Playback controls (skip amounts from Customize; seek path unchanged) ---
-        q('omt-m120').addEventListener('click', () => saltarVideo(-omtGetSkipSeconds('long')));
-        q('omt-m10').addEventListener('click', () => saltarVideo(-omtGetSkipSeconds('medium')));
-        q('omt-m2').addEventListener('click', () => saltarVideo(-omtGetSkipSeconds('short')));
-        q('omt-p2').addEventListener('click', () => saltarVideo(omtGetSkipSeconds('short')));
-        q('omt-p10').addEventListener('click', () => saltarVideo(omtGetSkipSeconds('medium')));
-        q('omt-p120').addEventListener('click', () => saltarVideo(omtGetSkipSeconds('long')));
+        // --- Playback controls (amounts from Shortcuts; panel slots auto-sorted by value) ---
+        q('omt-m2').addEventListener('click', () => saltarVideo(-omtPanelSkipSeconds('back', 0)));
+        q('omt-m10').addEventListener('click', () => saltarVideo(-omtPanelSkipSeconds('back', 1)));
+        q('omt-m120').addEventListener('click', () => saltarVideo(-omtPanelSkipSeconds('back', 2)));
+        q('omt-p2').addEventListener('click', () => saltarVideo(omtPanelSkipSeconds('fwd', 0)));
+        q('omt-p10').addEventListener('click', () => saltarVideo(omtPanelSkipSeconds('fwd', 1)));
+        q('omt-p120').addEventListener('click', () => saltarVideo(omtPanelSkipSeconds('fwd', 2)));
         q('omt-btn-play').addEventListener('click', togglePlay);
         q('omt-prev-frame').addEventListener('click', retrocederFrame);
         q('omt-next-frame').addEventListener('click', avancarFrame);

@@ -1306,13 +1306,13 @@
             }
         });
 
-        // --- Playback controls (skip amounts from Customize; seek path unchanged) ---
-        q('omt-m120').addEventListener('click', () => saltarVideo(-omtGetSkipSeconds('long')));
-        q('omt-m10').addEventListener('click', () => saltarVideo(-omtGetSkipSeconds('medium')));
-        q('omt-m2').addEventListener('click', () => saltarVideo(-omtGetSkipSeconds('short')));
-        q('omt-p2').addEventListener('click', () => saltarVideo(omtGetSkipSeconds('short')));
-        q('omt-p10').addEventListener('click', () => saltarVideo(omtGetSkipSeconds('medium')));
-        q('omt-p120').addEventListener('click', () => saltarVideo(omtGetSkipSeconds('long')));
+        // --- Playback controls (amounts from Shortcuts; panel slots auto-sorted by value) ---
+        q('omt-m2').addEventListener('click', () => saltarVideo(-omtPanelSkipSeconds('back', 0)));
+        q('omt-m10').addEventListener('click', () => saltarVideo(-omtPanelSkipSeconds('back', 1)));
+        q('omt-m120').addEventListener('click', () => saltarVideo(-omtPanelSkipSeconds('back', 2)));
+        q('omt-p2').addEventListener('click', () => saltarVideo(omtPanelSkipSeconds('fwd', 0)));
+        q('omt-p10').addEventListener('click', () => saltarVideo(omtPanelSkipSeconds('fwd', 1)));
+        q('omt-p120').addEventListener('click', () => saltarVideo(omtPanelSkipSeconds('fwd', 2)));
         q('omt-btn-play').addEventListener('click', togglePlay);
         q('omt-prev-frame').addEventListener('click', retrocederFrame);
         q('omt-next-frame').addEventListener('click', avancarFrame);
@@ -2925,12 +2925,12 @@
     function runHotkeyAction(actionId) {
         if (!ensureLiveVideo()) return;
         switch (actionId) {
-            case 'skipFwd2': saltarVideo(omtGetSkipSeconds('short')); break;
-            case 'skipBack2': saltarVideo(-omtGetSkipSeconds('short')); break;
-            case 'skipFwd10': saltarVideo(omtGetSkipSeconds('medium')); break;
-            case 'skipBack10': saltarVideo(-omtGetSkipSeconds('medium')); break;
-            case 'skipFwd2m': saltarVideo(omtGetSkipSeconds('long')); break;
-            case 'skipBack2m': saltarVideo(-omtGetSkipSeconds('long')); break;
+            case 'skipFwd2': saltarVideo(omtGetSkipForAction('skipFwd2')); break;
+            case 'skipBack2': saltarVideo(-omtGetSkipForAction('skipBack2')); break;
+            case 'skipFwd10': saltarVideo(omtGetSkipForAction('skipFwd10')); break;
+            case 'skipBack10': saltarVideo(-omtGetSkipForAction('skipBack10')); break;
+            case 'skipFwd2m': saltarVideo(omtGetSkipForAction('skipFwd2m')); break;
+            case 'skipBack2m': saltarVideo(-omtGetSkipForAction('skipBack2m')); break;
             case 'frameFwd': avancarFrame(); break;
             case 'frameBack': retrocederFrame(); break;
             case 'playPause': togglePlay(); break;
@@ -3203,9 +3203,7 @@
 
         const prefs = (typeof omtGetShuttlePrefs === 'function')
             ? omtGetShuttlePrefs()
-            : ((typeof omtShuttleDefaultsFromSkips === 'function')
-                ? omtShuttleDefaultsFromSkips()
-                : { skipBtn1: 120, skipBtn2: 10, skipBtn3: 120, skipBtn4: 10, skipBtn5: 120, playPauseBtn: 3, centreSkipSign: 1, jogStep: 0.04, shuttleScale: 1 });
+            : { skipBtn1: 120, skipBtn2: 10, skipBtn3: 120, skipBtn4: 10, skipBtn5: 120, playPauseBtn: 3, centreSkipSign: 1, jogStep: 0.04, shuttleScale: 1 };
 
         // A) 5 Buttons edge detection (play/pause button configurable)
         for (let btn = 1; btn <= 5; btn++) {
@@ -3663,7 +3661,12 @@
         'speedDown', 'speedReset', 'speedUp', 'kickoff', 'live', 'hide'
     ];
 
-    const OMT_SKIP_DEFAULTS = { short: 2, medium: 10, long: 120 };
+    const OMT_SKIP_ACTION_DEFAULTS = {
+        skipBack2: 2, skipFwd2: 2,
+        skipBack10: 10, skipFwd10: 10,
+        skipBack2m: 120, skipFwd2m: 120
+    };
+    const OMT_SKIP_ACTION_IDS = Object.keys(OMT_SKIP_ACTION_DEFAULTS);
     const OMT_SKIP_MIN = 1;
     const OMT_SKIP_MAX = 999;
 
@@ -3682,39 +3685,65 @@
         return m + ':' + String(r).padStart(2, '0') + ' min';
     }
 
+    function omtNormalizeSkipSecondsMap(raw) {
+        const out = Object.assign({}, OMT_SKIP_ACTION_DEFAULTS);
+        if (!raw || typeof raw !== 'object') return out;
+        // Migrate v2.0.1 short/medium/long shape → per-action map.
+        if (raw.short != null || raw.medium != null || raw.long != null) {
+            const short = omtClampSkipSeconds(raw.short, 2);
+            const medium = omtClampSkipSeconds(raw.medium, 10);
+            const long = omtClampSkipSeconds(raw.long, 120);
+            out.skipBack2 = short; out.skipFwd2 = short;
+            out.skipBack10 = medium; out.skipFwd10 = medium;
+            out.skipBack2m = long; out.skipFwd2m = long;
+        }
+        OMT_SKIP_ACTION_IDS.forEach((id) => {
+            if (raw[id] != null) out[id] = omtClampSkipSeconds(raw[id], out[id]);
+        });
+        return out;
+    }
+
     function omtReadSkipSeconds() {
-        let short = OMT_SKIP_DEFAULTS.short;
-        let medium = OMT_SKIP_DEFAULTS.medium;
-        let long = OMT_SKIP_DEFAULTS.long;
         try {
             const raw = localStorage.getItem(OMT_STORAGE_KEYS.skipSeconds);
             if (raw) {
                 const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-                if (parsed && typeof parsed === 'object') {
-                    short = omtClampSkipSeconds(parsed.short, short);
-                    medium = omtClampSkipSeconds(parsed.medium, medium);
-                    long = omtClampSkipSeconds(parsed.long, long);
-                }
+                return omtNormalizeSkipSecondsMap(parsed);
             }
         } catch (_) {}
-        return { short, medium, long };
+        return Object.assign({}, OMT_SKIP_ACTION_DEFAULTS);
     }
 
-    function omtGetSkipSeconds(tier) {
-        const s = omtReadSkipSeconds();
-        if (tier === 'short') return s.short;
-        if (tier === 'medium') return s.medium;
-        return s.long;
+    function omtGetSkipForAction(actionId) {
+        const map = omtReadSkipSeconds();
+        if (Object.prototype.hasOwnProperty.call(map, actionId)) return map[actionId];
+        return OMT_SKIP_ACTION_DEFAULTS[actionId] || 2;
     }
 
-    function omtShuttleDefaultsFromSkips() {
-        const s = omtReadSkipSeconds();
+    /** Panel slots: [0]=smallest (next to play), [2]=largest (outer). */
+    function omtSortedSkipSlots(side) {
+        const ids = side === 'back'
+            ? ['skipBack2', 'skipBack10', 'skipBack2m']
+            : ['skipFwd2', 'skipFwd10', 'skipFwd2m'];
+        return ids
+            .map((id) => ({ id, sec: omtGetSkipForAction(id) }))
+            .sort((a, b) => (a.sec - b.sec) || a.id.localeCompare(b.id));
+    }
+
+    function omtPanelSkipSeconds(side, slotIndex) {
+        const slots = omtSortedSkipSlots(side);
+        const row = slots[slotIndex];
+        return row ? row.sec : 2;
+    }
+
+    // Shuttle Btn 1–5 defaults stay fixed (independent of Shortcuts skip seconds).
+    function omtShuttleDefaultsFixed() {
         return {
-            skipBtn1: s.long,
-            skipBtn2: s.medium,
-            skipBtn3: s.long,
-            skipBtn4: s.medium,
-            skipBtn5: s.long,
+            skipBtn1: 120,
+            skipBtn2: 10,
+            skipBtn3: 120,
+            skipBtn4: 10,
+            skipBtn5: 120,
             playPauseBtn: 3,
             centreSkipSign: 1,
             jogStep: 0.04,
@@ -3722,8 +3751,7 @@
         };
     }
 
-    // Legacy name kept for callers; values follow Customize skip times when unset.
-    const OMT_SHUTTLE_DEFAULTS = omtShuttleDefaultsFromSkips();
+    const OMT_SHUTTLE_DEFAULTS = omtShuttleDefaultsFixed();
 
     function omtReadPanelPrefs() {
         let size = localStorage.getItem(OMT_STORAGE_KEYS.panelSize) || 'medium';
@@ -3735,14 +3763,15 @@
 
     function omtApplySkipButtonLabels() {
         if (!omtRoot) return;
-        const skips = omtReadSkipSeconds();
+        const back = omtSortedSkipSlots('back');
+        const fwd = omtSortedSkipSlots('fwd');
         const map = [
-            ['omt-m120', skips.long],
-            ['omt-m10', skips.medium],
-            ['omt-m2', skips.short],
-            ['omt-p2', skips.short],
-            ['omt-p10', skips.medium],
-            ['omt-p120', skips.long]
+            ['omt-m2', back[0].sec],
+            ['omt-m10', back[1].sec],
+            ['omt-m120', back[2].sec],
+            ['omt-p2', fwd[0].sec],
+            ['omt-p10', fwd[1].sec],
+            ['omt-p120', fwd[2].sec]
         ];
         map.forEach(([id, sec]) => {
             const btn = typeof q === 'function' ? q(id) : document.getElementById(id);
@@ -3946,7 +3975,7 @@
     }
 
     function omtMergeShuttlePrefs(stored) {
-        const defaults = omtShuttleDefaultsFromSkips();
+        const defaults = omtShuttleDefaultsFixed();
         const out = Object.assign({}, defaults);
         if (!stored || typeof stored !== 'object') return out;
         ['skipBtn1', 'skipBtn2', 'skipBtn3', 'skipBtn4', 'skipBtn5'].forEach((k) => {

@@ -17,12 +17,12 @@
     function runHotkeyAction(actionId) {
         if (!ensureLiveVideo()) return;
         switch (actionId) {
-            case 'skipFwd2': saltarVideo(omtGetSkipSeconds('short')); break;
-            case 'skipBack2': saltarVideo(-omtGetSkipSeconds('short')); break;
-            case 'skipFwd10': saltarVideo(omtGetSkipSeconds('medium')); break;
-            case 'skipBack10': saltarVideo(-omtGetSkipSeconds('medium')); break;
-            case 'skipFwd2m': saltarVideo(omtGetSkipSeconds('long')); break;
-            case 'skipBack2m': saltarVideo(-omtGetSkipSeconds('long')); break;
+            case 'skipFwd2': saltarVideo(omtGetSkipForAction('skipFwd2')); break;
+            case 'skipBack2': saltarVideo(-omtGetSkipForAction('skipBack2')); break;
+            case 'skipFwd10': saltarVideo(omtGetSkipForAction('skipFwd10')); break;
+            case 'skipBack10': saltarVideo(-omtGetSkipForAction('skipBack10')); break;
+            case 'skipFwd2m': saltarVideo(omtGetSkipForAction('skipFwd2m')); break;
+            case 'skipBack2m': saltarVideo(-omtGetSkipForAction('skipBack2m')); break;
             case 'frameFwd': avancarFrame(); break;
             case 'frameBack': retrocederFrame(); break;
             case 'playPause': togglePlay(); break;

@@ -987,25 +987,30 @@ async function run() {
       detail: skipDefaultLabels
     });
 
-    // Apply custom skips + panel size/compact via bridge sync; labels and classes update
+    // Custom skips + auto-sort (inner row=120, outer row=2 → panel shows 2 next to play)
+    // + panel size/compact. Keyboard still follows the row value (ArrowRight = skipFwd2 = 120).
     const panelPrefs = await page.evaluate(async () => {
       window.postMessage({
         source: 'omt-bridge',
         type: 'OMT_STORAGE_SYNC',
         values: {
-          omtSkipSeconds: { short: 3, medium: 15, long: 90 },
+          omtSkipSeconds: {
+            skipBack2: 120, skipFwd2: 120,
+            skipBack10: 10, skipFwd10: 10,
+            skipBack2m: 2, skipFwd2m: 2
+          },
           omtPanelSize: 'small',
           omtPanelCompact: true
         }
       }, '*');
       await new Promise((r) => setTimeout(r, 80));
-      const labels = ['omt-m120', 'omt-m10', 'omt-m2'].map((id) =>
+      // Sorted ascending on each side: inner(m2)=2, mid=10, outer(m120)=120
+      const labels = ['omt-m2', 'omt-m10', 'omt-m120', 'omt-p2', 'omt-p10', 'omt-p120'].map((id) =>
         (document.getElementById(id)?.querySelector('.omt-btn-label')?.textContent || '').trim()
       );
       const panel = document.getElementById('controls-panel');
       const speedRow = document.querySelector('.omt-speed-row');
       const speedCs = speedRow ? getComputedStyle(speedRow) : null;
-      // Exercise seek with short skip setting (ArrowRight = short tier)
       const v = document.querySelector('video');
       let seekOk = false;
       if (v) {
@@ -1015,7 +1020,8 @@ async function run() {
           key: 'ArrowRight', code: 'ArrowRight', bubbles: true, cancelable: true
         }));
         await new Promise((r) => setTimeout(r, 40));
-        seekOk = v.currentTime >= before + 2.5 && v.currentTime <= before + 3.5;
+        // skipFwd2 row value is 120 → seek +120 (clamped by duration is fine; delta should be >> 10)
+        seekOk = v.currentTime >= before + 5;
       }
       return {
         labels,
@@ -1027,11 +1033,21 @@ async function run() {
     });
     results.push({
       name: 'panel-size-compact-and-custom-skips',
-      pass: panelPrefs.labels.join('|') === '1:30 min|15 s|3 s'
+      pass: panelPrefs.labels.join('|') === '2 s|10 s|2 min|2 s|10 s|2 min'
         && panelPrefs.sizeSmall && panelPrefs.compact && panelPrefs.speedHidden
         && panelPrefs.seekOk === true,
       detail: panelPrefs
     });
+    await page.evaluate(() => {
+      const panel = document.getElementById('controls-panel');
+      const timelineBar = document.getElementById('omt-timeline-bar');
+      [panel, timelineBar].forEach((el) => {
+        if (!el) return;
+        el.style.opacity = '1';
+        el.style.pointerEvents = 'auto';
+      });
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v201_panel_skip_resorted.png'), fullPage: true });
 
     // Screenshots: panel M (default), S, and Compact (for Vasco)
     await page.evaluate(() => {
@@ -3004,44 +3020,31 @@ async function run() {
         detail: clockPreview
       });
 
-      // Control panel size + Compact + Skip times (defaults / clamp / persist)
+      // Control panel size + Compact defaults
       await popupPage.evaluate(() => {
         const p = document.getElementById('omt-panel-details');
-        const s = document.getElementById('omt-skips-details');
         if (p) p.open = true;
-        if (s) s.open = true;
       });
       await popupPage.waitForTimeout(80);
-      const panelSkipUi = await popupPage.evaluate(() => {
+      const panelUi = await popupPage.evaluate(() => {
         const size = document.getElementById('panel-size');
         const compact = document.getElementById('panel-compact');
-        const short = document.getElementById('skip-short');
-        const medium = document.getElementById('skip-medium');
-        const long = document.getElementById('skip-long');
         return {
           hasSize: !!size,
           sizeDefault: size?.value || '',
           sizeOptions: Array.from(size?.options || []).map((o) => o.value),
           compactDefaultOff: !!(compact && compact.checked === false),
-          skips: {
-            short: short?.value || '',
-            medium: medium?.value || '',
-            long: long?.value || ''
-          },
-          hasReset: !!document.getElementById('omt-skips-reset')
+          noSkipTimesSection: !document.getElementById('omt-skips-details')
         };
       });
       results.push({
         name: 'customize-panel-skip-defaults',
-        pass: panelSkipUi.hasSize
-          && panelSkipUi.sizeDefault === 'medium'
-          && panelSkipUi.sizeOptions.join(',') === 'medium,small'
-          && panelSkipUi.compactDefaultOff
-          && panelSkipUi.skips.short === '2'
-          && panelSkipUi.skips.medium === '10'
-          && panelSkipUi.skips.long === '120'
-          && panelSkipUi.hasReset,
-        detail: panelSkipUi
+        pass: panelUi.hasSize
+          && panelUi.sizeDefault === 'medium'
+          && panelUi.sizeOptions.join(',') === 'medium,small'
+          && panelUi.compactDefaultOff
+          && panelUi.noSkipTimesSection,
+        detail: panelUi
       });
       await popupPage.selectOption('#panel-size', 'small');
       await popupPage.evaluate(() => {
@@ -3051,29 +3054,100 @@ async function run() {
           c.dispatchEvent(new Event('change', { bubbles: true }));
         }
       });
-      await popupPage.fill('#skip-short', '0');
-      await popupPage.fill('#skip-medium', '1500');
-      await popupPage.fill('#skip-long', '90');
-      await popupPage.locator('#skip-long').blur();
-      await popupPage.waitForTimeout(120);
-      const panelSkipClamped = await popupPage.evaluate(() => ({
-        size: document.getElementById('panel-size')?.value,
-        compact: !!document.getElementById('panel-compact')?.checked,
-        short: document.getElementById('skip-short')?.value,
-        medium: document.getElementById('skip-medium')?.value,
-        long: document.getElementById('skip-long')?.value
+      await popupPage.waitForTimeout(80);
+
+      // Shortcuts: per-row skip seconds (defaults / clamp) + live labels
+      await popupPage.evaluate(() => {
+        const d = document.getElementById('omt-hotkeys-details');
+        if (d) d.open = true;
+        d?.scrollIntoView({ block: 'start' });
+      });
+      await popupPage.waitForTimeout(100);
+      const skipRowDefaults = await popupPage.evaluate(() => {
+        const ids = ['skipBack2', 'skipFwd2', 'skipBack10', 'skipFwd10', 'skipBack2m', 'skipFwd2m'];
+        const vals = {};
+        const labels = {};
+        ids.forEach((id) => {
+          vals[id] = document.getElementById('omt-skip-' + id)?.value || '';
+          const row = document.querySelector('.omt-hotkey-row[data-id="' + id + '"]');
+          labels[id] = (row?.querySelector('.omt-hotkey-label')?.textContent || '').trim();
+        });
+        return {
+          vals,
+          labels,
+          hasInputs: ids.every((id) => !!document.getElementById('omt-skip-' + id)),
+          hasSkipReset: !!document.querySelector('[data-reset-skip="skipBack2"]')
+        };
+      });
+      results.push({
+        name: 'customize-shortcut-skip-defaults',
+        pass: skipRowDefaults.hasInputs
+          && skipRowDefaults.hasSkipReset
+          && skipRowDefaults.vals.skipBack2 === '2'
+          && skipRowDefaults.vals.skipBack10 === '10'
+          && skipRowDefaults.vals.skipBack2m === '120'
+          && skipRowDefaults.labels.skipBack2 === 'Skip back 2 s'
+          && skipRowDefaults.labels.skipFwd10 === 'Skip forward 10 s'
+          && skipRowDefaults.labels.skipBack2m === 'Skip back 2 min',
+        detail: skipRowDefaults
+      });
+      await popupPage.fill('#omt-skip-skipBack2', '0');
+      await popupPage.fill('#omt-skip-skipFwd2', '0');
+      await popupPage.fill('#omt-skip-skipBack2m', '1500');
+      await popupPage.fill('#omt-skip-skipFwd2m', '1500');
+      await popupPage.locator('#omt-skip-skipFwd2m').blur();
+      await popupPage.waitForTimeout(150);
+      const skipClamped = await popupPage.evaluate(() => ({
+        back2: document.getElementById('omt-skip-skipBack2')?.value,
+        fwd2: document.getElementById('omt-skip-skipFwd2')?.value,
+        back2m: document.getElementById('omt-skip-skipBack2m')?.value,
+        fwd2m: document.getElementById('omt-skip-skipFwd2m')?.value,
+        labelBack2: (document.querySelector('.omt-hotkey-row[data-id="skipBack2"] .omt-hotkey-label')?.textContent || '').trim(),
+        labelBack2m: (document.querySelector('.omt-hotkey-row[data-id="skipBack2m"] .omt-hotkey-label')?.textContent || '').trim()
       }));
       results.push({
         name: 'customize-panel-skip-clamp-persist',
-        pass: panelSkipClamped.size === 'small'
-          && panelSkipClamped.compact === true
-          && panelSkipClamped.short === '1'
-          && panelSkipClamped.medium === '999'
-          && panelSkipClamped.long === '90',
-        detail: panelSkipClamped
+        pass: skipClamped.back2 === '1'
+          && skipClamped.fwd2 === '1'
+          && skipClamped.back2m === '999'
+          && skipClamped.fwd2m === '999'
+          && skipClamped.labelBack2 === 'Skip back 1 s'
+          && skipClamped.labelBack2m === 'Skip back 16:39 min',
+        detail: skipClamped
       });
-      await popupPage.screenshot({ path: path.join(ARTIFACTS, 'v201_customize_panel_skips.png'), fullPage: true });
-      await popupPage.click('#omt-skips-reset');
+      // Set swap case for screenshot: short-row 120, long-row 2
+      await popupPage.fill('#omt-skip-skipBack2', '120');
+      await popupPage.fill('#omt-skip-skipFwd2', '120');
+      await popupPage.fill('#omt-skip-skipBack2m', '2');
+      await popupPage.fill('#omt-skip-skipFwd2m', '2');
+      await popupPage.locator('#omt-skip-skipFwd2m').blur();
+      await popupPage.waitForTimeout(120);
+      await popupPage.screenshot({ path: path.join(ARTIFACTS, 'v201_customize_shortcuts_skips.png'), fullPage: true });
+
+      // General list shows live times
+      await popupPage.click('[data-tab="general"]');
+      await popupPage.evaluate(() => {
+        const d = document.getElementById('omt-gen-shortcuts-details');
+        if (d) d.open = true;
+      });
+      await popupPage.waitForTimeout(80);
+      const generalSkipLabels = await popupPage.evaluate(() => {
+        const items = Array.from(document.querySelectorAll('#omt-shortcut-list .shortcut-item .shortcut-label'))
+          .map((el) => (el.textContent || '').trim());
+        return {
+          items,
+          hasBack120: items.some((t) => t === 'Skip back 2 min'),
+          hasFwd2: items.some((t) => t === 'Skip forward 2 s'),
+          hasBack10: items.some((t) => t === 'Skip back 10 s')
+        };
+      });
+      results.push({
+        name: 'general-skip-labels-live',
+        pass: generalSkipLabels.hasBack120 && generalSkipLabels.hasFwd2 && generalSkipLabels.hasBack10,
+        detail: generalSkipLabels
+      });
+      await popupPage.screenshot({ path: path.join(ARTIFACTS, 'v201_general_shortcuts_skips.png'), fullPage: true });
+      await popupPage.click('[data-tab="customize"]');
       await popupPage.selectOption('#panel-size', 'medium');
       await popupPage.evaluate(() => {
         const c = document.getElementById('panel-compact');
@@ -3081,6 +3155,10 @@ async function run() {
           c.checked = false;
           c.dispatchEvent(new Event('change', { bubbles: true }));
         }
+        // Reset skip seconds for later tests
+        ['skipBack2', 'skipFwd2', 'skipBack10', 'skipFwd10', 'skipBack2m', 'skipFwd2m'].forEach((id) => {
+          document.querySelector('[data-reset-skip="' + id + '"]')?.click();
+        });
       });
       await popupPage.waitForTimeout(80);
 

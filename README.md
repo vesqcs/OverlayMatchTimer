@@ -2,7 +2,7 @@
 
 Chrome MV3 extension for Stats Perform / RunningBall match analysts. It injects a drift-aware match clock, HUD timeline, and playback controls over supported stream players, plus a local file player.
 
-**Current build: v2.0.1** - Customize + local player. Kickoff sync disabled. Semver: 2.0.x bugfixes, 2.1.0+ features. UI: no tips on play/skip/speed-row; control panel size M/S + Compact; custom skip times.
+**Current build: v2.0.1** - Customize + local player. Kickoff sync disabled. Semver: 2.0.x bugfixes, 2.1.0+ features. UI: no tips on play/skip/speed-row; control panel size M/S + Compact; skip seconds on Shortcuts rows with panel auto-sort.
 
 Supported surfaces:
 

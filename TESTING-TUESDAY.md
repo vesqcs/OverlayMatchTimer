@@ -15,9 +15,9 @@ Mark each row: `[ ]` → `[x]` when pass. Use **Notes** for anything odd (screen
 | 0.1 | Load unpacked from zip’s `Overlay-chrome-extension` | Extension shows **2.0.1**, no errors on card | [ ] | |
 | 0.2 | Check toolbar / extensions icon | Slash + **20:08** badge top-left (v2) on dark tile | [ ] | |
 | 0.3 | Open popup | Header: SP logo with **20:08** badge + OverlayMatchTimer; footer `v2.0.1` | [ ] | |
-| 0.4 | Customize tab | Match clock, Control panel, Skip times, Shortcuts, ShuttleXpress; **no Kickoff sync** | [ ] | |
+| 0.4 | Customize tab | Match clock, Control panel, Shortcuts, ShuttleXpress; **no Kickoff sync** | [ ] | |
 | 0.5 | Control panel size M then S; Compact on/off | M = current look; S smaller; Compact hides lower speed row (top speed select stays) | [ ] | |
-| 0.6 | Skip times 2 / 10 / 120; change long to 90; Reset | Labels become `1:30 min`; Reset restores 2 / 10 / 120 and `2 min` | [ ] | |
+| 0.6 | Shortcuts: set short-row skip to 120 and long-row to 2 | Labels update; panel re-sorts so **2** is next to play and **120** is outer; keyboard still follows each row | [ ] | |
 
 ---
 

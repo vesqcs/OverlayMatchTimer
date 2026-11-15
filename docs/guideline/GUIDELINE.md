@@ -116,7 +116,7 @@ Click the HUD clock to type a match time (`45`, `45.30`, `45:30`, etc.).
 
 | Control | Behaviour |
 |---------|-----------|
-| Play / Pause, skip buttons, lower speed-row chips | Self-explanatory; **no hover tooltips**. Skip amounts come from Customize → Skip times |
+| Play / Pause, skip buttons, lower speed-row chips | Self-explanatory; **no hover tooltips**. Skip amounts come from Customize → Shortcuts (seconds on each skip row); panel buttons auto-sort by size |
 | Frame ±, top speed select, volume, more chevron, Open file, ShuttleXpress, Clear timer | Hover tips as usual (opaque portal tips) |
 | **Eye** button | **Auto hide** toggle only (does not hide the panel on click). Eye-off = Auto hide on; eye = off. Tip: `Auto hide: on/off` |
 | **H** | Still hides/shows the whole control chrome (original hotkey) |
@@ -160,15 +160,14 @@ Defaults are rebindable under **Customize → Shortcuts**.
 |---------|---------|
 | Match clock | Open |
 | Control panel | Collapsed |
-| Skip times | Collapsed |
 | Shortcuts | Collapsed |
 | ShuttleXpress | Collapsed |
 
 **Control panel:** Size **M** (default, current look) or **S** (smaller). **Compact** (default off) hides the lower speed-button row; the top speed dropdown stays.
 
-**Skip times:** Three whole-second fields (1 to 999), defaults **2 / 10 / 120**. Labels on the panel use `N s` under 60 seconds, or minutes at/above 60 (e.g. `2 min`, `1:30 min`). The same values drive the panel skip buttons and matching keyboard / ShuttleXpress skip bindings. **Reset to defaults** restores 2 / 10 / 120.
+**Shortcuts (skip rows):** Each skip back/forward row has a seconds field (1 to 999, defaults **2 / 10 / 120** for the three pairs) and a reset icon. Labels show the live amount (`Skip back 10 s`, `Skip forward 2 min`, `1:30 min`). The same values drive keyboard skips; the on-video panel orders the three buttons on each side by size (smallest next to play, largest outer). ShuttleXpress Btn 1–5 skip seconds stay separate.
 
-**Reset all customizations** restores clock, control panel, skip times, shortcuts, and Shuttle defaults.
+**Reset all customizations** restores clock, control panel, shortcuts (including skip seconds), and Shuttle defaults.
 
 ---
 
