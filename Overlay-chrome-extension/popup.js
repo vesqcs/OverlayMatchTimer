@@ -8,6 +8,9 @@
     clockSize: 'omtClockSize',
     clockShape: 'omtClockShape',
     clockCustom: 'omtClockCustomOffset',
+    panelSize: 'omtPanelSize',
+    panelCompact: 'omtPanelCompact',
+    skipSeconds: 'omtSkipSeconds',
     hotkeys: 'omtHotkeys',
     shuttlePrefs: 'omtShuttlePrefs',
     autoPauseOnBlur: 'omtAutoPauseOnBlur',
@@ -18,9 +21,13 @@
     syncRoom: 'omtKickoffSyncRoom'
   };
 
+  const SKIP_DEFAULTS = { short: 2, medium: 10, long: 120 };
+  const SKIP_MIN = 1;
+  const SKIP_MAX = 999;
+
   const CUST_SECTION_DEFAULTS = {
     // Customize
-    clock: true, hotkeys: false, shuttle: false,
+    clock: true, panel: false, skips: false, hotkeys: false, shuttle: false,
     // General (v1.6.3) — actions open; reference lists collapsed
     genActions: true, genShortcuts: false, genShuttle: false
   };
@@ -47,17 +54,51 @@
   };
   const HOTKEY_ORDER = Object.keys(HOTKEY_DEFAULTS);
 
-  const SHUTTLE_DEFAULTS = {
-    skipBtn1: 120,
-    skipBtn2: 10,
-    skipBtn3: 120,
-    skipBtn4: 10,
-    skipBtn5: 120,
-    playPauseBtn: 3,
-    centreSkipSign: 1, // +1 / −1 when centre (btn 3) holds a skip
-    jogStep: 0.04,
-    shuttleScale: 1
-  };
+  function clampSkipSeconds(n, fallback) {
+    const v = Math.round(Number(n));
+    if (!Number.isFinite(v)) return fallback;
+    return Math.min(SKIP_MAX, Math.max(SKIP_MIN, v));
+  }
+
+  function normalizeSkipSeconds(raw) {
+    const base = Object.assign({}, SKIP_DEFAULTS);
+    if (!raw || typeof raw !== 'object') return base;
+    return {
+      short: clampSkipSeconds(raw.short, base.short),
+      medium: clampSkipSeconds(raw.medium, base.medium),
+      long: clampSkipSeconds(raw.long, base.long)
+    };
+  }
+
+  function formatPanelSkipLabel(secs) {
+    const s = clampSkipSeconds(secs, 0);
+    if (s < 60) return s + ' s';
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    if (r === 0) return m + ' min';
+    return m + ':' + String(r).padStart(2, '0') + ' min';
+  }
+
+  function shuttleDefaultsFromSkips(skips) {
+    const s = normalizeSkipSeconds(skips);
+    return {
+      skipBtn1: s.long,
+      skipBtn2: s.medium,
+      skipBtn3: s.long,
+      skipBtn4: s.medium,
+      skipBtn5: s.long,
+      playPauseBtn: 3,
+      centreSkipSign: 1,
+      jogStep: 0.04,
+      shuttleScale: 1
+    };
+  }
+
+  let skipSeconds = Object.assign({}, SKIP_DEFAULTS);
+
+  function getShuttleDefaults() {
+    return shuttleDefaultsFromSkips(skipSeconds);
+  }
 
   const SHUTTLE_DIAGRAM_SVG = `<svg class="omt-shuttle-svg" viewBox="0 0 200 200" role="img" aria-label="Contour ShuttleXpress">
   <!-- v1.6.3 outline: Vasco foto.png — centred btn3, mirrored 2/4 & 1/5, dimple at 12 o'clock -->
@@ -105,9 +146,58 @@
   const clockPos = document.getElementById('clock-pos');
   const clockSize = document.getElementById('clock-size');
   const clockShape = document.getElementById('clock-shape');
+  const panelSize = document.getElementById('panel-size');
+  const panelCompact = document.getElementById('panel-compact');
+  const skipShort = document.getElementById('skip-short');
+  const skipMedium = document.getElementById('skip-medium');
+  const skipLong = document.getElementById('skip-long');
   const autoPause = document.getElementById('omt-auto-pause-blur');
   const previewStage = document.getElementById('omt-clock-preview-stage');
   const previewFace = document.getElementById('omt-clock-preview-face');
+
+  function fillSkipFields() {
+    if (skipShort) skipShort.value = String(skipSeconds.short);
+    if (skipMedium) skipMedium.value = String(skipSeconds.medium);
+    if (skipLong) skipLong.value = String(skipSeconds.long);
+  }
+
+  function readSkipFields() {
+    return normalizeSkipSeconds({
+      short: skipShort ? skipShort.value : SKIP_DEFAULTS.short,
+      medium: skipMedium ? skipMedium.value : SKIP_DEFAULTS.medium,
+      long: skipLong ? skipLong.value : SKIP_DEFAULTS.long
+    });
+  }
+
+  function persistSkips(next) {
+    skipSeconds = normalizeSkipSeconds(next || readSkipFields());
+    fillSkipFields();
+    chrome.storage.local.set({ [KEYS.skipSeconds]: skipSeconds });
+    // Keep hotkey labels / shuttle default markers in sync with the three skips.
+    if (hotkeys) refreshAll();
+  }
+
+  function persistPanel() {
+    const size = (panelSize && panelSize.value === 'small') ? 'small' : 'medium';
+    const compact = !!(panelCompact && panelCompact.checked);
+    chrome.storage.local.set({
+      [KEYS.panelSize]: size,
+      [KEYS.panelCompact]: compact
+    });
+  }
+
+  function applySkipLabelsToHotkeyDefaults() {
+    const s = skipSeconds;
+    HOTKEY_DEFAULTS.skipBack2.label = 'Skip -' + formatPanelSkipLabel(s.short);
+    HOTKEY_DEFAULTS.skipFwd2.label = 'Skip +' + formatPanelSkipLabel(s.short);
+    HOTKEY_DEFAULTS.skipBack10.label = 'Skip -' + formatPanelSkipLabel(s.medium);
+    HOTKEY_DEFAULTS.skipFwd10.label = 'Skip +' + formatPanelSkipLabel(s.medium);
+    HOTKEY_DEFAULTS.skipBack2m.label = 'Skip -' + formatPanelSkipLabel(s.long);
+    HOTKEY_DEFAULTS.skipFwd2m.label = 'Skip +' + formatPanelSkipLabel(s.long);
+    Object.keys(HOTKEY_DEFAULTS).forEach((id) => {
+      if (hotkeys && hotkeys[id]) hotkeys[id].label = HOTKEY_DEFAULTS[id].label;
+    });
+  }
 
   function normalizeKey(key) {
     if (key == null) return '';
@@ -156,7 +246,7 @@
   }
 
   function mergeShuttle(stored) {
-    const out = Object.assign({}, SHUTTLE_DEFAULTS);
+    const out = Object.assign({}, getShuttleDefaults());
     if (!stored || typeof stored !== 'object') return out;
     ['skipBtn1', 'skipBtn2', 'skipBtn3', 'skipBtn4', 'skipBtn5'].forEach((k) => {
       const n = Number(stored[k]);
@@ -172,7 +262,7 @@
     if (Number.isFinite(scale) && scale > 0 && scale <= 4) out.shuttleScale = scale;
     // Migrate pre-1.6.4: no skipBtn3 stored while PP was moved off centre → seed centre skip
     if (stored.skipBtn3 == null && out.playPauseBtn !== 3) {
-      out.skipBtn3 = SHUTTLE_DEFAULTS.skipBtn3;
+      out.skipBtn3 = getShuttleDefaults().skipBtn3;
       out.centreSkipSign = positionalSkipSign(out.playPauseBtn);
     }
     return out;
@@ -188,7 +278,7 @@
     const movingSkip = Number(shuttlePrefs['skipBtn' + dest]);
     const secs = Number.isFinite(movingSkip) && movingSkip > 0
       ? movingSkip
-      : SHUTTLE_DEFAULTS['skipBtn' + dest];
+      : getShuttleDefaults()['skipBtn' + dest];
     shuttlePrefs['skipBtn' + old] = secs;
     if (old === 3) {
       shuttlePrefs.centreSkipSign = positionalSkipSign(dest);
@@ -466,11 +556,11 @@
       const key = btn.getAttribute('data-reset');
       let dirty = false;
       if (key === 'playPauseBtn') {
-        dirty = shuttlePrefs.playPauseBtn !== SHUTTLE_DEFAULTS.playPauseBtn
-          || shuttlePrefs.centreSkipSign !== SHUTTLE_DEFAULTS.centreSkipSign
-          || [1, 2, 3, 4, 5].some((n) => shuttlePrefs['skipBtn' + n] !== SHUTTLE_DEFAULTS['skipBtn' + n]);
+        dirty = shuttlePrefs.playPauseBtn !== getShuttleDefaults().playPauseBtn
+          || shuttlePrefs.centreSkipSign !== getShuttleDefaults().centreSkipSign
+          || [1, 2, 3, 4, 5].some((n) => shuttlePrefs['skipBtn' + n] !== getShuttleDefaults()['skipBtn' + n]);
       } else {
-        dirty = shuttlePrefs[key] !== SHUTTLE_DEFAULTS[key];
+        dirty = shuttlePrefs[key] !== getShuttleDefaults()[key];
       }
       btn.classList.toggle('is-dirty', dirty);
     });
@@ -520,6 +610,7 @@
   }
 
   function refreshAll() {
+    applySkipLabelsToHotkeyDefaults();
     mountShuttleDiagrams();
     updateClockPreview();
     renderGeneralShortcuts();
@@ -695,6 +786,9 @@
     [KEYS.clockPos]: 'top-left',
     [KEYS.clockSize]: 'medium',
     [KEYS.clockShape]: 'rounded',
+    [KEYS.panelSize]: 'medium',
+    [KEYS.panelCompact]: false,
+    [KEYS.skipSeconds]: null,
     [KEYS.hotkeys]: null,
     [KEYS.shuttlePrefs]: null,
     [KEYS.autoPauseOnBlur]: false,
@@ -712,8 +806,14 @@
       clockPos.value = result[KEYS.clockPos] || 'top-left';
       clockSize.value = result[KEYS.clockSize] || 'medium';
       clockShape.value = result[KEYS.clockShape] || 'rounded';
+      if (panelSize) panelSize.value = result[KEYS.panelSize] === 'small' ? 'small' : 'medium';
+      if (panelCompact) panelCompact.checked = !!result[KEYS.panelCompact];
+      skipSeconds = normalizeSkipSeconds(result[KEYS.skipSeconds]);
+      fillSkipFields();
+      applySkipLabelsToHotkeyDefaults();
       if (autoPause) autoPause.checked = !!result[KEYS.autoPauseOnBlur];
       hotkeys = mergeHotkeys(result[KEYS.hotkeys]);
+      applySkipLabelsToHotkeyDefaults();
       shuttlePrefs = mergeShuttle(result[KEYS.shuttlePrefs]);
       applyCustSections(result[KEYS.custSections]);
       if (SYNC_FEATURE) {
@@ -761,6 +861,24 @@
   clockPos.addEventListener('change', persistClock);
   clockSize.addEventListener('change', persistClock);
   clockShape.addEventListener('change', persistClock);
+
+  if (panelSize) panelSize.addEventListener('change', persistPanel);
+  if (panelCompact) panelCompact.addEventListener('change', persistPanel);
+
+  function onSkipFieldCommit() {
+    persistSkips(readSkipFields());
+  }
+  [skipShort, skipMedium, skipLong].forEach((el) => {
+    if (!el) return;
+    el.addEventListener('change', onSkipFieldCommit);
+    el.addEventListener('blur', onSkipFieldCommit);
+  });
+  const skipsReset = document.getElementById('omt-skips-reset');
+  if (skipsReset) {
+    skipsReset.addEventListener('click', () => {
+      persistSkips(Object.assign({}, SKIP_DEFAULTS));
+    });
+  }
 
   document.getElementById('omt-hotkey-editor').addEventListener('click', (e) => {
     const resetBtn = e.target.closest('[data-reset-hotkey]');
@@ -867,11 +985,11 @@
     if (resetBtn) {
       const key = resetBtn.getAttribute('data-reset');
       if (key === 'playPauseBtn') {
-        shuttlePrefs.playPauseBtn = SHUTTLE_DEFAULTS.playPauseBtn;
-        shuttlePrefs.centreSkipSign = SHUTTLE_DEFAULTS.centreSkipSign;
-        for (let i = 1; i <= 5; i++) shuttlePrefs['skipBtn' + i] = SHUTTLE_DEFAULTS['skipBtn' + i];
-      } else if (key && Object.prototype.hasOwnProperty.call(SHUTTLE_DEFAULTS, key)) {
-        shuttlePrefs[key] = SHUTTLE_DEFAULTS[key];
+        shuttlePrefs.playPauseBtn = getShuttleDefaults().playPauseBtn;
+        shuttlePrefs.centreSkipSign = getShuttleDefaults().centreSkipSign;
+        for (let i = 1; i <= 5; i++) shuttlePrefs['skipBtn' + i] = getShuttleDefaults()['skipBtn' + i];
+      } else if (key && Object.prototype.hasOwnProperty.call(getShuttleDefaults(), key)) {
+        shuttlePrefs[key] = getShuttleDefaults()[key];
       }
       const partMap = {
         skipBtn1: 'btn1', skipBtn2: 'btn2', skipBtn3: 'btn3', skipBtn4: 'btn4', skipBtn5: 'btn5',
@@ -950,10 +1068,15 @@
   });
 
   document.getElementById('omt-reset-all-custom').addEventListener('click', () => {
-    if (!confirm('Reset all customizations (clock, shortcuts, ShuttleXpress) to defaults?')) return;
+    if (!confirm('Reset all customizations (clock, control panel, skip times, shortcuts, ShuttleXpress) to defaults?')) return;
     clockPos.value = 'top-left';
     clockSize.value = 'medium';
     clockShape.value = 'rounded';
+    if (panelSize) panelSize.value = 'medium';
+    if (panelCompact) panelCompact.checked = false;
+    skipSeconds = Object.assign({}, SKIP_DEFAULTS);
+    fillSkipFields();
+    applySkipLabelsToHotkeyDefaults();
     hotkeys = mergeHotkeys(null);
     shuttlePrefs = mergeShuttle(null);
     const resetPayload = {
@@ -961,6 +1084,9 @@
       [KEYS.clockSize]: 'medium',
       [KEYS.clockShape]: 'rounded',
       [KEYS.clockCustom]: null,
+      [KEYS.panelSize]: 'medium',
+      [KEYS.panelCompact]: false,
+      [KEYS.skipSeconds]: null,
       [KEYS.hotkeys]: null,
       [KEYS.shuttlePrefs]: null
     };

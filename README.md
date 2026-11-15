@@ -2,7 +2,7 @@
 
 Chrome MV3 extension for Stats Perform / RunningBall match analysts. It injects a drift-aware match clock, HUD timeline, and playback controls over supported stream players, plus a local file player.
 
-**Current build: v2.0.0** — Customize + local player. Kickoff sync disabled. Semver from here: 2.0.x bugfixes, 2.1.0+ features. Same product as 1.7.8 (no tips on play/skip/speed-row).
+**Current build: v2.0.1** - Customize + local player. Kickoff sync disabled. Semver: 2.0.x bugfixes, 2.1.0+ features. UI: no tips on play/skip/speed-row; control panel size M/S + Compact; custom skip times.
 
 Supported surfaces:
 
@@ -33,7 +33,7 @@ Xeatre content-script injection remains out of scope until material is provided 
 | `TESTING-TUESDAY.md` / `.pdf` | Short smoke checklist for a build |
 | `store/` | Unlisted Chrome Web Store prep |
 | `test/fixtures/` + `test/e2e/` | Local mocks + Playwright harness |
-| `scripts/` | PDF generators + `make-release-zip.sh` (writes `OverlayMatchTimer-v*-full.zip`) |
+| `scripts/` | PDF generators + `make-release-zip.sh` (writes `OverlayMatchTimer-v*.zip` full bundle) |
 | `ARCHITECTURE.md` | Module map + planned sync design |
 | `OverlayMatchTimer.html` | Legacy local companion dashboard |
 

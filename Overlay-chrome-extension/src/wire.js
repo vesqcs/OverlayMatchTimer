@@ -55,13 +55,13 @@
             }
         });
 
-        // --- Playback controls ---
-        q('omt-m120').addEventListener('click', () => saltarVideo(-120));
-        q('omt-m10').addEventListener('click', () => saltarVideo(-10));
-        q('omt-m2').addEventListener('click', () => saltarVideo(-2));
-        q('omt-p2').addEventListener('click', () => saltarVideo(2));
-        q('omt-p10').addEventListener('click', () => saltarVideo(10));
-        q('omt-p120').addEventListener('click', () => saltarVideo(120));
+        // --- Playback controls (skip amounts from Customize; seek path unchanged) ---
+        q('omt-m120').addEventListener('click', () => saltarVideo(-omtGetSkipSeconds('long')));
+        q('omt-m10').addEventListener('click', () => saltarVideo(-omtGetSkipSeconds('medium')));
+        q('omt-m2').addEventListener('click', () => saltarVideo(-omtGetSkipSeconds('short')));
+        q('omt-p2').addEventListener('click', () => saltarVideo(omtGetSkipSeconds('short')));
+        q('omt-p10').addEventListener('click', () => saltarVideo(omtGetSkipSeconds('medium')));
+        q('omt-p120').addEventListener('click', () => saltarVideo(omtGetSkipSeconds('long')));
         q('omt-btn-play').addEventListener('click', togglePlay);
         q('omt-prev-frame').addEventListener('click', retrocederFrame);
         q('omt-next-frame').addEventListener('click', avancarFrame);

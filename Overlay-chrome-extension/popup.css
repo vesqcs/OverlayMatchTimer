@@ -105,6 +105,11 @@ body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
   text-transform: uppercase; color: var(--omt-orange); border: 1px solid rgba(245,131,31,0.35);
   background: var(--omt-orange-dim); border-radius: 3px; padding: 3px 8px;
 }
+.omt-skip-fields {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
 .omt-field { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--omt-muted); font-weight: 600; }
 .omt-field select,
 .omt-field input[type="number"],

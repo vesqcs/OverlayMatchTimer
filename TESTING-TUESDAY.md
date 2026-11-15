@@ -1,8 +1,8 @@
 # Overlay MatchTimer — Tuesday manual test (~15 min)
 
-**Build:** v2.0.0 · **PC:** work machine · **Date:** ________ · **Tester:** ________
+**Build:** v2.0.1 · **PC:** work machine · **Date:** ________ · **Tester:** ________
 
-Install from the full zip (`OverlayMatchTimer-v2.0.0-full.zip` → `OverlayMatchTimer-v2.0.0/Overlay-chrome-extension/`). Load unpacked in `chrome://extensions` (Developer mode). Do not use an old folder.
+Install from the full zip (`OverlayMatchTimer-v2.0.1.zip` → `OverlayMatchTimer-v2.0.1/Overlay-chrome-extension/`). Load unpacked in `chrome://extensions` (Developer mode). Do not use an old folder.
 
 Mark each row: `[ ]` → `[x]` when pass. Use **Notes** for anything odd (screenshot path / console error).
 
@@ -12,10 +12,12 @@ Mark each row: `[ ]` → `[x]` when pass. Use **Notes** for anything odd (screen
 
 | # | Action | Expected | ✓ | Notes |
 |---|--------|----------|---|-------|
-| 0.1 | Load unpacked from zip’s `Overlay-chrome-extension` | Extension shows **2.0.0**, no errors on card | [ ] | |
+| 0.1 | Load unpacked from zip’s `Overlay-chrome-extension` | Extension shows **2.0.1**, no errors on card | [ ] | |
 | 0.2 | Check toolbar / extensions icon | Slash + **20:08** badge top-left (v2) on dark tile | [ ] | |
-| 0.3 | Open popup | Header: SP logo with **20:08** badge + OverlayMatchTimer; footer `v2.0.0` | [ ] | |
-| 0.4 | Customize tab | Sections: Match clock, Shortcuts, ShuttleXpress only — **no Kickoff sync** | [ ] | |
+| 0.3 | Open popup | Header: SP logo with **20:08** badge + OverlayMatchTimer; footer `v2.0.1` | [ ] | |
+| 0.4 | Customize tab | Match clock, Control panel, Skip times, Shortcuts, ShuttleXpress; **no Kickoff sync** | [ ] | |
+| 0.5 | Control panel size M then S; Compact on/off | M = current look; S smaller; Compact hides lower speed row (top speed select stays) | [ ] | |
+| 0.6 | Skip times 2 / 10 / 120; change long to 90; Reset | Labels become `1:30 min`; Reset restores 2 / 10 / 120 and `2 min` | [ ] | |
 
 ---
 
@@ -63,7 +65,7 @@ Open a live/VOD InplayIP match page with the overlay injected.
 
 | # | Action | Expected | ✓ | Notes |
 |---|--------|----------|---|-------|
-| 3.1 | Popup → **Open local player** | New window; same HUD chrome | [ ] | |
+| 3.1 | Popup → **Open local player** | New window; tab title **Overlay MatchTimer**; drop copy: `Drop or browse a match video file, local or from the NAS.` + Open file; hint uses a comma (no dash) | [ ] | |
 | 3.2 | Open a local / NAS-mapped file | Playback + clock + shortcuts work; **no LIVE** button | [ ] | |
 | 3.3 | Enable ShuttleXpress only on this window if testing device | Toggle stays per-window | [ ] | |
 

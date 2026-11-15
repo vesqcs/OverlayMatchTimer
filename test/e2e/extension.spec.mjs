@@ -892,10 +892,10 @@ async function run() {
     });
     results.push({ name: 'examino-live-speed-no-overlap', pass: noOverlap.ok === true, detail: noOverlap });
 
-    // Skip buttons show amount labels (2s / 10s / 2m); no hover tips (self-explanatory)
+    // Skip buttons show amount labels (2 s / 10 s / 2 min); no hover tips (self-explanatory)
     const skipLabels = await page.evaluate(() => {
       const ids = ['omt-m120', 'omt-m10', 'omt-m2', 'omt-p2', 'omt-p10', 'omt-p120'];
-      const expected = ['2m', '10s', '2s', '2s', '10s', '2m'];
+      const expected = ['2 min', '10 s', '2 s', '2 s', '10 s', '2 min'];
       const rows = ids.map((id, i) => {
         const el = document.getElementById(id);
         const label = el?.querySelector('.omt-btn-label')?.textContent?.trim() || '';
@@ -966,11 +966,124 @@ async function run() {
       const gap = ib.left - lb.right;
       const overflow = label.scrollWidth > label.clientWidth + 1;
       return {
-        ok: lb.width >= 14 && gap >= 4 && !overflow && (label.textContent || '').trim() === '2m',
+        ok: lb.width >= 14 && gap >= 4 && !overflow && (label.textContent || '').trim() === '2 min',
         gap, labelW: lb.width, overflow
       };
     });
     results.push({ name: 'examino-skip-2m-label-fit', pass: skip2mFit.ok === true, detail: skip2mFit });
+
+    // Default skip labels on the panel (2 s / 10 s / 2 min)
+    const skipDefaultLabels = await page.evaluate(() => {
+      const ids = ['omt-m2', 'omt-m10', 'omt-m120'];
+      const expected = ['2 s', '10 s', '2 min'];
+      const got = ids.map((id) =>
+        (document.getElementById(id)?.querySelector('.omt-btn-label')?.textContent || '').trim()
+      );
+      return { ok: got.join('|') === expected.join('|'), got };
+    });
+    results.push({
+      name: 'skip-defaults-clamp-labels',
+      pass: skipDefaultLabels.ok === true,
+      detail: skipDefaultLabels
+    });
+
+    // Apply custom skips + panel size/compact via bridge sync; labels and classes update
+    const panelPrefs = await page.evaluate(async () => {
+      window.postMessage({
+        source: 'omt-bridge',
+        type: 'OMT_STORAGE_SYNC',
+        values: {
+          omtSkipSeconds: { short: 3, medium: 15, long: 90 },
+          omtPanelSize: 'small',
+          omtPanelCompact: true
+        }
+      }, '*');
+      await new Promise((r) => setTimeout(r, 80));
+      const labels = ['omt-m120', 'omt-m10', 'omt-m2'].map((id) =>
+        (document.getElementById(id)?.querySelector('.omt-btn-label')?.textContent || '').trim()
+      );
+      const panel = document.getElementById('controls-panel');
+      const speedRow = document.querySelector('.omt-speed-row');
+      const speedCs = speedRow ? getComputedStyle(speedRow) : null;
+      // Exercise seek with short skip setting (ArrowRight = short tier)
+      const v = document.querySelector('video');
+      let seekOk = false;
+      if (v) {
+        try { v.currentTime = 1; } catch (_) {}
+        const before = v.currentTime;
+        document.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'ArrowRight', code: 'ArrowRight', bubbles: true, cancelable: true
+        }));
+        await new Promise((r) => setTimeout(r, 40));
+        seekOk = v.currentTime >= before + 2.5 && v.currentTime <= before + 3.5;
+      }
+      return {
+        labels,
+        seekOk,
+        sizeSmall: !!(panel && panel.classList.contains('omt-panel-size-small')),
+        compact: !!(panel && panel.classList.contains('omt-panel-compact')),
+        speedHidden: !!(speedCs && speedCs.display === 'none')
+      };
+    });
+    results.push({
+      name: 'panel-size-compact-and-custom-skips',
+      pass: panelPrefs.labels.join('|') === '1:30 min|15 s|3 s'
+        && panelPrefs.sizeSmall && panelPrefs.compact && panelPrefs.speedHidden
+        && panelPrefs.seekOk === true,
+      detail: panelPrefs
+    });
+
+    // Screenshots: panel M (default), S, and Compact (for Vasco)
+    await page.evaluate(() => {
+      const panel = document.getElementById('controls-panel');
+      const timelineBar = document.getElementById('omt-timeline-bar');
+      [panel, timelineBar].forEach((el) => {
+        if (!el) return;
+        el.style.opacity = '1';
+        el.style.pointerEvents = 'auto';
+      });
+    });
+    await page.evaluate(async () => {
+      window.postMessage({
+        source: 'omt-bridge',
+        type: 'OMT_STORAGE_SYNC',
+        values: { omtSkipSeconds: null, omtPanelSize: 'medium', omtPanelCompact: false }
+      }, '*');
+      await new Promise((r) => setTimeout(r, 60));
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v201_panel_size_m.png'), fullPage: true });
+    await page.evaluate(async () => {
+      window.postMessage({
+        source: 'omt-bridge',
+        type: 'OMT_STORAGE_SYNC',
+        values: { omtPanelSize: 'small', omtPanelCompact: false }
+      }, '*');
+      await new Promise((r) => setTimeout(r, 60));
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v201_panel_size_s.png'), fullPage: true });
+    await page.evaluate(async () => {
+      window.postMessage({
+        source: 'omt-bridge',
+        type: 'OMT_STORAGE_SYNC',
+        values: { omtPanelSize: 'medium', omtPanelCompact: true }
+      }, '*');
+      await new Promise((r) => setTimeout(r, 60));
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v201_panel_compact.png'), fullPage: true });
+
+    // Restore defaults for later tests
+    await page.evaluate(async () => {
+      window.postMessage({
+        source: 'omt-bridge',
+        type: 'OMT_STORAGE_SYNC',
+        values: {
+          omtSkipSeconds: null,
+          omtPanelSize: 'medium',
+          omtPanelCompact: false
+        }
+      }, '*');
+      await new Promise((r) => setTimeout(r, 60));
+    });
 
     // Speed row syncs with select + Z/C/X hotkeys
     // Mock MSE fixtures often clamp HTMLMediaElement.playbackRate to 1; stub the
@@ -2632,7 +2745,7 @@ async function run() {
           noCredit: !document.querySelector('.omt-brand-credit'),
           noPersonalizar: !document.body.textContent.includes('Personalizar') &&
             !document.body.textContent.includes('Em breve'),
-          footOk: foot === 'v2.0.0',
+          footOk: foot === 'v2.0.1',
           hasAutoPause: !!document.getElementById('omt-auto-pause-blur'),
           autoPauseDefaultOff: document.getElementById('omt-auto-pause-blur')
             ? document.getElementById('omt-auto-pause-blur').checked === false
@@ -2890,6 +3003,86 @@ async function run() {
           /style-pill/.test(clockPreview.faceClass),
         detail: clockPreview
       });
+
+      // Control panel size + Compact + Skip times (defaults / clamp / persist)
+      await popupPage.evaluate(() => {
+        const p = document.getElementById('omt-panel-details');
+        const s = document.getElementById('omt-skips-details');
+        if (p) p.open = true;
+        if (s) s.open = true;
+      });
+      await popupPage.waitForTimeout(80);
+      const panelSkipUi = await popupPage.evaluate(() => {
+        const size = document.getElementById('panel-size');
+        const compact = document.getElementById('panel-compact');
+        const short = document.getElementById('skip-short');
+        const medium = document.getElementById('skip-medium');
+        const long = document.getElementById('skip-long');
+        return {
+          hasSize: !!size,
+          sizeDefault: size?.value || '',
+          sizeOptions: Array.from(size?.options || []).map((o) => o.value),
+          compactDefaultOff: !!(compact && compact.checked === false),
+          skips: {
+            short: short?.value || '',
+            medium: medium?.value || '',
+            long: long?.value || ''
+          },
+          hasReset: !!document.getElementById('omt-skips-reset')
+        };
+      });
+      results.push({
+        name: 'customize-panel-skip-defaults',
+        pass: panelSkipUi.hasSize
+          && panelSkipUi.sizeDefault === 'medium'
+          && panelSkipUi.sizeOptions.join(',') === 'medium,small'
+          && panelSkipUi.compactDefaultOff
+          && panelSkipUi.skips.short === '2'
+          && panelSkipUi.skips.medium === '10'
+          && panelSkipUi.skips.long === '120'
+          && panelSkipUi.hasReset,
+        detail: panelSkipUi
+      });
+      await popupPage.selectOption('#panel-size', 'small');
+      await popupPage.evaluate(() => {
+        const c = document.getElementById('panel-compact');
+        if (c) {
+          c.checked = true;
+          c.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      });
+      await popupPage.fill('#skip-short', '0');
+      await popupPage.fill('#skip-medium', '1500');
+      await popupPage.fill('#skip-long', '90');
+      await popupPage.locator('#skip-long').blur();
+      await popupPage.waitForTimeout(120);
+      const panelSkipClamped = await popupPage.evaluate(() => ({
+        size: document.getElementById('panel-size')?.value,
+        compact: !!document.getElementById('panel-compact')?.checked,
+        short: document.getElementById('skip-short')?.value,
+        medium: document.getElementById('skip-medium')?.value,
+        long: document.getElementById('skip-long')?.value
+      }));
+      results.push({
+        name: 'customize-panel-skip-clamp-persist',
+        pass: panelSkipClamped.size === 'small'
+          && panelSkipClamped.compact === true
+          && panelSkipClamped.short === '1'
+          && panelSkipClamped.medium === '999'
+          && panelSkipClamped.long === '90',
+        detail: panelSkipClamped
+      });
+      await popupPage.screenshot({ path: path.join(ARTIFACTS, 'v201_customize_panel_skips.png'), fullPage: true });
+      await popupPage.click('#omt-skips-reset');
+      await popupPage.selectOption('#panel-size', 'medium');
+      await popupPage.evaluate(() => {
+        const c = document.getElementById('panel-compact');
+        if (c) {
+          c.checked = false;
+          c.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      });
+      await popupPage.waitForTimeout(80);
 
       // Open Shortcuts section for rebind tests
       await popupPage.evaluate(() => {
@@ -3734,6 +3927,27 @@ async function run() {
           localBoot.hasVideo && localBoot.hasFileInput && localBoot.hasBrowse,
         detail: localBoot
       });
+
+      const localCopy = await localPage.evaluate(() => {
+        const copy = (document.querySelector('.omt-local-drop-copy')?.textContent || '').trim();
+        const hint = (document.querySelector('.omt-local-drop-hint')?.textContent || '').trim();
+        return {
+          title: document.title,
+          copy,
+          hint,
+          browse: (document.getElementById('omt-local-browse')?.textContent || '').trim()
+        };
+      });
+      results.push({
+        name: 'local-drop-copy-and-title',
+        pass: localCopy.title === 'Overlay MatchTimer'
+          && localCopy.copy === 'Drop or browse a match video file, local or from the NAS.'
+          && localCopy.hint === 'Multiple player windows are supported, enable ShuttleXpress only in the window that should own the device.'
+          && localCopy.browse === 'Open file'
+          && !/[—–]/.test(localCopy.copy + localCopy.hint),
+        detail: localCopy
+      });
+      await localPage.screenshot({ path: path.join(ARTIFACTS, 'v201_local_drop_zone.png'), fullPage: true });
 
       await localPage.screenshot({ path: path.join(ARTIFACTS, 'local_player_empty.png'), fullPage: true });
 

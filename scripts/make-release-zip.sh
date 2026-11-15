@@ -7,7 +7,7 @@ cd "$ROOT"
 
 VERSION="$(node -p "require('./Overlay-chrome-extension/package.json').version")"
 # Full owner/QA bundle (extension + docs + store + supabase). Not the Store upload zip.
-NAME="OverlayMatchTimer-v${VERSION}-full.zip"
+NAME="OverlayMatchTimer-v${VERSION}.zip"
 OUT_DIR="${1:-/opt/cursor/artifacts}"
 mkdir -p "$OUT_DIR"
 

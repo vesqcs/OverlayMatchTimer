@@ -11,6 +11,9 @@
         clockSize: 'omtClockSize',
         clockShape: 'omtClockShape',
         clockCustom: 'omtClockCustomOffset',
+        panelSize: 'omtPanelSize',
+        panelCompact: 'omtPanelCompact',
+        skipSeconds: 'omtSkipSeconds',
         hotkeys: 'omtHotkeys',
         shuttlePrefs: 'omtShuttlePrefs'
     };
@@ -168,7 +171,7 @@
         }
 
         let customizeTouched = false;
-        [OMT_STORAGE_KEYS.clockPos, OMT_STORAGE_KEYS.clockSize, OMT_STORAGE_KEYS.clockShape].forEach((k) => {
+        [OMT_STORAGE_KEYS.clockPos, OMT_STORAGE_KEYS.clockSize, OMT_STORAGE_KEYS.clockShape, OMT_STORAGE_KEYS.panelSize].forEach((k) => {
             if (Object.prototype.hasOwnProperty.call(values, k)) {
                 try {
                     if (values[k] == null) localStorage.removeItem(k);
@@ -177,8 +180,21 @@
                 customizeTouched = true;
             }
         });
+        if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.panelCompact)) {
+            try {
+                localStorage.setItem(
+                    OMT_STORAGE_KEYS.panelCompact,
+                    values[OMT_STORAGE_KEYS.panelCompact] ? 'true' : 'false'
+                );
+            } catch (_) {}
+            customizeTouched = true;
+        }
         if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.clockCustom)) {
             omtMirrorJsonKey(OMT_STORAGE_KEYS.clockCustom, values[OMT_STORAGE_KEYS.clockCustom]);
+            customizeTouched = true;
+        }
+        if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.skipSeconds)) {
+            omtMirrorJsonKey(OMT_STORAGE_KEYS.skipSeconds, values[OMT_STORAGE_KEYS.skipSeconds]);
             customizeTouched = true;
         }
         if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.hotkeys)) {

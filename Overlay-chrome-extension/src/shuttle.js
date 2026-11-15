@@ -109,7 +109,9 @@
 
         const prefs = (typeof omtGetShuttlePrefs === 'function')
             ? omtGetShuttlePrefs()
-            : { skipBtn1: 120, skipBtn2: 10, skipBtn3: 120, skipBtn4: 10, skipBtn5: 120, playPauseBtn: 3, centreSkipSign: 1, jogStep: 0.04, shuttleScale: 1 };
+            : ((typeof omtShuttleDefaultsFromSkips === 'function')
+                ? omtShuttleDefaultsFromSkips()
+                : { skipBtn1: 120, skipBtn2: 10, skipBtn3: 120, skipBtn4: 10, skipBtn5: 120, playPauseBtn: 3, centreSkipSign: 1, jogStep: 0.04, shuttleScale: 1 });
 
         // A) 5 Buttons edge detection (play/pause button configurable)
         for (let btn = 1; btn <= 5; btn++) {

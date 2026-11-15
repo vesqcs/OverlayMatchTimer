@@ -727,6 +727,75 @@
     top: auto;
 }
 
+/* Customize: Control panel size S (M = current look, no extra class). */
+#controls-panel.omt-panel-size-small {
+    width: min(480px, calc(100% - 24px));
+}
+#controls-panel.omt-panel-size-small .drag-handle {
+    padding: 6px 8px;
+    gap: 6px;
+}
+#controls-panel.omt-panel-size-small .top-select {
+    font-size: 11px;
+    padding: 3px 6px;
+    max-width: 72px;
+}
+#controls-panel.omt-panel-size-small .handle-btn,
+#controls-panel.omt-panel-size-small .omt-more-toggle {
+    width: 28px;
+    height: 28px;
+}
+#controls-panel.omt-panel-size-small .handle-btn .omt-icon,
+#controls-panel.omt-panel-size-small .omt-more-toggle .omt-icon {
+    width: 14px;
+    height: 14px;
+}
+#controls-panel.omt-panel-size-small #omt-live-btn {
+    font-size: 10px;
+    padding: 4px 8px;
+}
+#controls-panel.omt-panel-size-small #omt-volume-range {
+    width: 56px;
+}
+#controls-panel.omt-panel-size-small .controls-content {
+    padding: 6px 8px 8px;
+    gap: 6px;
+}
+#controls-panel.omt-panel-size-small .omt-transport-seg .ctrl-btn {
+    min-height: 36px;
+    padding: 8px 4px;
+    gap: 3px;
+}
+#controls-panel.omt-panel-size-small .omt-transport-seg .ctrl-btn .omt-btn-label {
+    font-size: 10px;
+}
+#controls-panel.omt-panel-size-small .omt-transport-seg .ctrl-btn .omt-icon {
+    width: 14px;
+    height: 14px;
+}
+#controls-panel.omt-panel-size-small .omt-transport-seg .ctrl-btn.btn-play {
+    min-width: 52px;
+    padding: 8px 6px;
+}
+#controls-panel.omt-panel-size-small .omt-speed-chip {
+    min-height: 28px;
+    padding: 5px 2px;
+    font-size: 10px;
+}
+#controls-panel.omt-panel-size-small .omt-more-panel.is-open {
+    margin: 6px 8px 0;
+    padding: 6px;
+}
+#controls-panel.omt-panel-size-small .omt-more-label,
+#controls-panel.omt-panel-size-small .omt-more-block {
+    font-size: 11px;
+}
+
+/* Customize: Compact hides the lower speed-chip row (top speed select stays). */
+#controls-panel.omt-panel-compact .omt-speed-row {
+    display: none;
+}
+
 /* ---- BOTTOM TIMELINE (alone at video edge) ---- */
 .omt-timeline-bar {
     position: absolute;
