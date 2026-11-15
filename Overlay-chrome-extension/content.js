@@ -810,6 +810,8 @@
 
         updateCompactLayout();
         ensureFullscreenHook();
+        updateFullscreenButton();
+        if (typeof installVideoVisibilityGuard === 'function') installVideoVisibilityGuard();
     }
 
     function updateCompactLayout() {
@@ -821,12 +823,23 @@
         omtRoot.classList.toggle('omt-compact', compact);
     }
 
+    function updateFullscreenButton() {
+        const btn = q('omt-btn-fullscreen');
+        if (!btn) return;
+        const on = !!document.fullscreenElement;
+        btn.innerHTML = omtIcon(on ? 'minimize' : 'maximize', 16);
+        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+        btn.setAttribute('aria-label', on ? 'Exit fullscreen' : 'Enter fullscreen');
+        btn.classList.toggle('is-fullscreen', on);
+    }
+
     function ensureFullscreenHook() {
         if (fullscreenHooked) return;
         fullscreenHooked = true;
         document.addEventListener('fullscreenchange', () => {
             if (!vid || !omtRoot) return;
             updateCompactLayout();
+            updateFullscreenButton();
             const fs = document.fullscreenElement;
             if (fs && fs.contains(vid) && !fs.contains(omtRoot)) {
                 fs.appendChild(omtRoot);
@@ -837,6 +850,9 @@
                 if (anchor && omtRoot.parentElement !== anchor) {
                     anchor.appendChild(omtRoot);
                 }
+            }
+            if (typeof omtApplyVideoSurfaceVisibility === 'function') {
+                try { omtApplyVideoSurfaceVisibility(); } catch (_) {}
             }
         });
         window.addEventListener('resize', () => updateCompactLayout());
@@ -884,6 +900,7 @@
         <span id="omt-v-time-current" class="omt-time-text omt-tip"${tip('Current video time')}>00:00:00</span>
         <span class="omt-time-sep" aria-hidden="true">/</span>
         <span id="omt-v-time-duration" class="omt-time-text omt-tip"${tip('Duration / live edge')}>00:00:00</span>
+        <button type="button" class="omt-timeline-fs-btn" id="omt-btn-fullscreen" aria-label="Enter fullscreen" aria-pressed="false">${omtIcon('maximize', 16)}</button>
     </div>
 </div>
 
@@ -919,7 +936,6 @@
             <span class="omt-live-spacer" aria-hidden="true"></span>
             <button class="handle-btn omt-tip" id="omt-volume-icon-btn" type="button"${tip('Mute / Unmute')}>${omtIcon('volume-2', 16)}</button>
             <input type="range" id="omt-volume-range" class="omt-tip" min="0" max="1" step="0.05" value="1"${tip('Volume')}>
-            <button class="handle-btn omt-tip" id="omt-btn-fullscreen" type="button"${tip('Fullscreen')}>${omtIcon('maximize', 16)}</button>
         </div>
     </div>
 
@@ -1247,6 +1263,89 @@
         const panel = q('omt-more-panel');
         if (!panel) return;
         setMorePanelOpen(!panel.classList.contains('is-open'));
+    }
+
+/* Hide overlay when the video surface is not meaningfully visible
+       (InPlay Review curtain/drawer, collapsed/offscreen player, etc.).
+       Layout/observer only — does not read or change video time / PDT. */
+    const OMT_VIDEO_VIS_MIN_PX = 24;
+
+    function omtVideoSurfaceVisible(videoEl) {
+        if (!videoEl || !videoEl.isConnected) return false;
+        try {
+            const cs = getComputedStyle(videoEl);
+            if (cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity) === 0) {
+                return false;
+            }
+        } catch (_) {}
+        const r = videoEl.getBoundingClientRect();
+        if (!(r.width >= OMT_VIDEO_VIS_MIN_PX && r.height >= OMT_VIDEO_VIS_MIN_PX)) return false;
+        const vw = window.innerWidth || document.documentElement.clientWidth || 0;
+        const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+        if (vw <= 0 || vh <= 0) return false;
+        const intersects = r.bottom > 0 && r.right > 0 && r.top < vh && r.left < vw;
+        if (!intersects) return false;
+
+        // Soft cover check: if the centre pixel is neither the video, its
+        // player container, nor our overlay, treat as covered (drawer/list).
+        try {
+            const cx = Math.min(vw - 1, Math.max(0, r.left + r.width / 2));
+            const cy = Math.min(vh - 1, Math.max(0, r.top + r.height / 2));
+            const topEl = document.elementFromPoint(cx, cy);
+            if (topEl) {
+                if (topEl === videoEl || videoEl.contains(topEl)) return true;
+                if (omtRoot && (omtRoot === topEl || omtRoot.contains(topEl))) return true;
+                const anchor = (typeof site !== 'undefined' && site && typeof site.findAnchor === 'function')
+                    ? site.findAnchor(videoEl)
+                    : (videoEl.parentElement);
+                if (anchor && (anchor === topEl || anchor.contains(topEl))) return true;
+                // Something else is painted at the video centre.
+                return false;
+            }
+        } catch (_) {}
+        return true;
+    }
+
+    function omtApplyVideoSurfaceVisibility() {
+        if (!omtRoot) return;
+        const visible = omtVideoSurfaceVisible(vid);
+        omtRoot.classList.toggle('omt-video-obscured', !visible);
+        omtRoot.setAttribute('data-omt-video-visible', visible ? '1' : '0');
+    }
+
+    function installVideoVisibilityGuard() {
+        if (!vid || !omtRoot) return;
+        if (omtRoot.dataset.omtVisGuard === '1') {
+            omtApplyVideoSurfaceVisibility();
+            return;
+        }
+        omtRoot.dataset.omtVisGuard = '1';
+
+        const apply = () => {
+            try { omtApplyVideoSurfaceVisibility(); } catch (_) {}
+        };
+
+        if (typeof IntersectionObserver === 'function') {
+            try {
+                const io = new IntersectionObserver(() => apply(), {
+                    threshold: [0, 0.01, 0.05, 0.1, 0.25, 0.5, 1]
+                });
+                io.observe(vid);
+                const anchor = omtRoot.parentElement;
+                if (anchor && anchor !== vid) io.observe(anchor);
+            } catch (_) {}
+        }
+        if (typeof ResizeObserver === 'function') {
+            try {
+                const ro = new ResizeObserver(() => apply());
+                ro.observe(vid);
+                if (omtRoot.parentElement) ro.observe(omtRoot.parentElement);
+            } catch (_) {}
+        }
+        window.addEventListener('scroll', apply, true);
+        window.addEventListener('resize', apply);
+        document.addEventListener('fullscreenchange', apply);
+        apply();
     }
 
 /* Wire UI controls to timer / playback / auto-hide / site extras. */

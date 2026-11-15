@@ -2550,6 +2550,36 @@ async function run() {
     });
     results.push({ name: 'inplayip-no-examino-section', pass: inplayState.examinoHidden === true });
 
+    // Fullscreen control lives on the timeline (bottom bar), no tip
+    const fsBtnUi = await page.evaluate(() => {
+      const btn = document.getElementById('omt-btn-fullscreen');
+      const bar = document.getElementById('omt-timeline-bar');
+      const panel = document.getElementById('controls-panel');
+      return {
+        inTimeline: !!(btn && bar && bar.contains(btn)),
+        notInPanel: !(panel && btn && panel.contains(btn)),
+        noTip: !(btn && btn.hasAttribute('data-tip')),
+        aria: (btn?.getAttribute('aria-label') || ''),
+        hasIcon: !!(btn && btn.querySelector('.omt-icon'))
+      };
+    });
+    results.push({
+      name: 'timeline-fullscreen-button',
+      pass: fsBtnUi.inTimeline && fsBtnUi.notInPanel && fsBtnUi.noTip && /fullscreen/i.test(fsBtnUi.aria) && fsBtnUi.hasIcon,
+      detail: fsBtnUi
+    });
+    await page.evaluate(() => {
+      const panel = document.getElementById('controls-panel');
+      const bar = document.getElementById('omt-timeline-bar');
+      [panel, bar].forEach((el) => {
+        if (!el) return;
+        el.style.opacity = '1';
+        el.style.pointerEvents = 'auto';
+      });
+    });
+    await page.waitForTimeout(60);
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v201_timeline_fullscreen_btn.png'), fullPage: true });
+
     // Click-to-toggle on video surface (not controls)
     await page.evaluate(() => {
       const panel = document.getElementById('controls-panel');
@@ -2704,6 +2734,104 @@ async function run() {
     }
     await page.screenshot({ path: path.join(ARTIFACTS, 'inplayip_hide_tooltip.png'), fullPage: true });
 
+    // ---------- Video surface visibility (InPlay curtain / collapsed player) ----------
+    await page.goto(`${base}/inplayip-curtain-mock.html`, { waitUntil: 'domcontentloaded' });
+    await waitForOmt(page, 15000);
+    await page.waitForTimeout(120);
+    const curtainClosed = await page.evaluate(() => {
+      const root = document.getElementById('omt-root');
+      const v = document.querySelector('video');
+      const r = v?.getBoundingClientRect();
+      return {
+        obscured: !!root?.classList.contains('omt-video-obscured'),
+        attr: root?.getAttribute('data-omt-video-visible') || '',
+        vh: r ? Math.round(r.height) : -1,
+        rootVis: root ? getComputedStyle(root).visibility : null
+      };
+    });
+    results.push({
+      name: 'video-visibility-curtain-hidden',
+      pass: curtainClosed.obscured === true && curtainClosed.attr === '0' && curtainClosed.vh < 24,
+      detail: curtainClosed
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v201_overlay_hidden_curtain.png'), fullPage: true });
+    await page.click('#toggle-curtain');
+    await page.waitForTimeout(250);
+    const curtainOpen = await page.evaluate(() => {
+      const root = document.getElementById('omt-root');
+      const v = document.querySelector('video');
+      const r = v?.getBoundingClientRect();
+      return {
+        obscured: !!root?.classList.contains('omt-video-obscured'),
+        attr: root?.getAttribute('data-omt-video-visible') || '',
+        vh: r ? Math.round(r.height) : -1,
+        rootVis: root ? getComputedStyle(root).visibility : null
+      };
+    });
+    results.push({
+      name: 'video-visibility-curtain-visible',
+      pass: curtainOpen.obscured === false && curtainOpen.attr === '1' && curtainOpen.vh >= 24 && curtainOpen.rootVis !== 'hidden',
+      detail: curtainOpen
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v201_overlay_visible_curtain.png'), fullPage: true });
+
+    // ---------- Host CSS isolation (html font-size 10px + aggressive resets) ----------
+    await page.goto(`${base}/inplayip-css-leak-mock.html`, { waitUntil: 'domcontentloaded' });
+    await waitForOmt(page, 15000);
+    await page.evaluate(() => {
+      const panel = document.getElementById('controls-panel');
+      const bar = document.getElementById('omt-timeline-bar');
+      [panel, bar].forEach((el) => {
+        if (!el) return;
+        el.style.opacity = '1';
+        el.style.pointerEvents = 'auto';
+      });
+    });
+    await page.waitForTimeout(100);
+    // "Before" reference: measure a naked host button under the leak styles
+    const cssLeak = await page.evaluate(() => {
+      const probe = document.createElement('button');
+      probe.textContent = 'Host';
+      probe.id = 'omt-host-probe';
+      document.body.appendChild(probe);
+      const hostFs = parseFloat(getComputedStyle(probe).fontSize) || 0;
+      probe.remove();
+      const root = document.getElementById('omt-root');
+      const label = root?.querySelector('.omt-btn-label');
+      const time = root?.querySelector('.omt-time-text');
+      const rootFs = root ? parseFloat(getComputedStyle(root).fontSize) || 0 : 0;
+      const labelFs = label ? parseFloat(getComputedStyle(label).fontSize) || 0 : 0;
+      const timeFs = time ? parseFloat(getComputedStyle(time).fontSize) || 0 : 0;
+      const box = label ? label.getBoundingClientRect() : null;
+      return {
+        hostFs,
+        rootFs,
+        labelFs,
+        timeFs,
+        labelW: box ? Math.round(box.width) : 0,
+        htmlFs: parseFloat(getComputedStyle(document.documentElement).fontSize) || 0
+      };
+    });
+    results.push({
+      name: 'overlay-css-isolation-from-host',
+      pass: cssLeak.htmlFs <= 10.5
+        && cssLeak.hostFs < 12
+        && cssLeak.rootFs >= 15.5
+        && cssLeak.labelFs >= 10.5 && cssLeak.labelFs <= 12.5
+        && cssLeak.timeFs >= 10.5 && cssLeak.timeFs <= 12.5,
+      detail: cssLeak
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v201_overlay_css_isolation_after.png'), fullPage: true });
+    // Synthetic "before" shot: show host probe vs overlay metrics as caption page
+    await page.evaluate((m) => {
+      const el = document.getElementById('status');
+      if (el) {
+        el.textContent = 'Host html font-size=' + m.htmlFs + 'px; host button≈' + m.hostFs.toFixed(1)
+          + 'px; overlay root=' + m.rootFs + 'px label=' + m.labelFs + 'px (isolated)';
+      }
+    }, cssLeak);
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v201_overlay_css_isolation_compare.png'), fullPage: true });
+
     // Toolbar popup (logo above wordmark only)
     const extUrlRe = /chrome-extension:\/\/([^/]+)/;
     let extId = null;
@@ -2769,6 +2897,11 @@ async function run() {
           hasOpenLocal: !!document.getElementById('omt-open-local-player'),
           openLocalLabel: (document.getElementById('omt-open-local-player')?.textContent || '').trim(),
           logoSrc: document.querySelector('.omt-sp-logo')?.getAttribute('src') || '',
+          logoNoTitle: (() => {
+            const wrap = document.querySelector('.omt-brand-logo-wrap');
+            const t = (wrap?.getAttribute('title') || '').trim();
+            return !!wrap && t === '';
+          })(),
           logoUncropped: (() => {
             const logo = document.querySelector('.omt-sp-logo');
             if (!logo) return false;
@@ -2872,6 +3005,7 @@ async function run() {
           popupOk.hasCustomize && popupOk.noSoonBanner && popupOk.noShuttleToggleInPopup &&
           popupOk.noSwap && popupOk.noCredit && popupOk.noPersonalizar &&
           popupOk.footOk && popupOk.keyCaps && popupOk.logoUncropped &&
+          popupOk.logoNoTitle === true &&
           popupOk.hasAutoPause && popupOk.autoPauseDefaultOff &&
           popupOk.hasOpenLocal && popupOk.openLocalLabel === 'Open local player' &&
           /stats-perform-logo-dark\.png/i.test(popupOk.logoSrc || '') &&
@@ -2882,6 +3016,18 @@ async function run() {
           popupOk.toggleKnob.ok === true,
         detail: popupOk
       });
+      const logoBox = await popupPage.locator('.omt-brand-logo-wrap').boundingBox();
+      if (logoBox) {
+        await popupPage.screenshot({
+          path: path.join(ARTIFACTS, 'v201_popup_logo_no_tooltip.png'),
+          clip: {
+            x: Math.max(0, logoBox.x - 8),
+            y: Math.max(0, logoBox.y - 8),
+            width: Math.min(logoBox.width + 16, 320),
+            height: Math.min(logoBox.height + 40, 120)
+          }
+        });
+      }
       results.push({
         name: 'popup-shuttle-general-diagram-only',
         pass: popupOk.generalDiagram.ok === true && popupOk.noGeneralShuttleList === true,

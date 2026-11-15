@@ -21,6 +21,8 @@
 
         updateCompactLayout();
         ensureFullscreenHook();
+        updateFullscreenButton();
+        if (typeof installVideoVisibilityGuard === 'function') installVideoVisibilityGuard();
     }
 
     function updateCompactLayout() {
@@ -32,12 +34,23 @@
         omtRoot.classList.toggle('omt-compact', compact);
     }
 
+    function updateFullscreenButton() {
+        const btn = q('omt-btn-fullscreen');
+        if (!btn) return;
+        const on = !!document.fullscreenElement;
+        btn.innerHTML = omtIcon(on ? 'minimize' : 'maximize', 16);
+        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+        btn.setAttribute('aria-label', on ? 'Exit fullscreen' : 'Enter fullscreen');
+        btn.classList.toggle('is-fullscreen', on);
+    }
+
     function ensureFullscreenHook() {
         if (fullscreenHooked) return;
         fullscreenHooked = true;
         document.addEventListener('fullscreenchange', () => {
             if (!vid || !omtRoot) return;
             updateCompactLayout();
+            updateFullscreenButton();
             const fs = document.fullscreenElement;
             if (fs && fs.contains(vid) && !fs.contains(omtRoot)) {
                 fs.appendChild(omtRoot);
@@ -48,6 +61,9 @@
                 if (anchor && omtRoot.parentElement !== anchor) {
                     anchor.appendChild(omtRoot);
                 }
+            }
+            if (typeof omtApplyVideoSurfaceVisibility === 'function') {
+                try { omtApplyVideoSurfaceVisibility(); } catch (_) {}
             }
         });
         window.addEventListener('resize', () => updateCompactLayout());
@@ -95,6 +111,7 @@
         <span id="omt-v-time-current" class="omt-time-text omt-tip"${tip('Current video time')}>00:00:00</span>
         <span class="omt-time-sep" aria-hidden="true">/</span>
         <span id="omt-v-time-duration" class="omt-time-text omt-tip"${tip('Duration / live edge')}>00:00:00</span>
+        <button type="button" class="omt-timeline-fs-btn" id="omt-btn-fullscreen" aria-label="Enter fullscreen" aria-pressed="false">${omtIcon('maximize', 16)}</button>
     </div>
 </div>
 
@@ -130,7 +147,6 @@
             <span class="omt-live-spacer" aria-hidden="true"></span>
             <button class="handle-btn omt-tip" id="omt-volume-icon-btn" type="button"${tip('Mute / Unmute')}>${omtIcon('volume-2', 16)}</button>
             <input type="range" id="omt-volume-range" class="omt-tip" min="0" max="1" step="0.05" value="1"${tip('Volume')}>
-            <button class="handle-btn omt-tip" id="omt-btn-fullscreen" type="button"${tip('Fullscreen')}>${omtIcon('maximize', 16)}</button>
         </div>
     </div>
 
