@@ -2786,8 +2786,11 @@ async function run() {
         el.style.opacity = '1';
         el.style.pointerEvents = 'auto';
       });
+      const more = document.getElementById('omt-more-toggle');
+      const morePanel = document.getElementById('omt-more-panel');
+      if (more && morePanel && !morePanel.classList.contains('is-open')) more.click();
     });
-    await page.waitForTimeout(100);
+    await page.waitForTimeout(120);
     // "Before" reference: measure a naked host button under the leak styles
     const cssLeak = await page.evaluate(() => {
       const probe = document.createElement('button');
@@ -2795,6 +2798,7 @@ async function run() {
       probe.id = 'omt-host-probe';
       document.body.appendChild(probe);
       const hostFs = parseFloat(getComputedStyle(probe).fontSize) || 0;
+      const hostBg = getComputedStyle(probe).backgroundColor;
       probe.remove();
       const root = document.getElementById('omt-root');
       const label = root?.querySelector('.omt-btn-label');
@@ -2803,13 +2807,30 @@ async function run() {
       const labelFs = label ? parseFloat(getComputedStyle(label).fontSize) || 0 : 0;
       const timeFs = time ? parseFloat(getComputedStyle(time).fontSize) || 0 : 0;
       const box = label ? label.getBoundingClientRect() : null;
+      const kick = document.getElementById('omt-btn-set-kickoff');
+      const kickCs = kick ? getComputedStyle(kick) : null;
+      const speed = root?.querySelector('.omt-speed-chip.is-active');
+      const speedCs = speed ? getComputedStyle(speed) : null;
+      const play = document.getElementById('omt-btn-play');
+      if (play && !play.classList.contains('playing')) play.classList.add('playing');
+      const playCs = play ? getComputedStyle(play) : null;
+      const isOrangeBg = (c) => /245,\s*131,\s*31/.test(c || '') || /rgb\(245,\s*131,\s*31\)/.test(c || '');
+      const isOrangeFg = (c) => /245,\s*131,\s*31/.test(c || '');
       return {
         hostFs,
+        hostBg,
         rootFs,
         labelFs,
         timeFs,
         labelW: box ? Math.round(box.width) : 0,
-        htmlFs: parseFloat(getComputedStyle(document.documentElement).fontSize) || 0
+        htmlFs: parseFloat(getComputedStyle(document.documentElement).fontSize) || 0,
+        kickBg: kickCs?.backgroundColor || '',
+        kickColor: kickCs?.color || '',
+        kickFilter: kickCs?.filter || '',
+        kickOpacity: kickCs?.opacity || '',
+        kickOrange: !!(kickCs && isOrangeBg(kickCs.backgroundColor) && !/grayscale/.test(kickCs.filter || '')),
+        speedOrange: !!(speedCs && isOrangeFg(speedCs.color)),
+        playOrange: !!(playCs && isOrangeFg(playCs.color))
       };
     });
     results.push({
@@ -2821,7 +2842,35 @@ async function run() {
         && cssLeak.timeFs >= 10.5 && cssLeak.timeFs <= 12.5,
       detail: cssLeak
     });
+    results.push({
+      name: 'overlay-accent-colors-survive-host-button-css',
+      pass: cssLeak.kickOrange === true
+        && cssLeak.speedOrange === true
+        && cssLeak.playOrange === true
+        && cssLeak.kickOpacity === '1',
+      detail: {
+        kickBg: cssLeak.kickBg,
+        kickColor: cssLeak.kickColor,
+        kickFilter: cssLeak.kickFilter,
+        kickOpacity: cssLeak.kickOpacity,
+        speedOrange: cssLeak.speedOrange,
+        playOrange: cssLeak.playOrange,
+        hostBg: cssLeak.hostBg
+      }
+    });
     await page.screenshot({ path: path.join(ARTIFACTS, 'v201_overlay_css_isolation_after.png'), fullPage: true });
+    const kickBox = await page.locator('#omt-btn-set-kickoff').boundingBox();
+    if (kickBox) {
+      await page.screenshot({
+        path: path.join(ARTIFACTS, 'v201_kickoff_accent_after.png'),
+        clip: {
+          x: Math.max(0, kickBox.x - 12),
+          y: Math.max(0, kickBox.y - 12),
+          width: Math.min(kickBox.width + 24, 400),
+          height: Math.min(kickBox.height + 24, 80)
+        }
+      });
+    }
     // Synthetic "before" shot: show host probe vs overlay metrics as caption page
     await page.evaluate((m) => {
       const el = document.getElementById('status');

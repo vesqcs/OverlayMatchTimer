@@ -152,6 +152,77 @@
     font-size: 11px !important;
     line-height: 1.25 !important;
 }
+/* Beat host button grey / grayscale / :not(:active) resets (InPlay). */
+#omt-root button,
+#omt-root .ctrl-btn,
+#omt-root .handle-btn,
+#omt-root .omt-speed-chip,
+#omt-root .omt-timeline-fs-btn,
+#omt-root .omt-more-toggle,
+#omt-root .omt-offset-btn,
+#omt-root .btn-sync,
+#omt-root .btn-clear-timer,
+#omt-root #omt-live-btn {
+    filter: none !important;
+    opacity: 1 !important;
+    -webkit-filter: none !important;
+}
+#omt-root .btn-sync,
+#omt-root #omt-btn-set-kickoff,
+#omt-root #omt-kickoff-bar .btn-sync,
+#omt-root #omt-kickoff-bar .btn-sync.kickoff-set {
+    background: #F5831F !important;
+    background-color: #F5831F !important;
+    background-image: none !important;
+    color: #111 !important;
+    border: none !important;
+    filter: none !important;
+    opacity: 1 !important;
+}
+#omt-root .btn-sync:hover,
+#omt-root #omt-btn-set-kickoff:hover,
+#omt-root #omt-kickoff-bar .btn-sync:hover {
+    filter: brightness(1.05) !important;
+    background: #F5831F !important;
+    background-color: #F5831F !important;
+    color: #111 !important;
+}
+#omt-root .omt-speed-chip.is-active,
+#omt-root .omt-speed-chip.is-active:hover {
+    background: transparent !important;
+    background-color: transparent !important;
+    color: #F5831F !important;
+    filter: none !important;
+}
+#omt-root .omt-transport-seg .ctrl-btn.btn-play.playing,
+#omt-root .omt-transport-seg .ctrl-btn.btn-play.playing:hover {
+    color: #F5831F !important;
+    filter: none !important;
+    background: transparent !important;
+    background-color: transparent !important;
+}
+#omt-root .omt-transport-seg .ctrl-btn.btn-play.playing:hover {
+    background: rgba(245, 131, 31, 0.12) !important;
+    background-color: rgba(245, 131, 31, 0.12) !important;
+}
+#omt-root #omt-live-btn {
+    background: transparent !important;
+    background-color: transparent !important;
+    color: #cfcfcf !important;
+    border: 1px solid rgba(255, 255, 255, 0.28) !important;
+    filter: none !important;
+}
+#omt-root #omt-live-btn.is-live {
+    background: rgba(224, 32, 27, 0.18) !important;
+    background-color: rgba(224, 32, 27, 0.18) !important;
+    color: #fff !important;
+    border-color: rgba(224, 32, 27, 0.7) !important;
+}
+#omt-root #omt-live-btn.is-live .live-dot {
+    background: #e0201b !important;
+    background-color: #e0201b !important;
+    filter: none !important;
+}
 #omt-root.omt-video-obscured {
     visibility: hidden !important;
     pointer-events: none !important;
