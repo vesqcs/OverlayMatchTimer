@@ -71,7 +71,8 @@
     // Cached UI element refs (populated after injection)
     let timerUI, osd, setupPanel, controlsPanel, timelineSlider,
         vTimeCurrent, vTimeDuration, liveBtn, btnMainPlay, speedSelect,
-        volumeRange, volumeIconBtn, shuttleToggle, shuttleCheatsheet;
+        volumeRange, volumeIconBtn, timelineVolRange, timelineVolBtn,
+        shuttleToggle, shuttleCheatsheet;
     // Timeline right-side live delay / LIVE chip (hysteresis latch)
     let omtTimelineLiveChipOn = false;
     // Easy to tune: enter LIVE chip when delay <= enter; leave only when delay > leave.
@@ -426,6 +427,8 @@
         speedSelect = null;
         volumeRange = null;
         volumeIconBtn = null;
+        timelineVolRange = null;
+        timelineVolBtn = null;
 
         // --- TOTAL LIFECYCLE RESET (Bug 1 fix) ---
         // Every SPA navigation must begin with a completely clean slate so that
@@ -894,7 +897,7 @@
     <button id="omt-jump-kc2" type="button" style="display:none;"></button>
 </div>
 
-<!-- Timeline alone: full-width thin bar at the very bottom of the video -->
+<!-- Timeline: full-width scrubber on top; chrome row (time left / fullscreen right) below. -->
 <div id="omt-timeline-bar" class="omt-timeline-bar">
     <div class="omt-timeline-track">
         <div id="omt-timeline-period-ticks" class="omt-timeline-period-ticks" aria-hidden="true"></div>
@@ -902,15 +905,22 @@
         <div id="omt-timeline-markers" aria-hidden="true"></div>
     </div>
     <div id="omt-timeline-hover-tip" class="omt-timeline-hover-tip" hidden></div>
-    <div class="omt-timeline-times" data-omt-time-mode="post">
-        <button type="button" id="omt-timeline-live-indicator" class="omt-timeline-live-indicator" hidden aria-label="Go to live">
-            <span id="omt-timeline-live-delay" class="omt-timeline-live-delay">-0 s</span>
-            <span id="omt-timeline-live-chip" class="omt-timeline-live-chip" hidden>LIVE</span>
-        </button>
-        <div id="omt-timeline-post-times" class="omt-timeline-post-times">
-            <span id="omt-v-time-current" class="omt-time-text">0:00:00</span>
-            <span class="omt-time-sep" aria-hidden="true">/</span>
-            <span id="omt-v-time-duration" class="omt-time-text">0:00:00</span>
+    <div class="omt-timeline-chrome-row">
+        <div class="omt-timeline-chrome-left">
+            <button type="button" class="omt-timeline-vol-btn" id="omt-timeline-vol-btn" aria-label="Mute">${omtIcon('volume-2', 16)}</button>
+            <input type="range" id="omt-timeline-vol-range" class="omt-timeline-vol-range" min="0" max="1" step="0.05" value="1" aria-label="Volume">
+            <div class="omt-timeline-times" data-omt-time-mode="post">
+                <button type="button" id="omt-timeline-live-indicator" class="omt-timeline-live-indicator" hidden aria-label="Go to live">
+                    <span id="omt-timeline-live-delay" class="omt-timeline-live-delay">-0 s</span>
+                    <span id="omt-timeline-live-chip" class="omt-timeline-live-chip" hidden>LIVE</span>
+                </button>
+                <div id="omt-timeline-post-times" class="omt-timeline-post-times">
+                    <span id="omt-v-time-current" class="omt-time-text">0:00</span>
+                    <span class="omt-time-sep" aria-hidden="true">/</span>
+                    <span id="omt-v-time-duration" class="omt-time-text">0:00</span>
+                </div>
+                <span id="omt-timeline-match-clock" class="omt-timeline-match-clock" hidden>00:00</span>
+            </div>
         </div>
         <button type="button" class="omt-timeline-fs-btn" id="omt-btn-fullscreen" aria-label="Enter fullscreen" aria-pressed="false">${omtIcon('maximize', 16)}</button>
     </div>
@@ -1050,6 +1060,8 @@
         speedSelect = q('omt-speed-select');
         volumeRange = q('omt-volume-range');
         volumeIconBtn = q('omt-volume-icon-btn');
+        timelineVolRange = q('omt-timeline-vol-range');
+        timelineVolBtn = q('omt-timeline-vol-btn');
         shuttleToggle = q('omt-shuttle-enable-toggle');
         shuttleCheatsheet = q('omt-shuttle-cheatsheet');
     }
@@ -1459,35 +1471,39 @@
         const liveIndicator = omtRoot.querySelector('#omt-timeline-live-indicator');
         if (liveIndicator) liveIndicator.addEventListener('click', irParaLive);
 
-        // --- Volume ---
+        // --- Volume (panel + timeline chrome row stay in sync) ---
+        const applyVolumeInput = (raw) => {
+            const v = Math.max(0, Math.min(1, parseFloat(raw)));
+            if (!isFinite(v) || !vid) return;
+            vid.volume = v;
+            if (v > 0) vid.muted = false;
+            else vid.muted = true;
+            syncVolumeControlsFromVideo();
+            localStorage.setItem('matchTimerVolume', String(v));
+        };
         const volGuardado = localStorage.getItem('matchTimerVolume');
         if (volGuardado !== null) {
-            vid.volume = parseFloat(volGuardado);
-            volumeRange.value = volGuardado;
-            atualizarIconeVolume(vid.volume);
-            if (vid.volume > 0) {
-                vid.muted = false;
+            const parsed = parseFloat(volGuardado);
+            if (isFinite(parsed)) {
+                vid.volume = parsed;
+                if (parsed > 0) vid.muted = false;
+                else vid.muted = true;
             }
+            syncVolumeControlsFromVideo();
+        } else {
+            syncVolumeControlsFromVideo();
         }
-        volumeRange.addEventListener('input', function () {
-            vid.volume = this.value;
-            if (vid.volume > 0) {
-                vid.muted = false;
-            }
-            atualizarIconeVolume(vid.volume);
-            localStorage.setItem('matchTimerVolume', vid.volume);
-        });
+        volumeRange.addEventListener('input', function () { applyVolumeInput(this.value); });
         volumeRange.addEventListener('change', () => volumeRange.blur());
         volumeIconBtn.addEventListener('click', toggleMute);
+        if (timelineVolRange) {
+            timelineVolRange.addEventListener('input', function () { applyVolumeInput(this.value); });
+            timelineVolRange.addEventListener('change', () => timelineVolRange.blur());
+        }
+        if (timelineVolBtn) timelineVolBtn.addEventListener('click', toggleMute);
 
         vid.addEventListener('volumechange', () => {
-            if (vid.muted || vid.volume === 0) {
-                volumeRange.value = 0;
-                atualizarIconeVolume(0);
-            } else {
-                volumeRange.value = vid.volume;
-                atualizarIconeVolume(vid.volume);
-            }
+            syncVolumeControlsFromVideo();
         });
 
         // --- Timeline slider ---
@@ -1858,8 +1874,15 @@
         return (mediaDuration && isFinite(mediaDuration)) ? mediaDuration : 0;
     }
 
+    /** Kick-off offset set → timeline chrome shows match clock only. */
+    function omtHasKickoffOffset() {
+        return !!(timerAtivo && (
+            kickoff1 !== null || kickoff2 !== null || kickoffC1 !== null || kickoffC2 !== null
+        ));
+    }
+
     /**
-     * Paint the timeline right-side time slot (LIVE delay/chip or POST current/duration).
+     * Paint timeline chrome-row time (left): match clock, LIVE delay/chip, or POST current/duration.
      * Does not read PDT or change seek/hooks — reuses playhead + live-edge already used for LIVE.
      */
     function atualizarTempoTimelineDireito() {
@@ -1869,8 +1892,30 @@
         const liveDelayEl = omtRoot.querySelector('#omt-timeline-live-delay');
         const liveChipEl = omtRoot.querySelector('#omt-timeline-live-chip');
         const postWrap = omtRoot.querySelector('#omt-timeline-post-times');
-        if (!timesWrap || !liveInd || !liveDelayEl || !liveChipEl || !postWrap) return;
+        const matchClockEl = omtRoot.querySelector('#omt-timeline-match-clock');
+        if (!timesWrap || !liveInd || !liveDelayEl || !liveChipEl || !postWrap || !matchClockEl) return;
 
+        const playhead = omtTimelinePlayheadSec();
+        const kickoffOn = omtHasKickoffOffset();
+
+        if (kickoffOn) {
+            timesWrap.dataset.omtTimeMode = 'kickoff';
+            liveInd.hidden = true;
+            postWrap.hidden = true;
+            matchClockEl.hidden = false;
+            omtTimelineLiveChipOn = false;
+            // Same value the on-video match clock shows (reuse mirror helper / live DOM text).
+            let clockText = '';
+            if (typeof matchClockAtVideoTime === 'function') {
+                const info = matchClockAtVideoTime(playhead);
+                clockText = (info && info.clock) ? info.clock : '';
+            }
+            if (!clockText && timerUI && timerUI.innerText) clockText = timerUI.innerText;
+            matchClockEl.textContent = clockText || '00:00';
+            return;
+        }
+
+        matchClockEl.hidden = true;
         const liveMode = omtIsTimelineLiveMode();
         timesWrap.dataset.omtTimeMode = liveMode ? 'live' : 'post';
         liveInd.hidden = !liveMode;
@@ -1878,7 +1923,6 @@
 
         if (!liveMode) {
             omtTimelineLiveChipOn = false;
-            const playhead = omtTimelinePlayheadSec();
             let dur = omtTimelineLiveEdgeSec();
             if (!(dur > 0) && site && typeof site.effectiveDuration === 'function') {
                 const ed = site.effectiveDuration(vid);
@@ -1890,7 +1934,6 @@
         }
 
         const liveEdge = omtTimelineLiveEdgeSec();
-        const playhead = omtTimelinePlayheadSec();
         const delay = liveEdge > 0 ? Math.max(0, liveEdge - playhead) : 0;
 
         // Hysteresis: enter LIVE when delay <= ENTER, leave only when delay > LEAVE.
@@ -2023,6 +2066,7 @@
         inicializarMetadadosTimeline();
         atualizarMarcadores();
         atualizarRelogio();
+        if (typeof atualizarTempoTimelineDireito === 'function') atualizarTempoTimelineDireito();
         esconderSetup();
         const _kickoffBtn = q('omt-btn-set-kickoff');
         if (_kickoffBtn) _kickoffBtn.classList.add('kickoff-set');
@@ -2060,6 +2104,7 @@
 
         inicializarMetadadosTimeline();
         atualizarMarcadores();
+        if (typeof atualizarTempoTimelineDireito === 'function') atualizarTempoTimelineDireito();
         const _kickoffBtnClear = q('omt-btn-set-kickoff');
         if (_kickoffBtnClear) _kickoffBtnClear.classList.remove('kickoff-set');
         if (typeof omtSyncPublishKickoffs === 'function') omtSyncPublishKickoffs();
@@ -2110,6 +2155,7 @@
 
         atualizarMarcadores();
         atualizarRelogio();
+        if (typeof atualizarTempoTimelineDireito === 'function') atualizarTempoTimelineDireito();
         if (typeof omtSyncPublishKickoffs === 'function') omtSyncPublishKickoffs();
         mostrarOSD('Offset ' + (deltaSec > 0 ? '+' : '') + deltaSec + 's');
     }
@@ -2553,7 +2599,7 @@
         if (k1 !== null && t < k1) {
             return {
                 period: '',
-                clock: 'Pre-match'
+                clock: 'Pre-Match'
             };
         }
 
@@ -2970,26 +3016,39 @@
         }
     }
 
+    function syncVolumeControlsFromVideo() {
+        if (!vid) return;
+        const muted = !!(vid.muted || vid.volume === 0);
+        const vol = muted ? 0 : (vid.volume || 0);
+        if (volumeRange) volumeRange.value = vol;
+        if (timelineVolRange) timelineVolRange.value = vol;
+        atualizarIconeVolume(vol);
+    }
+
     function toggleMute() {
         if (vid.volume > 0 && !vid.muted) {
             ultimoVolume = vid.volume;
             vid.volume = 0;
             vid.muted = true;
-            volumeRange.value = 0;
         } else {
             vid.volume = ultimoVolume > 0 ? ultimoVolume : 1;
             vid.muted = false;
-            volumeRange.value = vid.volume;
         }
-        atualizarIconeVolume(vid.volume);
-        localStorage.setItem('matchTimerVolume', vid.volume);
-        volumeIconBtn.blur();
+        syncVolumeControlsFromVideo();
+        localStorage.setItem('matchTimerVolume', vid.muted ? 0 : vid.volume);
+        if (volumeIconBtn) volumeIconBtn.blur();
+        if (timelineVolBtn) timelineVolBtn.blur();
     }
 
     function atualizarIconeVolume(vol) {
-        if (!volumeIconBtn) return;
         const name = vol === 0 ? 'volume-x' : vol < 0.5 ? 'volume-1' : 'volume-2';
-        volumeIconBtn.innerHTML = omtIcon(name, 15);
+        const html = omtIcon(name, 15);
+        if (volumeIconBtn) volumeIconBtn.innerHTML = html;
+        if (timelineVolBtn) {
+            timelineVolBtn.innerHTML = omtIcon(name, 16);
+            timelineVolBtn.setAttribute('aria-label', vol === 0 ? 'Unmute' : 'Mute');
+            timelineVolBtn.setAttribute('aria-pressed', vol === 0 ? 'true' : 'false');
+        }
     }
 
 /* Transient OSD toast messages. */
@@ -3079,7 +3138,7 @@
         const timelineBar = omtRoot.querySelector('#omt-timeline-bar');
         if (timelineBar) {
             trackHover(timelineBar.querySelector('.omt-timeline-track'));
-            trackHover(timelineBar.querySelector('.omt-timeline-times'));
+            trackHover(timelineBar.querySelector('.omt-timeline-chrome-row'));
         }
         if (timerUI) trackHover(timerUI);
     }

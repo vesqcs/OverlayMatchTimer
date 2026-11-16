@@ -96,35 +96,39 @@
         const liveIndicator = omtRoot.querySelector('#omt-timeline-live-indicator');
         if (liveIndicator) liveIndicator.addEventListener('click', irParaLive);
 
-        // --- Volume ---
+        // --- Volume (panel + timeline chrome row stay in sync) ---
+        const applyVolumeInput = (raw) => {
+            const v = Math.max(0, Math.min(1, parseFloat(raw)));
+            if (!isFinite(v) || !vid) return;
+            vid.volume = v;
+            if (v > 0) vid.muted = false;
+            else vid.muted = true;
+            syncVolumeControlsFromVideo();
+            localStorage.setItem('matchTimerVolume', String(v));
+        };
         const volGuardado = localStorage.getItem('matchTimerVolume');
         if (volGuardado !== null) {
-            vid.volume = parseFloat(volGuardado);
-            volumeRange.value = volGuardado;
-            atualizarIconeVolume(vid.volume);
-            if (vid.volume > 0) {
-                vid.muted = false;
+            const parsed = parseFloat(volGuardado);
+            if (isFinite(parsed)) {
+                vid.volume = parsed;
+                if (parsed > 0) vid.muted = false;
+                else vid.muted = true;
             }
+            syncVolumeControlsFromVideo();
+        } else {
+            syncVolumeControlsFromVideo();
         }
-        volumeRange.addEventListener('input', function () {
-            vid.volume = this.value;
-            if (vid.volume > 0) {
-                vid.muted = false;
-            }
-            atualizarIconeVolume(vid.volume);
-            localStorage.setItem('matchTimerVolume', vid.volume);
-        });
+        volumeRange.addEventListener('input', function () { applyVolumeInput(this.value); });
         volumeRange.addEventListener('change', () => volumeRange.blur());
         volumeIconBtn.addEventListener('click', toggleMute);
+        if (timelineVolRange) {
+            timelineVolRange.addEventListener('input', function () { applyVolumeInput(this.value); });
+            timelineVolRange.addEventListener('change', () => timelineVolRange.blur());
+        }
+        if (timelineVolBtn) timelineVolBtn.addEventListener('click', toggleMute);
 
         vid.addEventListener('volumechange', () => {
-            if (vid.muted || vid.volume === 0) {
-                volumeRange.value = 0;
-                atualizarIconeVolume(0);
-            } else {
-                volumeRange.value = vid.volume;
-                atualizarIconeVolume(vid.volume);
-            }
+            syncVolumeControlsFromVideo();
         });
 
         // --- Timeline slider ---

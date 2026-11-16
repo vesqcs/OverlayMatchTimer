@@ -65,6 +65,7 @@
         inicializarMetadadosTimeline();
         atualizarMarcadores();
         atualizarRelogio();
+        if (typeof atualizarTempoTimelineDireito === 'function') atualizarTempoTimelineDireito();
         esconderSetup();
         const _kickoffBtn = q('omt-btn-set-kickoff');
         if (_kickoffBtn) _kickoffBtn.classList.add('kickoff-set');
@@ -102,6 +103,7 @@
 
         inicializarMetadadosTimeline();
         atualizarMarcadores();
+        if (typeof atualizarTempoTimelineDireito === 'function') atualizarTempoTimelineDireito();
         const _kickoffBtnClear = q('omt-btn-set-kickoff');
         if (_kickoffBtnClear) _kickoffBtnClear.classList.remove('kickoff-set');
         if (typeof omtSyncPublishKickoffs === 'function') omtSyncPublishKickoffs();
@@ -152,6 +154,7 @@
 
         atualizarMarcadores();
         atualizarRelogio();
+        if (typeof atualizarTempoTimelineDireito === 'function') atualizarTempoTimelineDireito();
         if (typeof omtSyncPublishKickoffs === 'function') omtSyncPublishKickoffs();
         mostrarOSD('Offset ' + (deltaSec > 0 ? '+' : '') + deltaSec + 's');
     }

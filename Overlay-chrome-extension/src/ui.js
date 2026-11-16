@@ -99,7 +99,7 @@
     <button id="omt-jump-kc2" type="button" style="display:none;"></button>
 </div>
 
-<!-- Timeline alone: full-width thin bar at the very bottom of the video -->
+<!-- Timeline: full-width scrubber on top; chrome row (time left / fullscreen right) below. -->
 <div id="omt-timeline-bar" class="omt-timeline-bar">
     <div class="omt-timeline-track">
         <div id="omt-timeline-period-ticks" class="omt-timeline-period-ticks" aria-hidden="true"></div>
@@ -107,15 +107,22 @@
         <div id="omt-timeline-markers" aria-hidden="true"></div>
     </div>
     <div id="omt-timeline-hover-tip" class="omt-timeline-hover-tip" hidden></div>
-    <div class="omt-timeline-times" data-omt-time-mode="post">
-        <button type="button" id="omt-timeline-live-indicator" class="omt-timeline-live-indicator" hidden aria-label="Go to live">
-            <span id="omt-timeline-live-delay" class="omt-timeline-live-delay">-0 s</span>
-            <span id="omt-timeline-live-chip" class="omt-timeline-live-chip" hidden>LIVE</span>
-        </button>
-        <div id="omt-timeline-post-times" class="omt-timeline-post-times">
-            <span id="omt-v-time-current" class="omt-time-text">0:00:00</span>
-            <span class="omt-time-sep" aria-hidden="true">/</span>
-            <span id="omt-v-time-duration" class="omt-time-text">0:00:00</span>
+    <div class="omt-timeline-chrome-row">
+        <div class="omt-timeline-chrome-left">
+            <button type="button" class="omt-timeline-vol-btn" id="omt-timeline-vol-btn" aria-label="Mute">${omtIcon('volume-2', 16)}</button>
+            <input type="range" id="omt-timeline-vol-range" class="omt-timeline-vol-range" min="0" max="1" step="0.05" value="1" aria-label="Volume">
+            <div class="omt-timeline-times" data-omt-time-mode="post">
+                <button type="button" id="omt-timeline-live-indicator" class="omt-timeline-live-indicator" hidden aria-label="Go to live">
+                    <span id="omt-timeline-live-delay" class="omt-timeline-live-delay">-0 s</span>
+                    <span id="omt-timeline-live-chip" class="omt-timeline-live-chip" hidden>LIVE</span>
+                </button>
+                <div id="omt-timeline-post-times" class="omt-timeline-post-times">
+                    <span id="omt-v-time-current" class="omt-time-text">0:00</span>
+                    <span class="omt-time-sep" aria-hidden="true">/</span>
+                    <span id="omt-v-time-duration" class="omt-time-text">0:00</span>
+                </div>
+                <span id="omt-timeline-match-clock" class="omt-timeline-match-clock" hidden>00:00</span>
+            </div>
         </div>
         <button type="button" class="omt-timeline-fs-btn" id="omt-btn-fullscreen" aria-label="Enter fullscreen" aria-pressed="false">${omtIcon('maximize', 16)}</button>
     </div>
@@ -255,6 +262,8 @@
         speedSelect = q('omt-speed-select');
         volumeRange = q('omt-volume-range');
         volumeIconBtn = q('omt-volume-icon-btn');
+        timelineVolRange = q('omt-timeline-vol-range');
+        timelineVolBtn = q('omt-timeline-vol-btn');
         shuttleToggle = q('omt-shuttle-enable-toggle');
         shuttleCheatsheet = q('omt-shuttle-cheatsheet');
     }

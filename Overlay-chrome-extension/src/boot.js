@@ -77,6 +77,8 @@
         speedSelect = null;
         volumeRange = null;
         volumeIconBtn = null;
+        timelineVolRange = null;
+        timelineVolBtn = null;
 
         // --- TOTAL LIFECYCLE RESET (Bug 1 fix) ---
         // Every SPA navigation must begin with a completely clean slate so that

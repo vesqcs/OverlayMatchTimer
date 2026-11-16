@@ -57,7 +57,8 @@
     // Cached UI element refs (populated after injection)
     let timerUI, osd, setupPanel, controlsPanel, timelineSlider,
         vTimeCurrent, vTimeDuration, liveBtn, btnMainPlay, speedSelect,
-        volumeRange, volumeIconBtn, shuttleToggle, shuttleCheatsheet;
+        volumeRange, volumeIconBtn, timelineVolRange, timelineVolBtn,
+        shuttleToggle, shuttleCheatsheet;
     // Timeline right-side live delay / LIVE chip (hysteresis latch)
     let omtTimelineLiveChipOn = false;
     // Easy to tune: enter LIVE chip when delay <= enter; leave only when delay > leave.

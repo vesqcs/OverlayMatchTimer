@@ -138,8 +138,15 @@
         return (mediaDuration && isFinite(mediaDuration)) ? mediaDuration : 0;
     }
 
+    /** Kick-off offset set → timeline chrome shows match clock only. */
+    function omtHasKickoffOffset() {
+        return !!(timerAtivo && (
+            kickoff1 !== null || kickoff2 !== null || kickoffC1 !== null || kickoffC2 !== null
+        ));
+    }
+
     /**
-     * Paint the timeline right-side time slot (LIVE delay/chip or POST current/duration).
+     * Paint timeline chrome-row time (left): match clock, LIVE delay/chip, or POST current/duration.
      * Does not read PDT or change seek/hooks — reuses playhead + live-edge already used for LIVE.
      */
     function atualizarTempoTimelineDireito() {
@@ -149,8 +156,30 @@
         const liveDelayEl = omtRoot.querySelector('#omt-timeline-live-delay');
         const liveChipEl = omtRoot.querySelector('#omt-timeline-live-chip');
         const postWrap = omtRoot.querySelector('#omt-timeline-post-times');
-        if (!timesWrap || !liveInd || !liveDelayEl || !liveChipEl || !postWrap) return;
+        const matchClockEl = omtRoot.querySelector('#omt-timeline-match-clock');
+        if (!timesWrap || !liveInd || !liveDelayEl || !liveChipEl || !postWrap || !matchClockEl) return;
 
+        const playhead = omtTimelinePlayheadSec();
+        const kickoffOn = omtHasKickoffOffset();
+
+        if (kickoffOn) {
+            timesWrap.dataset.omtTimeMode = 'kickoff';
+            liveInd.hidden = true;
+            postWrap.hidden = true;
+            matchClockEl.hidden = false;
+            omtTimelineLiveChipOn = false;
+            // Same value the on-video match clock shows (reuse mirror helper / live DOM text).
+            let clockText = '';
+            if (typeof matchClockAtVideoTime === 'function') {
+                const info = matchClockAtVideoTime(playhead);
+                clockText = (info && info.clock) ? info.clock : '';
+            }
+            if (!clockText && timerUI && timerUI.innerText) clockText = timerUI.innerText;
+            matchClockEl.textContent = clockText || '00:00';
+            return;
+        }
+
+        matchClockEl.hidden = true;
         const liveMode = omtIsTimelineLiveMode();
         timesWrap.dataset.omtTimeMode = liveMode ? 'live' : 'post';
         liveInd.hidden = !liveMode;
@@ -158,7 +187,6 @@
 
         if (!liveMode) {
             omtTimelineLiveChipOn = false;
-            const playhead = omtTimelinePlayheadSec();
             let dur = omtTimelineLiveEdgeSec();
             if (!(dur > 0) && site && typeof site.effectiveDuration === 'function') {
                 const ed = site.effectiveDuration(vid);
@@ -170,7 +198,6 @@
         }
 
         const liveEdge = omtTimelineLiveEdgeSec();
-        const playhead = omtTimelinePlayheadSec();
         const delay = liveEdge > 0 ? Math.max(0, liveEdge - playhead) : 0;
 
         // Hysteresis: enter LIVE when delay <= ENTER, leave only when delay > LEAVE.

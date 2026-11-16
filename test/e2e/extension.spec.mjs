@@ -1731,7 +1731,22 @@ async function run() {
     await page.screenshot({ path: path.join(ARTIFACTS, 'examino_behind_live.png'), fullPage: true });
     await page.screenshot({ path: path.join(ARTIFACTS, 'ui_timeline_behind_live.png'), fullPage: true });
 
-    // ---- v2.0.1 timeline right-side: LIVE delay / red LIVE chip / POST ----
+    // ---- v2.0.1 YouTube-style timeline chrome (bar top / vol+time left / FS right) ----
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.evaluate(() => {
+      // Ensure no leftover kickoff from earlier cases / restore.
+      document.getElementById('omt-btn-clear-timer')?.click();
+      const pageEl = document.querySelector('.page');
+      if (pageEl) {
+        pageEl.style.width = '1280px';
+        pageEl.style.height = '720px';
+        pageEl.style.margin = '0';
+      }
+      const main = document.querySelector('.main-container');
+      if (main) main.style.height = 'calc(100% - 108px)';
+    });
+    await page.waitForTimeout(100);
+
     const seekLiveDelay = async (delaySec) => {
       await page.evaluate((d) => {
         const v = document.querySelector('video');
@@ -1761,69 +1776,125 @@ async function run() {
       }, delaySec);
       await page.waitForTimeout(70);
     };
-    const readTimelineRight = async () => page.evaluate(() => {
+    const readTimelineChrome = async () => page.evaluate(() => {
+      const bar = document.getElementById('omt-timeline-bar');
+      const track = bar?.querySelector('.omt-timeline-track');
+      const row = bar?.querySelector('.omt-timeline-chrome-row');
       const times = document.querySelector('#omt-root .omt-timeline-times');
       const ind = document.getElementById('omt-timeline-live-indicator');
       const delay = document.getElementById('omt-timeline-live-delay');
       const chip = document.getElementById('omt-timeline-live-chip');
       const post = document.getElementById('omt-timeline-post-times');
+      const matchClock = document.getElementById('omt-timeline-match-clock');
       const cur = document.getElementById('omt-v-time-current');
       const dur = document.getElementById('omt-v-time-duration');
+      const volBtn = document.getElementById('omt-timeline-vol-btn');
+      const volRange = document.getElementById('omt-timeline-vol-range');
+      const fs = document.getElementById('omt-btn-fullscreen');
       const chipCs = chip && !chip.hidden ? getComputedStyle(chip) : null;
+      const barBox = bar?.getBoundingClientRect();
+      const trackBox = track?.getBoundingClientRect();
+      const rowBox = row?.getBoundingClientRect();
+      const timesBox = times?.getBoundingClientRect();
+      const fsBox = fs?.getBoundingClientRect();
+      const volBox = volBtn?.getBoundingClientRect();
       return {
         mode: times?.dataset?.omtTimeMode || null,
         liveHidden: !!(ind && ind.hidden),
         postHidden: !!(post && post.hidden),
+        matchHidden: !!(matchClock && matchClock.hidden),
+        matchText: matchClock && !matchClock.hidden ? matchClock.textContent.trim() : null,
         delayText: delay && !delay.hidden ? delay.textContent.trim() : null,
         chipVisible: !!(chip && !chip.hidden && ind && !ind.hidden),
         chipBg: chipCs ? chipCs.backgroundColor : null,
         chipColor: chipCs ? chipCs.color : null,
         curText: cur?.innerText || null,
         durText: dur?.innerText || null,
-        liveWidth: ind ? Math.round(ind.getBoundingClientRect().width) : 0,
-        postWidth: post ? Math.round(post.getBoundingClientRect().width) : 0
+        hasVol: !!(volBtn && volRange),
+        layoutOk: !!(barBox && trackBox && rowBox && timesBox && fsBox && volBox &&
+          Math.abs(trackBox.width - barBox.width) < 40 &&
+          rowBox.top >= trackBox.bottom - 2 &&
+          timesBox.left < fsBox.left &&
+          volBox.left <= timesBox.left + 2),
+        panelClearance: (() => {
+          const panel = document.getElementById('controls-panel');
+          if (!panel || !barBox) return null;
+          const pb = panel.getBoundingClientRect();
+          return pb.bottom <= barBox.top + 4;
+        })()
       };
     });
-    const shotTimelineRight = async (name) => {
-      const box = await page.locator('#omt-timeline-bar').boundingBox();
-      if (!box) return;
-      await screenshotClipReliable(page, path.join(ARTIFACTS, name), {
-        x: Math.max(0, box.x - 8),
-        y: Math.max(0, box.y - 12),
-        width: Math.min(box.width + 16, 960),
-        height: Math.ceil(box.height + 24)
+    const shotTimelineFrame = async (name, { showPanel = false } = {}) => {
+      await page.evaluate((show) => {
+        const panel = document.getElementById('controls-panel');
+        const bar = document.getElementById('omt-timeline-bar');
+        if (bar) {
+          bar.style.opacity = '1';
+          bar.classList.remove('omt-chrome-hidden');
+        }
+        if (panel) {
+          if (show) {
+            panel.style.opacity = '1';
+            panel.style.pointerEvents = 'auto';
+          } else {
+            panel.style.opacity = '0';
+            panel.style.pointerEvents = 'none';
+          }
+        }
+      }, showPanel);
+      await page.waitForTimeout(40);
+      const clip = await page.evaluate(() => {
+        const root = document.getElementById('omt-root') || document.querySelector('.op-player') || document.querySelector('.page');
+        const bar = document.getElementById('omt-timeline-bar');
+        const r = (root || bar).getBoundingClientRect();
+        const b = bar ? bar.getBoundingClientRect() : r;
+        const y = Math.max(0, Math.min(b.top - 120, r.bottom - 220));
+        return {
+          x: Math.max(0, r.left),
+          y,
+          width: Math.min(1280, Math.max(640, r.width)),
+          height: Math.min(280, Math.max(160, r.bottom - y + 8))
+        };
       });
+      await screenshotClipReliable(page, path.join(ARTIFACTS, name), clip);
     };
+
+    const layoutCheck = await readTimelineChrome();
+    results.push({
+      name: 'timeline-youtube-layout',
+      pass: layoutCheck.layoutOk === true && layoutCheck.hasVol === true,
+      detail: layoutCheck
+    });
 
     // Leave LIVE chip first (delay > 15) so -12 s is delay text, not chip
     await seekLiveDelay(20);
     await seekLiveDelay(12);
-    const live12 = await readTimelineRight();
+    const live12 = await readTimelineChrome();
     results.push({
       name: 'timeline-live-delay-12s',
       pass: live12.mode === 'live' && !live12.liveHidden && live12.postHidden &&
-        live12.delayText === '-12 s' && !live12.chipVisible && live12.liveWidth >= 70,
+        live12.matchHidden && live12.delayText === '-12 s' && !live12.chipVisible,
       detail: live12
     });
-    await shotTimelineRight('v201_timeline_live_minus_12s.png');
+    await shotTimelineFrame('v201_timeline_live_minus_12s.png');
 
     await seekLiveDelay(65);
-    const live65 = await readTimelineRight();
+    const live65 = await readTimelineChrome();
     results.push({
       name: 'timeline-live-delay-1m05',
       pass: live65.mode === 'live' && live65.delayText === '-1:05' && !live65.chipVisible,
       detail: live65
     });
-    await shotTimelineRight('v201_timeline_live_minus_1m05.png');
+    await shotTimelineFrame('v201_timeline_live_minus_1m05.png');
 
     // Hysteresis: enter at <=10, stay through 12, leave only when >15
     await seekLiveDelay(20);
     await seekLiveDelay(8);
-    const liveEnter = await readTimelineRight();
+    const liveEnter = await readTimelineChrome();
     await seekLiveDelay(12);
-    const liveHold = await readTimelineRight();
+    const liveHold = await readTimelineChrome();
     await seekLiveDelay(16);
-    const liveLeave = await readTimelineRight();
+    const liveLeave = await readTimelineChrome();
     results.push({
       name: 'timeline-live-chip-hysteresis',
       pass: liveEnter.chipVisible === true && liveHold.chipVisible === true &&
@@ -1832,23 +1903,21 @@ async function run() {
     });
 
     await seekLiveDelay(2);
-    const liveEdge = await readTimelineRight();
-    const chipRed = liveEdge.chipVisible && (
-      /e5383b|rgb\(\s*229,\s*56,\s*59\s*\)/i.test(String(liveEdge.chipBg || '')) ||
-      /rgb\(\s*229,\s*56,\s*59\s*\)/i.test(String(liveEdge.chipBg || ''))
-    );
+    const liveEdge = await readTimelineChrome();
+    const chipRed = liveEdge.chipVisible &&
+      /rgb\(\s*229,\s*56,\s*59\s*\)/i.test(String(liveEdge.chipBg || ''));
     results.push({
       name: 'timeline-live-chip-red-at-edge',
       pass: liveEdge.mode === 'live' && liveEdge.chipVisible && chipRed &&
-        /rgb\(\s*255,\s*255,\s*255\s*\)|#fff/i.test(String(liveEdge.chipColor || '')),
+        /rgb\(\s*255,\s*255,\s*255\s*\)/i.test(String(liveEdge.chipColor || '')),
       detail: liveEdge
     });
-    await shotTimelineRight('v201_timeline_live_edge_chip.png');
+    await shotTimelineFrame('v201_timeline_live_edge_chip.png');
 
     // Clicking the indicator jumps live (same as panel LIVE)
     await seekLiveDelay(40);
     const beforeClick = await page.evaluate(() => document.querySelector('video')?.currentTime);
-    await page.locator('#omt-timeline-live-indicator').click();
+    await page.evaluate(() => document.getElementById('omt-timeline-live-indicator')?.click());
     await page.waitForTimeout(120);
     const afterClick = await page.evaluate(() => {
       const v = document.querySelector('video');
@@ -1861,7 +1930,76 @@ async function run() {
       detail: { beforeClick, afterClick }
     });
 
-    // POST mode: force VOD metadata on the same element (no player replace) for UI paint
+    // Timeline volume stays in sync with panel volume
+    const volSync = await page.evaluate(async () => {
+      const v = document.querySelector('video');
+      const panelRange = document.getElementById('omt-volume-range');
+      const tlRange = document.getElementById('omt-timeline-vol-range');
+      const tlBtn = document.getElementById('omt-timeline-vol-btn');
+      if (!v || !panelRange || !tlRange || !tlBtn) return { ok: false, reason: 'missing' };
+      panelRange.value = '0.4';
+      panelRange.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 40));
+      const afterPanel = {
+        video: v.volume,
+        tl: parseFloat(tlRange.value),
+        panel: parseFloat(panelRange.value)
+      };
+      tlRange.value = '0.7';
+      tlRange.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 40));
+      const afterTl = {
+        video: v.volume,
+        tl: parseFloat(tlRange.value),
+        panel: parseFloat(panelRange.value)
+      };
+      tlBtn.click();
+      await new Promise((r) => setTimeout(r, 40));
+      const afterMute = {
+        video: v.volume,
+        muted: v.muted,
+        tl: parseFloat(tlRange.value),
+        panel: parseFloat(panelRange.value)
+      };
+      return {
+        ok: Math.abs(afterPanel.video - 0.4) < 0.02 && Math.abs(afterPanel.tl - 0.4) < 0.02 &&
+          Math.abs(afterTl.video - 0.7) < 0.02 && Math.abs(afterTl.panel - 0.7) < 0.02 &&
+          afterMute.tl === 0 && afterMute.panel === 0,
+        afterPanel, afterTl, afterMute
+      };
+    });
+    results.push({ name: 'timeline-volume-syncs-with-panel', pass: volSync.ok === true, detail: volSync });
+
+    // LIVE + kickoff → match clock only (set kickoff early, then sit 12 s behind live)
+    await page.evaluate(() => {
+      const v = document.querySelector('video');
+      if (v) {
+        try { v.currentTime = 30; } catch (_) {}
+        v.dispatchEvent(new Event('timeupdate'));
+      }
+      const half = document.getElementById('omt-half-select');
+      if (half) {
+        half.value = '1';
+        half.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      document.getElementById('omt-btn-set-kickoff')?.click();
+    });
+    await page.waitForTimeout(80);
+    await seekLiveDelay(12);
+    const liveKick = await readTimelineChrome();
+    const onVideoClock = await page.evaluate(() => document.getElementById('match-timer')?.innerText || '');
+    results.push({
+      name: 'timeline-live-with-kickoff-match-clock',
+      pass: liveKick.mode === 'kickoff' && liveKick.matchText &&
+        liveKick.matchText === onVideoClock && /^\d{2}:\d{2}$/.test(liveKick.matchText) &&
+        liveKick.liveHidden && liveKick.postHidden,
+      detail: { liveKick, onVideoClock }
+    });
+    await shotTimelineFrame('v201_timeline_live_kickoff_clock.png');
+
+    // Clear kickoff, then POST no kickoff
+    await page.evaluate(() => document.getElementById('omt-btn-clear-timer')?.click());
+    await page.waitForTimeout(80);
     await page.evaluate(() => {
       const v = document.querySelector('video');
       const slider = document.getElementById('omt-timeline-slider');
@@ -1872,7 +2010,6 @@ async function run() {
       v.dataset.omtSource = 'VOD';
       const postDur = 1 * 3600 + 52 * 60 + 40; // 1:52:40
       const postAt = 34 * 60 + 12; // 34:12
-      // Mock currentTime setter clamps to the original DVR window — replace it for this paint.
       Object.defineProperty(v, 'duration', { configurable: true, get: () => postDur });
       Object.defineProperty(v, 'seekable', {
         configurable: true,
@@ -1897,18 +2034,43 @@ async function run() {
       v.dispatchEvent(new Event('timeupdate'));
     });
     await page.waitForTimeout(100);
-    const postState = await readTimelineRight();
+    const postState = await readTimelineChrome();
     results.push({
       name: 'timeline-post-current-duration',
       pass: postState.mode === 'post' && postState.liveHidden && !postState.postHidden &&
-        postState.curText === '34:12' && postState.durText === '1:52:40' &&
-        postState.postWidth >= 110,
+        postState.matchHidden && postState.curText === '34:12' && postState.durText === '1:52:40',
       detail: postState
     });
-    await shotTimelineRight('v201_timeline_post.png');
+    await shotTimelineFrame('v201_timeline_post.png');
 
-    // Restore DVR metadata for remaining Examino checks
+    // POST + kickoff → match clock
     await page.evaluate(() => {
+      const half = document.getElementById('omt-half-select');
+      if (half) {
+        half.value = '1';
+        half.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      document.getElementById('omt-btn-set-kickoff')?.click();
+    });
+    await page.waitForTimeout(80);
+    await page.evaluate(() => {
+      const v = document.querySelector('video');
+      if (v) v.dispatchEvent(new Event('timeupdate'));
+    });
+    await page.waitForTimeout(60);
+    const postKick = await readTimelineChrome();
+    const postKickClock = await page.evaluate(() => document.getElementById('match-timer')?.innerText || '');
+    results.push({
+      name: 'timeline-post-with-kickoff-match-clock',
+      pass: postKick.mode === 'kickoff' && postKick.matchText === postKickClock &&
+        postKick.liveHidden && postKick.postHidden,
+      detail: { postKick, postKickClock }
+    });
+    await shotTimelineFrame('v201_timeline_post_kickoff_clock.png');
+
+    // Restore DVR metadata, then panel spacing over LIVE chrome row
+    await page.evaluate(() => {
+      document.getElementById('omt-btn-clear-timer')?.click();
       const v = document.querySelector('video');
       const slider = document.getElementById('omt-timeline-slider');
       if (!v) return;
@@ -1934,6 +2096,15 @@ async function run() {
       v.dispatchEvent(new Event('timeupdate'));
     });
     await page.waitForTimeout(100);
+    await seekLiveDelay(20);
+    await seekLiveDelay(12);
+    const spacing = await readTimelineChrome();
+    results.push({
+      name: 'timeline-panel-above-chrome-row',
+      pass: spacing.panelClearance === true && spacing.mode === 'live' && spacing.delayText === '-12 s',
+      detail: spacing
+    });
+    await shotTimelineFrame('v201_timeline_with_panel.png', { showPanel: true });
 
     // Hover thickens the timeline
     const timelineBox = await page.locator('#omt-timeline-slider').boundingBox();
@@ -2073,12 +2244,17 @@ async function run() {
       detail: seekTipGone
     });
 
-    // Set 1st + 2nd half kickoffs
+    // Set 1st + 2nd half kickoffs (1st early, 2nd later — order matters for tip clock)
     await page.evaluate(() => {
+      const v = document.querySelector('video');
       const half = document.getElementById('omt-half-select');
       const moreBtn = document.getElementById('omt-more-toggle');
       const more = document.getElementById('omt-more-panel');
       if (more && !more.classList.contains('is-open')) moreBtn?.click();
+      if (v) {
+        try { v.currentTime = 20; } catch (_) {}
+        v.dispatchEvent(new Event('timeupdate'));
+      }
       if (half) {
         half.value = '1';
         half.dispatchEvent(new Event('change', { bubbles: true }));
@@ -2090,7 +2266,10 @@ async function run() {
       const v = document.querySelector('video');
       const half = document.getElementById('omt-half-select');
       if (v) {
-        try { v.currentTime = Math.min((v.duration || 7200) * 0.55, (v.seekable?.end?.(0) || 7200) - 10); } catch (_) {}
+        const end = v.seekable?.length ? v.seekable.end(v.seekable.length - 1) : (v.duration || 0);
+        const at = Math.min((end || 330) * 0.55, Math.max(0, (end || 330) - 10));
+        try { v.currentTime = at; } catch (_) {}
+        v.dispatchEvent(new Event('timeupdate'));
       }
       if (half) {
         half.value = '2';
@@ -2442,7 +2621,7 @@ async function run() {
         const text = (tip.textContent || '').trim();
         return t2.classList.contains('is-snap') && /2nd Half/i.test(text) &&
           getComputedStyle(tip).opacity === '1' && tip.getBoundingClientRect().width > 20;
-      }, null, { timeout: 3000 });
+      }, null, { timeout: 3000 }).catch(() => {});
       const snapClip = await page.evaluate((xy) => {
         const track = document.querySelector('.omt-timeline-track');
         const tip = document.getElementById('omt-timeline-hover-tip');

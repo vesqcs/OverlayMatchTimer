@@ -244,7 +244,10 @@
     pointer-events: none;
 }
 #omt-root #omt-timeline-bar .omt-timeline-track,
+#omt-root #omt-timeline-bar .omt-timeline-chrome-row,
 #omt-root #omt-timeline-bar .omt-timeline-times,
+#omt-root #omt-timeline-bar .omt-timeline-vol-btn,
+#omt-root #omt-timeline-bar .omt-timeline-vol-range,
 #omt-root #omt-timeline-bar .omt-timeline-fs-btn {
     pointer-events: auto;
 }
@@ -867,8 +870,8 @@
 
 /* ---- FLOATING CONTROLS PANEL (Option A polished transport) ---- */
 #controls-panel {
-    /* Sit above the full timeline shell (tip pad + track + times + FS button). */
-    bottom: 86px;
+    /* Sit above the YouTube-style shell (tip pad + track + chrome row). */
+    bottom: 100px;
     top: auto;
     left: 50%;
     transform: translateX(-50%);
@@ -952,7 +955,7 @@
     display: none;
 }
 
-/* ---- BOTTOM TIMELINE (alone at video edge) ---- */
+/* ---- BOTTOM TIMELINE (YouTube-style: full-width scrubber + chrome row) ---- */
 .omt-timeline-bar {
     position: absolute;
     left: 0;
@@ -960,10 +963,12 @@
     bottom: 0;
     z-index: 48;
     display: flex;
-    align-items: center;
-    gap: 10px;
-    /* Top: floating tip; bottom: tick labels. Shell is pointer-events:none. */
-    padding: 30px 10px 20px;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-end;
+    gap: 2px;
+    /* Top: floating tip; bottom: slim chrome row. Shell is pointer-events:none. */
+    padding: 28px 12px 6px;
     box-sizing: border-box;
     transition: opacity 0.3s ease;
     background: linear-gradient(to top, rgba(0, 0, 0, 0.55) 0%, rgba(0, 0, 0, 0) 100%);
@@ -971,14 +976,18 @@
     overflow: visible;
 }
 .omt-timeline-bar.omt-chrome-hidden .omt-timeline-track,
+.omt-timeline-bar.omt-chrome-hidden .omt-timeline-chrome-row,
 .omt-timeline-bar.omt-chrome-hidden .omt-timeline-times,
+.omt-timeline-bar.omt-chrome-hidden .omt-timeline-vol-btn,
+.omt-timeline-bar.omt-chrome-hidden .omt-timeline-vol-range,
 .omt-timeline-bar.omt-chrome-hidden .omt-timeline-fs-btn {
     pointer-events: none !important;
 }
 
 .omt-timeline-track {
     position: relative;
-    flex: 1;
+    width: 100%;
+    flex: 0 0 auto;
     display: flex;
     align-items: center;
     height: 16px;
@@ -987,32 +996,58 @@
     overflow: visible;
 }
 
+/* Slim always-with-panel row: volume + time left, fullscreen right. */
+.omt-timeline-chrome-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    min-height: 28px;
+    box-sizing: border-box;
+}
+.omt-timeline-chrome-left {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    flex: 1 1 auto;
+}
 .omt-timeline-times {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    flex-shrink: 0;
+    flex-shrink: 1;
+    min-width: 0;
     font-variant-numeric: tabular-nums;
 }
-/* Fixed-width slots by mode only — bar width does not jitter during playback. */
 #omt-root .omt-timeline-post-times {
     display: inline-flex;
     align-items: center;
-    justify-content: flex-end;
+    justify-content: flex-start;
     gap: 4px;
-    width: 118px; /* fits 0:00:00 / 0:00:00 */
     flex-shrink: 0;
     font-variant-numeric: tabular-nums;
-    text-align: right;
+    text-align: left;
 }
 #omt-root .omt-timeline-post-times[hidden] {
+    display: none !important;
+}
+#omt-root .omt-timeline-match-clock {
+    font-family: var(--omt-mono);
+    font-size: 12px !important;
+    font-variant-numeric: tabular-nums;
+    color: #f1f1f1;
+    line-height: 1;
+    white-space: nowrap;
+}
+#omt-root .omt-timeline-match-clock[hidden] {
     display: none !important;
 }
 #omt-root .omt-timeline-live-indicator {
     display: inline-flex;
     align-items: center;
-    justify-content: flex-end;
-    width: 72px; /* fits -1:02:10 and red LIVE chip */
+    justify-content: flex-start;
     height: 22px;
     margin: 0;
     padding: 0;
@@ -1022,7 +1057,7 @@
     cursor: pointer;
     flex-shrink: 0;
     font-variant-numeric: tabular-nums;
-    text-align: right;
+    text-align: left;
 }
 #omt-root .omt-timeline-live-indicator[hidden] {
     display: none !important;
@@ -1036,9 +1071,9 @@
 }
 #omt-root .omt-timeline-live-delay {
     font-family: var(--omt-mono);
-    font-size: 11px !important;
+    font-size: 12px !important;
     font-variant-numeric: tabular-nums;
-    color: #ddd;
+    color: #f1f1f1;
     line-height: 1;
     white-space: nowrap;
 }
@@ -1062,13 +1097,86 @@
 #omt-root .omt-timeline-live-chip[hidden] {
     display: none !important;
 }
+#omt-root .omt-timeline-vol-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: #f1f1f1;
+    cursor: pointer;
+    opacity: 0.92;
+    flex-shrink: 0;
+}
+#omt-root .omt-timeline-vol-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    opacity: 1;
+}
+#omt-root .omt-timeline-vol-btn:focus-visible {
+    outline: 2px solid var(--omt-orange);
+    outline-offset: 1px;
+}
+#omt-root .omt-timeline-vol-btn .omt-icon {
+    width: 16px;
+    height: 16px;
+}
+#omt-root .omt-timeline-vol-range {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 56px;
+    height: 4px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.28);
+    outline: none;
+    cursor: pointer;
+    flex-shrink: 0;
+    accent-color: #fff;
+}
+#omt-root .omt-timeline-vol-range::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.28);
+}
+#omt-root .omt-timeline-vol-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    margin-top: -4px;
+    border-radius: 50%;
+    background: #fff;
+    border: none;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+    cursor: pointer;
+}
+#omt-root .omt-timeline-vol-range::-moz-range-track {
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.28);
+}
+#omt-root .omt-timeline-vol-range::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #fff;
+    border: none;
+    cursor: pointer;
+}
 .omt-timeline-fs-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 28px;
     height: 28px;
-    margin-left: 4px;
+    margin: 0;
     padding: 0;
     border: none;
     border-radius: 4px;
@@ -1789,8 +1897,8 @@
 #omt-root.omt-examino.omt-compact #match-timer-wrap.omt-clock-pos-bottom-centre { bottom: 150px; left: 50%; transform: translateX(-50%); }
 #omt-root.omt-examino.omt-compact #match-timer-wrap.omt-clock-pos-bottom-right { bottom: 150px; right: 8px; }
 #omt-root.omt-examino.omt-compact #controls-panel {
-    /* Clear taller timeline (tip above + times/FS + 1st/2nd labels below). */
-    bottom: 86px;
+    /* Clear YouTube-style timeline (tip + track + chrome row). */
+    bottom: 100px;
     width: min(560px, calc(100% - 16px));
 }
 #omt-root.omt-examino.omt-compact .controls-content {
@@ -1806,8 +1914,7 @@
     display: none;
 }
 #omt-root.omt-examino.omt-compact .omt-timeline-bar {
-    /* Top: tip clearance; bottom: room for 1st/2nd labels under ticks. */
-    padding: 28px 8px 22px;
+    padding: 24px 8px 6px;
 }
 #omt-root.omt-examino.omt-compact #omt-volume-range {
     width: 40px;

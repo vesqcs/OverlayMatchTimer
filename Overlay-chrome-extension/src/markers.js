@@ -70,7 +70,7 @@
         if (k1 !== null && t < k1) {
             return {
                 period: '',
-                clock: 'Pre-match'
+                clock: 'Pre-Match'
             };
         }
 
