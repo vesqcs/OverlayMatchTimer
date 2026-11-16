@@ -7,7 +7,10 @@ import { spawnSync } from 'node:child_process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '../..');
-const EXT = path.join(ROOT, 'Overlay-chrome-extension');
+// OMT_EXT_DIR: optional path to a packaged/runtime-only extension folder (zip extract).
+const EXT = process.env.OMT_EXT_DIR
+  ? path.resolve(process.env.OMT_EXT_DIR)
+  : path.join(ROOT, 'Overlay-chrome-extension');
 const FIXTURES = path.join(ROOT, 'test/fixtures');
 const ARTIFACTS = '/opt/cursor/artifacts';
 

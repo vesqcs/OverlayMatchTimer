@@ -23,11 +23,11 @@ trap 'rm -rf "$STAGE"' EXIT
 
 PKG="$STAGE/OverlayMatchTimer-v${VERSION}"
 mkdir -p "$PKG"
-# Extension (no node_modules)
-mkdir -p "$PKG/Overlay-chrome-extension"
-tar -C Overlay-chrome-extension \
-  --exclude=node_modules --exclude=.git \
-  -cf - . | tar -C "$PKG/Overlay-chrome-extension" -xf -
+# Extension runtime only (same allowlist as pack-extension-zip.sh)
+EXT_STAGE="$(mktemp -d)"
+./scripts/pack-extension-zip.sh "$EXT_STAGE" >/dev/null
+unzip -q "$EXT_STAGE/OverlayMatchTimer-extension-v${VERSION}.zip" -d "$PKG/Overlay-chrome-extension"
+rm -rf "$EXT_STAGE"
 
 # Docs useful for the owner package
 cp -a README.md TESTING-TUESDAY.md TESTING-TUESDAY.pdf \
