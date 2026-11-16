@@ -69,6 +69,7 @@
         shuttleToggle = null;
         shuttleCheatsheet = null;
         liveBtn = null;
+        omtTimelineLiveChipOn = false;
         btnMainPlay = null;
         timelineSlider = null;
         vTimeCurrent = null;

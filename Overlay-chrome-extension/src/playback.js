@@ -159,6 +159,8 @@
             if (timelineBar) timelineBar.classList.toggle('omt-at-live', atLive);
             if (controlsPanel) controlsPanel.classList.toggle('omt-at-live', atLive);
         }
+        // Right-side LIVE delay / POST times (UI only; same liveEdge/playhead values).
+        if (typeof atualizarTempoTimelineDireito === 'function') atualizarTempoTimelineDireito();
         // While the user is scrubbing, input handler owns the fill (avoid fighting the thumb).
         if (!isDraggingTimeline) paintTimelineScrubberProgress(false);
     }

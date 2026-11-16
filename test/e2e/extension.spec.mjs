@@ -833,23 +833,10 @@ async function run() {
         slider.max = String(end);
         slider.value = String(liveAt);
         slider.style.setProperty('--omt-progress', '100%');
-        const dur = document.getElementById('omt-v-time-duration');
-        const cur = document.getElementById('omt-v-time-current');
-        if (dur) {
-          const h = Math.floor(end / 3600).toString().padStart(2, '0');
-          const m = Math.floor((end % 3600) / 60).toString().padStart(2, '0');
-          const s = Math.floor(end % 60).toString().padStart(2, '0');
-          dur.innerText = `${h}:${m}:${s}`;
-        }
-        if (cur) {
-          const h = Math.floor(liveAt / 3600).toString().padStart(2, '0');
-          const m = Math.floor((liveAt % 3600) / 60).toString().padStart(2, '0');
-          const s = Math.floor(liveAt % 60).toString().padStart(2, '0');
-          cur.innerText = `${h}:${m}:${s}`;
-        }
       }
       if (timelineBar) timelineBar.classList.add('omt-at-live');
       if (live) live.classList.add('is-live');
+      v.dispatchEvent(new Event('timeupdate'));
     });
     await page.waitForTimeout(80);
     const atLiveState = await page.evaluate(() => {
@@ -1716,23 +1703,10 @@ async function run() {
         slider.max = String(end);
         slider.value = String(behindAt);
         slider.style.setProperty('--omt-progress', '55%');
-        const dur = document.getElementById('omt-v-time-duration');
-        const cur = document.getElementById('omt-v-time-current');
-        if (dur) {
-          const h = Math.floor(end / 3600).toString().padStart(2, '0');
-          const m = Math.floor((end % 3600) / 60).toString().padStart(2, '0');
-          const s = Math.floor(end % 60).toString().padStart(2, '0');
-          dur.innerText = `${h}:${m}:${s}`;
-        }
-        if (cur) {
-          const h = Math.floor(behindAt / 3600).toString().padStart(2, '0');
-          const m = Math.floor((behindAt % 3600) / 60).toString().padStart(2, '0');
-          const s = Math.floor(behindAt % 60).toString().padStart(2, '0');
-          cur.innerText = `${h}:${m}:${s}`;
-        }
       }
       if (timelineBar) timelineBar.classList.remove('omt-at-live');
       if (live) live.classList.remove('is-live');
+      v.dispatchEvent(new Event('timeupdate'));
     });
     await page.waitForTimeout(80);
     const behindState = await page.evaluate(() => {
@@ -1756,6 +1730,210 @@ async function run() {
     });
     await page.screenshot({ path: path.join(ARTIFACTS, 'examino_behind_live.png'), fullPage: true });
     await page.screenshot({ path: path.join(ARTIFACTS, 'ui_timeline_behind_live.png'), fullPage: true });
+
+    // ---- v2.0.1 timeline right-side: LIVE delay / red LIVE chip / POST ----
+    const seekLiveDelay = async (delaySec) => {
+      await page.evaluate((d) => {
+        const v = document.querySelector('video');
+        const slider = document.getElementById('omt-timeline-slider');
+        const bar = document.getElementById('omt-timeline-bar');
+        const panel = document.getElementById('controls-panel');
+        if (!v) return;
+        try { v.pause(); } catch (_) {}
+        const end = v.seekable?.length ? v.seekable.end(v.seekable.length - 1) : v.duration;
+        const at = Math.max(0, (typeof end === 'number' ? end : 0) - d);
+        try { v.currentTime = at; } catch (_) {}
+        if (slider && typeof end === 'number' && isFinite(end) && end > 0) {
+          slider.min = '0';
+          slider.max = String(end);
+          slider.value = String(at);
+          slider.style.setProperty('--omt-progress', ((at / end) * 100) + '%');
+        }
+        if (bar) {
+          bar.style.opacity = '1';
+          bar.classList.remove('omt-chrome-hidden');
+        }
+        if (panel) {
+          panel.style.opacity = '1';
+          panel.style.pointerEvents = 'auto';
+        }
+        v.dispatchEvent(new Event('timeupdate'));
+      }, delaySec);
+      await page.waitForTimeout(70);
+    };
+    const readTimelineRight = async () => page.evaluate(() => {
+      const times = document.querySelector('#omt-root .omt-timeline-times');
+      const ind = document.getElementById('omt-timeline-live-indicator');
+      const delay = document.getElementById('omt-timeline-live-delay');
+      const chip = document.getElementById('omt-timeline-live-chip');
+      const post = document.getElementById('omt-timeline-post-times');
+      const cur = document.getElementById('omt-v-time-current');
+      const dur = document.getElementById('omt-v-time-duration');
+      const chipCs = chip && !chip.hidden ? getComputedStyle(chip) : null;
+      return {
+        mode: times?.dataset?.omtTimeMode || null,
+        liveHidden: !!(ind && ind.hidden),
+        postHidden: !!(post && post.hidden),
+        delayText: delay && !delay.hidden ? delay.textContent.trim() : null,
+        chipVisible: !!(chip && !chip.hidden && ind && !ind.hidden),
+        chipBg: chipCs ? chipCs.backgroundColor : null,
+        chipColor: chipCs ? chipCs.color : null,
+        curText: cur?.innerText || null,
+        durText: dur?.innerText || null,
+        liveWidth: ind ? Math.round(ind.getBoundingClientRect().width) : 0,
+        postWidth: post ? Math.round(post.getBoundingClientRect().width) : 0
+      };
+    });
+    const shotTimelineRight = async (name) => {
+      const box = await page.locator('#omt-timeline-bar').boundingBox();
+      if (!box) return;
+      await screenshotClipReliable(page, path.join(ARTIFACTS, name), {
+        x: Math.max(0, box.x - 8),
+        y: Math.max(0, box.y - 12),
+        width: Math.min(box.width + 16, 960),
+        height: Math.ceil(box.height + 24)
+      });
+    };
+
+    // Leave LIVE chip first (delay > 15) so -12 s is delay text, not chip
+    await seekLiveDelay(20);
+    await seekLiveDelay(12);
+    const live12 = await readTimelineRight();
+    results.push({
+      name: 'timeline-live-delay-12s',
+      pass: live12.mode === 'live' && !live12.liveHidden && live12.postHidden &&
+        live12.delayText === '-12 s' && !live12.chipVisible && live12.liveWidth >= 70,
+      detail: live12
+    });
+    await shotTimelineRight('v201_timeline_live_minus_12s.png');
+
+    await seekLiveDelay(65);
+    const live65 = await readTimelineRight();
+    results.push({
+      name: 'timeline-live-delay-1m05',
+      pass: live65.mode === 'live' && live65.delayText === '-1:05' && !live65.chipVisible,
+      detail: live65
+    });
+    await shotTimelineRight('v201_timeline_live_minus_1m05.png');
+
+    // Hysteresis: enter at <=10, stay through 12, leave only when >15
+    await seekLiveDelay(20);
+    await seekLiveDelay(8);
+    const liveEnter = await readTimelineRight();
+    await seekLiveDelay(12);
+    const liveHold = await readTimelineRight();
+    await seekLiveDelay(16);
+    const liveLeave = await readTimelineRight();
+    results.push({
+      name: 'timeline-live-chip-hysteresis',
+      pass: liveEnter.chipVisible === true && liveHold.chipVisible === true &&
+        liveLeave.chipVisible === false && liveLeave.delayText === '-16 s',
+      detail: { liveEnter, liveHold, liveLeave }
+    });
+
+    await seekLiveDelay(2);
+    const liveEdge = await readTimelineRight();
+    const chipRed = liveEdge.chipVisible && (
+      /e5383b|rgb\(\s*229,\s*56,\s*59\s*\)/i.test(String(liveEdge.chipBg || '')) ||
+      /rgb\(\s*229,\s*56,\s*59\s*\)/i.test(String(liveEdge.chipBg || ''))
+    );
+    results.push({
+      name: 'timeline-live-chip-red-at-edge',
+      pass: liveEdge.mode === 'live' && liveEdge.chipVisible && chipRed &&
+        /rgb\(\s*255,\s*255,\s*255\s*\)|#fff/i.test(String(liveEdge.chipColor || '')),
+      detail: liveEdge
+    });
+    await shotTimelineRight('v201_timeline_live_edge_chip.png');
+
+    // Clicking the indicator jumps live (same as panel LIVE)
+    await seekLiveDelay(40);
+    const beforeClick = await page.evaluate(() => document.querySelector('video')?.currentTime);
+    await page.locator('#omt-timeline-live-indicator').click();
+    await page.waitForTimeout(120);
+    const afterClick = await page.evaluate(() => {
+      const v = document.querySelector('video');
+      const end = v?.seekable?.length ? v.seekable.end(v.seekable.length - 1) : v?.duration;
+      return { ct: v?.currentTime, end, delay: (end || 0) - (v?.currentTime || 0) };
+    });
+    results.push({
+      name: 'timeline-live-indicator-clicks-go-live',
+      pass: typeof beforeClick === 'number' && afterClick.delay <= 8,
+      detail: { beforeClick, afterClick }
+    });
+
+    // POST mode: force VOD metadata on the same element (no player replace) for UI paint
+    await page.evaluate(() => {
+      const v = document.querySelector('video');
+      const slider = document.getElementById('omt-timeline-slider');
+      const bar = document.getElementById('omt-timeline-bar');
+      if (!v) return;
+      try { v.pause(); } catch (_) {}
+      window.__omtMockSource = 'VOD';
+      v.dataset.omtSource = 'VOD';
+      const postDur = 1 * 3600 + 52 * 60 + 40; // 1:52:40
+      const postAt = 34 * 60 + 12; // 34:12
+      // Mock currentTime setter clamps to the original DVR window — replace it for this paint.
+      Object.defineProperty(v, 'duration', { configurable: true, get: () => postDur });
+      Object.defineProperty(v, 'seekable', {
+        configurable: true,
+        get: () => ({ length: 1, start: () => 0, end: () => postDur })
+      });
+      Object.defineProperty(v, 'currentTime', {
+        configurable: true,
+        get: () => postAt,
+        set: () => {}
+      });
+      if (slider) {
+        slider.min = '0';
+        slider.max = String(postDur);
+        slider.value = String(postAt);
+        slider.style.setProperty('--omt-progress', ((postAt / postDur) * 100) + '%');
+      }
+      if (bar) {
+        bar.style.opacity = '1';
+        bar.classList.remove('omt-chrome-hidden');
+      }
+      v.dispatchEvent(new Event('durationchange'));
+      v.dispatchEvent(new Event('timeupdate'));
+    });
+    await page.waitForTimeout(100);
+    const postState = await readTimelineRight();
+    results.push({
+      name: 'timeline-post-current-duration',
+      pass: postState.mode === 'post' && postState.liveHidden && !postState.postHidden &&
+        postState.curText === '34:12' && postState.durText === '1:52:40' &&
+        postState.postWidth >= 110,
+      detail: postState
+    });
+    await shotTimelineRight('v201_timeline_post.png');
+
+    // Restore DVR metadata for remaining Examino checks
+    await page.evaluate(() => {
+      const v = document.querySelector('video');
+      const slider = document.getElementById('omt-timeline-slider');
+      if (!v) return;
+      window.__omtMockSource = 'DVR';
+      v.dataset.omtSource = 'DVR';
+      const dvrDur = 330;
+      let ct = 100;
+      Object.defineProperty(v, 'duration', { configurable: true, get: () => dvrDur });
+      Object.defineProperty(v, 'seekable', {
+        configurable: true,
+        get: () => ({ length: 1, start: () => 0, end: () => dvrDur })
+      });
+      Object.defineProperty(v, 'currentTime', {
+        configurable: true,
+        get: () => ct,
+        set: (val) => { ct = Math.max(0, Math.min(dvrDur, Number(val) || 0)); }
+      });
+      if (slider) {
+        slider.max = String(dvrDur);
+        slider.value = String(ct);
+      }
+      v.dispatchEvent(new Event('durationchange'));
+      v.dispatchEvent(new Event('timeupdate'));
+    });
+    await page.waitForTimeout(100);
 
     // Hover thickens the timeline
     const timelineBox = await page.locator('#omt-timeline-slider').boundingBox();
@@ -2187,6 +2365,11 @@ async function run() {
         await screenshotClipReliable(
           page,
           path.join(ARTIFACTS, 'v177_timeline_hover_mid_half.png'),
+          midClip.clip
+        );
+        await screenshotClipReliable(
+          page,
+          path.join(ARTIFACTS, 'v201_timeline_hover_kickoff_tip.png'),
           midClip.clip
         );
         await page.evaluate(() => {

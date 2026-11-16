@@ -107,10 +107,16 @@
         <div id="omt-timeline-markers" aria-hidden="true"></div>
     </div>
     <div id="omt-timeline-hover-tip" class="omt-timeline-hover-tip" hidden></div>
-    <div class="omt-timeline-times">
-        <span id="omt-v-time-current" class="omt-time-text omt-tip"${tip('Current video time')}>00:00:00</span>
-        <span class="omt-time-sep" aria-hidden="true">/</span>
-        <span id="omt-v-time-duration" class="omt-time-text omt-tip"${tip('Duration / live edge')}>00:00:00</span>
+    <div class="omt-timeline-times" data-omt-time-mode="post">
+        <button type="button" id="omt-timeline-live-indicator" class="omt-timeline-live-indicator" hidden aria-label="Go to live">
+            <span id="omt-timeline-live-delay" class="omt-timeline-live-delay">-0 s</span>
+            <span id="omt-timeline-live-chip" class="omt-timeline-live-chip" hidden>LIVE</span>
+        </button>
+        <div id="omt-timeline-post-times" class="omt-timeline-post-times">
+            <span id="omt-v-time-current" class="omt-time-text">0:00:00</span>
+            <span class="omt-time-sep" aria-hidden="true">/</span>
+            <span id="omt-v-time-duration" class="omt-time-text">0:00:00</span>
+        </div>
         <button type="button" class="omt-timeline-fs-btn" id="omt-btn-fullscreen" aria-label="Enter fullscreen" aria-pressed="false">${omtIcon('maximize', 16)}</button>
     </div>
 </div>
@@ -243,6 +249,7 @@
         timelineSlider = q('omt-timeline-slider');
         vTimeCurrent = q('omt-v-time-current');
         vTimeDuration = q('omt-v-time-duration');
+        // Live/post slots are looked up by id when painting (no extra cached refs required).
         liveBtn = q('omt-live-btn');
         btnMainPlay = q('omt-btn-play');
         speedSelect = q('omt-speed-select');

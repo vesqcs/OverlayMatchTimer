@@ -72,6 +72,11 @@
     let timerUI, osd, setupPanel, controlsPanel, timelineSlider,
         vTimeCurrent, vTimeDuration, liveBtn, btnMainPlay, speedSelect,
         volumeRange, volumeIconBtn, shuttleToggle, shuttleCheatsheet;
+    // Timeline right-side live delay / LIVE chip (hysteresis latch)
+    let omtTimelineLiveChipOn = false;
+    // Easy to tune: enter LIVE chip when delay <= enter; leave only when delay > leave.
+    const OMT_LIVE_CHIP_ENTER_S = 10;
+    const OMT_LIVE_CHIP_LEAVE_S = 15;
 
 /* =========================================================
    SITE ADAPTER INTERFACE
@@ -413,6 +418,7 @@
         shuttleToggle = null;
         shuttleCheatsheet = null;
         liveBtn = null;
+        omtTimelineLiveChipOn = false;
         btnMainPlay = null;
         timelineSlider = null;
         vTimeCurrent = null;
@@ -896,10 +902,16 @@
         <div id="omt-timeline-markers" aria-hidden="true"></div>
     </div>
     <div id="omt-timeline-hover-tip" class="omt-timeline-hover-tip" hidden></div>
-    <div class="omt-timeline-times">
-        <span id="omt-v-time-current" class="omt-time-text omt-tip"${tip('Current video time')}>00:00:00</span>
-        <span class="omt-time-sep" aria-hidden="true">/</span>
-        <span id="omt-v-time-duration" class="omt-time-text omt-tip"${tip('Duration / live edge')}>00:00:00</span>
+    <div class="omt-timeline-times" data-omt-time-mode="post">
+        <button type="button" id="omt-timeline-live-indicator" class="omt-timeline-live-indicator" hidden aria-label="Go to live">
+            <span id="omt-timeline-live-delay" class="omt-timeline-live-delay">-0 s</span>
+            <span id="omt-timeline-live-chip" class="omt-timeline-live-chip" hidden>LIVE</span>
+        </button>
+        <div id="omt-timeline-post-times" class="omt-timeline-post-times">
+            <span id="omt-v-time-current" class="omt-time-text">0:00:00</span>
+            <span class="omt-time-sep" aria-hidden="true">/</span>
+            <span id="omt-v-time-duration" class="omt-time-text">0:00:00</span>
+        </div>
         <button type="button" class="omt-timeline-fs-btn" id="omt-btn-fullscreen" aria-label="Enter fullscreen" aria-pressed="false">${omtIcon('maximize', 16)}</button>
     </div>
 </div>
@@ -1032,6 +1044,7 @@
         timelineSlider = q('omt-timeline-slider');
         vTimeCurrent = q('omt-v-time-current');
         vTimeDuration = q('omt-v-time-duration');
+        // Live/post slots are looked up by id when painting (no extra cached refs required).
         liveBtn = q('omt-live-btn');
         btnMainPlay = q('omt-btn-play');
         speedSelect = q('omt-speed-select');
@@ -1443,6 +1456,8 @@
 
         // --- Live button ---
         liveBtn.addEventListener('click', irParaLive);
+        const liveIndicator = omtRoot.querySelector('#omt-timeline-live-indicator');
+        if (liveIndicator) liveIndicator.addEventListener('click', irParaLive);
 
         // --- Volume ---
         const volGuardado = localStorage.getItem('matchTimerVolume');
@@ -1478,7 +1493,7 @@
         // --- Timeline slider ---
         timelineSlider.addEventListener('input', function () {
             isDraggingTimeline = true;
-            vTimeCurrent.innerText = formatarTempoVideo(parseFloat(this.value));
+            if (typeof atualizarTempoTimelineDireito === 'function') atualizarTempoTimelineDireito();
             // Redesign only: keep fill glued to the thumb while dragging (no wait for timeupdate).
             if (typeof paintTimelineScrubberProgress === 'function') paintTimelineScrubberProgress(true);
         });
@@ -1540,7 +1555,6 @@
 
             if (!isDraggingTimeline) {
                 timelineSlider.value = vid.currentTime;
-                vTimeCurrent.innerText = formatarTempoVideo(vid.currentTime);
             }
             atualizarRelogio();
             atualizarEstadoLive();
@@ -1779,6 +1793,127 @@
         return `${h}:${m}:${s}`;
     }
 
+    /** Compact player time for POST right-side slot (e.g. 34:12 or 1:52:40). */
+    function formatarTempoCompacto(segundos) {
+        if (isNaN(segundos) || !isFinite(segundos) || segundos < 0) segundos = 0;
+        const total = Math.floor(segundos);
+        const h = Math.floor(total / 3600);
+        const m = Math.floor((total % 3600) / 60);
+        const s = total % 60;
+        if (h > 0) {
+            return h + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+        }
+        return m + ':' + String(s).padStart(2, '0');
+    }
+
+    /** Live delay text: -12 s / -1:05 / -1:02:10 */
+    function formatarAtrasoLive(delaySec) {
+        const d = Math.max(0, Math.floor(Number(delaySec) || 0));
+        if (d < 60) return '-' + d + ' s';
+        const h = Math.floor(d / 3600);
+        const m = Math.floor((d % 3600) / 60);
+        const s = d % 60;
+        if (h > 0) {
+            return '-' + h + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+        }
+        return '-' + m + ':' + String(s).padStart(2, '0');
+    }
+
+    /** LIVE timeline mode (delay / LIVE chip) vs POST (current / duration). */
+    function omtIsTimelineLiveMode() {
+        if (!omtRoot || !site) return false;
+        if (site.id === 'local' || omtRoot.classList.contains('omt-local')) return false;
+        if (site.id === 'examino') {
+            try {
+                if (examinoManualSourceChoice === 'VOD') return false;
+                if (typeof detectCurrentSource === 'function') {
+                    const src = detectCurrentSource();
+                    if (src === 'VOD') return false;
+                } else if (/\/play\/vod\b/i.test(location.pathname || '')) {
+                    return false;
+                }
+            } catch (_) {}
+        }
+        return true;
+    }
+
+    function omtTimelinePlayheadSec() {
+        if (isDraggingTimeline && timelineSlider) {
+            const v = parseFloat(timelineSlider.value);
+            return isFinite(v) ? v : 0;
+        }
+        return vid ? (vid.currentTime || 0) : 0;
+    }
+
+    function omtTimelineLiveEdgeSec() {
+        if (!vid) return 0;
+        try {
+            if (vid.seekable && vid.seekable.length > 0) {
+                return vid.seekable.end(vid.seekable.length - 1);
+            }
+        } catch (_) {}
+        if (vid.duration && isFinite(vid.duration)) return vid.duration;
+        const mediaDuration = site && typeof site.effectiveDuration === 'function'
+            ? site.effectiveDuration(vid) : NaN;
+        return (mediaDuration && isFinite(mediaDuration)) ? mediaDuration : 0;
+    }
+
+    /**
+     * Paint the timeline right-side time slot (LIVE delay/chip or POST current/duration).
+     * Does not read PDT or change seek/hooks — reuses playhead + live-edge already used for LIVE.
+     */
+    function atualizarTempoTimelineDireito() {
+        if (!omtRoot) return;
+        const timesWrap = omtRoot.querySelector('.omt-timeline-times');
+        const liveInd = omtRoot.querySelector('#omt-timeline-live-indicator');
+        const liveDelayEl = omtRoot.querySelector('#omt-timeline-live-delay');
+        const liveChipEl = omtRoot.querySelector('#omt-timeline-live-chip');
+        const postWrap = omtRoot.querySelector('#omt-timeline-post-times');
+        if (!timesWrap || !liveInd || !liveDelayEl || !liveChipEl || !postWrap) return;
+
+        const liveMode = omtIsTimelineLiveMode();
+        timesWrap.dataset.omtTimeMode = liveMode ? 'live' : 'post';
+        liveInd.hidden = !liveMode;
+        postWrap.hidden = liveMode;
+
+        if (!liveMode) {
+            omtTimelineLiveChipOn = false;
+            const playhead = omtTimelinePlayheadSec();
+            let dur = omtTimelineLiveEdgeSec();
+            if (!(dur > 0) && site && typeof site.effectiveDuration === 'function') {
+                const ed = site.effectiveDuration(vid);
+                if (ed && isFinite(ed)) dur = ed;
+            }
+            if (vTimeCurrent) vTimeCurrent.innerText = formatarTempoCompacto(playhead);
+            if (vTimeDuration) vTimeDuration.innerText = formatarTempoCompacto(dur);
+            return;
+        }
+
+        const liveEdge = omtTimelineLiveEdgeSec();
+        const playhead = omtTimelinePlayheadSec();
+        const delay = liveEdge > 0 ? Math.max(0, liveEdge - playhead) : 0;
+
+        // Hysteresis: enter LIVE when delay <= ENTER, leave only when delay > LEAVE.
+        if (omtTimelineLiveChipOn) {
+            if (delay > OMT_LIVE_CHIP_LEAVE_S) omtTimelineLiveChipOn = false;
+        } else if (delay <= OMT_LIVE_CHIP_ENTER_S) {
+            omtTimelineLiveChipOn = true;
+        }
+
+        if (omtTimelineLiveChipOn) {
+            liveDelayEl.hidden = true;
+            liveChipEl.hidden = false;
+            liveInd.classList.add('is-at-live');
+            liveInd.setAttribute('aria-label', 'At live');
+        } else {
+            liveDelayEl.hidden = false;
+            liveChipEl.hidden = true;
+            liveDelayEl.textContent = formatarAtrasoLive(delay);
+            liveInd.classList.remove('is-at-live');
+            liveInd.setAttribute('aria-label', 'Go to live');
+        }
+    }
+
     function inicializarMetadadosTimeline() {
         const mediaDuration = site.effectiveDuration(vid);
         // InplayIP path: only enters when duration is finite (effectiveDuration === vid.duration).
@@ -1794,9 +1929,9 @@
             }
             timelineSlider.min = minVal;
             timelineSlider.max = mediaDuration;
-            vTimeDuration.innerText = formatarTempoVideo(mediaDuration);
             timelineSlider.disabled = false;
             if (parseFloat(timelineSlider.value) < minVal) timelineSlider.value = minVal;
+            if (typeof atualizarTempoTimelineDireito === 'function') atualizarTempoTimelineDireito();
 
             // --- SE FOR DVR (REVIEW): Mostra os controlos (caso não tenham sido escondidos pelo H) ---
             if (controlsPanel && !isManuallyHidden) {
@@ -1808,8 +1943,8 @@
         } else {
             timelineSlider.min = 0;
             timelineSlider.max = 100;
-            vTimeDuration.innerText = 'LIVE';
             timelineSlider.disabled = true;
+            if (typeof atualizarTempoTimelineDireito === 'function') atualizarTempoTimelineDireito();
 
             // --- SE FOR LIVE PURO (HD): Esconde os controlos automaticamente ---
             if (controlsPanel) {
@@ -2820,6 +2955,8 @@
             if (timelineBar) timelineBar.classList.toggle('omt-at-live', atLive);
             if (controlsPanel) controlsPanel.classList.toggle('omt-at-live', atLive);
         }
+        // Right-side LIVE delay / POST times (UI only; same liveEdge/playhead values).
+        if (typeof atualizarTempoTimelineDireito === 'function') atualizarTempoTimelineDireito();
         // While the user is scrubbing, input handler owns the fill (avoid fighting the thumb).
         if (!isDraggingTimeline) paintTimelineScrubberProgress(false);
     }

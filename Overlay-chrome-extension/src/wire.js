@@ -93,6 +93,8 @@
 
         // --- Live button ---
         liveBtn.addEventListener('click', irParaLive);
+        const liveIndicator = omtRoot.querySelector('#omt-timeline-live-indicator');
+        if (liveIndicator) liveIndicator.addEventListener('click', irParaLive);
 
         // --- Volume ---
         const volGuardado = localStorage.getItem('matchTimerVolume');
@@ -128,7 +130,7 @@
         // --- Timeline slider ---
         timelineSlider.addEventListener('input', function () {
             isDraggingTimeline = true;
-            vTimeCurrent.innerText = formatarTempoVideo(parseFloat(this.value));
+            if (typeof atualizarTempoTimelineDireito === 'function') atualizarTempoTimelineDireito();
             // Redesign only: keep fill glued to the thumb while dragging (no wait for timeupdate).
             if (typeof paintTimelineScrubberProgress === 'function') paintTimelineScrubberProgress(true);
         });
@@ -190,7 +192,6 @@
 
             if (!isDraggingTimeline) {
                 timelineSlider.value = vid.currentTime;
-                vTimeCurrent.innerText = formatarTempoVideo(vid.currentTime);
             }
             atualizarRelogio();
             atualizarEstadoLive();
