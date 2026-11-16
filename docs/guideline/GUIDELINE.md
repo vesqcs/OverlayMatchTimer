@@ -1,5 +1,5 @@
 ---
-title: Overlay MatchTimer — User Guideline
+title: Overlay MatchTimer - User Guideline
 product: Overlay MatchTimer
 version: 2.0.1
 status: editable-source
@@ -14,7 +14,7 @@ security: Stats Perform internal - confirm classification before external share
 **Primary product:** Chrome MV3 extension (`Overlay-chrome-extension/`)  
 **Legacy companion:** `OverlayMatchTimer.html` (local dashboard; still documented for Tier-12 / URL paste)
 
-> **Confidentiality:** The historical PDF (`Overlay MatchTimer Guideline.pdf`) is marked Stats Perform Security Level 2 — Restricted. This Markdown is the **editable maintenance source** for regenerating the PDF. Classification and distribution must be confirmed by the owner / Stats Perform before sharing outside the intended internal audience.
+> **Confidentiality:** The historical PDF (`Overlay MatchTimer Guideline.pdf`) is marked Stats Perform Security Level 2 - Restricted. This Markdown is the **editable maintenance source** for regenerating the PDF. Classification and distribution must be confirmed by the owner / Stats Perform before sharing outside the intended internal audience.
 
 ---
 
@@ -27,7 +27,7 @@ security: Stats Perform internal - confirm classification before external share
 | 1.0.0 | Original Guideline PDF (HTML dashboard + early Inplay extension) | Vasco Oliveira | 05 Jul 2026 |
 | 1.7.0 | Editable Markdown; extension-first; temporary Kickoff sync Customize prototype | Maintainers | 13 Nov 2026 |
 | 1.7.1 | Kickoff sync UI removed / feature flagged off; Guideline no longer documents sync as a current feature | Maintainers | 13 Nov 2026 |
-| 1.7.2 | Perf audit (redesign scrubber micro-opt only); General Shuttle diagram action labels without Btn 1–5 numbers | Maintainers | 13 Nov 2026 |
+| 1.7.2 | Perf audit (redesign scrubber micro-opt only); General Shuttle diagram action labels without Btn 1 to 5 numbers | Maintainers | 13 Nov 2026 |
 | 1.7.3 | Shuttle hit areas; more-panel expands up (bar fixed); LIVE hidden on local; eye = Auto hide toggle | Maintainers | 13 Nov 2026 |
 | 1.7.4 | More-panel inside card (grows UP); timeline period bands + hover tip; instant scrub fill; no Seek label | Maintainers | 13 Nov 2026 |
 | 1.7.5 | Timeline bookmarks; match-clock tip; single fill; click-to-toggle; unclipped tips; auto-hide idle fix; more tip | Maintainers | 13 Nov 2026 |
@@ -35,7 +35,7 @@ security: Stats Perform internal - confirm classification before external share
 | 1.7.7 | Opaque tips; Open-file tip below; timeline tip fixed + labels visible; screenshot polish | Maintainers | 13 Nov 2026 |
 | 1.7.8 | Remove hover tips from play / skip / speed-row (self-explanatory); keep all other tips | Maintainers | 13 Nov 2026 |
 | 2.0.0 | Release rename of 1.7.8; semver going forward (2.0.x fixes, 2.1.0+ features) | Maintainers | 13 Nov 2026 |
-| 2.0.1 | Control panel size M/S + Compact; custom skip times; local drop copy/title polish | Maintainers | 15 Nov 2026 |
+| 2.0.1 | Panel size M/S + Compact; custom skip times; YouTube-style time bar; fullscreen + volume on the bar; visibility guard; host CSS isolation | Maintainers | 16 Nov 2026 |
 
 ### 1.2 Glossary
 
@@ -57,20 +57,20 @@ security: Stats Perform internal - confirm classification before external share
 | Hotkeys, timeline, OSD | Yes |
 | ShuttleXpress | Yes |
 | Customize (clock / shortcuts / Shuttle) | Yes |
-| Team Kickoff sync | **No** — not a current feature (planned later; see maintainer docs only) |
-| Store publishing | No — `store/PUBLISHING.md` |
+| Team Kickoff sync | **No** (planned later; see maintainer docs only) |
+| Store publishing | No (`store/PUBLISHING.md`) |
 
 ---
 
 ## 2. Installing the Chrome extension
 
-1. Obtain the release zip (e.g. `OverlayMatchTimer-v2.0.1.zip`) and extract it.
+1. Obtain the full zip (e.g. `OverlayMatchTimer-v2.0.1-full.zip`) and extract it.
 2. Open `chrome://extensions` → enable **Developer mode**.
-3. **Load unpacked** → select `OverlayMatchTimer-v2.0.1/Overlay-chrome-extension/` (contains `manifest.json`).
+3. **Load unpacked** → select `OverlayMatchTimer-v2.0.1-full/Overlay-chrome-extension/` (folder with `manifest.json` only; no `src/` folder).
 4. Confirm the card shows version **2.0.1** and no errors.
 5. Pin the toolbar icon (slash + **20:08** badge).
 
-Chrome is the supported browser.
+You can also load the clean extension zip extract (`OverlayMatchTimer-extension-v2.0.1.zip`). Chrome is the supported browser.
 
 ---
 
@@ -78,7 +78,7 @@ Chrome is the supported browser.
 
 ### 3.1 InplayIP
 
-Open a Review / DVR session on `*.inplayip.tv`. The HUD injects over the Video.js player.
+Open a Review / DVR session on `*.inplayip.tv`. The HUD injects over the Video.js player. If the Review curtain or drawer hides the video, the overlay hides until the video surface is visible again.
 
 ### 3.2 Examino
 
@@ -104,7 +104,7 @@ Open `examino.statsperform.io/play/dvr/…` or `/play/vod/…`. The overlay wait
 
 1. Seek to the kick-off frame for the period (1st, 2nd, Custom 1/2).
 2. Select the period in the half dropdown.
-3. Click **Set Kick-off** (or press **K**).
+3. Click **Kick-off** (or press **K**).
 4. Use ±1s / ±5s offset nudges if needed.
 5. Clear with the reset control when starting a new match.
 
@@ -116,11 +116,16 @@ Click the HUD clock to type a match time (`45`, `45.30`, `45:30`, etc.).
 
 | Control | Behaviour |
 |---------|-----------|
-| Play / Pause, skip buttons, lower speed-row chips | Self-explanatory; **no hover tooltips**. Skip amounts come from Customize → Shortcuts (seconds on each skip row); panel buttons auto-sort by size |
-| Frame ±, top speed select, volume, more chevron, Open file, ShuttleXpress, Clear timer | Hover tips as usual (opaque portal tips) |
+| Play / Pause, skip buttons, lower speed-row chips | Self-explanatory; **no hover tooltips**. Skip amounts come from Customize → Shortcuts; panel buttons auto-sort by size |
+| Frame ±, top speed select, panel volume, more chevron, Open file, ShuttleXpress, Clear timer | Hover tips as usual (opaque portal tips) |
 | **Eye** button | **Auto hide** toggle only (does not hide the panel on click). Eye-off = Auto hide on; eye = off. Tip: `Auto hide: on/off` |
 | **H** | Still hides/shows the whole control chrome (original hotkey) |
-| Timeline (kick-offs set) | At rest: no markers. On hover: thin period ticks + tiny `1st/2nd/…` labels; tip above = period · match clock; near a tick snaps + click seeks |
+| Panel **LIVE** | Jump to live edge (**L**). Unchanged |
+| Timeline scrubber | Full width at the top of the bottom bar |
+| Timeline chrome row | Below the scrubber: volume (mute + slider) left, time text, fullscreen right. Shows and hides with the control panel (Auto hide) |
+| Time text rules | **Kickoff set** (live or post): match clock only. **Live, no kickoff:** delay behind live (`-12 s`, `-1:05`, `-1:02:10`) or red **LIVE** chip when near the edge (enter within about 10 s, leave after about 15 s); click jumps live. **Post, no kickoff:** `current / duration` (e.g. `34:12 / 1:52:40`) |
+| Timeline hover tip | Unchanged: video time, or period · match clock when kickoff is set; near a tick snaps and click seeks |
+| Fullscreen | Button on the timeline chrome row (enter/exit icon). Overlay stays visible in fullscreen |
 | Kickoff sync / Customize sync | **Hidden / disabled** in this build |
 
 ## 7. Navigation & hotkeys
@@ -137,7 +142,7 @@ Click the HUD clock to type a match time (`45`, `45.30`, `45:30`, etc.).
 | Go Live | L |
 | Hide controls | H |
 
-Defaults are rebindable under **Customize → Shortcuts**.
+Defaults are rebindable under **Customize → Shortcuts**. Skip amounts follow the seconds set on each Shortcuts row.
 
 ---
 
@@ -148,11 +153,13 @@ Defaults are rebindable under **Customize → Shortcuts**.
 3. Accept the browser device chooser.
 4. Remap under **Customize → ShuttleXpress**. Auto pause on Alt+Tab never applies while Shuttle is on.
 
+ShuttleXpress Btn 1 to 5 skip times stay separate from Customize → Shortcuts skip seconds.
+
 ---
 
 ## 9. Customize & General (toolbar popup)
 
-**General:** Open local player, Auto pause on Alt+Tab (default off), live shortcut list, Shuttle diagram summary (action labels only; no Btn 1–5 numbers; those appear under Customize → ShuttleXpress).
+**General:** Open local player, Auto pause on Alt+Tab (default off), live shortcut list, Shuttle diagram summary (action labels only; no Btn 1 to 5 numbers; those appear under Customize → ShuttleXpress).
 
 **Customize:**
 
@@ -165,7 +172,7 @@ Defaults are rebindable under **Customize → Shortcuts**.
 
 **Control panel:** Size **M** (default, current look) or **S** (smaller). **Compact** (default off) hides the lower speed-button row; the top speed dropdown stays.
 
-**Shortcuts (skip rows):** Each skip back/forward row has a seconds field (1 to 999, defaults **2 / 10 / 120** for the three pairs) and a reset icon. Labels show the live amount (`Skip back 10 s`, `Skip forward 2 min`, `1:30 min`). The same values drive keyboard skips; the on-video panel orders the three buttons on each side by size (smallest next to play, largest outer). ShuttleXpress Btn 1–5 skip seconds stay separate.
+**Shortcuts (skip rows):** Each skip back/forward row has a seconds field (1 to 999, defaults **2 / 10 / 120** for the three pairs) and a reset icon. Labels show the live amount (`Skip back 10 s`, `Skip forward 2 min`). The same values drive keyboard skips; the on-video panel orders the three buttons on each side by size (smallest next to play, largest outer).
 
 **Reset all customizations** restores clock, control panel, shortcuts (including skip seconds), and Shuttle defaults.
 
@@ -182,7 +189,8 @@ Xeatre / Examino “copy DVR URL → paste into dashboard” steps from Guidelin
 | Symptom | Try |
 |---------|-----|
 | No HUD on Examino | Confirm `/play/dvr/` or `/play/vod/` URL; wait for video; reload |
-| No HUD on Inplay | Confirm Review/DVR session; reload unpacked |
+| No HUD on Inplay | Confirm Review/DVR session; open the video curtain if closed; reload unpacked |
+| Overlay missing while video looks covered | A host menu or drawer over the video centre can hide the overlay until cleared |
 | Hotkeys do nothing | Click the page; check Customize bindings |
 | Shuttle won’t pair | Toggle off/on; re-plug USB; allow device |
 

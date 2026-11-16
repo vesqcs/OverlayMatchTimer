@@ -1,8 +1,8 @@
-# Overlay MatchTimer — Tuesday manual test (~15 min)
+# Overlay MatchTimer - Tuesday manual test (~15 min)
 
 **Build:** v2.0.1 · **PC:** work machine · **Date:** ________ · **Tester:** ________
 
-Install from the full zip (`OverlayMatchTimer-v2.0.1.zip` → `OverlayMatchTimer-v2.0.1/Overlay-chrome-extension/`). Load unpacked in `chrome://extensions` (Developer mode). Do not use an old folder.
+Install from the full zip (`OverlayMatchTimer-v2.0.1-full.zip` → `OverlayMatchTimer-v2.0.1-full/Overlay-chrome-extension/`). Load unpacked in `chrome://extensions` (Developer mode). Do not use an old folder that still contains `src/` or `scripts/`.
 
 Mark each row: `[ ]` → `[x]` when pass. Use **Notes** for anything odd (screenshot path / console error).
 
@@ -12,9 +12,9 @@ Mark each row: `[ ]` → `[x]` when pass. Use **Notes** for anything odd (screen
 
 | # | Action | Expected | ✓ | Notes |
 |---|--------|----------|---|-------|
-| 0.1 | Load unpacked from zip’s `Overlay-chrome-extension` | Extension shows **2.0.1**, no errors on card | [ ] | |
+| 0.1 | Load unpacked from zip’s `Overlay-chrome-extension` | Extension shows **2.0.1**, no errors; folder has **no** `src/` or `scripts/` | [ ] | |
 | 0.2 | Check toolbar / extensions icon | Slash + **20:08** badge top-left (v2) on dark tile | [ ] | |
-| 0.3 | Open popup | Header: SP logo with **20:08** badge + OverlayMatchTimer; footer `v2.0.1` | [ ] | |
+| 0.3 | Open popup | Header: SP logo (no Aveiro tooltip) + OverlayMatchTimer; footer `v2.0.1` | [ ] | |
 | 0.4 | Customize tab | Match clock, Control panel, Shortcuts, ShuttleXpress; **no Kickoff sync** | [ ] | |
 | 0.5 | Control panel size M then S; Compact on/off | M = current look; S smaller; Compact hides lower speed row (top speed select stays) | [ ] | |
 | 0.6 | Shortcuts: set short-row skip to 120 and long-row to 2 | Labels update; panel re-sorts so **2** is next to play and **120** is outer; keyboard still follows each row | [ ] | |
@@ -32,9 +32,9 @@ Open a live/VOD InplayIP match page with the overlay injected.
 | 1.3 | Edit: `45.30` | Accepts → **45:30** | [ ] | |
 | 1.4 | Edit: `45,30` | Accepts → **45:30** | [ ] | |
 | 1.5 | Edit: `45 30` | Accepts → **45:30** | [ ] | |
-| 1.6 | Edit: `45:70` | Stays open; **thin red outline**; hint **Seconds 0–59**; no commit | [ ] | |
+| 1.6 | Edit: `45:70` | Stays open; **thin red outline**; hint **Seconds 0-59**; no commit | [ ] | |
 | 1.7 | Press **Esc** while editing | Edit cancels; previous valid time restored | [ ] | |
-| 1.8 | Popup → Customize → move clock through 6 positions × sizes S–XL × Box/Pill/Minimal | Clock stays clear of OSD/timeline; style matches choice | [ ] | |
+| 1.8 | Popup → Customize → move clock through 6 positions × sizes S to XL × Box/Pill/Minimal | Clock stays clear of OSD/timeline; style matches choice | [ ] | |
 | 1.9 | Speed row / **eye** Auto hide toggle | Eye-off = Auto hide on; eye = off; click does **not** hide panel; tooltip `Auto hide: on/off` | [ ] | |
 | 1.9b | Hover **Play**, skip (±2s/±10s/±2m), lower speed chips | **No** hover tooltip (self-explanatory). Frame ± / top speed select still tip | [ ] | |
 | 1.10 | Auto hide **ON**: leave mouse still over video ~3s | Controls + timeline **fade**; move mouse → they return | [ ] | |
@@ -48,6 +48,12 @@ Open a live/VOD InplayIP match page with the overlay injected.
 | 1.17 | Click empty video (not controls) | Toggles play/pause (local / Examino / InPlay) | [ ] | |
 | 1.18 | Press **H** | Still hides/shows controls completely (original hotkey) | [ ] | |
 | 1.19 | Trigger an OSD (skip / play) | OSD appears **at top**, not over clock oddly | [ ] | |
+| 1.20 | Timeline chrome: no kickoff, sit ~12 s behind live | Bottom-left shows `-12 s` (or similar); click jumps live; red **LIVE** chip when at edge | [ ] | |
+| 1.21 | Set kickoff; watch chrome time | Bottom-left shows **match clock only** (same as HUD clock) | [ ] | |
+| 1.22 | Volume on timeline chrome row | Mute + slider; stays in sync with panel volume | [ ] | |
+| 1.23 | Fullscreen on timeline chrome | Enter/exit; overlay remains visible in fullscreen | [ ] | |
+| 1.24 | Close Review curtain / drawer so video is hidden | Overlay (bar + panel + clock) **hides**; reopen curtain → overlay returns | [ ] | |
+| 1.25 | Kick-off button at rest | Stays **orange** (not greyed by host CSS) | [ ] | |
 
 ---
 
@@ -58,6 +64,8 @@ Open a live/VOD InplayIP match page with the overlay injected.
 | 2.1 | Open Examino DVR or VOD play URL | Overlay injects; clock + panel work | [ ] | |
 | 2.2 | Repeat clock edit smoke (`45`, `45.30`, invalid `45:70`, Esc) | Same as InplayIP | [ ] | |
 | 2.3 | Kick-off / sync controls you normally use | Still set clock vs video as before | [ ] | |
+| 2.4 | DVR: chrome delay / LIVE chip; VOD: `current / duration` when no kickoff | Matches §1.20 / post rule | [ ] | |
+| 2.5 | Fullscreen + timeline volume | Same as InPlay | [ ] | |
 
 ---
 
@@ -66,12 +74,13 @@ Open a live/VOD InplayIP match page with the overlay injected.
 | # | Action | Expected | ✓ | Notes |
 |---|--------|----------|---|-------|
 | 3.1 | Popup → **Open local player** | New window; tab title **Overlay MatchTimer**; drop copy: `Drop or browse a match video file, local or from the NAS.` + Open file; hint uses a comma (no dash) | [ ] | |
-| 3.2 | Open a local / NAS-mapped file | Playback + clock + shortcuts work; **no LIVE** button | [ ] | |
-| 3.3 | Enable ShuttleXpress only on this window if testing device | Toggle stays per-window | [ ] | |
+| 3.2 | Open a local / NAS-mapped file | Playback + clock + shortcuts work; **no LIVE** button; chrome shows `current / duration` until kickoff | [ ] | |
+| 3.3 | Set kickoff | Chrome time switches to match clock only | [ ] | |
+| 3.4 | Enable ShuttleXpress only on this window if testing device | Toggle stays per-window | [ ] | |
 
 ---
 
-## 4. Customize — shortcuts
+## 4. Customize - shortcuts
 
 | # | Action | Expected | ✓ | Notes |
 |---|--------|----------|---|-------|
@@ -87,8 +96,8 @@ Open a live/VOD InplayIP match page with the overlay injected.
 | # | Action | Expected | ✓ | Notes |
 |---|--------|----------|---|-------|
 | 5.1 | Enable Shuttle on page; pair device | Connects; cheatsheet/controls as usual | [ ] | |
-| 5.2 | Press Btn 1–5, turn Jog, rock Shuttle ring | Correct skip / play-pause / frame / scrub; **OSD** labels unchanged | [ ] | |
-| 5.3 | Customize: click **Btn 5** / **Jog disc** / **ring band** (not only the outline) | Correct piece + row highlight; generous hit area; **Btn numbers 1–5 visible** on Customize diagram | [ ] | |
+| 5.2 | Press Btn 1 to 5, turn Jog, rock Shuttle ring | Correct skip / play-pause / frame / scrub; **OSD** labels unchanged | [ ] | |
+| 5.3 | Customize: click **Btn 5** / **Jog disc** / **ring band** (not only the outline) | Correct piece + row highlight; generous hit area; **Btn numbers 1 to 5 visible** on Customize diagram | [ ] | |
 | 5.4 | Focus **Jog** select | **Only** Jog highlighted on SVG + row | [ ] | |
 | 5.5 | Move Play/Pause to **Btn 5** | Btn 5 = Play/Pause (no number field); Btn 3 = **+2m**; General diagram labels match | [ ] | |
 | 5.6 | Press physical Btn 5 / Btn 3 | 5 toggles play; 3 skips +2m; OSD correct | [ ] | |
@@ -103,12 +112,12 @@ Open a live/VOD InplayIP match page with the overlay injected.
 | # | Action | Expected | ✓ | Notes |
 |---|--------|----------|---|-------|
 | 6.1 | Default General | Actions open; Shortcuts + Shuttle **collapsed** | [ ] | |
-| 6.2 | Open ShuttleXpress | **Diagram only** (live action labels: −2m / −10s / Play/Pause / +10s / +2m / Jog / Shuttle ring); **no** Btn numbers 1–5 around the ring | [ ] | |
+| 6.2 | Open ShuttleXpress | **Diagram only** (live action labels: −2m / −10s / Play/Pause / +10s / +2m / Jog / Shuttle ring); **no** Btn numbers 1 to 5 around the ring | [ ] | |
 | 6.3 | **Reset all customizations** | Clock, shortcuts, Shuttle back to defaults | [ ] | |
 
 ---
 
-## 7. Performance — Chrome Task Manager (work PC)
+## 7. Performance - Chrome Task Manager (work PC)
 
 Use a real InPlay or Examino tab (not the mock). Record numbers in Notes.
 
@@ -118,7 +127,7 @@ Use a real InPlay or Examino tab (not the mock). Record numbers in Notes.
 | 7.2 | Enable extension; reload match tab; HUD visible; watch ~60 s | CPU/JS higher than OFF is OK; no runaway climb; UI stays smooth | [ ] | ON: CPU ___ % · JS ___ MB |
 | 7.3 | Optional: leave tab open ~5 min with HUD | Memory does not climb without bound (GC noise OK) | [ ] | |
 
-Directionality from the v1.7.2 lab harness: Examino ON ≫ OFF for script time; InPlay ON also clearly above OFF. Absolute % on your PC will differ — see `PERFORMANCE.md`.
+Directionality from the v1.7.2 lab harness: Examino ON much higher than OFF for script time; InPlay ON also clearly above OFF. Absolute % on your PC will differ. See `PERFORMANCE.md`.
 
 ---
 
