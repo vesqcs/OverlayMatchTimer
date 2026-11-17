@@ -159,6 +159,8 @@
             if (timelineBar) timelineBar.classList.toggle('omt-at-live', atLive);
             if (controlsPanel) controlsPanel.classList.toggle('omt-at-live', atLive);
         }
+        // Right-side LIVE delay / POST times (UI only; same liveEdge/playhead values).
+        if (typeof atualizarTempoTimelineDireito === 'function') atualizarTempoTimelineDireito();
         // While the user is scrubbing, input handler owns the fill (avoid fighting the thumb).
         if (!isDraggingTimeline) paintTimelineScrubberProgress(false);
     }
@@ -172,24 +174,37 @@
         }
     }
 
+    function syncVolumeControlsFromVideo() {
+        if (!vid) return;
+        const muted = !!(vid.muted || vid.volume === 0);
+        const vol = muted ? 0 : (vid.volume || 0);
+        if (volumeRange) volumeRange.value = vol;
+        if (timelineVolRange) timelineVolRange.value = vol;
+        atualizarIconeVolume(vol);
+    }
+
     function toggleMute() {
         if (vid.volume > 0 && !vid.muted) {
             ultimoVolume = vid.volume;
             vid.volume = 0;
             vid.muted = true;
-            volumeRange.value = 0;
         } else {
             vid.volume = ultimoVolume > 0 ? ultimoVolume : 1;
             vid.muted = false;
-            volumeRange.value = vid.volume;
         }
-        atualizarIconeVolume(vid.volume);
-        localStorage.setItem('matchTimerVolume', vid.volume);
-        volumeIconBtn.blur();
+        syncVolumeControlsFromVideo();
+        localStorage.setItem('matchTimerVolume', vid.muted ? 0 : vid.volume);
+        if (volumeIconBtn) volumeIconBtn.blur();
+        if (timelineVolBtn) timelineVolBtn.blur();
     }
 
     function atualizarIconeVolume(vol) {
-        if (!volumeIconBtn) return;
         const name = vol === 0 ? 'volume-x' : vol < 0.5 ? 'volume-1' : 'volume-2';
-        volumeIconBtn.innerHTML = omtIcon(name, 15);
+        const html = omtIcon(name, 15);
+        if (volumeIconBtn) volumeIconBtn.innerHTML = html;
+        if (timelineVolBtn) {
+            timelineVolBtn.innerHTML = omtIcon(name, 16);
+            timelineVolBtn.setAttribute('aria-label', vol === 0 ? 'Unmute' : 'Mute');
+            timelineVolBtn.setAttribute('aria-pressed', vol === 0 ? 'true' : 'false');
+        }
     }

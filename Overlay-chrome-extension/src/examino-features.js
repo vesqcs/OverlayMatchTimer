@@ -136,22 +136,26 @@
     }
 
     function injectExaminoHideCSS() {
-        if (document.getElementById('omt-examino-hide-css')) return;
-        const style = document.createElement('style');
-        style.id = 'omt-examino-hide-css';
+        let style = document.getElementById('omt-examino-hide-css');
+        if (!style) {
+            style = document.createElement('style');
+            style.id = 'omt-examino-hide-css';
+            (document.head || document.documentElement).appendChild(style);
+        }
         style.textContent = [
-            /* OpenPlayer built-in chrome */
-            '.op-controls,',
-            '.op-ui:not(.op-media-element-container),',
-            '.op-progressbar-container,',
-            '.op-player .button-bar,',
-            '.video-container > .button-bar,',
-            '.setting-holder,',
-            '.op-button.op-setting-button,',
-            /* Examino Svelte chrome from owner probe */
-            '.hamburger-menu,',
-            '.examino-bottom-controls,',
-            '.omt-examino-native-hidden {',
+            /* Only while HUD is active (html.omt-hud-on). When the video */
+            /* surface is obscured, host chrome must be usable again. */
+            'html.omt-hud-on .op-controls,',
+            /* Do not hide .op-ui when it wraps <video> (real Examino DOM). */
+            'html.omt-hud-on .op-ui:not(.op-media-element-container):not(:has(video)):not(:has(.op-media-element-container)),',
+            'html.omt-hud-on .op-progressbar-container,',
+            'html.omt-hud-on .op-player .button-bar,',
+            'html.omt-hud-on .video-container > .button-bar,',
+            'html.omt-hud-on .setting-holder,',
+            'html.omt-hud-on .op-button.op-setting-button,',
+            'html.omt-hud-on .hamburger-menu,',
+            'html.omt-hud-on .examino-bottom-controls,',
+            'html.omt-hud-on .omt-examino-native-hidden {',
             '  display: none !important;',
             '  opacity: 0 !important;',
             '  pointer-events: none !important;',
@@ -160,13 +164,13 @@
             '  margin: 0 !important;',
             '  padding: 0 !important;',
             '}',
-            /* Give the video the space freed by the ~108px bottom bars */
-            '.main-container.svelte-iq8mv8,',
-            '.main-container {',
+            'html.omt-hud-on .main-container.svelte-iq8mv8,',
+            'html.omt-hud-on .main-container {',
             '  height: 100% !important;',
             '  max-height: 100% !important;',
             '}',
-            /* Fallback raised settings panel when proxying native gear */
+            /* Raised settings panel while scraping Source — keep usable even */
+            /* if HUD paint state flaps; scoped to the temporary classes. */
             '.op-setting-panel.omt-settings-raised {',
             '  display: block !important;',
             '  opacity: 1 !important;',
@@ -188,11 +192,17 @@
             '  height: 1px !important;',
             '}'
         ].join('\n');
-        (document.head || document.documentElement).appendChild(style);
     }
 
     function markNativeHidden(el) {
         if (!el || el.id === 'omt-root' || (omtRoot && omtRoot.contains(el))) return;
+        // Never hide a node that contains the media — that makes <video>
+        // display:none and triggers Chrome power-save pause vs OpenPlayer play().
+        try {
+            if (el.tagName === 'VIDEO') return;
+            if (el.classList && el.classList.contains('op-media-element-container')) return;
+            if (el.querySelector && el.querySelector('video, .op-media-element-container, .op-player')) return;
+        } catch (_) { return; }
         el.classList.add('omt-examino-native-hidden');
     }
 
@@ -522,6 +532,11 @@
 
             if (confirmed && wanted === 'DVR') {
                 examinoPendingDvrSettle = true;
+                // Settle now — do not wait for the 1.5s SPA monitor to notice a
+                // replaced <video> (avoids a frozen out-of-window DVR playhead).
+                if (typeof settleExaminoMediaAfterBind === 'function') {
+                    try { settleExaminoMediaAfterBind(); } catch (_) {}
+                }
             }
             return confirmed;
         });

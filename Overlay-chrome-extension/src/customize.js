@@ -23,17 +23,136 @@
         'speedDown', 'speedReset', 'speedUp', 'kickoff', 'live', 'hide'
     ];
 
-    const OMT_SHUTTLE_DEFAULTS = {
-        skipBtn1: 120,   // outer left (−)
-        skipBtn2: 10,    // inner left (−)
-        skipBtn3: 120,   // centre skip when Play/Pause moved away
-        skipBtn4: 10,    // inner right (+)
-        skipBtn5: 120,   // outer right (+)
-        playPauseBtn: 3, // centre button (1–5)
-        centreSkipSign: 1, // +1 / −1 when btn 3 holds a skip
-        jogStep: 0.04,   // seconds per jog tick (~1 frame @25fps)
-        shuttleScale: 1  // multiplies ring scrub factors
+    const OMT_SKIP_ACTION_DEFAULTS = {
+        skipBack2: 2, skipFwd2: 2,
+        skipBack10: 10, skipFwd10: 10,
+        skipBack2m: 120, skipFwd2m: 120
     };
+    const OMT_SKIP_ACTION_IDS = Object.keys(OMT_SKIP_ACTION_DEFAULTS);
+    const OMT_SKIP_MIN = 1;
+    const OMT_SKIP_MAX = 999;
+
+    function omtClampSkipSeconds(n, fallback) {
+        const v = Math.round(Number(n));
+        if (!Number.isFinite(v)) return fallback;
+        return Math.min(OMT_SKIP_MAX, Math.max(OMT_SKIP_MIN, v));
+    }
+
+    function omtFormatPanelSkipLabel(sec) {
+        const s = omtClampSkipSeconds(sec, 0);
+        if (s < 60) return s + ' s';
+        const m = Math.floor(s / 60);
+        const r = s % 60;
+        if (r === 0) return m + ' min';
+        return m + ':' + String(r).padStart(2, '0') + ' min';
+    }
+
+    function omtNormalizeSkipSecondsMap(raw) {
+        const out = Object.assign({}, OMT_SKIP_ACTION_DEFAULTS);
+        if (!raw || typeof raw !== 'object') return out;
+        // Migrate v2.0.1 short/medium/long shape → per-action map.
+        if (raw.short != null || raw.medium != null || raw.long != null) {
+            const short = omtClampSkipSeconds(raw.short, 2);
+            const medium = omtClampSkipSeconds(raw.medium, 10);
+            const long = omtClampSkipSeconds(raw.long, 120);
+            out.skipBack2 = short; out.skipFwd2 = short;
+            out.skipBack10 = medium; out.skipFwd10 = medium;
+            out.skipBack2m = long; out.skipFwd2m = long;
+        }
+        OMT_SKIP_ACTION_IDS.forEach((id) => {
+            if (raw[id] != null) out[id] = omtClampSkipSeconds(raw[id], out[id]);
+        });
+        return out;
+    }
+
+    function omtReadSkipSeconds() {
+        try {
+            const raw = localStorage.getItem(OMT_STORAGE_KEYS.skipSeconds);
+            if (raw) {
+                const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+                return omtNormalizeSkipSecondsMap(parsed);
+            }
+        } catch (_) {}
+        return Object.assign({}, OMT_SKIP_ACTION_DEFAULTS);
+    }
+
+    function omtGetSkipForAction(actionId) {
+        const map = omtReadSkipSeconds();
+        if (Object.prototype.hasOwnProperty.call(map, actionId)) return map[actionId];
+        return OMT_SKIP_ACTION_DEFAULTS[actionId] || 2;
+    }
+
+    /** Panel slots: [0]=smallest (next to play), [2]=largest (outer). */
+    function omtSortedSkipSlots(side) {
+        const ids = side === 'back'
+            ? ['skipBack2', 'skipBack10', 'skipBack2m']
+            : ['skipFwd2', 'skipFwd10', 'skipFwd2m'];
+        return ids
+            .map((id) => ({ id, sec: omtGetSkipForAction(id) }))
+            .sort((a, b) => (a.sec - b.sec) || a.id.localeCompare(b.id));
+    }
+
+    function omtPanelSkipSeconds(side, slotIndex) {
+        const slots = omtSortedSkipSlots(side);
+        const row = slots[slotIndex];
+        return row ? row.sec : 2;
+    }
+
+    // Shuttle Btn 1–5 defaults stay fixed (independent of Shortcuts skip seconds).
+    function omtShuttleDefaultsFixed() {
+        return {
+            skipBtn1: 120,
+            skipBtn2: 10,
+            skipBtn3: 120,
+            skipBtn4: 10,
+            skipBtn5: 120,
+            playPauseBtn: 3,
+            centreSkipSign: 1,
+            jogStep: 0.04,
+            shuttleScale: 1
+        };
+    }
+
+    const OMT_SHUTTLE_DEFAULTS = omtShuttleDefaultsFixed();
+
+    function omtReadPanelPrefs() {
+        let size = localStorage.getItem(OMT_STORAGE_KEYS.panelSize) || 'medium';
+        if (size !== 'small' && size !== 'medium') size = 'medium';
+        const compactRaw = localStorage.getItem(OMT_STORAGE_KEYS.panelCompact);
+        const compact = compactRaw === 'true';
+        return { size, compact };
+    }
+
+    function omtApplySkipButtonLabels() {
+        if (!omtRoot) return;
+        const back = omtSortedSkipSlots('back');
+        const fwd = omtSortedSkipSlots('fwd');
+        const map = [
+            ['omt-m2', back[0].sec],
+            ['omt-m10', back[1].sec],
+            ['omt-m120', back[2].sec],
+            ['omt-p2', fwd[0].sec],
+            ['omt-p10', fwd[1].sec],
+            ['omt-p120', fwd[2].sec]
+        ];
+        map.forEach(([id, sec]) => {
+            const btn = typeof q === 'function' ? q(id) : document.getElementById(id);
+            if (!btn) return;
+            const label = btn.querySelector('.omt-btn-label');
+            if (label) label.textContent = omtFormatPanelSkipLabel(sec);
+        });
+    }
+
+    function omtApplyPanelAppearance() {
+        if (!controlsPanel) return;
+        const prefs = omtReadPanelPrefs();
+        controlsPanel.classList.toggle('omt-panel-size-small', prefs.size === 'small');
+        controlsPanel.classList.toggle('omt-panel-compact', !!prefs.compact);
+        omtApplySkipButtonLabels();
+        if (typeof omtAnchorControlsPanelBottom === 'function') {
+            try { omtAnchorControlsPanelBottom(); } catch (_) {}
+        }
+    }
 
     let omtHotkeyMap = null; // actionId → binding
     let omtShuttlePrefs = null;
@@ -218,7 +337,8 @@
     }
 
     function omtMergeShuttlePrefs(stored) {
-        const out = Object.assign({}, OMT_SHUTTLE_DEFAULTS);
+        const defaults = omtShuttleDefaultsFixed();
+        const out = Object.assign({}, defaults);
         if (!stored || typeof stored !== 'object') return out;
         ['skipBtn1', 'skipBtn2', 'skipBtn3', 'skipBtn4', 'skipBtn5'].forEach((k) => {
             const n = Number(stored[k]);
@@ -233,7 +353,7 @@
         const scale = Number(stored.shuttleScale);
         if (Number.isFinite(scale) && scale > 0 && scale <= 4) out.shuttleScale = scale;
         if (stored.skipBtn3 == null && out.playPauseBtn !== 3) {
-            out.skipBtn3 = OMT_SHUTTLE_DEFAULTS.skipBtn3;
+            out.skipBtn3 = defaults.skipBtn3;
             out.centreSkipSign = omtPositionalSkipSign(out.playPauseBtn);
         }
         return out;
@@ -259,5 +379,6 @@
         omtLoadShuttlePrefsFromLocal();
         omtClearLegacyClockCustom();
         omtApplyClockAppearance();
+        omtApplyPanelAppearance();
         omtInstallClockClickEdit();
     }

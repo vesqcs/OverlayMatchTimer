@@ -65,7 +65,7 @@
         const timelineBar = omtRoot.querySelector('#omt-timeline-bar');
         if (timelineBar) {
             trackHover(timelineBar.querySelector('.omt-timeline-track'));
-            trackHover(timelineBar.querySelector('.omt-timeline-times'));
+            trackHover(timelineBar.querySelector('.omt-timeline-chrome-row'));
         }
         if (timerUI) trackHover(timerUI);
     }

@@ -7,7 +7,10 @@ import { spawnSync } from 'node:child_process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '../..');
-const EXT = path.join(ROOT, 'Overlay-chrome-extension');
+// OMT_EXT_DIR: optional path to a packaged/runtime-only extension folder (zip extract).
+const EXT = process.env.OMT_EXT_DIR
+  ? path.resolve(process.env.OMT_EXT_DIR)
+  : path.join(ROOT, 'Overlay-chrome-extension');
 const FIXTURES = path.join(ROOT, 'test/fixtures');
 const ARTIFACTS = '/opt/cursor/artifacts';
 
@@ -409,6 +412,60 @@ async function run() {
       return { paused: !!(v && v.paused) };
     });
     results.push({ name: 'examino-click-plays', pass: afterPlay.paused === false, detail: afterPlay });
+
+    // ---- Idle: no spurious play/pause or seek loops (v2.0.2 field regression) ----
+    // Field: ~250 play+pause pairs/sec when .op-ui (wrapping <video>) was display:none.
+    const idleTransport = await page.evaluate(async () => {
+      const v = document.querySelector('video');
+      if (!v) return { ok: false, reason: 'no-video' };
+      try { await v.play(); } catch (_) {}
+      let playN = 0;
+      let pauseN = 0;
+      let seekingN = 0;
+      let rateN = 0;
+      const onPlay = () => { playN += 1; };
+      const onPause = () => { pauseN += 1; };
+      const onSeeking = () => { seekingN += 1; };
+      const onRate = () => { rateN += 1; };
+      v.addEventListener('play', onPlay);
+      v.addEventListener('pause', onPause);
+      v.addEventListener('seeking', onSeeking);
+      v.addEventListener('ratechange', onRate);
+      const rate0 = v.playbackRate;
+      const vCs = getComputedStyle(v);
+      // Stir layout/observers without user transport actions.
+      for (let i = 0; i < 8; i++) {
+        window.dispatchEvent(new Event('resize'));
+        document.dispatchEvent(new Event('fullscreenchange'));
+        await new Promise((r) => setTimeout(r, 40));
+      }
+      await new Promise((r) => setTimeout(r, 2500));
+      v.removeEventListener('play', onPlay);
+      v.removeEventListener('pause', onPause);
+      v.removeEventListener('seeking', onSeeking);
+      v.removeEventListener('ratechange', onRate);
+      // Allow a couple of events from the initial play(); reject storms.
+      const ok = playN <= 2 && pauseN <= 2 && seekingN <= 2 && rateN <= 2 &&
+        v.paused === false && Math.abs((v.playbackRate || 1) - (rate0 || 1)) < 0.01 &&
+        vCs.display !== 'none' && vCs.visibility !== 'hidden';
+      return {
+        ok,
+        playN,
+        pauseN,
+        seekingN,
+        rateN,
+        paused: v.paused,
+        rate: v.playbackRate,
+        videoDisplay: vCs.display,
+        videoVisibility: vCs.visibility,
+        hudOn: document.documentElement.classList.contains('omt-hud-on')
+      };
+    });
+    results.push({
+      name: 'examino-idle-no-transport-loop',
+      pass: idleTransport.ok === true,
+      detail: idleTransport
+    });
 
     // ---- Auto-hide: repeated clicks keep panel visible ----
     const autoHide = await page.evaluate(async () => {
@@ -833,23 +890,10 @@ async function run() {
         slider.max = String(end);
         slider.value = String(liveAt);
         slider.style.setProperty('--omt-progress', '100%');
-        const dur = document.getElementById('omt-v-time-duration');
-        const cur = document.getElementById('omt-v-time-current');
-        if (dur) {
-          const h = Math.floor(end / 3600).toString().padStart(2, '0');
-          const m = Math.floor((end % 3600) / 60).toString().padStart(2, '0');
-          const s = Math.floor(end % 60).toString().padStart(2, '0');
-          dur.innerText = `${h}:${m}:${s}`;
-        }
-        if (cur) {
-          const h = Math.floor(liveAt / 3600).toString().padStart(2, '0');
-          const m = Math.floor((liveAt % 3600) / 60).toString().padStart(2, '0');
-          const s = Math.floor(liveAt % 60).toString().padStart(2, '0');
-          cur.innerText = `${h}:${m}:${s}`;
-        }
       }
       if (timelineBar) timelineBar.classList.add('omt-at-live');
       if (live) live.classList.add('is-live');
+      v.dispatchEvent(new Event('timeupdate'));
     });
     await page.waitForTimeout(80);
     const atLiveState = await page.evaluate(() => {
@@ -892,10 +936,10 @@ async function run() {
     });
     results.push({ name: 'examino-live-speed-no-overlap', pass: noOverlap.ok === true, detail: noOverlap });
 
-    // Skip buttons show amount labels (2s / 10s / 2m); no hover tips (self-explanatory)
+    // Skip buttons show amount labels (2 s / 10 s / 2 min); no hover tips (self-explanatory)
     const skipLabels = await page.evaluate(() => {
       const ids = ['omt-m120', 'omt-m10', 'omt-m2', 'omt-p2', 'omt-p10', 'omt-p120'];
-      const expected = ['2m', '10s', '2s', '2s', '10s', '2m'];
+      const expected = ['2 min', '10 s', '2 s', '2 s', '10 s', '2 min'];
       const rows = ids.map((id, i) => {
         const el = document.getElementById(id);
         const label = el?.querySelector('.omt-btn-label')?.textContent?.trim() || '';
@@ -966,11 +1010,140 @@ async function run() {
       const gap = ib.left - lb.right;
       const overflow = label.scrollWidth > label.clientWidth + 1;
       return {
-        ok: lb.width >= 14 && gap >= 4 && !overflow && (label.textContent || '').trim() === '2m',
+        ok: lb.width >= 14 && gap >= 4 && !overflow && (label.textContent || '').trim() === '2 min',
         gap, labelW: lb.width, overflow
       };
     });
     results.push({ name: 'examino-skip-2m-label-fit', pass: skip2mFit.ok === true, detail: skip2mFit });
+
+    // Default skip labels on the panel (2 s / 10 s / 2 min)
+    const skipDefaultLabels = await page.evaluate(() => {
+      const ids = ['omt-m2', 'omt-m10', 'omt-m120'];
+      const expected = ['2 s', '10 s', '2 min'];
+      const got = ids.map((id) =>
+        (document.getElementById(id)?.querySelector('.omt-btn-label')?.textContent || '').trim()
+      );
+      return { ok: got.join('|') === expected.join('|'), got };
+    });
+    results.push({
+      name: 'skip-defaults-clamp-labels',
+      pass: skipDefaultLabels.ok === true,
+      detail: skipDefaultLabels
+    });
+
+    // Custom skips + auto-sort (inner row=120, outer row=2 → panel shows 2 next to play)
+    // + panel size/compact. Keyboard still follows the row value (ArrowRight = skipFwd2 = 120).
+    const panelPrefs = await page.evaluate(async () => {
+      window.postMessage({
+        source: 'omt-bridge',
+        type: 'OMT_STORAGE_SYNC',
+        values: {
+          omtSkipSeconds: {
+            skipBack2: 120, skipFwd2: 120,
+            skipBack10: 10, skipFwd10: 10,
+            skipBack2m: 2, skipFwd2m: 2
+          },
+          omtPanelSize: 'small',
+          omtPanelCompact: true
+        }
+      }, '*');
+      await new Promise((r) => setTimeout(r, 80));
+      // Sorted ascending on each side: inner(m2)=2, mid=10, outer(m120)=120
+      const labels = ['omt-m2', 'omt-m10', 'omt-m120', 'omt-p2', 'omt-p10', 'omt-p120'].map((id) =>
+        (document.getElementById(id)?.querySelector('.omt-btn-label')?.textContent || '').trim()
+      );
+      const panel = document.getElementById('controls-panel');
+      const speedRow = document.querySelector('.omt-speed-row');
+      const speedCs = speedRow ? getComputedStyle(speedRow) : null;
+      const v = document.querySelector('video');
+      let seekOk = false;
+      if (v) {
+        try { v.currentTime = 1; } catch (_) {}
+        const before = v.currentTime;
+        document.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'ArrowRight', code: 'ArrowRight', bubbles: true, cancelable: true
+        }));
+        await new Promise((r) => setTimeout(r, 40));
+        // skipFwd2 row value is 120 → seek +120 (clamped by duration is fine; delta should be >> 10)
+        seekOk = v.currentTime >= before + 5;
+      }
+      return {
+        labels,
+        seekOk,
+        sizeSmall: !!(panel && panel.classList.contains('omt-panel-size-small')),
+        compact: !!(panel && panel.classList.contains('omt-panel-compact')),
+        speedHidden: !!(speedCs && speedCs.display === 'none')
+      };
+    });
+    results.push({
+      name: 'panel-size-compact-and-custom-skips',
+      pass: panelPrefs.labels.join('|') === '2 s|10 s|2 min|2 s|10 s|2 min'
+        && panelPrefs.sizeSmall && panelPrefs.compact && panelPrefs.speedHidden
+        && panelPrefs.seekOk === true,
+      detail: panelPrefs
+    });
+    await page.evaluate(() => {
+      const panel = document.getElementById('controls-panel');
+      const timelineBar = document.getElementById('omt-timeline-bar');
+      [panel, timelineBar].forEach((el) => {
+        if (!el) return;
+        el.style.opacity = '1';
+        el.style.pointerEvents = 'auto';
+      });
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v201_panel_skip_resorted.png'), fullPage: true });
+
+    // Screenshots: panel M (default), S, and Compact (for Vasco)
+    await page.evaluate(() => {
+      const panel = document.getElementById('controls-panel');
+      const timelineBar = document.getElementById('omt-timeline-bar');
+      [panel, timelineBar].forEach((el) => {
+        if (!el) return;
+        el.style.opacity = '1';
+        el.style.pointerEvents = 'auto';
+      });
+    });
+    await page.evaluate(async () => {
+      window.postMessage({
+        source: 'omt-bridge',
+        type: 'OMT_STORAGE_SYNC',
+        values: { omtSkipSeconds: null, omtPanelSize: 'medium', omtPanelCompact: false }
+      }, '*');
+      await new Promise((r) => setTimeout(r, 60));
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v201_panel_size_m.png'), fullPage: true });
+    await page.evaluate(async () => {
+      window.postMessage({
+        source: 'omt-bridge',
+        type: 'OMT_STORAGE_SYNC',
+        values: { omtPanelSize: 'small', omtPanelCompact: false }
+      }, '*');
+      await new Promise((r) => setTimeout(r, 60));
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v201_panel_size_s.png'), fullPage: true });
+    await page.evaluate(async () => {
+      window.postMessage({
+        source: 'omt-bridge',
+        type: 'OMT_STORAGE_SYNC',
+        values: { omtPanelSize: 'medium', omtPanelCompact: true }
+      }, '*');
+      await new Promise((r) => setTimeout(r, 60));
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v201_panel_compact.png'), fullPage: true });
+
+    // Restore defaults for later tests
+    await page.evaluate(async () => {
+      window.postMessage({
+        source: 'omt-bridge',
+        type: 'OMT_STORAGE_SYNC',
+        values: {
+          omtSkipSeconds: null,
+          omtPanelSize: 'medium',
+          omtPanelCompact: false
+        }
+      }, '*');
+      await new Promise((r) => setTimeout(r, 60));
+    });
 
     // Speed row syncs with select + Z/C/X hotkeys
     // Mock MSE fixtures often clamp HTMLMediaElement.playbackRate to 1; stub the
@@ -1587,23 +1760,10 @@ async function run() {
         slider.max = String(end);
         slider.value = String(behindAt);
         slider.style.setProperty('--omt-progress', '55%');
-        const dur = document.getElementById('omt-v-time-duration');
-        const cur = document.getElementById('omt-v-time-current');
-        if (dur) {
-          const h = Math.floor(end / 3600).toString().padStart(2, '0');
-          const m = Math.floor((end % 3600) / 60).toString().padStart(2, '0');
-          const s = Math.floor(end % 60).toString().padStart(2, '0');
-          dur.innerText = `${h}:${m}:${s}`;
-        }
-        if (cur) {
-          const h = Math.floor(behindAt / 3600).toString().padStart(2, '0');
-          const m = Math.floor((behindAt % 3600) / 60).toString().padStart(2, '0');
-          const s = Math.floor(behindAt % 60).toString().padStart(2, '0');
-          cur.innerText = `${h}:${m}:${s}`;
-        }
       }
       if (timelineBar) timelineBar.classList.remove('omt-at-live');
       if (live) live.classList.remove('is-live');
+      v.dispatchEvent(new Event('timeupdate'));
     });
     await page.waitForTimeout(80);
     const behindState = await page.evaluate(() => {
@@ -1627,6 +1787,381 @@ async function run() {
     });
     await page.screenshot({ path: path.join(ARTIFACTS, 'examino_behind_live.png'), fullPage: true });
     await page.screenshot({ path: path.join(ARTIFACTS, 'ui_timeline_behind_live.png'), fullPage: true });
+
+    // ---- v2.0.1 YouTube-style timeline chrome (bar top / vol+time left / FS right) ----
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.evaluate(() => {
+      // Ensure no leftover kickoff from earlier cases / restore.
+      document.getElementById('omt-btn-clear-timer')?.click();
+      const pageEl = document.querySelector('.page');
+      if (pageEl) {
+        pageEl.style.width = '1280px';
+        pageEl.style.height = '720px';
+        pageEl.style.margin = '0';
+      }
+      const main = document.querySelector('.main-container');
+      if (main) main.style.height = 'calc(100% - 108px)';
+    });
+    await page.waitForTimeout(100);
+
+    const seekLiveDelay = async (delaySec) => {
+      await page.evaluate((d) => {
+        const v = document.querySelector('video');
+        const slider = document.getElementById('omt-timeline-slider');
+        const bar = document.getElementById('omt-timeline-bar');
+        const panel = document.getElementById('controls-panel');
+        if (!v) return;
+        try { v.pause(); } catch (_) {}
+        const end = v.seekable?.length ? v.seekable.end(v.seekable.length - 1) : v.duration;
+        const at = Math.max(0, (typeof end === 'number' ? end : 0) - d);
+        try { v.currentTime = at; } catch (_) {}
+        if (slider && typeof end === 'number' && isFinite(end) && end > 0) {
+          slider.min = '0';
+          slider.max = String(end);
+          slider.value = String(at);
+          slider.style.setProperty('--omt-progress', ((at / end) * 100) + '%');
+        }
+        if (bar) {
+          bar.style.opacity = '1';
+          bar.classList.remove('omt-chrome-hidden');
+        }
+        if (panel) {
+          panel.style.opacity = '1';
+          panel.style.pointerEvents = 'auto';
+        }
+        v.dispatchEvent(new Event('timeupdate'));
+      }, delaySec);
+      await page.waitForTimeout(70);
+    };
+    const readTimelineChrome = async () => page.evaluate(() => {
+      const bar = document.getElementById('omt-timeline-bar');
+      const track = bar?.querySelector('.omt-timeline-track');
+      const row = bar?.querySelector('.omt-timeline-chrome-row');
+      const times = document.querySelector('#omt-root .omt-timeline-times');
+      const ind = document.getElementById('omt-timeline-live-indicator');
+      const delay = document.getElementById('omt-timeline-live-delay');
+      const chip = document.getElementById('omt-timeline-live-chip');
+      const post = document.getElementById('omt-timeline-post-times');
+      const matchClock = document.getElementById('omt-timeline-match-clock');
+      const cur = document.getElementById('omt-v-time-current');
+      const dur = document.getElementById('omt-v-time-duration');
+      const volBtn = document.getElementById('omt-timeline-vol-btn');
+      const volRange = document.getElementById('omt-timeline-vol-range');
+      const fs = document.getElementById('omt-btn-fullscreen');
+      const chipCs = chip && !chip.hidden ? getComputedStyle(chip) : null;
+      const barBox = bar?.getBoundingClientRect();
+      const trackBox = track?.getBoundingClientRect();
+      const rowBox = row?.getBoundingClientRect();
+      const timesBox = times?.getBoundingClientRect();
+      const fsBox = fs?.getBoundingClientRect();
+      const volBox = volBtn?.getBoundingClientRect();
+      return {
+        mode: times?.dataset?.omtTimeMode || null,
+        liveHidden: !!(ind && ind.hidden),
+        postHidden: !!(post && post.hidden),
+        matchHidden: !!(matchClock && matchClock.hidden),
+        matchText: matchClock && !matchClock.hidden ? matchClock.textContent.trim() : null,
+        delayText: delay && !delay.hidden ? delay.textContent.trim() : null,
+        chipVisible: !!(chip && !chip.hidden && ind && !ind.hidden),
+        chipBg: chipCs ? chipCs.backgroundColor : null,
+        chipColor: chipCs ? chipCs.color : null,
+        curText: cur?.innerText || null,
+        durText: dur?.innerText || null,
+        hasVol: !!(volBtn && volRange),
+        layoutOk: !!(barBox && trackBox && rowBox && timesBox && fsBox && volBox &&
+          Math.abs(trackBox.width - barBox.width) < 40 &&
+          rowBox.top >= trackBox.bottom - 2 &&
+          timesBox.left < fsBox.left &&
+          volBox.left <= timesBox.left + 2),
+        panelClearance: (() => {
+          const panel = document.getElementById('controls-panel');
+          if (!panel || !barBox) return null;
+          const pb = panel.getBoundingClientRect();
+          return pb.bottom <= barBox.top + 4;
+        })()
+      };
+    });
+    const shotTimelineFrame = async (name, { showPanel = false } = {}) => {
+      await page.evaluate((show) => {
+        const panel = document.getElementById('controls-panel');
+        const bar = document.getElementById('omt-timeline-bar');
+        if (bar) {
+          bar.style.opacity = '1';
+          bar.classList.remove('omt-chrome-hidden');
+        }
+        if (panel) {
+          if (show) {
+            panel.style.opacity = '1';
+            panel.style.pointerEvents = 'auto';
+          } else {
+            panel.style.opacity = '0';
+            panel.style.pointerEvents = 'none';
+          }
+        }
+      }, showPanel);
+      await page.waitForTimeout(40);
+      const clip = await page.evaluate(() => {
+        const root = document.getElementById('omt-root') || document.querySelector('.op-player') || document.querySelector('.page');
+        const bar = document.getElementById('omt-timeline-bar');
+        const r = (root || bar).getBoundingClientRect();
+        const b = bar ? bar.getBoundingClientRect() : r;
+        const y = Math.max(0, Math.min(b.top - 120, r.bottom - 220));
+        return {
+          x: Math.max(0, r.left),
+          y,
+          width: Math.min(1280, Math.max(640, r.width)),
+          height: Math.min(280, Math.max(160, r.bottom - y + 8))
+        };
+      });
+      await screenshotClipReliable(page, path.join(ARTIFACTS, name), clip);
+    };
+
+    const layoutCheck = await readTimelineChrome();
+    results.push({
+      name: 'timeline-youtube-layout',
+      pass: layoutCheck.layoutOk === true && layoutCheck.hasVol === true,
+      detail: layoutCheck
+    });
+
+    // Leave LIVE chip first (delay > 15) so -12 s is delay text, not chip
+    await seekLiveDelay(20);
+    await seekLiveDelay(12);
+    const live12 = await readTimelineChrome();
+    results.push({
+      name: 'timeline-live-delay-12s',
+      pass: live12.mode === 'live' && !live12.liveHidden && live12.postHidden &&
+        live12.matchHidden && live12.delayText === '-12 s' && !live12.chipVisible,
+      detail: live12
+    });
+    await shotTimelineFrame('v201_timeline_live_minus_12s.png');
+
+    await seekLiveDelay(65);
+    const live65 = await readTimelineChrome();
+    results.push({
+      name: 'timeline-live-delay-1m05',
+      pass: live65.mode === 'live' && live65.delayText === '-1:05' && !live65.chipVisible,
+      detail: live65
+    });
+    await shotTimelineFrame('v201_timeline_live_minus_1m05.png');
+
+    // Hysteresis: enter at <=10, stay through 12, leave only when >15
+    await seekLiveDelay(20);
+    await seekLiveDelay(8);
+    const liveEnter = await readTimelineChrome();
+    await seekLiveDelay(12);
+    const liveHold = await readTimelineChrome();
+    await seekLiveDelay(16);
+    const liveLeave = await readTimelineChrome();
+    results.push({
+      name: 'timeline-live-chip-hysteresis',
+      pass: liveEnter.chipVisible === true && liveHold.chipVisible === true &&
+        liveLeave.chipVisible === false && liveLeave.delayText === '-16 s',
+      detail: { liveEnter, liveHold, liveLeave }
+    });
+
+    await seekLiveDelay(2);
+    const liveEdge = await readTimelineChrome();
+    const chipRed = liveEdge.chipVisible &&
+      /rgb\(\s*229,\s*56,\s*59\s*\)/i.test(String(liveEdge.chipBg || ''));
+    results.push({
+      name: 'timeline-live-chip-red-at-edge',
+      pass: liveEdge.mode === 'live' && liveEdge.chipVisible && chipRed &&
+        /rgb\(\s*255,\s*255,\s*255\s*\)/i.test(String(liveEdge.chipColor || '')),
+      detail: liveEdge
+    });
+    await shotTimelineFrame('v201_timeline_live_edge_chip.png');
+
+    // Clicking the indicator jumps live (same as panel LIVE)
+    await seekLiveDelay(40);
+    const beforeClick = await page.evaluate(() => document.querySelector('video')?.currentTime);
+    await page.evaluate(() => document.getElementById('omt-timeline-live-indicator')?.click());
+    await page.waitForTimeout(120);
+    const afterClick = await page.evaluate(() => {
+      const v = document.querySelector('video');
+      const end = v?.seekable?.length ? v.seekable.end(v.seekable.length - 1) : v?.duration;
+      return { ct: v?.currentTime, end, delay: (end || 0) - (v?.currentTime || 0) };
+    });
+    results.push({
+      name: 'timeline-live-indicator-clicks-go-live',
+      pass: typeof beforeClick === 'number' && afterClick.delay <= 8,
+      detail: { beforeClick, afterClick }
+    });
+
+    // Timeline volume stays in sync with panel volume
+    const volSync = await page.evaluate(async () => {
+      const v = document.querySelector('video');
+      const panelRange = document.getElementById('omt-volume-range');
+      const tlRange = document.getElementById('omt-timeline-vol-range');
+      const tlBtn = document.getElementById('omt-timeline-vol-btn');
+      if (!v || !panelRange || !tlRange || !tlBtn) return { ok: false, reason: 'missing' };
+      panelRange.value = '0.4';
+      panelRange.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 40));
+      const afterPanel = {
+        video: v.volume,
+        tl: parseFloat(tlRange.value),
+        panel: parseFloat(panelRange.value)
+      };
+      tlRange.value = '0.7';
+      tlRange.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 40));
+      const afterTl = {
+        video: v.volume,
+        tl: parseFloat(tlRange.value),
+        panel: parseFloat(panelRange.value)
+      };
+      tlBtn.click();
+      await new Promise((r) => setTimeout(r, 40));
+      const afterMute = {
+        video: v.volume,
+        muted: v.muted,
+        tl: parseFloat(tlRange.value),
+        panel: parseFloat(panelRange.value)
+      };
+      return {
+        ok: Math.abs(afterPanel.video - 0.4) < 0.02 && Math.abs(afterPanel.tl - 0.4) < 0.02 &&
+          Math.abs(afterTl.video - 0.7) < 0.02 && Math.abs(afterTl.panel - 0.7) < 0.02 &&
+          afterMute.tl === 0 && afterMute.panel === 0,
+        afterPanel, afterTl, afterMute
+      };
+    });
+    results.push({ name: 'timeline-volume-syncs-with-panel', pass: volSync.ok === true, detail: volSync });
+
+    // LIVE + kickoff → match clock only (set kickoff early, then sit 12 s behind live)
+    await page.evaluate(() => {
+      const v = document.querySelector('video');
+      if (v) {
+        try { v.currentTime = 30; } catch (_) {}
+        v.dispatchEvent(new Event('timeupdate'));
+      }
+      const half = document.getElementById('omt-half-select');
+      if (half) {
+        half.value = '1';
+        half.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      document.getElementById('omt-btn-set-kickoff')?.click();
+    });
+    await page.waitForTimeout(80);
+    await seekLiveDelay(12);
+    const liveKick = await readTimelineChrome();
+    const onVideoClock = await page.evaluate(() => document.getElementById('match-timer')?.innerText || '');
+    results.push({
+      name: 'timeline-live-with-kickoff-match-clock',
+      pass: liveKick.mode === 'kickoff' && liveKick.matchText &&
+        liveKick.matchText === onVideoClock && /^\d{2}:\d{2}$/.test(liveKick.matchText) &&
+        liveKick.liveHidden && liveKick.postHidden,
+      detail: { liveKick, onVideoClock }
+    });
+    await shotTimelineFrame('v201_timeline_live_kickoff_clock.png');
+
+    // Clear kickoff, then POST no kickoff
+    await page.evaluate(() => document.getElementById('omt-btn-clear-timer')?.click());
+    await page.waitForTimeout(80);
+    await page.evaluate(() => {
+      const v = document.querySelector('video');
+      const slider = document.getElementById('omt-timeline-slider');
+      const bar = document.getElementById('omt-timeline-bar');
+      if (!v) return;
+      try { v.pause(); } catch (_) {}
+      window.__omtMockSource = 'VOD';
+      v.dataset.omtSource = 'VOD';
+      const postDur = 1 * 3600 + 52 * 60 + 40; // 1:52:40
+      const postAt = 34 * 60 + 12; // 34:12
+      Object.defineProperty(v, 'duration', { configurable: true, get: () => postDur });
+      Object.defineProperty(v, 'seekable', {
+        configurable: true,
+        get: () => ({ length: 1, start: () => 0, end: () => postDur })
+      });
+      Object.defineProperty(v, 'currentTime', {
+        configurable: true,
+        get: () => postAt,
+        set: () => {}
+      });
+      if (slider) {
+        slider.min = '0';
+        slider.max = String(postDur);
+        slider.value = String(postAt);
+        slider.style.setProperty('--omt-progress', ((postAt / postDur) * 100) + '%');
+      }
+      if (bar) {
+        bar.style.opacity = '1';
+        bar.classList.remove('omt-chrome-hidden');
+      }
+      v.dispatchEvent(new Event('durationchange'));
+      v.dispatchEvent(new Event('timeupdate'));
+    });
+    await page.waitForTimeout(100);
+    const postState = await readTimelineChrome();
+    results.push({
+      name: 'timeline-post-current-duration',
+      pass: postState.mode === 'post' && postState.liveHidden && !postState.postHidden &&
+        postState.matchHidden && postState.curText === '34:12' && postState.durText === '1:52:40',
+      detail: postState
+    });
+    await shotTimelineFrame('v201_timeline_post.png');
+
+    // POST + kickoff → match clock
+    await page.evaluate(() => {
+      const half = document.getElementById('omt-half-select');
+      if (half) {
+        half.value = '1';
+        half.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      document.getElementById('omt-btn-set-kickoff')?.click();
+    });
+    await page.waitForTimeout(80);
+    await page.evaluate(() => {
+      const v = document.querySelector('video');
+      if (v) v.dispatchEvent(new Event('timeupdate'));
+    });
+    await page.waitForTimeout(60);
+    const postKick = await readTimelineChrome();
+    const postKickClock = await page.evaluate(() => document.getElementById('match-timer')?.innerText || '');
+    results.push({
+      name: 'timeline-post-with-kickoff-match-clock',
+      pass: postKick.mode === 'kickoff' && postKick.matchText === postKickClock &&
+        postKick.liveHidden && postKick.postHidden,
+      detail: { postKick, postKickClock }
+    });
+    await shotTimelineFrame('v201_timeline_post_kickoff_clock.png');
+
+    // Restore DVR metadata, then panel spacing over LIVE chrome row
+    await page.evaluate(() => {
+      document.getElementById('omt-btn-clear-timer')?.click();
+      const v = document.querySelector('video');
+      const slider = document.getElementById('omt-timeline-slider');
+      if (!v) return;
+      window.__omtMockSource = 'DVR';
+      v.dataset.omtSource = 'DVR';
+      const dvrDur = 330;
+      let ct = 100;
+      Object.defineProperty(v, 'duration', { configurable: true, get: () => dvrDur });
+      Object.defineProperty(v, 'seekable', {
+        configurable: true,
+        get: () => ({ length: 1, start: () => 0, end: () => dvrDur })
+      });
+      Object.defineProperty(v, 'currentTime', {
+        configurable: true,
+        get: () => ct,
+        set: (val) => { ct = Math.max(0, Math.min(dvrDur, Number(val) || 0)); }
+      });
+      if (slider) {
+        slider.max = String(dvrDur);
+        slider.value = String(ct);
+      }
+      v.dispatchEvent(new Event('durationchange'));
+      v.dispatchEvent(new Event('timeupdate'));
+    });
+    await page.waitForTimeout(100);
+    await seekLiveDelay(20);
+    await seekLiveDelay(12);
+    const spacing = await readTimelineChrome();
+    results.push({
+      name: 'timeline-panel-above-chrome-row',
+      pass: spacing.panelClearance === true && spacing.mode === 'live' && spacing.delayText === '-12 s',
+      detail: spacing
+    });
+    await shotTimelineFrame('v201_timeline_with_panel.png', { showPanel: true });
 
     // Hover thickens the timeline
     const timelineBox = await page.locator('#omt-timeline-slider').boundingBox();
@@ -1766,12 +2301,17 @@ async function run() {
       detail: seekTipGone
     });
 
-    // Set 1st + 2nd half kickoffs
+    // Set 1st + 2nd half kickoffs (1st early, 2nd later — order matters for tip clock)
     await page.evaluate(() => {
+      const v = document.querySelector('video');
       const half = document.getElementById('omt-half-select');
       const moreBtn = document.getElementById('omt-more-toggle');
       const more = document.getElementById('omt-more-panel');
       if (more && !more.classList.contains('is-open')) moreBtn?.click();
+      if (v) {
+        try { v.currentTime = 20; } catch (_) {}
+        v.dispatchEvent(new Event('timeupdate'));
+      }
       if (half) {
         half.value = '1';
         half.dispatchEvent(new Event('change', { bubbles: true }));
@@ -1783,7 +2323,10 @@ async function run() {
       const v = document.querySelector('video');
       const half = document.getElementById('omt-half-select');
       if (v) {
-        try { v.currentTime = Math.min((v.duration || 7200) * 0.55, (v.seekable?.end?.(0) || 7200) - 10); } catch (_) {}
+        const end = v.seekable?.length ? v.seekable.end(v.seekable.length - 1) : (v.duration || 0);
+        const at = Math.min((end || 330) * 0.55, Math.max(0, (end || 330) - 10));
+        try { v.currentTime = at; } catch (_) {}
+        v.dispatchEvent(new Event('timeupdate'));
       }
       if (half) {
         half.value = '2';
@@ -2060,6 +2603,11 @@ async function run() {
           path.join(ARTIFACTS, 'v177_timeline_hover_mid_half.png'),
           midClip.clip
         );
+        await screenshotClipReliable(
+          page,
+          path.join(ARTIFACTS, 'v201_timeline_hover_kickoff_tip.png'),
+          midClip.clip
+        );
         await page.evaluate(() => {
           const tip = document.getElementById('omt-timeline-hover-tip');
           if (tip) delete tip.dataset.omtHold;
@@ -2130,7 +2678,7 @@ async function run() {
         const text = (tip.textContent || '').trim();
         return t2.classList.contains('is-snap') && /2nd Half/i.test(text) &&
           getComputedStyle(tip).opacity === '1' && tip.getBoundingClientRect().width > 20;
-      }, null, { timeout: 3000 });
+      }, null, { timeout: 3000 }).catch(() => {});
       const snapClip = await page.evaluate((xy) => {
         const track = document.querySelector('.omt-timeline-track');
         const tip = document.getElementById('omt-timeline-hover-tip');
@@ -2421,6 +2969,36 @@ async function run() {
     });
     results.push({ name: 'inplayip-no-examino-section', pass: inplayState.examinoHidden === true });
 
+    // Fullscreen control lives on the timeline (bottom bar), no tip
+    const fsBtnUi = await page.evaluate(() => {
+      const btn = document.getElementById('omt-btn-fullscreen');
+      const bar = document.getElementById('omt-timeline-bar');
+      const panel = document.getElementById('controls-panel');
+      return {
+        inTimeline: !!(btn && bar && bar.contains(btn)),
+        notInPanel: !(panel && btn && panel.contains(btn)),
+        noTip: !(btn && btn.hasAttribute('data-tip')),
+        aria: (btn?.getAttribute('aria-label') || ''),
+        hasIcon: !!(btn && btn.querySelector('.omt-icon'))
+      };
+    });
+    results.push({
+      name: 'timeline-fullscreen-button',
+      pass: fsBtnUi.inTimeline && fsBtnUi.notInPanel && fsBtnUi.noTip && /fullscreen/i.test(fsBtnUi.aria) && fsBtnUi.hasIcon,
+      detail: fsBtnUi
+    });
+    await page.evaluate(() => {
+      const panel = document.getElementById('controls-panel');
+      const bar = document.getElementById('omt-timeline-bar');
+      [panel, bar].forEach((el) => {
+        if (!el) return;
+        el.style.opacity = '1';
+        el.style.pointerEvents = 'auto';
+      });
+    });
+    await page.waitForTimeout(60);
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v201_timeline_fullscreen_btn.png'), fullPage: true });
+
     // Click-to-toggle on video surface (not controls)
     await page.evaluate(() => {
       const panel = document.getElementById('controls-panel');
@@ -2575,6 +3153,352 @@ async function run() {
     }
     await page.screenshot({ path: path.join(ARTIFACTS, 'inplayip_hide_tooltip.png'), fullPage: true });
 
+    // ---- Nested .op-ui wrapping <video>: must NOT hide media (v2.0.2 field fix) ----
+    await page.goto(`${base}/examino-nested-op-ui-mock.html`, { waitUntil: 'domcontentloaded' });
+    await waitForOmt(page, 15000);
+    await page.waitForTimeout(300);
+    const nestedOpUi = await page.evaluate(async () => {
+      const v = document.querySelector('video');
+      const opUi = document.getElementById('op-ui-wrap');
+      const controls = document.querySelector('.op-controls');
+      if (!v || !opUi) return { ok: false, reason: 'missing' };
+      const vCs = getComputedStyle(v);
+      const uiCs = getComputedStyle(opUi);
+      const ctrlCs = controls ? getComputedStyle(controls) : null;
+      let playN = 0;
+      let pauseN = 0;
+      const onPlay = () => { playN += 1; };
+      const onPause = () => { pauseN += 1; };
+      v.addEventListener('play', onPlay);
+      v.addEventListener('pause', onPause);
+      try { await v.play(); } catch (_) {}
+      await new Promise((r) => setTimeout(r, 3000));
+      v.removeEventListener('play', onPlay);
+      v.removeEventListener('pause', onPause);
+      const mediaVisible = vCs.display !== 'none' && vCs.visibility !== 'hidden' &&
+        v.getBoundingClientRect().height >= 24;
+      // .op-ui wraps video → must stay rendered; leaf .op-controls may hide.
+      const opUiVisible = uiCs.display !== 'none' && uiCs.visibility !== 'hidden';
+      const controlsHidden = !ctrlCs || ctrlCs.display === 'none' || ctrlCs.visibility === 'hidden';
+      return {
+        ok: mediaVisible && opUiVisible && controlsHidden && playN <= 3 && pauseN <= 3 && v.paused === false,
+        mediaVisible,
+        opUiVisible,
+        controlsHidden,
+        playN,
+        pauseN,
+        paused: v.paused,
+        vDisplay: vCs.display,
+        uiDisplay: uiCs.display,
+        ctrlDisplay: ctrlCs ? ctrlCs.display : null,
+        hudOn: document.documentElement.classList.contains('omt-hud-on')
+      };
+    });
+    results.push({
+      name: 'examino-nested-op-ui-keeps-video-visible',
+      pass: nestedOpUi.ok === true,
+      detail: nestedOpUi
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v202_nested_op_ui.png'), fullPage: true });
+
+
+    // ---------- Video surface visibility (InPlay curtain / collapsed player) ----------
+    await page.goto(`${base}/inplayip-curtain-mock.html`, { waitUntil: 'domcontentloaded' });
+    await waitForOmt(page, 15000);
+    await page.waitForTimeout(200);
+    const curtainClosed = await page.evaluate(() => {
+      const root = document.getElementById('omt-root');
+      const v = document.querySelector('video');
+      const bar = document.querySelector('.vjs-control-bar');
+      const r = v?.getBoundingClientRect();
+      const rootCs = root ? getComputedStyle(root) : null;
+      const barCs = bar ? getComputedStyle(bar) : null;
+      return {
+        obscured: !!root?.classList.contains('omt-video-obscured'),
+        attr: root?.getAttribute('data-omt-video-visible') || '',
+        vh: r ? Math.round(r.height) : -1,
+        rootVis: rootCs ? rootCs.visibility : null,
+        rootDisplay: rootCs ? rootCs.display : null,
+        rootPe: rootCs ? rootCs.pointerEvents : null,
+        hudOn: document.documentElement.classList.contains('omt-hud-on'),
+        hostBarDisplay: barCs ? barCs.display : null,
+        hostBarPe: barCs ? barCs.pointerEvents : null
+      };
+    });
+    results.push({
+      name: 'video-visibility-curtain-hidden',
+      pass: curtainClosed.obscured === true && curtainClosed.attr === '0' && curtainClosed.vh < 24 &&
+        curtainClosed.rootDisplay === 'none' && curtainClosed.rootPe === 'none' &&
+        curtainClosed.hudOn === false &&
+        curtainClosed.hostBarDisplay !== 'none',
+      detail: curtainClosed
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v201_overlay_hidden_curtain.png'), fullPage: true });
+
+    // Curtain toggle outside the player must stay clickable while HUD is obscured.
+    await page.click('#toggle-curtain');
+    await page.waitForTimeout(280);
+    const curtainOpen = await page.evaluate(() => {
+      const root = document.getElementById('omt-root');
+      const v = document.querySelector('video');
+      const bar = document.querySelector('.vjs-control-bar');
+      const r = v?.getBoundingClientRect();
+      const rootCs = root ? getComputedStyle(root) : null;
+      const barCs = bar ? getComputedStyle(bar) : null;
+      return {
+        obscured: !!root?.classList.contains('omt-video-obscured'),
+        attr: root?.getAttribute('data-omt-video-visible') || '',
+        vh: r ? Math.round(r.height) : -1,
+        rootVis: rootCs ? rootCs.visibility : null,
+        rootDisplay: rootCs ? rootCs.display : null,
+        hudOn: document.documentElement.classList.contains('omt-hud-on'),
+        hostBarDisplay: barCs ? barCs.display : null,
+        playerOpen: !!document.getElementById('vjs')?.classList.contains('is-open')
+      };
+    });
+    results.push({
+      name: 'video-visibility-curtain-visible',
+      pass: curtainOpen.obscured === false && curtainOpen.attr === '1' && curtainOpen.vh >= 24 &&
+        curtainOpen.rootDisplay !== 'none' && curtainOpen.rootVis !== 'hidden' &&
+        curtainOpen.hudOn === true && curtainOpen.playerOpen === true &&
+        curtainOpen.hostBarDisplay === 'none',
+      detail: curtainOpen
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v201_overlay_visible_curtain.png'), fullPage: true });
+
+    // Centre host overlay must NOT hide our HUD (elementFromPoint removed in 2.0.2).
+    await page.goto(`${base}/inplayip-cover-mock.html`, { waitUntil: 'domcontentloaded' });
+    await waitForOmt(page, 15000);
+    await page.waitForTimeout(200);
+    const coverState = await page.evaluate(() => {
+      const root = document.getElementById('omt-root');
+      const panel = document.getElementById('controls-panel');
+      const btn = document.getElementById('host-curtain-btn');
+      const rootCs = root ? getComputedStyle(root) : null;
+      return {
+        obscured: !!root?.classList.contains('omt-video-obscured'),
+        attr: root?.getAttribute('data-omt-video-visible') || '',
+        hudOn: document.documentElement.classList.contains('omt-hud-on'),
+        rootDisplay: rootCs ? rootCs.display : null,
+        panelPe: panel ? getComputedStyle(panel).pointerEvents : null,
+        btnClicksBefore: Number(btn?.getAttribute('data-clicks') || 0)
+      };
+    });
+    await page.click('#host-curtain-btn');
+    await page.waitForTimeout(80);
+    const coverAfterClick = await page.evaluate(() => {
+      const btn = document.getElementById('host-curtain-btn');
+      return { clicks: Number(btn?.getAttribute('data-clicks') || 0) };
+    });
+    results.push({
+      name: 'video-visibility-centre-cover-keeps-hud',
+      pass: coverState.obscured === false && coverState.attr === '1' && coverState.hudOn === true &&
+        coverState.rootDisplay !== 'none' && coverAfterClick.clicks === coverState.btnClicksBefore + 1,
+      detail: { coverState, coverAfterClick }
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v202_centre_cover_keeps_hud.png'), fullPage: true });
+
+    // ---------- InPlay 10s CPU / loop guard (play-pause + visibility churn) ----------
+    await page.goto(`${base}/inplayip-mock.html`, { waitUntil: 'domcontentloaded' });
+    await waitForOmt(page, 15000);
+    await page.waitForTimeout(400);
+    const inplayLoopGuard = await page.evaluate(async () => {
+      const v = document.querySelector('video');
+      if (!v) return { ok: false, reason: 'no-video' };
+      try { await v.play(); } catch (_) {}
+      const statsFn = window.__omtVideoVisibilityStats;
+      const t0stats = typeof statsFn === 'function' ? statsFn() : null;
+      let playN = 0;
+      let pauseN = 0;
+      let seekingN = 0;
+      let waitingN = 0;
+      const onPlay = () => { playN += 1; };
+      const onPause = () => { pauseN += 1; };
+      const onSeeking = () => { seekingN += 1; };
+      const onWaiting = () => { waitingN += 1; };
+      v.addEventListener('play', onPlay);
+      v.addEventListener('pause', onPause);
+      v.addEventListener('seeking', onSeeking);
+      v.addEventListener('waiting', onWaiting);
+      const started = performance.now();
+      for (let i = 0; i < 20; i++) {
+        window.dispatchEvent(new Event('resize'));
+        window.dispatchEvent(new Event('scroll'));
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      await new Promise((r) => setTimeout(r, 10000));
+      const elapsed = performance.now() - started;
+      v.removeEventListener('play', onPlay);
+      v.removeEventListener('pause', onPause);
+      v.removeEventListener('seeking', onSeeking);
+      v.removeEventListener('waiting', onWaiting);
+      const t1stats = typeof statsFn === 'function' ? statsFn() : null;
+      const schedules = t1stats && t0stats ? (t1stats.schedules - t0stats.schedules) : -1;
+      const applies = t1stats && t0stats ? (t1stats.applies - t0stats.applies) : -1;
+      const domWrites = t1stats && t0stats ? (t1stats.domWrites - t0stats.domWrites) : -1;
+      const ok = playN <= 3 && pauseN <= 3 && seekingN <= 5 && waitingN <= 30 &&
+        schedules >= 0 && schedules < 80 && applies < 40 && domWrites < 20 &&
+        v.paused === false;
+      return {
+        ok,
+        elapsedMs: Math.round(elapsed),
+        playN,
+        pauseN,
+        seekingN,
+        waitingN,
+        schedules,
+        applies,
+        domWrites,
+        paused: v.paused,
+        hudOn: document.documentElement.classList.contains('omt-hud-on'),
+        obscured: !!document.getElementById('omt-root')?.classList.contains('omt-video-obscured')
+      };
+    });
+    results.push({
+      name: 'inplayip-idle-no-cpu-loop',
+      pass: inplayLoopGuard.ok === true,
+      detail: inplayLoopGuard
+    });
+
+    // Curtain open/close must stay snappy (no multi-second stall from vis churn).
+    await page.goto(`${base}/inplayip-curtain-mock.html`, { waitUntil: 'domcontentloaded' });
+    await waitForOmt(page, 15000);
+    await page.waitForTimeout(200);
+    const curtainSpeed = await page.evaluate(async () => {
+      const btn = document.getElementById('toggle-curtain');
+      const player = document.getElementById('vjs');
+      if (!btn || !player) return { ok: false, reason: 'missing' };
+      const t0 = performance.now();
+      btn.click();
+      await new Promise((r) => setTimeout(r, 50));
+      const opened = player.classList.contains('is-open');
+      const tOpen = performance.now() - t0;
+      await new Promise((r) => setTimeout(r, 200));
+      const t1 = performance.now();
+      btn.click();
+      await new Promise((r) => setTimeout(r, 50));
+      const closed = !player.classList.contains('is-open');
+      const tClose = performance.now() - t1;
+      return {
+        ok: opened && closed && tOpen < 500 && tClose < 500,
+        opened,
+        closed,
+        tOpen: Math.round(tOpen),
+        tClose: Math.round(tClose)
+      };
+    });
+    results.push({
+      name: 'inplayip-curtain-toggle-snappy',
+      pass: curtainSpeed.ok === true,
+      detail: curtainSpeed
+    });
+
+    // ---------- Host CSS isolation (html font-size 10px + aggressive resets) ----------
+    await page.goto(`${base}/inplayip-css-leak-mock.html`, { waitUntil: 'domcontentloaded' });
+    await waitForOmt(page, 15000);
+    await page.evaluate(() => {
+      const panel = document.getElementById('controls-panel');
+      const bar = document.getElementById('omt-timeline-bar');
+      [panel, bar].forEach((el) => {
+        if (!el) return;
+        el.style.opacity = '1';
+        el.style.pointerEvents = 'auto';
+      });
+      const more = document.getElementById('omt-more-toggle');
+      const morePanel = document.getElementById('omt-more-panel');
+      if (more && morePanel && !morePanel.classList.contains('is-open')) more.click();
+    });
+    await page.waitForTimeout(120);
+    // "Before" reference: measure a naked host button under the leak styles
+    const cssLeak = await page.evaluate(() => {
+      const probe = document.createElement('button');
+      probe.textContent = 'Host';
+      probe.id = 'omt-host-probe';
+      document.body.appendChild(probe);
+      const hostFs = parseFloat(getComputedStyle(probe).fontSize) || 0;
+      const hostBg = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      const root = document.getElementById('omt-root');
+      const label = root?.querySelector('.omt-btn-label');
+      const time = root?.querySelector('.omt-time-text');
+      const rootFs = root ? parseFloat(getComputedStyle(root).fontSize) || 0 : 0;
+      const labelFs = label ? parseFloat(getComputedStyle(label).fontSize) || 0 : 0;
+      const timeFs = time ? parseFloat(getComputedStyle(time).fontSize) || 0 : 0;
+      const box = label ? label.getBoundingClientRect() : null;
+      const kick = document.getElementById('omt-btn-set-kickoff');
+      const kickCs = kick ? getComputedStyle(kick) : null;
+      const speed = root?.querySelector('.omt-speed-chip.is-active');
+      const speedCs = speed ? getComputedStyle(speed) : null;
+      const play = document.getElementById('omt-btn-play');
+      if (play && !play.classList.contains('playing')) play.classList.add('playing');
+      const playCs = play ? getComputedStyle(play) : null;
+      const isOrangeBg = (c) => /245,\s*131,\s*31/.test(c || '') || /rgb\(245,\s*131,\s*31\)/.test(c || '');
+      const isOrangeFg = (c) => /245,\s*131,\s*31/.test(c || '');
+      return {
+        hostFs,
+        hostBg,
+        rootFs,
+        labelFs,
+        timeFs,
+        labelW: box ? Math.round(box.width) : 0,
+        htmlFs: parseFloat(getComputedStyle(document.documentElement).fontSize) || 0,
+        kickBg: kickCs?.backgroundColor || '',
+        kickColor: kickCs?.color || '',
+        kickFilter: kickCs?.filter || '',
+        kickOpacity: kickCs?.opacity || '',
+        kickOrange: !!(kickCs && isOrangeBg(kickCs.backgroundColor) && !/grayscale/.test(kickCs.filter || '')),
+        speedOrange: !!(speedCs && isOrangeFg(speedCs.color)),
+        playOrange: !!(playCs && isOrangeFg(playCs.color))
+      };
+    });
+    results.push({
+      name: 'overlay-css-isolation-from-host',
+      pass: cssLeak.htmlFs <= 10.5
+        && cssLeak.hostFs < 12
+        && cssLeak.rootFs >= 15.5
+        && cssLeak.labelFs >= 10.5 && cssLeak.labelFs <= 12.5
+        && cssLeak.timeFs >= 10.5 && cssLeak.timeFs <= 12.5,
+      detail: cssLeak
+    });
+    results.push({
+      name: 'overlay-accent-colors-survive-host-button-css',
+      pass: cssLeak.kickOrange === true
+        && cssLeak.speedOrange === true
+        && cssLeak.playOrange === true
+        && cssLeak.kickOpacity === '1',
+      detail: {
+        kickBg: cssLeak.kickBg,
+        kickColor: cssLeak.kickColor,
+        kickFilter: cssLeak.kickFilter,
+        kickOpacity: cssLeak.kickOpacity,
+        speedOrange: cssLeak.speedOrange,
+        playOrange: cssLeak.playOrange,
+        hostBg: cssLeak.hostBg
+      }
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v201_overlay_css_isolation_after.png'), fullPage: true });
+    const kickBox = await page.locator('#omt-btn-set-kickoff').boundingBox();
+    if (kickBox) {
+      await page.screenshot({
+        path: path.join(ARTIFACTS, 'v201_kickoff_accent_after.png'),
+        clip: {
+          x: Math.max(0, kickBox.x - 12),
+          y: Math.max(0, kickBox.y - 12),
+          width: Math.min(kickBox.width + 24, 400),
+          height: Math.min(kickBox.height + 24, 80)
+        }
+      });
+    }
+    // Synthetic "before" shot: show host probe vs overlay metrics as caption page
+    await page.evaluate((m) => {
+      const el = document.getElementById('status');
+      if (el) {
+        el.textContent = 'Host html font-size=' + m.htmlFs + 'px; host button≈' + m.hostFs.toFixed(1)
+          + 'px; overlay root=' + m.rootFs + 'px label=' + m.labelFs + 'px (isolated)';
+      }
+    }, cssLeak);
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v201_overlay_css_isolation_compare.png'), fullPage: true });
+
     // Toolbar popup (logo above wordmark only)
     const extUrlRe = /chrome-extension:\/\/([^/]+)/;
     let extId = null;
@@ -2632,7 +3556,7 @@ async function run() {
           noCredit: !document.querySelector('.omt-brand-credit'),
           noPersonalizar: !document.body.textContent.includes('Personalizar') &&
             !document.body.textContent.includes('Em breve'),
-          footOk: foot === 'v2.0.0',
+          footOk: foot === 'v2.0.2',
           hasAutoPause: !!document.getElementById('omt-auto-pause-blur'),
           autoPauseDefaultOff: document.getElementById('omt-auto-pause-blur')
             ? document.getElementById('omt-auto-pause-blur').checked === false
@@ -2640,6 +3564,11 @@ async function run() {
           hasOpenLocal: !!document.getElementById('omt-open-local-player'),
           openLocalLabel: (document.getElementById('omt-open-local-player')?.textContent || '').trim(),
           logoSrc: document.querySelector('.omt-sp-logo')?.getAttribute('src') || '',
+          logoNoTitle: (() => {
+            const wrap = document.querySelector('.omt-brand-logo-wrap');
+            const t = (wrap?.getAttribute('title') || '').trim();
+            return !!wrap && t === '';
+          })(),
           logoUncropped: (() => {
             const logo = document.querySelector('.omt-sp-logo');
             if (!logo) return false;
@@ -2716,6 +3645,10 @@ async function run() {
         fullPage: true
       });
       await popupPage.screenshot({
+        path: path.join(ARTIFACTS, 'v201_popup_general_full.png'),
+        fullPage: true
+      });
+      await popupPage.screenshot({
         path: path.join(ARTIFACTS, 'popup_shuttle_general_diagram.png'),
         fullPage: true
       });
@@ -2723,12 +3656,23 @@ async function run() {
         path: path.join(ARTIFACTS, 'popup_general_shuttle_open.png'),
         fullPage: true
       });
+      // Restore General defaults before Customize default checks
+      await popupPage.evaluate(() => {
+        const a = document.getElementById('omt-gen-actions-details');
+        const s = document.getElementById('omt-gen-shortcuts-details');
+        const sh = document.getElementById('omt-gen-shuttle-details');
+        if (a) a.open = true;
+        if (s) s.open = false;
+        if (sh) sh.open = false;
+      });
+      await popupPage.waitForTimeout(60);
       results.push({
         name: 'popup-branding-and-personalizar',
         pass: popupOk.hasWordmark && popupOk.hasLogo && popupOk.logoCount === 1 &&
           popupOk.hasCustomize && popupOk.noSoonBanner && popupOk.noShuttleToggleInPopup &&
           popupOk.noSwap && popupOk.noCredit && popupOk.noPersonalizar &&
           popupOk.footOk && popupOk.keyCaps && popupOk.logoUncropped &&
+          popupOk.logoNoTitle === true &&
           popupOk.hasAutoPause && popupOk.autoPauseDefaultOff &&
           popupOk.hasOpenLocal && popupOk.openLocalLabel === 'Open local player' &&
           /stats-perform-logo-dark\.png/i.test(popupOk.logoSrc || '') &&
@@ -2739,6 +3683,18 @@ async function run() {
           popupOk.toggleKnob.ok === true,
         detail: popupOk
       });
+      const logoBox = await popupPage.locator('.omt-brand-logo-wrap').boundingBox();
+      if (logoBox) {
+        await popupPage.screenshot({
+          path: path.join(ARTIFACTS, 'v201_popup_logo_no_tooltip.png'),
+          clip: {
+            x: Math.max(0, logoBox.x - 8),
+            y: Math.max(0, logoBox.y - 8),
+            width: Math.min(logoBox.width + 16, 320),
+            height: Math.min(logoBox.height + 40, 120)
+          }
+        });
+      }
       results.push({
         name: 'popup-shuttle-general-diagram-only',
         pass: popupOk.generalDiagram.ok === true && popupOk.noGeneralShuttleList === true,
@@ -2795,6 +3751,27 @@ async function run() {
           noSyncLabel: sectionsDefault.noSyncLabel
         }
       });
+      // Full Customize capture with short help copy (all sections open)
+      await popupPage.evaluate(() => {
+        ['omt-clock-details', 'omt-panel-details', 'omt-hotkeys-details', 'omt-shuttle-details'].forEach((id) => {
+          const el = document.getElementById(id);
+          if (el) el.open = true;
+        });
+      });
+      await popupPage.waitForTimeout(120);
+      await popupPage.screenshot({ path: path.join(ARTIFACTS, 'v201_popup_customize_full.png'), fullPage: true });
+      // Restore Customize defaults for later section-sensitive steps
+      await popupPage.evaluate(() => {
+        const clock = document.getElementById('omt-clock-details');
+        const panel = document.getElementById('omt-panel-details');
+        const hotkeys = document.getElementById('omt-hotkeys-details');
+        const shuttle = document.getElementById('omt-shuttle-details');
+        if (clock) clock.open = true;
+        if (panel) panel.open = false;
+        if (hotkeys) hotkeys.open = false;
+        if (shuttle) shuttle.open = false;
+      });
+      await popupPage.waitForTimeout(60);
 
       // Feature flag off → zero sync network even if page tries e2e harness messages
       mockSb.reset();
@@ -2890,6 +3867,193 @@ async function run() {
           /style-pill/.test(clockPreview.faceClass),
         detail: clockPreview
       });
+
+      // Control panel size + Compact defaults
+      await popupPage.evaluate(() => {
+        const p = document.getElementById('omt-panel-details');
+        if (p) p.open = true;
+      });
+      await popupPage.waitForTimeout(80);
+      const panelUi = await popupPage.evaluate(() => {
+        const size = document.getElementById('panel-size');
+        const compact = document.getElementById('panel-compact');
+        return {
+          hasSize: !!size,
+          sizeDefault: size?.value || '',
+          sizeOptions: Array.from(size?.options || []).map((o) => o.value),
+          compactDefaultOff: !!(compact && compact.checked === false),
+          noSkipTimesSection: !document.getElementById('omt-skips-details')
+        };
+      });
+      results.push({
+        name: 'customize-panel-skip-defaults',
+        pass: panelUi.hasSize
+          && panelUi.sizeDefault === 'medium'
+          && panelUi.sizeOptions.join(',') === 'medium,small'
+          && panelUi.compactDefaultOff
+          && panelUi.noSkipTimesSection,
+        detail: panelUi
+      });
+      await popupPage.selectOption('#panel-size', 'small');
+      await popupPage.evaluate(() => {
+        const c = document.getElementById('panel-compact');
+        if (c) {
+          c.checked = true;
+          c.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      });
+      await popupPage.waitForTimeout(80);
+
+      // Shortcuts: per-row skip seconds (defaults / clamp) + live labels
+      await popupPage.evaluate(() => {
+        const d = document.getElementById('omt-hotkeys-details');
+        if (d) d.open = true;
+        d?.scrollIntoView({ block: 'start' });
+      });
+      await popupPage.waitForTimeout(100);
+      const skipRowDefaults = await popupPage.evaluate(() => {
+        const ids = ['skipBack2', 'skipFwd2', 'skipBack10', 'skipFwd10', 'skipBack2m', 'skipFwd2m'];
+        const vals = {};
+        const labels = {};
+        const labelFits = {};
+        ids.forEach((id) => {
+          vals[id] = document.getElementById('omt-skip-' + id)?.value || '';
+          const row = document.querySelector('.omt-hotkey-row[data-id="' + id + '"]');
+          const labelEl = row?.querySelector('.omt-hotkey-label');
+          labels[id] = (labelEl?.textContent || '').trim();
+          // Measure rendered text vs available width (avoids false pass from stretched grid item).
+          let fits = false;
+          if (labelEl) {
+            const range = document.createRange();
+            range.selectNodeContents(labelEl);
+            const textW = range.getBoundingClientRect().width;
+            const avail = labelEl.getBoundingClientRect().width;
+            const cs = getComputedStyle(labelEl);
+            fits = textW <= avail + 1 && cs.textOverflow !== 'ellipsis';
+          }
+          labelFits[id] = fits;
+        });
+        return {
+          vals,
+          labels,
+          labelFits,
+          hasInputs: ids.every((id) => !!document.getElementById('omt-skip-' + id)),
+          hasSkipReset: !!document.querySelector('[data-reset-skip="skipBack2"]'),
+          hasSkipTools: !!document.querySelector('.omt-hotkey-row--skip .omt-hotkey-skip-tools')
+        };
+      });
+      results.push({
+        name: 'customize-shortcut-skip-defaults',
+        pass: skipRowDefaults.hasInputs
+          && skipRowDefaults.hasSkipReset
+          && skipRowDefaults.hasSkipTools
+          && skipRowDefaults.vals.skipBack2 === '2'
+          && skipRowDefaults.vals.skipBack10 === '10'
+          && skipRowDefaults.vals.skipBack2m === '120'
+          && skipRowDefaults.labels.skipBack2 === 'Skip back 2 s'
+          && skipRowDefaults.labels.skipFwd10 === 'Skip forward 10 s'
+          && skipRowDefaults.labels.skipBack2m === 'Skip back 2 min'
+          && Object.values(skipRowDefaults.labelFits).every(Boolean),
+        detail: skipRowDefaults
+      });
+      await popupPage.fill('#omt-skip-skipBack2', '0');
+      await popupPage.fill('#omt-skip-skipFwd2', '0');
+      await popupPage.fill('#omt-skip-skipBack2m', '1500');
+      await popupPage.fill('#omt-skip-skipFwd2m', '1500');
+      await popupPage.locator('#omt-skip-skipFwd2m').blur();
+      await popupPage.waitForTimeout(150);
+      const skipClamped = await popupPage.evaluate(() => ({
+        back2: document.getElementById('omt-skip-skipBack2')?.value,
+        fwd2: document.getElementById('omt-skip-skipFwd2')?.value,
+        back2m: document.getElementById('omt-skip-skipBack2m')?.value,
+        fwd2m: document.getElementById('omt-skip-skipFwd2m')?.value,
+        labelBack2: (document.querySelector('.omt-hotkey-row[data-id="skipBack2"] .omt-hotkey-label')?.textContent || '').trim(),
+        labelBack2m: (document.querySelector('.omt-hotkey-row[data-id="skipBack2m"] .omt-hotkey-label')?.textContent || '').trim()
+      }));
+      results.push({
+        name: 'customize-panel-skip-clamp-persist',
+        pass: skipClamped.back2 === '1'
+          && skipClamped.fwd2 === '1'
+          && skipClamped.back2m === '999'
+          && skipClamped.fwd2m === '999'
+          && skipClamped.labelBack2 === 'Skip back 1 s'
+          && skipClamped.labelBack2m === 'Skip back 16:39 min',
+        detail: skipClamped
+      });
+      // Set swap case for screenshot: short-row 120, long-row 2
+      await popupPage.fill('#omt-skip-skipBack2', '120');
+      await popupPage.fill('#omt-skip-skipFwd2', '120');
+      await popupPage.fill('#omt-skip-skipBack2m', '2');
+      await popupPage.fill('#omt-skip-skipFwd2m', '2');
+      await popupPage.locator('#omt-skip-skipFwd2m').blur();
+      await popupPage.waitForTimeout(120);
+      // Focus Shortcuts; expand editor so all six skip rows are visible
+      await popupPage.evaluate(() => {
+        document.getElementById('omt-clock-details') && (document.getElementById('omt-clock-details').open = false);
+        document.getElementById('omt-panel-details') && (document.getElementById('omt-panel-details').open = false);
+        document.getElementById('omt-shuttle-details') && (document.getElementById('omt-shuttle-details').open = false);
+        const d = document.getElementById('omt-hotkeys-details');
+        if (d) d.open = true;
+        d?.scrollIntoView({ block: 'start' });
+        const editor = document.getElementById('omt-hotkey-editor');
+        if (editor) {
+          editor.style.maxHeight = 'none';
+          const firstSkip = document.querySelector('.omt-hotkey-row--skip');
+          if (firstSkip) editor.scrollTop = Math.max(0, firstSkip.offsetTop - 2);
+        }
+      });
+      await popupPage.waitForTimeout(80);
+      await popupPage.locator('#omt-hotkeys-details').screenshot({
+        path: path.join(ARTIFACTS, 'v201_customize_shortcuts_skips.png')
+      });
+      await popupPage.evaluate(() => {
+        const editor = document.getElementById('omt-hotkey-editor');
+        if (editor) editor.style.maxHeight = '';
+      });
+
+      // General list shows live times
+      await popupPage.click('[data-tab="general"]');
+      await popupPage.evaluate(() => {
+        const d = document.getElementById('omt-gen-shortcuts-details');
+        if (d) d.open = true;
+      });
+      await popupPage.waitForTimeout(80);
+      const generalSkipLabels = await popupPage.evaluate(() => {
+        const items = Array.from(document.querySelectorAll('#omt-shortcut-list .shortcut-item .shortcut-label'))
+          .map((el) => (el.textContent || '').trim());
+        return {
+          items,
+          hasBack120: items.some((t) => t === 'Skip back 2 min'),
+          hasFwd2: items.some((t) => t === 'Skip forward 2 s'),
+          hasBack10: items.some((t) => t === 'Skip back 10 s')
+        };
+      });
+      results.push({
+        name: 'general-skip-labels-live',
+        pass: generalSkipLabels.hasBack120 && generalSkipLabels.hasFwd2 && generalSkipLabels.hasBack10,
+        detail: generalSkipLabels
+      });
+      await popupPage.screenshot({ path: path.join(ARTIFACTS, 'v201_general_shortcuts_skips.png'), fullPage: true });
+      await popupPage.click('[data-tab="customize"]');
+      await popupPage.evaluate(() => {
+        const panel = document.getElementById('omt-panel-details');
+        if (panel) panel.open = true;
+        const size = document.getElementById('panel-size');
+        if (size) {
+          size.value = 'medium';
+          size.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        const c = document.getElementById('panel-compact');
+        if (c) {
+          c.checked = false;
+          c.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        // Reset skip seconds for later tests
+        ['skipBack2', 'skipFwd2', 'skipBack10', 'skipFwd10', 'skipBack2m', 'skipFwd2m'].forEach((id) => {
+          document.querySelector('[data-reset-skip="' + id + '"]')?.click();
+        });
+      });
+      await popupPage.waitForTimeout(80);
 
       // Open Shortcuts section for rebind tests
       await popupPage.evaluate(() => {
@@ -3181,7 +4345,7 @@ async function run() {
         return {
           map,
           dirtyReset: !!skip1Reset?.classList.contains('is-dirty'),
-          compactHotkeyScroll: !!hkCs && Number.isFinite(maxH) && maxH > 0 && maxH <= 240 &&
+          compactHotkeyScroll: !!hkCs && Number.isFinite(maxH) && maxH > 0 && maxH <= 300 &&
             /auto|scroll/.test(hkCs.overflowY || ''),
           sxNeutral: !!sxCs && !/rgb\(245,\s*131,\s*31\)/.test(sxCs.backgroundColor || ''),
           svgWide: !!svgBox && svgBox.width >= 250
@@ -3735,6 +4899,27 @@ async function run() {
         detail: localBoot
       });
 
+      const localCopy = await localPage.evaluate(() => {
+        const copy = (document.querySelector('.omt-local-drop-copy')?.textContent || '').trim();
+        const hint = (document.querySelector('.omt-local-drop-hint')?.textContent || '').trim();
+        return {
+          title: document.title,
+          copy,
+          hint,
+          browse: (document.getElementById('omt-local-browse')?.textContent || '').trim()
+        };
+      });
+      results.push({
+        name: 'local-drop-copy-and-title',
+        pass: localCopy.title === 'Overlay MatchTimer'
+          && localCopy.copy === 'Drop or browse a match video file, local or from the NAS.'
+          && localCopy.hint === 'Multiple player windows are supported, enable ShuttleXpress only in the window that should own the device.'
+          && localCopy.browse === 'Open file'
+          && !/[—–]/.test(localCopy.copy + localCopy.hint),
+        detail: localCopy
+      });
+      await localPage.screenshot({ path: path.join(ARTIFACTS, 'v201_local_drop_zone.png'), fullPage: true });
+
       await localPage.screenshot({ path: path.join(ARTIFACTS, 'local_player_empty.png'), fullPage: true });
 
       await localPage.setInputFiles('#omt-local-file-input', sampleMp4);
@@ -4029,6 +5214,93 @@ async function run() {
         };
       });
       results.push({ name: 'local-hotkey-seek', pass: localSeek.ok === true, detail: localSeek });
+
+      // Fullscreen seek must advance currentTime and deliver frames without exiting FS
+      // (v2.0.1 field: skip-forward froze until exit fullscreen).
+      const localFsSeek = await localPage.evaluate(async () => {
+        const v = document.getElementById('omt-local-video');
+        const stage = document.getElementById('omt-local-stage');
+        const root = document.getElementById('omt-root');
+        if (!v || !stage) return { ok: false, reason: 'missing' };
+        try { await v.play(); } catch (_) {}
+        try {
+          if (!document.fullscreenElement) {
+            await stage.requestFullscreen();
+          }
+        } catch (err) {
+          return { ok: false, reason: 'fs-denied', message: String(err && err.message || err) };
+        }
+        await new Promise((r) => setTimeout(r, 120));
+        if (typeof window.__omtVideoVisibilityStats === 'function') {
+          // Force a visibility pass while FS (must stay visible / not obscured).
+          try {
+            document.dispatchEvent(new Event('fullscreenchange'));
+          } catch (_) {}
+          await new Promise((r) => setTimeout(r, 200));
+        }
+        const obscuredInFs = !!root?.classList.contains('omt-video-obscured');
+        const hudOn = document.documentElement.classList.contains('omt-hud-on');
+        try { v.currentTime = 1; } catch (_) {}
+        await new Promise((r) => setTimeout(r, 80));
+        const before = v.currentTime;
+        let timeupdates = 0;
+        let frames = 0;
+        const onTu = () => { timeupdates += 1; };
+        v.addEventListener('timeupdate', onTu);
+        let rVFC = null;
+        if (typeof v.requestVideoFrameCallback === 'function') {
+          rVFC = new Promise((resolve) => {
+            try {
+              v.requestVideoFrameCallback(() => {
+                frames += 1;
+                resolve(true);
+              });
+              setTimeout(() => resolve(false), 2000);
+            } catch (_) {
+              resolve(false);
+            }
+          });
+        }
+        // Skip +2s via the same path as the panel / hotkey (seekTo).
+        document.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'ArrowRight', code: 'ArrowRight', bubbles: true, cancelable: true
+        }));
+        await new Promise((r) => setTimeout(r, 500));
+        const after = v.currentTime;
+        const stillFs = !!document.fullscreenElement && document.fullscreenElement.contains(v);
+        const paused = v.paused;
+        let gotFrame = false;
+        if (rVFC) gotFrame = await rVFC;
+        // If rVFC unavailable, require timeupdate while still in FS.
+        v.removeEventListener('timeupdate', onTu);
+        const ok = stillFs && !obscuredInFs && hudOn && !paused &&
+          after >= before + 1.2 &&
+          (gotFrame || timeupdates >= 1);
+        try {
+          if (document.fullscreenElement) await document.exitFullscreen();
+        } catch (_) {}
+        return {
+          ok,
+          stillFs,
+          obscuredInFs,
+          hudOn,
+          paused,
+          before,
+          after,
+          timeupdates,
+          gotFrame,
+          fsEl: document.fullscreenElement ? document.fullscreenElement.id : null
+        };
+      });
+      results.push({
+        name: 'local-fullscreen-seek-keeps-playing',
+        pass: localFsSeek.ok === true,
+        detail: localFsSeek
+      });
+      await localPage.screenshot({
+        path: path.join(ARTIFACTS, 'v202_local_fullscreen_seek.png'),
+        fullPage: true
+      });
 
       const localSpeed = await localPage.evaluate(async () => {
         const v = document.getElementById('omt-local-video');

@@ -8,6 +8,9 @@
     clockSize: 'omtClockSize',
     clockShape: 'omtClockShape',
     clockCustom: 'omtClockCustomOffset',
+    panelSize: 'omtPanelSize',
+    panelCompact: 'omtPanelCompact',
+    skipSeconds: 'omtSkipSeconds',
     hotkeys: 'omtHotkeys',
     shuttlePrefs: 'omtShuttlePrefs',
     autoPauseOnBlur: 'omtAutoPauseOnBlur',
@@ -18,10 +21,19 @@
     syncRoom: 'omtKickoffSyncRoom'
   };
 
+  const SKIP_ACTION_DEFAULTS = {
+    skipBack2: 2, skipFwd2: 2,
+    skipBack10: 10, skipFwd10: 10,
+    skipBack2m: 120, skipFwd2m: 120
+  };
+  const SKIP_ACTION_IDS = Object.keys(SKIP_ACTION_DEFAULTS);
+  const SKIP_MIN = 1;
+  const SKIP_MAX = 999;
+
   const CUST_SECTION_DEFAULTS = {
     // Customize
-    clock: true, hotkeys: false, shuttle: false,
-    // General (v1.6.3) — actions open; reference lists collapsed
+    clock: true, panel: false, hotkeys: false, shuttle: false,
+    // General — actions open; reference lists collapsed
     genActions: true, genShortcuts: false, genShuttle: false
   };
   if (SYNC_FEATURE) CUST_SECTION_DEFAULTS.sync = false;
@@ -47,17 +59,78 @@
   };
   const HOTKEY_ORDER = Object.keys(HOTKEY_DEFAULTS);
 
-  const SHUTTLE_DEFAULTS = {
+  function clampSkipSeconds(n, fallback) {
+    const v = Math.round(Number(n));
+    if (!Number.isFinite(v)) return fallback;
+    return Math.min(SKIP_MAX, Math.max(SKIP_MIN, v));
+  }
+
+  function normalizeSkipSeconds(raw) {
+    const out = Object.assign({}, SKIP_ACTION_DEFAULTS);
+    if (!raw || typeof raw !== 'object') return out;
+    if (raw.short != null || raw.medium != null || raw.long != null) {
+      const short = clampSkipSeconds(raw.short, 2);
+      const medium = clampSkipSeconds(raw.medium, 10);
+      const long = clampSkipSeconds(raw.long, 120);
+      out.skipBack2 = short; out.skipFwd2 = short;
+      out.skipBack10 = medium; out.skipFwd10 = medium;
+      out.skipBack2m = long; out.skipFwd2m = long;
+    }
+    SKIP_ACTION_IDS.forEach((id) => {
+      if (raw[id] != null) out[id] = clampSkipSeconds(raw[id], out[id]);
+    });
+    return out;
+  }
+
+  function formatPanelSkipLabel(secs) {
+    const s = clampSkipSeconds(secs, 0);
+    if (s < 60) return s + ' s';
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    if (r === 0) return m + ' min';
+    return m + ':' + String(r).padStart(2, '0') + ' min';
+  }
+
+  function skipHotkeyLabel(id) {
+    const s = skipSeconds || SKIP_ACTION_DEFAULTS;
+    const sec = s[id] != null ? s[id] : SKIP_ACTION_DEFAULTS[id];
+    const body = formatPanelSkipLabel(sec);
+    switch (id) {
+      case 'skipBack2':
+      case 'skipBack10':
+      case 'skipBack2m':
+        return 'Skip back ' + body;
+      case 'skipFwd2':
+      case 'skipFwd10':
+      case 'skipFwd2m':
+        return 'Skip forward ' + body;
+      default:
+        return (HOTKEY_DEFAULTS[id] && HOTKEY_DEFAULTS[id].label) || id;
+    }
+  }
+
+  function isSkipAction(id) {
+    return Object.prototype.hasOwnProperty.call(SKIP_ACTION_DEFAULTS, id);
+  }
+
+  // Shuttle defaults stay fixed; not driven by Shortcuts skip seconds.
+  const SHUTTLE_DEFAULTS_FIXED = {
     skipBtn1: 120,
     skipBtn2: 10,
     skipBtn3: 120,
     skipBtn4: 10,
     skipBtn5: 120,
     playPauseBtn: 3,
-    centreSkipSign: 1, // +1 / −1 when centre (btn 3) holds a skip
+    centreSkipSign: 1,
     jogStep: 0.04,
     shuttleScale: 1
   };
+
+  let skipSeconds = Object.assign({}, SKIP_ACTION_DEFAULTS);
+
+  function getShuttleDefaults() {
+    return Object.assign({}, SHUTTLE_DEFAULTS_FIXED);
+  }
 
   const SHUTTLE_DIAGRAM_SVG = `<svg class="omt-shuttle-svg" viewBox="0 0 200 200" role="img" aria-label="Contour ShuttleXpress">
   <!-- v1.6.3 outline: Vasco foto.png — centred btn3, mirrored 2/4 & 1/5, dimple at 12 o'clock -->
@@ -105,9 +178,55 @@
   const clockPos = document.getElementById('clock-pos');
   const clockSize = document.getElementById('clock-size');
   const clockShape = document.getElementById('clock-shape');
+  const panelSize = document.getElementById('panel-size');
+  const panelCompact = document.getElementById('panel-compact');
   const autoPause = document.getElementById('omt-auto-pause-blur');
   const previewStage = document.getElementById('omt-clock-preview-stage');
   const previewFace = document.getElementById('omt-clock-preview-face');
+
+  function persistPanel() {
+    const size = (panelSize && panelSize.value === 'small') ? 'small' : 'medium';
+    const compact = !!(panelCompact && panelCompact.checked);
+    chrome.storage.local.set({
+      [KEYS.panelSize]: size,
+      [KEYS.panelCompact]: compact
+    });
+  }
+
+  function syncSkipRowUi() {
+    applySkipLabelsToHotkeyDefaults();
+    SKIP_ACTION_IDS.forEach((id) => {
+      const sec = skipSeconds[id];
+      const input = document.getElementById('omt-skip-' + id);
+      if (input && document.activeElement !== input) {
+        input.value = String(sec);
+      } else if (input && String(input.value) !== String(sec)) {
+        // Clamp visible value when out of range after commit.
+        const n = Number(input.value);
+        if (!Number.isFinite(n) || n < SKIP_MIN || n > SKIP_MAX) input.value = String(sec);
+      }
+      const row = document.querySelector('.omt-hotkey-row[data-id="' + id + '"]');
+      if (!row) return;
+      const label = row.querySelector('.omt-hotkey-label');
+      if (label) label.textContent = skipHotkeyLabel(id);
+      const resetBtn = row.querySelector('[data-reset-skip="' + id + '"]');
+      if (resetBtn) resetBtn.classList.toggle('is-dirty', sec !== SKIP_ACTION_DEFAULTS[id]);
+    });
+    renderGeneralShortcuts();
+  }
+
+  function persistSkips(next) {
+    skipSeconds = normalizeSkipSeconds(next || skipSeconds);
+    chrome.storage.local.set({ [KEYS.skipSeconds]: skipSeconds });
+    syncSkipRowUi();
+  }
+
+  function applySkipLabelsToHotkeyDefaults() {
+    Object.keys(HOTKEY_DEFAULTS).forEach((id) => {
+      if (!hotkeys || !hotkeys[id]) return;
+      hotkeys[id].label = isSkipAction(id) ? skipHotkeyLabel(id) : HOTKEY_DEFAULTS[id].label;
+    });
+  }
 
   function normalizeKey(key) {
     if (key == null) return '';
@@ -156,7 +275,7 @@
   }
 
   function mergeShuttle(stored) {
-    const out = Object.assign({}, SHUTTLE_DEFAULTS);
+    const out = Object.assign({}, getShuttleDefaults());
     if (!stored || typeof stored !== 'object') return out;
     ['skipBtn1', 'skipBtn2', 'skipBtn3', 'skipBtn4', 'skipBtn5'].forEach((k) => {
       const n = Number(stored[k]);
@@ -172,7 +291,7 @@
     if (Number.isFinite(scale) && scale > 0 && scale <= 4) out.shuttleScale = scale;
     // Migrate pre-1.6.4: no skipBtn3 stored while PP was moved off centre → seed centre skip
     if (stored.skipBtn3 == null && out.playPauseBtn !== 3) {
-      out.skipBtn3 = SHUTTLE_DEFAULTS.skipBtn3;
+      out.skipBtn3 = getShuttleDefaults().skipBtn3;
       out.centreSkipSign = positionalSkipSign(out.playPauseBtn);
     }
     return out;
@@ -188,7 +307,7 @@
     const movingSkip = Number(shuttlePrefs['skipBtn' + dest]);
     const secs = Number.isFinite(movingSkip) && movingSkip > 0
       ? movingSkip
-      : SHUTTLE_DEFAULTS['skipBtn' + dest];
+      : getShuttleDefaults()['skipBtn' + dest];
     shuttlePrefs['skipBtn' + old] = secs;
     if (old === 3) {
       shuttlePrefs.centreSkipSign = positionalSkipSign(dest);
@@ -264,7 +383,8 @@
     if (!host || !hotkeys) return;
     host.innerHTML = HOTKEY_ORDER.map((id) => {
       const b = hotkeys[id];
-      return '<div class="shortcut-item"><span class="shortcut-label">' + b.label +
+      const label = isSkipAction(id) ? skipHotkeyLabel(id) : b.label;
+      return '<div class="shortcut-item"><span class="shortcut-label">' + label +
         '</span><span class="shortcut-keys"><kbd>' + formatBinding(b).replace(/\+/g, '</kbd><kbd>') +
         '</kbd></span></div>';
     }).join('');
@@ -350,9 +470,10 @@
     // General: diagram + note only (no text list).
   }
 
-  function numFieldHtml(id, value) {
+  function numFieldHtml(id, value, maxVal) {
+    const max = maxVal != null ? maxVal : 600;
     return '<span class="omt-num-field">'
-      + '<input type="number" id="' + id + '" class="omt-control" min="1" max="600" step="1" value="' + value + '" />'
+      + '<input type="number" id="' + id + '" class="omt-control" min="1" max="' + max + '" step="1" value="' + value + '" />'
       + '<span class="omt-num-chevrons" aria-hidden="true">'
       + '<button type="button" class="omt-chev" data-step="1" data-for="' + id + '" tabindex="-1" aria-label="Increase"></button>'
       + '<button type="button" class="omt-chev" data-step="-1" data-for="' + id + '" tabindex="-1" aria-label="Decrease"></button>'
@@ -438,21 +559,45 @@
       const cls = 'omt-hotkey-bind' +
         (listening ? ' is-listening' : '') +
         (conflict ? ' has-conflict' : '');
-      const warn = conflict
-        ? '<div class="omt-hotkey-warn">Conflicts with ' + hotkeys[conflict].label + '</div>'
+      const label = isSkipAction(id) ? skipHotkeyLabel(id) : b.label;
+      const conflictLabel = conflict
+        ? (isSkipAction(conflict) ? skipHotkeyLabel(conflict) : hotkeys[conflict].label)
         : '';
-      const dirty = !bindingEqual(b, {
+      const warn = conflict
+        ? '<div class="omt-hotkey-warn">Conflicts with ' + conflictLabel + '</div>'
+        : '';
+      const dirtyBind = !bindingEqual(b, {
         key: HOTKEY_DEFAULTS[id].key,
         ctrl: !!HOTKEY_DEFAULTS[id].ctrl,
         shift: !!HOTKEY_DEFAULTS[id].shift,
         alt: !!HOTKEY_DEFAULTS[id].alt,
         meta: !!HOTKEY_DEFAULTS[id].meta
       });
+      if (isSkipAction(id)) {
+        const sec = skipSeconds[id];
+        const dirtySkip = sec !== SKIP_ACTION_DEFAULTS[id];
+        // Label on its own line so "Skip back 2 min" stays fully readable;
+        // seconds + key chip + resets sit on the second line (Shuttle-style controls).
+        return '<div class="omt-hotkey-row omt-hotkey-row--skip" data-id="' + id + '">' +
+          '<span class="omt-hotkey-label">' + label + '</span>' +
+          '<div class="omt-hotkey-skip-tools">' +
+          '<span class="omt-hotkey-skip-control">' + numFieldHtml('omt-skip-' + id, sec, 999) + '</span>' +
+          '<button type="button" class="' + cls + '" data-bind="' + id + '">' +
+          (listening ? 'Press key…' : formatBinding(b)) + '</button>' +
+          '<button type="button" class="omt-btn-icon' + (dirtySkip ? ' is-dirty' : '') +
+          '" data-reset-skip="' + id + '" title="Reset skip seconds" aria-label="Reset skip seconds">' +
+          ICON_RESET + '</button>' +
+          '<button type="button" class="omt-btn-icon' + (dirtyBind ? ' is-dirty' : '') +
+          '" data-reset-hotkey="' + id + '" title="Reset key binding" aria-label="Reset key binding">' +
+          ICON_RESET + '</button>' +
+          '</div>' +
+          warn + '</div>';
+      }
       return '<div class="omt-hotkey-row" data-id="' + id + '">' +
-        '<span>' + b.label + '</span>' +
+        '<span class="omt-hotkey-label">' + label + '</span>' +
         '<button type="button" class="' + cls + '" data-bind="' + id + '">' +
         (listening ? 'Press key…' : formatBinding(b)) + '</button>' +
-        '<button type="button" class="omt-btn-icon' + (dirty ? ' is-dirty' : '') +
+        '<button type="button" class="omt-btn-icon' + (dirtyBind ? ' is-dirty' : '') +
         '" data-reset-hotkey="' + id + '" title="Reset to default" aria-label="Reset to default">' +
         ICON_RESET + '</button>' +
         warn + '</div>';
@@ -466,11 +611,11 @@
       const key = btn.getAttribute('data-reset');
       let dirty = false;
       if (key === 'playPauseBtn') {
-        dirty = shuttlePrefs.playPauseBtn !== SHUTTLE_DEFAULTS.playPauseBtn
-          || shuttlePrefs.centreSkipSign !== SHUTTLE_DEFAULTS.centreSkipSign
-          || [1, 2, 3, 4, 5].some((n) => shuttlePrefs['skipBtn' + n] !== SHUTTLE_DEFAULTS['skipBtn' + n]);
+        dirty = shuttlePrefs.playPauseBtn !== getShuttleDefaults().playPauseBtn
+          || shuttlePrefs.centreSkipSign !== getShuttleDefaults().centreSkipSign
+          || [1, 2, 3, 4, 5].some((n) => shuttlePrefs['skipBtn' + n] !== getShuttleDefaults()['skipBtn' + n]);
       } else {
-        dirty = shuttlePrefs[key] !== SHUTTLE_DEFAULTS[key];
+        dirty = shuttlePrefs[key] !== getShuttleDefaults()[key];
       }
       btn.classList.toggle('is-dirty', dirty);
     });
@@ -520,6 +665,7 @@
   }
 
   function refreshAll() {
+    applySkipLabelsToHotkeyDefaults();
     mountShuttleDiagrams();
     updateClockPreview();
     renderGeneralShortcuts();
@@ -695,6 +841,9 @@
     [KEYS.clockPos]: 'top-left',
     [KEYS.clockSize]: 'medium',
     [KEYS.clockShape]: 'rounded',
+    [KEYS.panelSize]: 'medium',
+    [KEYS.panelCompact]: false,
+    [KEYS.skipSeconds]: null,
     [KEYS.hotkeys]: null,
     [KEYS.shuttlePrefs]: null,
     [KEYS.autoPauseOnBlur]: false,
@@ -712,8 +861,12 @@
       clockPos.value = result[KEYS.clockPos] || 'top-left';
       clockSize.value = result[KEYS.clockSize] || 'medium';
       clockShape.value = result[KEYS.clockShape] || 'rounded';
+      if (panelSize) panelSize.value = result[KEYS.panelSize] === 'small' ? 'small' : 'medium';
+      if (panelCompact) panelCompact.checked = !!result[KEYS.panelCompact];
+      skipSeconds = normalizeSkipSeconds(result[KEYS.skipSeconds]);
       if (autoPause) autoPause.checked = !!result[KEYS.autoPauseOnBlur];
       hotkeys = mergeHotkeys(result[KEYS.hotkeys]);
+      applySkipLabelsToHotkeyDefaults();
       shuttlePrefs = mergeShuttle(result[KEYS.shuttlePrefs]);
       applyCustSections(result[KEYS.custSections]);
       if (SYNC_FEATURE) {
@@ -762,13 +915,52 @@
   clockSize.addEventListener('change', persistClock);
   clockShape.addEventListener('change', persistClock);
 
+  if (panelSize) panelSize.addEventListener('change', persistPanel);
+  if (panelCompact) panelCompact.addEventListener('change', persistPanel);
+
+  function readSkipSecondsFromEditor() {
+    const next = Object.assign({}, skipSeconds);
+    SKIP_ACTION_IDS.forEach((id) => {
+      const input = document.getElementById('omt-skip-' + id);
+      if (input) next[id] = clampSkipSeconds(input.value, SKIP_ACTION_DEFAULTS[id]);
+    });
+    return normalizeSkipSeconds(next);
+  }
+
   document.getElementById('omt-hotkey-editor').addEventListener('click', (e) => {
+    const skipReset = e.target.closest('[data-reset-skip]');
+    if (skipReset) {
+      const id = skipReset.getAttribute('data-reset-skip');
+      if (isSkipAction(id)) {
+        skipSeconds[id] = SKIP_ACTION_DEFAULTS[id];
+        persistSkips(skipSeconds);
+      }
+      return;
+    }
+    const chev = e.target.closest('.omt-chev[data-for]');
+    if (chev) {
+      const forId = chev.getAttribute('data-for');
+      if (forId && forId.indexOf('omt-skip-') === 0) {
+        const input = document.getElementById(forId);
+        if (input) {
+          const step = Number(chev.getAttribute('data-step')) || 0;
+          const min = Number(input.min) || 1;
+          const max = Number(input.max) || 999;
+          const cur = Number(input.value);
+          const next = Math.min(max, Math.max(min, (Number.isFinite(cur) ? cur : min) + step));
+          input.value = String(next);
+          persistSkips(readSkipSecondsFromEditor());
+        }
+        return;
+      }
+    }
     const resetBtn = e.target.closest('[data-reset-hotkey]');
     if (resetBtn) {
       const id = resetBtn.getAttribute('data-reset-hotkey');
       const def = HOTKEY_DEFAULTS[id];
       hotkeys[id] = {
-        key: def.key, ctrl: !!def.ctrl, shift: !!def.shift, alt: !!def.alt, meta: !!def.meta, label: def.label
+        key: def.key, ctrl: !!def.ctrl, shift: !!def.shift, alt: !!def.alt, meta: !!def.meta,
+        label: isSkipAction(id) ? skipHotkeyLabel(id) : def.label
       };
       listeningId = null;
       saveHotkeys();
@@ -799,11 +991,20 @@
       shift: !!e.shiftKey,
       alt: !!e.altKey,
       meta: !!e.metaKey,
-      label: HOTKEY_DEFAULTS[listeningId].label
+      label: isSkipAction(listeningId) ? skipHotkeyLabel(listeningId) : HOTKEY_DEFAULTS[listeningId].label
     };
     listeningId = null;
     saveHotkeys();
     refreshAll();
+  }, true);
+
+  document.getElementById('omt-hotkey-editor').addEventListener('change', (e) => {
+    if (!e.target.matches('input[type="number"][id^="omt-skip-"]')) return;
+    persistSkips(readSkipSecondsFromEditor());
+  });
+  document.getElementById('omt-hotkey-editor').addEventListener('blur', (e) => {
+    if (!e.target.matches('input[type="number"][id^="omt-skip-"]')) return;
+    persistSkips(readSkipSecondsFromEditor());
   }, true);
 
   document.getElementById('omt-hotkeys-reset-all').addEventListener('click', () => {
@@ -867,11 +1068,11 @@
     if (resetBtn) {
       const key = resetBtn.getAttribute('data-reset');
       if (key === 'playPauseBtn') {
-        shuttlePrefs.playPauseBtn = SHUTTLE_DEFAULTS.playPauseBtn;
-        shuttlePrefs.centreSkipSign = SHUTTLE_DEFAULTS.centreSkipSign;
-        for (let i = 1; i <= 5; i++) shuttlePrefs['skipBtn' + i] = SHUTTLE_DEFAULTS['skipBtn' + i];
-      } else if (key && Object.prototype.hasOwnProperty.call(SHUTTLE_DEFAULTS, key)) {
-        shuttlePrefs[key] = SHUTTLE_DEFAULTS[key];
+        shuttlePrefs.playPauseBtn = getShuttleDefaults().playPauseBtn;
+        shuttlePrefs.centreSkipSign = getShuttleDefaults().centreSkipSign;
+        for (let i = 1; i <= 5; i++) shuttlePrefs['skipBtn' + i] = getShuttleDefaults()['skipBtn' + i];
+      } else if (key && Object.prototype.hasOwnProperty.call(getShuttleDefaults(), key)) {
+        shuttlePrefs[key] = getShuttleDefaults()[key];
       }
       const partMap = {
         skipBtn1: 'btn1', skipBtn2: 'btn2', skipBtn3: 'btn3', skipBtn4: 'btn4', skipBtn5: 'btn5',
@@ -950,10 +1151,14 @@
   });
 
   document.getElementById('omt-reset-all-custom').addEventListener('click', () => {
-    if (!confirm('Reset all customizations (clock, shortcuts, ShuttleXpress) to defaults?')) return;
+    if (!confirm('Reset all customizations (clock, control panel, shortcuts, ShuttleXpress) to defaults?')) return;
     clockPos.value = 'top-left';
     clockSize.value = 'medium';
     clockShape.value = 'rounded';
+    if (panelSize) panelSize.value = 'medium';
+    if (panelCompact) panelCompact.checked = false;
+    skipSeconds = Object.assign({}, SKIP_ACTION_DEFAULTS);
+    applySkipLabelsToHotkeyDefaults();
     hotkeys = mergeHotkeys(null);
     shuttlePrefs = mergeShuttle(null);
     const resetPayload = {
@@ -961,6 +1166,9 @@
       [KEYS.clockSize]: 'medium',
       [KEYS.clockShape]: 'rounded',
       [KEYS.clockCustom]: null,
+      [KEYS.panelSize]: 'medium',
+      [KEYS.panelCompact]: false,
+      [KEYS.skipSeconds]: null,
       [KEYS.hotkeys]: null,
       [KEYS.shuttlePrefs]: null
     };

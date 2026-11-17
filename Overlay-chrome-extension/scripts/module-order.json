@@ -11,6 +11,7 @@
   "src/suppress.js",
   "src/icons.js",
   "src/ui.js",
+  "src/video-visibility.js",
   "src/wire.js",
   "src/anti-snap.js",
   "src/pdt.js",

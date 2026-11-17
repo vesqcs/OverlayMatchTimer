@@ -21,6 +21,8 @@
 
         updateCompactLayout();
         ensureFullscreenHook();
+        updateFullscreenButton();
+        if (typeof installVideoVisibilityGuard === 'function') installVideoVisibilityGuard();
     }
 
     function updateCompactLayout() {
@@ -32,12 +34,23 @@
         omtRoot.classList.toggle('omt-compact', compact);
     }
 
+    function updateFullscreenButton() {
+        const btn = q('omt-btn-fullscreen');
+        if (!btn) return;
+        const on = !!document.fullscreenElement;
+        btn.innerHTML = omtIcon(on ? 'minimize' : 'maximize', 16);
+        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+        btn.setAttribute('aria-label', on ? 'Exit fullscreen' : 'Enter fullscreen');
+        btn.classList.toggle('is-fullscreen', on);
+    }
+
     function ensureFullscreenHook() {
         if (fullscreenHooked) return;
         fullscreenHooked = true;
         document.addEventListener('fullscreenchange', () => {
             if (!vid || !omtRoot) return;
             updateCompactLayout();
+            updateFullscreenButton();
             const fs = document.fullscreenElement;
             if (fs && fs.contains(vid) && !fs.contains(omtRoot)) {
                 fs.appendChild(omtRoot);
@@ -48,6 +61,9 @@
                 if (anchor && omtRoot.parentElement !== anchor) {
                     anchor.appendChild(omtRoot);
                 }
+            }
+            if (typeof omtApplyVideoSurfaceVisibility === 'function') {
+                try { omtApplyVideoSurfaceVisibility(); } catch (_) {}
             }
         });
         window.addEventListener('resize', () => updateCompactLayout());
@@ -83,7 +99,7 @@
     <button id="omt-jump-kc2" type="button" style="display:none;"></button>
 </div>
 
-<!-- Timeline alone: full-width thin bar at the very bottom of the video -->
+<!-- Timeline: full-width scrubber on top; chrome row (time left / fullscreen right) below. -->
 <div id="omt-timeline-bar" class="omt-timeline-bar">
     <div class="omt-timeline-track">
         <div id="omt-timeline-period-ticks" class="omt-timeline-period-ticks" aria-hidden="true"></div>
@@ -91,10 +107,24 @@
         <div id="omt-timeline-markers" aria-hidden="true"></div>
     </div>
     <div id="omt-timeline-hover-tip" class="omt-timeline-hover-tip" hidden></div>
-    <div class="omt-timeline-times">
-        <span id="omt-v-time-current" class="omt-time-text omt-tip"${tip('Current video time')}>00:00:00</span>
-        <span class="omt-time-sep" aria-hidden="true">/</span>
-        <span id="omt-v-time-duration" class="omt-time-text omt-tip"${tip('Duration / live edge')}>00:00:00</span>
+    <div class="omt-timeline-chrome-row">
+        <div class="omt-timeline-chrome-left">
+            <button type="button" class="omt-timeline-vol-btn" id="omt-timeline-vol-btn" aria-label="Mute">${omtIcon('volume-2', 16)}</button>
+            <input type="range" id="omt-timeline-vol-range" class="omt-timeline-vol-range" min="0" max="1" step="0.05" value="1" aria-label="Volume">
+            <div class="omt-timeline-times" data-omt-time-mode="post">
+                <button type="button" id="omt-timeline-live-indicator" class="omt-timeline-live-indicator" hidden aria-label="Go to live">
+                    <span id="omt-timeline-live-delay" class="omt-timeline-live-delay">-0 s</span>
+                    <span id="omt-timeline-live-chip" class="omt-timeline-live-chip" hidden>LIVE</span>
+                </button>
+                <div id="omt-timeline-post-times" class="omt-timeline-post-times">
+                    <span id="omt-v-time-current" class="omt-time-text">0:00</span>
+                    <span class="omt-time-sep" aria-hidden="true">/</span>
+                    <span id="omt-v-time-duration" class="omt-time-text">0:00</span>
+                </div>
+                <span id="omt-timeline-match-clock" class="omt-timeline-match-clock" hidden>00:00</span>
+            </div>
+        </div>
+        <button type="button" class="omt-timeline-fs-btn" id="omt-btn-fullscreen" aria-label="Enter fullscreen" aria-pressed="false">${omtIcon('maximize', 16)}</button>
     </div>
 </div>
 
@@ -130,7 +160,6 @@
             <span class="omt-live-spacer" aria-hidden="true"></span>
             <button class="handle-btn omt-tip" id="omt-volume-icon-btn" type="button"${tip('Mute / Unmute')}>${omtIcon('volume-2', 16)}</button>
             <input type="range" id="omt-volume-range" class="omt-tip" min="0" max="1" step="0.05" value="1"${tip('Volume')}>
-            <button class="handle-btn omt-tip" id="omt-btn-fullscreen" type="button"${tip('Fullscreen')}>${omtIcon('maximize', 16)}</button>
         </div>
     </div>
 
@@ -227,11 +256,14 @@
         timelineSlider = q('omt-timeline-slider');
         vTimeCurrent = q('omt-v-time-current');
         vTimeDuration = q('omt-v-time-duration');
+        // Live/post slots are looked up by id when painting (no extra cached refs required).
         liveBtn = q('omt-live-btn');
         btnMainPlay = q('omt-btn-play');
         speedSelect = q('omt-speed-select');
         volumeRange = q('omt-volume-range');
         volumeIconBtn = q('omt-volume-icon-btn');
+        timelineVolRange = q('omt-timeline-vol-range');
+        timelineVolBtn = q('omt-timeline-vol-btn');
         shuttleToggle = q('omt-shuttle-enable-toggle');
         shuttleCheatsheet = q('omt-shuttle-cheatsheet');
     }

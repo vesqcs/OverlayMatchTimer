@@ -55,13 +55,13 @@
             }
         });
 
-        // --- Playback controls ---
-        q('omt-m120').addEventListener('click', () => saltarVideo(-120));
-        q('omt-m10').addEventListener('click', () => saltarVideo(-10));
-        q('omt-m2').addEventListener('click', () => saltarVideo(-2));
-        q('omt-p2').addEventListener('click', () => saltarVideo(2));
-        q('omt-p10').addEventListener('click', () => saltarVideo(10));
-        q('omt-p120').addEventListener('click', () => saltarVideo(120));
+        // --- Playback controls (amounts from Shortcuts; panel slots auto-sorted by value) ---
+        q('omt-m2').addEventListener('click', () => saltarVideo(-omtPanelSkipSeconds('back', 0)));
+        q('omt-m10').addEventListener('click', () => saltarVideo(-omtPanelSkipSeconds('back', 1)));
+        q('omt-m120').addEventListener('click', () => saltarVideo(-omtPanelSkipSeconds('back', 2)));
+        q('omt-p2').addEventListener('click', () => saltarVideo(omtPanelSkipSeconds('fwd', 0)));
+        q('omt-p10').addEventListener('click', () => saltarVideo(omtPanelSkipSeconds('fwd', 1)));
+        q('omt-p120').addEventListener('click', () => saltarVideo(omtPanelSkipSeconds('fwd', 2)));
         q('omt-btn-play').addEventListener('click', togglePlay);
         q('omt-prev-frame').addEventListener('click', retrocederFrame);
         q('omt-next-frame').addEventListener('click', avancarFrame);
@@ -93,42 +93,48 @@
 
         // --- Live button ---
         liveBtn.addEventListener('click', irParaLive);
+        const liveIndicator = omtRoot.querySelector('#omt-timeline-live-indicator');
+        if (liveIndicator) liveIndicator.addEventListener('click', irParaLive);
 
-        // --- Volume ---
+        // --- Volume (panel + timeline chrome row stay in sync) ---
+        const applyVolumeInput = (raw) => {
+            const v = Math.max(0, Math.min(1, parseFloat(raw)));
+            if (!isFinite(v) || !vid) return;
+            vid.volume = v;
+            if (v > 0) vid.muted = false;
+            else vid.muted = true;
+            syncVolumeControlsFromVideo();
+            localStorage.setItem('matchTimerVolume', String(v));
+        };
         const volGuardado = localStorage.getItem('matchTimerVolume');
         if (volGuardado !== null) {
-            vid.volume = parseFloat(volGuardado);
-            volumeRange.value = volGuardado;
-            atualizarIconeVolume(vid.volume);
-            if (vid.volume > 0) {
-                vid.muted = false;
+            const parsed = parseFloat(volGuardado);
+            if (isFinite(parsed)) {
+                vid.volume = parsed;
+                if (parsed > 0) vid.muted = false;
+                else vid.muted = true;
             }
+            syncVolumeControlsFromVideo();
+        } else {
+            syncVolumeControlsFromVideo();
         }
-        volumeRange.addEventListener('input', function () {
-            vid.volume = this.value;
-            if (vid.volume > 0) {
-                vid.muted = false;
-            }
-            atualizarIconeVolume(vid.volume);
-            localStorage.setItem('matchTimerVolume', vid.volume);
-        });
+        volumeRange.addEventListener('input', function () { applyVolumeInput(this.value); });
         volumeRange.addEventListener('change', () => volumeRange.blur());
         volumeIconBtn.addEventListener('click', toggleMute);
+        if (timelineVolRange) {
+            timelineVolRange.addEventListener('input', function () { applyVolumeInput(this.value); });
+            timelineVolRange.addEventListener('change', () => timelineVolRange.blur());
+        }
+        if (timelineVolBtn) timelineVolBtn.addEventListener('click', toggleMute);
 
         vid.addEventListener('volumechange', () => {
-            if (vid.muted || vid.volume === 0) {
-                volumeRange.value = 0;
-                atualizarIconeVolume(0);
-            } else {
-                volumeRange.value = vid.volume;
-                atualizarIconeVolume(vid.volume);
-            }
+            syncVolumeControlsFromVideo();
         });
 
         // --- Timeline slider ---
         timelineSlider.addEventListener('input', function () {
             isDraggingTimeline = true;
-            vTimeCurrent.innerText = formatarTempoVideo(parseFloat(this.value));
+            if (typeof atualizarTempoTimelineDireito === 'function') atualizarTempoTimelineDireito();
             // Redesign only: keep fill glued to the thumb while dragging (no wait for timeupdate).
             if (typeof paintTimelineScrubberProgress === 'function') paintTimelineScrubberProgress(true);
         });
@@ -190,7 +196,6 @@
 
             if (!isDraggingTimeline) {
                 timelineSlider.value = vid.currentTime;
-                vTimeCurrent.innerText = formatarTempoVideo(vid.currentTime);
             }
             atualizarRelogio();
             atualizarEstadoLive();

@@ -71,7 +71,13 @@
     // Cached UI element refs (populated after injection)
     let timerUI, osd, setupPanel, controlsPanel, timelineSlider,
         vTimeCurrent, vTimeDuration, liveBtn, btnMainPlay, speedSelect,
-        volumeRange, volumeIconBtn, shuttleToggle, shuttleCheatsheet;
+        volumeRange, volumeIconBtn, timelineVolRange, timelineVolBtn,
+        shuttleToggle, shuttleCheatsheet;
+    // Timeline right-side live delay / LIVE chip (hysteresis latch)
+    let omtTimelineLiveChipOn = false;
+    // Easy to tune: enter LIVE chip when delay <= enter; leave only when delay > leave.
+    const OMT_LIVE_CHIP_ENTER_S = 10;
+    const OMT_LIVE_CHIP_LEAVE_S = 15;
 
 /* =========================================================
    SITE ADAPTER INTERFACE
@@ -397,6 +403,9 @@
         if (site.id !== 'examino') {
             document.removeEventListener('keydown', handleKeydown, true);
         }
+        if (typeof teardownVideoVisibilityGuard === 'function') {
+            try { teardownVideoVisibilityGuard(); } catch (_) {}
+        }
         // Remove the injected HUD from the DOM
         const existingRoot = document.getElementById('omt-root');
         if (existingRoot && existingRoot.parentNode) {
@@ -413,6 +422,7 @@
         shuttleToggle = null;
         shuttleCheatsheet = null;
         liveBtn = null;
+        omtTimelineLiveChipOn = false;
         btnMainPlay = null;
         timelineSlider = null;
         vTimeCurrent = null;
@@ -420,6 +430,8 @@
         speedSelect = null;
         volumeRange = null;
         volumeIconBtn = null;
+        timelineVolRange = null;
+        timelineVolBtn = null;
 
         // --- TOTAL LIFECYCLE RESET (Bug 1 fix) ---
         // Every SPA navigation must begin with a completely clean slate so that
@@ -557,6 +569,9 @@
         // this is a Review/DVR session with a seekable timeline.
         hlsInstance = getHlsInstance();
         patchHlsForDvr();
+        // Optimistic HUD-on so host-chrome CSS gates apply immediately;
+        // video-visibility guard turns it off if the surface is collapsed.
+        if (typeof omtSetHudActive === 'function') omtSetHudActive(true);
         suppressNativeControls();
         injectUI();
         cacheUIRefs();
@@ -810,6 +825,8 @@
 
         updateCompactLayout();
         ensureFullscreenHook();
+        updateFullscreenButton();
+        if (typeof installVideoVisibilityGuard === 'function') installVideoVisibilityGuard();
     }
 
     function updateCompactLayout() {
@@ -821,12 +838,23 @@
         omtRoot.classList.toggle('omt-compact', compact);
     }
 
+    function updateFullscreenButton() {
+        const btn = q('omt-btn-fullscreen');
+        if (!btn) return;
+        const on = !!document.fullscreenElement;
+        btn.innerHTML = omtIcon(on ? 'minimize' : 'maximize', 16);
+        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+        btn.setAttribute('aria-label', on ? 'Exit fullscreen' : 'Enter fullscreen');
+        btn.classList.toggle('is-fullscreen', on);
+    }
+
     function ensureFullscreenHook() {
         if (fullscreenHooked) return;
         fullscreenHooked = true;
         document.addEventListener('fullscreenchange', () => {
             if (!vid || !omtRoot) return;
             updateCompactLayout();
+            updateFullscreenButton();
             const fs = document.fullscreenElement;
             if (fs && fs.contains(vid) && !fs.contains(omtRoot)) {
                 fs.appendChild(omtRoot);
@@ -837,6 +865,9 @@
                 if (anchor && omtRoot.parentElement !== anchor) {
                     anchor.appendChild(omtRoot);
                 }
+            }
+            if (typeof omtApplyVideoSurfaceVisibility === 'function') {
+                try { omtApplyVideoSurfaceVisibility(); } catch (_) {}
             }
         });
         window.addEventListener('resize', () => updateCompactLayout());
@@ -872,7 +903,7 @@
     <button id="omt-jump-kc2" type="button" style="display:none;"></button>
 </div>
 
-<!-- Timeline alone: full-width thin bar at the very bottom of the video -->
+<!-- Timeline: full-width scrubber on top; chrome row (time left / fullscreen right) below. -->
 <div id="omt-timeline-bar" class="omt-timeline-bar">
     <div class="omt-timeline-track">
         <div id="omt-timeline-period-ticks" class="omt-timeline-period-ticks" aria-hidden="true"></div>
@@ -880,10 +911,24 @@
         <div id="omt-timeline-markers" aria-hidden="true"></div>
     </div>
     <div id="omt-timeline-hover-tip" class="omt-timeline-hover-tip" hidden></div>
-    <div class="omt-timeline-times">
-        <span id="omt-v-time-current" class="omt-time-text omt-tip"${tip('Current video time')}>00:00:00</span>
-        <span class="omt-time-sep" aria-hidden="true">/</span>
-        <span id="omt-v-time-duration" class="omt-time-text omt-tip"${tip('Duration / live edge')}>00:00:00</span>
+    <div class="omt-timeline-chrome-row">
+        <div class="omt-timeline-chrome-left">
+            <button type="button" class="omt-timeline-vol-btn" id="omt-timeline-vol-btn" aria-label="Mute">${omtIcon('volume-2', 16)}</button>
+            <input type="range" id="omt-timeline-vol-range" class="omt-timeline-vol-range" min="0" max="1" step="0.05" value="1" aria-label="Volume">
+            <div class="omt-timeline-times" data-omt-time-mode="post">
+                <button type="button" id="omt-timeline-live-indicator" class="omt-timeline-live-indicator" hidden aria-label="Go to live">
+                    <span id="omt-timeline-live-delay" class="omt-timeline-live-delay">-0 s</span>
+                    <span id="omt-timeline-live-chip" class="omt-timeline-live-chip" hidden>LIVE</span>
+                </button>
+                <div id="omt-timeline-post-times" class="omt-timeline-post-times">
+                    <span id="omt-v-time-current" class="omt-time-text">0:00</span>
+                    <span class="omt-time-sep" aria-hidden="true">/</span>
+                    <span id="omt-v-time-duration" class="omt-time-text">0:00</span>
+                </div>
+                <span id="omt-timeline-match-clock" class="omt-timeline-match-clock" hidden>00:00</span>
+            </div>
+        </div>
+        <button type="button" class="omt-timeline-fs-btn" id="omt-btn-fullscreen" aria-label="Enter fullscreen" aria-pressed="false">${omtIcon('maximize', 16)}</button>
     </div>
 </div>
 
@@ -919,7 +964,6 @@
             <span class="omt-live-spacer" aria-hidden="true"></span>
             <button class="handle-btn omt-tip" id="omt-volume-icon-btn" type="button"${tip('Mute / Unmute')}>${omtIcon('volume-2', 16)}</button>
             <input type="range" id="omt-volume-range" class="omt-tip" min="0" max="1" step="0.05" value="1"${tip('Volume')}>
-            <button class="handle-btn omt-tip" id="omt-btn-fullscreen" type="button"${tip('Fullscreen')}>${omtIcon('maximize', 16)}</button>
         </div>
     </div>
 
@@ -1016,11 +1060,14 @@
         timelineSlider = q('omt-timeline-slider');
         vTimeCurrent = q('omt-v-time-current');
         vTimeDuration = q('omt-v-time-duration');
+        // Live/post slots are looked up by id when painting (no extra cached refs required).
         liveBtn = q('omt-live-btn');
         btnMainPlay = q('omt-btn-play');
         speedSelect = q('omt-speed-select');
         volumeRange = q('omt-volume-range');
         volumeIconBtn = q('omt-volume-icon-btn');
+        timelineVolRange = q('omt-timeline-vol-range');
+        timelineVolBtn = q('omt-timeline-vol-btn');
         shuttleToggle = q('omt-shuttle-enable-toggle');
         shuttleCheatsheet = q('omt-shuttle-cheatsheet');
     }
@@ -1249,6 +1296,163 @@
         setMorePanelOpen(!panel.classList.contains('is-open'));
     }
 
+/* Hide overlay when the video surface is not meaningfully visible
+       (InPlay Review curtain / collapsed player). Layout only — does not
+       read or change video time / PDT.
+
+       v2.0.2:
+       - No elementFromPoint (forced layout + false hides).
+       - No ResizeObserver on the video (toggling #omt-root display was
+         feeding RO → apply → layout → RO storms on InPlay).
+       - Size hysteresis so curtain animations do not flap hud-on.
+       - Debounced IntersectionObserver + window resize/fullscreen only.
+       - When obscured, clear html.omt-hud-on so host chrome can show. */
+    const OMT_VIDEO_VIS_SHOW_MIN_PX = 24;
+    const OMT_VIDEO_VIS_HIDE_MAX_PX = 12;
+    const OMT_VIDEO_VIS_DEBOUNCE_MS = 150;
+
+    let omtVisApplyTimer = null;
+    let omtVisLastVisible = null;
+    let omtVisIntersectionObserver = null;
+    let omtVisListenersBound = false;
+    // Test/diagnostics counters (idle pages should stay tiny).
+    let omtVisSchedules = 0;
+    let omtVisApplies = 0;
+    let omtVisDomWrites = 0;
+
+    function omtVideoVisibilityStats() {
+        return {
+            schedules: omtVisSchedules,
+            applies: omtVisApplies,
+            domWrites: omtVisDomWrites,
+            lastVisible: omtVisLastVisible
+        };
+    }
+
+    function omtSetHudActive(active) {
+        try {
+            const on = !!active;
+            if (document.documentElement.classList.contains('omt-hud-on') === on &&
+                (!document.body || document.body.classList.contains('omt-hud-on') === on)) {
+                return;
+            }
+            document.documentElement.classList.toggle('omt-hud-on', on);
+            if (document.body) document.body.classList.toggle('omt-hud-on', on);
+            omtVisDomWrites += 1;
+        } catch (_) {}
+    }
+
+    function omtVideoSurfaceVisible(videoEl) {
+        if (!videoEl || !videoEl.isConnected) return false;
+        // Fullscreen owns the screen. IntersectionObserver often mis-reads the
+        // FS element (0 intersection vs layout viewport), which hid our HUD /
+        // flipped hud-on and left Chrome treating the media as background —
+        // local player: skip-forward freezes until exit fullscreen. Always
+        // treat FS that contains the video as visible.
+        try {
+            const fs = document.fullscreenElement;
+            if (fs && (fs === videoEl || fs.contains(videoEl))) return true;
+        } catch (_) {}
+        try {
+            const cs = getComputedStyle(videoEl);
+            if (cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity) === 0) {
+                return false;
+            }
+        } catch (_) {}
+        const r = videoEl.getBoundingClientRect();
+        const minSide = Math.min(r.width, r.height);
+        // Hysteresis: once hidden, need SHOW_MIN to become visible; once
+        // visible, only hide below HIDE_MAX (avoids curtain-animation flaps).
+        const need = (omtVisLastVisible === true) ? OMT_VIDEO_VIS_HIDE_MAX_PX : OMT_VIDEO_VIS_SHOW_MIN_PX;
+        if (!(minSide >= need)) return false;
+        const vw = window.innerWidth || document.documentElement.clientWidth || 0;
+        const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+        if (vw <= 0 || vh <= 0) return false;
+        return r.bottom > 0 && r.right > 0 && r.top < vh && r.left < vw;
+    }
+
+    function omtApplyVideoSurfaceVisibility() {
+        omtVisApplies += 1;
+        if (!omtRoot) {
+            omtSetHudActive(false);
+            return;
+        }
+        const visible = omtVideoSurfaceVisible(vid);
+        if (omtVisLastVisible === visible) {
+            return;
+        }
+        omtVisLastVisible = visible;
+        omtVisDomWrites += 1;
+        omtRoot.classList.toggle('omt-video-obscured', !visible);
+        omtRoot.setAttribute('data-omt-video-visible', visible ? '1' : '0');
+        omtSetHudActive(visible);
+    }
+
+    function omtScheduleVideoSurfaceVisibility() {
+        omtVisSchedules += 1;
+        if (omtVisApplyTimer) return;
+        omtVisApplyTimer = setTimeout(() => {
+            omtVisApplyTimer = null;
+            try { omtApplyVideoSurfaceVisibility(); } catch (_) {}
+        }, OMT_VIDEO_VIS_DEBOUNCE_MS);
+    }
+
+    function teardownVideoVisibilityGuard() {
+        if (omtVisApplyTimer) {
+            clearTimeout(omtVisApplyTimer);
+            omtVisApplyTimer = null;
+        }
+        if (omtVisIntersectionObserver) {
+            try { omtVisIntersectionObserver.disconnect(); } catch (_) {}
+            omtVisIntersectionObserver = null;
+        }
+        if (omtVisListenersBound) {
+            window.removeEventListener('scroll', omtScheduleVideoSurfaceVisibility);
+            window.removeEventListener('resize', omtScheduleVideoSurfaceVisibility);
+            document.removeEventListener('fullscreenchange', omtScheduleVideoSurfaceVisibility);
+            omtVisListenersBound = false;
+        }
+        omtVisLastVisible = null;
+        omtSetHudActive(false);
+    }
+
+    function installVideoVisibilityGuard() {
+        if (!vid || !omtRoot) return;
+        if (omtRoot.dataset.omtVisGuard === '1') {
+            omtApplyVideoSurfaceVisibility();
+            return;
+        }
+        omtRoot.dataset.omtVisGuard = '1';
+        omtVisSchedules = 0;
+        omtVisApplies = 0;
+        omtVisDomWrites = 0;
+
+        // IntersectionObserver only — do NOT ResizeObserver(vid): showing/hiding
+        // #omt-root inside the player changes layout and re-enters RO forever.
+        if (typeof IntersectionObserver === 'function') {
+            try {
+                omtVisIntersectionObserver = new IntersectionObserver(
+                    () => omtScheduleVideoSurfaceVisibility(),
+                    { threshold: [0, 1] }
+                );
+                omtVisIntersectionObserver.observe(vid);
+            } catch (_) {
+                omtVisIntersectionObserver = null;
+            }
+        }
+        if (!omtVisListenersBound) {
+            // Bubble scroll only (not capture) — InPlay curtains scroll often;
+            // capture+every scroll was scheduling visibility work constantly.
+            window.addEventListener('scroll', omtScheduleVideoSurfaceVisibility, { passive: true });
+            window.addEventListener('resize', omtScheduleVideoSurfaceVisibility, { passive: true });
+            document.addEventListener('fullscreenchange', omtScheduleVideoSurfaceVisibility);
+            omtVisListenersBound = true;
+        }
+        // Expose counters for e2e (MAIN world).
+        try { window.__omtVideoVisibilityStats = omtVideoVisibilityStats; } catch (_) {}
+        omtApplyVideoSurfaceVisibility();
+    }
+
 /* Wire UI controls to timer / playback / auto-hide / site extras. */
     /* =========================================================
        6. WIRE ALL EVENTS
@@ -1306,13 +1510,13 @@
             }
         });
 
-        // --- Playback controls ---
-        q('omt-m120').addEventListener('click', () => saltarVideo(-120));
-        q('omt-m10').addEventListener('click', () => saltarVideo(-10));
-        q('omt-m2').addEventListener('click', () => saltarVideo(-2));
-        q('omt-p2').addEventListener('click', () => saltarVideo(2));
-        q('omt-p10').addEventListener('click', () => saltarVideo(10));
-        q('omt-p120').addEventListener('click', () => saltarVideo(120));
+        // --- Playback controls (amounts from Shortcuts; panel slots auto-sorted by value) ---
+        q('omt-m2').addEventListener('click', () => saltarVideo(-omtPanelSkipSeconds('back', 0)));
+        q('omt-m10').addEventListener('click', () => saltarVideo(-omtPanelSkipSeconds('back', 1)));
+        q('omt-m120').addEventListener('click', () => saltarVideo(-omtPanelSkipSeconds('back', 2)));
+        q('omt-p2').addEventListener('click', () => saltarVideo(omtPanelSkipSeconds('fwd', 0)));
+        q('omt-p10').addEventListener('click', () => saltarVideo(omtPanelSkipSeconds('fwd', 1)));
+        q('omt-p120').addEventListener('click', () => saltarVideo(omtPanelSkipSeconds('fwd', 2)));
         q('omt-btn-play').addEventListener('click', togglePlay);
         q('omt-prev-frame').addEventListener('click', retrocederFrame);
         q('omt-next-frame').addEventListener('click', avancarFrame);
@@ -1344,42 +1548,48 @@
 
         // --- Live button ---
         liveBtn.addEventListener('click', irParaLive);
+        const liveIndicator = omtRoot.querySelector('#omt-timeline-live-indicator');
+        if (liveIndicator) liveIndicator.addEventListener('click', irParaLive);
 
-        // --- Volume ---
+        // --- Volume (panel + timeline chrome row stay in sync) ---
+        const applyVolumeInput = (raw) => {
+            const v = Math.max(0, Math.min(1, parseFloat(raw)));
+            if (!isFinite(v) || !vid) return;
+            vid.volume = v;
+            if (v > 0) vid.muted = false;
+            else vid.muted = true;
+            syncVolumeControlsFromVideo();
+            localStorage.setItem('matchTimerVolume', String(v));
+        };
         const volGuardado = localStorage.getItem('matchTimerVolume');
         if (volGuardado !== null) {
-            vid.volume = parseFloat(volGuardado);
-            volumeRange.value = volGuardado;
-            atualizarIconeVolume(vid.volume);
-            if (vid.volume > 0) {
-                vid.muted = false;
+            const parsed = parseFloat(volGuardado);
+            if (isFinite(parsed)) {
+                vid.volume = parsed;
+                if (parsed > 0) vid.muted = false;
+                else vid.muted = true;
             }
+            syncVolumeControlsFromVideo();
+        } else {
+            syncVolumeControlsFromVideo();
         }
-        volumeRange.addEventListener('input', function () {
-            vid.volume = this.value;
-            if (vid.volume > 0) {
-                vid.muted = false;
-            }
-            atualizarIconeVolume(vid.volume);
-            localStorage.setItem('matchTimerVolume', vid.volume);
-        });
+        volumeRange.addEventListener('input', function () { applyVolumeInput(this.value); });
         volumeRange.addEventListener('change', () => volumeRange.blur());
         volumeIconBtn.addEventListener('click', toggleMute);
+        if (timelineVolRange) {
+            timelineVolRange.addEventListener('input', function () { applyVolumeInput(this.value); });
+            timelineVolRange.addEventListener('change', () => timelineVolRange.blur());
+        }
+        if (timelineVolBtn) timelineVolBtn.addEventListener('click', toggleMute);
 
         vid.addEventListener('volumechange', () => {
-            if (vid.muted || vid.volume === 0) {
-                volumeRange.value = 0;
-                atualizarIconeVolume(0);
-            } else {
-                volumeRange.value = vid.volume;
-                atualizarIconeVolume(vid.volume);
-            }
+            syncVolumeControlsFromVideo();
         });
 
         // --- Timeline slider ---
         timelineSlider.addEventListener('input', function () {
             isDraggingTimeline = true;
-            vTimeCurrent.innerText = formatarTempoVideo(parseFloat(this.value));
+            if (typeof atualizarTempoTimelineDireito === 'function') atualizarTempoTimelineDireito();
             // Redesign only: keep fill glued to the thumb while dragging (no wait for timeupdate).
             if (typeof paintTimelineScrubberProgress === 'function') paintTimelineScrubberProgress(true);
         });
@@ -1441,7 +1651,6 @@
 
             if (!isDraggingTimeline) {
                 timelineSlider.value = vid.currentTime;
-                vTimeCurrent.innerText = formatarTempoVideo(vid.currentTime);
             }
             atualizarRelogio();
             atualizarEstadoLive();
@@ -1586,10 +1795,22 @@
     }
 
     function seekTo(time) {
+        if (!vid) return;
         const t = clampToSeekable(time);
         userIntendedTime = t;
         seekLockUntil = Date.now() + 4000; // 4-second protection window
+        const wasPlaying = !vid.paused && !vid.ended;
         vid.currentTime = t;
+        // Local/FS: Chrome can leave decode stalled after a seek while the
+        // element is fullscreen (frames only catch up on exit). Re-assert
+        // play if we were already playing — does not toggle pause/play.
+        try {
+            if (wasPlaying && document.fullscreenElement &&
+                (document.fullscreenElement === vid || document.fullscreenElement.contains(vid))) {
+                const p = vid.play();
+                if (p && typeof p.catch === 'function') p.catch(() => {});
+            }
+        } catch (_) {}
     }
 
     function antiLiveSnap() {
@@ -1680,6 +1901,154 @@
         return `${h}:${m}:${s}`;
     }
 
+    /** Compact player time for POST right-side slot (e.g. 34:12 or 1:52:40). */
+    function formatarTempoCompacto(segundos) {
+        if (isNaN(segundos) || !isFinite(segundos) || segundos < 0) segundos = 0;
+        const total = Math.floor(segundos);
+        const h = Math.floor(total / 3600);
+        const m = Math.floor((total % 3600) / 60);
+        const s = total % 60;
+        if (h > 0) {
+            return h + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+        }
+        return m + ':' + String(s).padStart(2, '0');
+    }
+
+    /** Live delay text: -12 s / -1:05 / -1:02:10 */
+    function formatarAtrasoLive(delaySec) {
+        const d = Math.max(0, Math.floor(Number(delaySec) || 0));
+        if (d < 60) return '-' + d + ' s';
+        const h = Math.floor(d / 3600);
+        const m = Math.floor((d % 3600) / 60);
+        const s = d % 60;
+        if (h > 0) {
+            return '-' + h + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+        }
+        return '-' + m + ':' + String(s).padStart(2, '0');
+    }
+
+    /** LIVE timeline mode (delay / LIVE chip) vs POST (current / duration). */
+    function omtIsTimelineLiveMode() {
+        if (!omtRoot || !site) return false;
+        if (site.id === 'local' || omtRoot.classList.contains('omt-local')) return false;
+        if (site.id === 'examino') {
+            try {
+                if (examinoManualSourceChoice === 'VOD') return false;
+                if (typeof detectCurrentSource === 'function') {
+                    const src = detectCurrentSource();
+                    if (src === 'VOD') return false;
+                } else if (/\/play\/vod\b/i.test(location.pathname || '')) {
+                    return false;
+                }
+            } catch (_) {}
+        }
+        return true;
+    }
+
+    function omtTimelinePlayheadSec() {
+        if (isDraggingTimeline && timelineSlider) {
+            const v = parseFloat(timelineSlider.value);
+            return isFinite(v) ? v : 0;
+        }
+        return vid ? (vid.currentTime || 0) : 0;
+    }
+
+    function omtTimelineLiveEdgeSec() {
+        if (!vid) return 0;
+        try {
+            if (vid.seekable && vid.seekable.length > 0) {
+                return vid.seekable.end(vid.seekable.length - 1);
+            }
+        } catch (_) {}
+        if (vid.duration && isFinite(vid.duration)) return vid.duration;
+        const mediaDuration = site && typeof site.effectiveDuration === 'function'
+            ? site.effectiveDuration(vid) : NaN;
+        return (mediaDuration && isFinite(mediaDuration)) ? mediaDuration : 0;
+    }
+
+    /** Kick-off offset set → timeline chrome shows match clock only. */
+    function omtHasKickoffOffset() {
+        return !!(timerAtivo && (
+            kickoff1 !== null || kickoff2 !== null || kickoffC1 !== null || kickoffC2 !== null
+        ));
+    }
+
+    /**
+     * Paint timeline chrome-row time (left): match clock, LIVE delay/chip, or POST current/duration.
+     * Does not read PDT or change seek/hooks — reuses playhead + live-edge already used for LIVE.
+     */
+    function atualizarTempoTimelineDireito() {
+        if (!omtRoot) return;
+        const timesWrap = omtRoot.querySelector('.omt-timeline-times');
+        const liveInd = omtRoot.querySelector('#omt-timeline-live-indicator');
+        const liveDelayEl = omtRoot.querySelector('#omt-timeline-live-delay');
+        const liveChipEl = omtRoot.querySelector('#omt-timeline-live-chip');
+        const postWrap = omtRoot.querySelector('#omt-timeline-post-times');
+        const matchClockEl = omtRoot.querySelector('#omt-timeline-match-clock');
+        if (!timesWrap || !liveInd || !liveDelayEl || !liveChipEl || !postWrap || !matchClockEl) return;
+
+        const playhead = omtTimelinePlayheadSec();
+        const kickoffOn = omtHasKickoffOffset();
+
+        if (kickoffOn) {
+            timesWrap.dataset.omtTimeMode = 'kickoff';
+            liveInd.hidden = true;
+            postWrap.hidden = true;
+            matchClockEl.hidden = false;
+            omtTimelineLiveChipOn = false;
+            // Same value the on-video match clock shows (reuse mirror helper / live DOM text).
+            let clockText = '';
+            if (typeof matchClockAtVideoTime === 'function') {
+                const info = matchClockAtVideoTime(playhead);
+                clockText = (info && info.clock) ? info.clock : '';
+            }
+            if (!clockText && timerUI && timerUI.innerText) clockText = timerUI.innerText;
+            matchClockEl.textContent = clockText || '00:00';
+            return;
+        }
+
+        matchClockEl.hidden = true;
+        const liveMode = omtIsTimelineLiveMode();
+        timesWrap.dataset.omtTimeMode = liveMode ? 'live' : 'post';
+        liveInd.hidden = !liveMode;
+        postWrap.hidden = liveMode;
+
+        if (!liveMode) {
+            omtTimelineLiveChipOn = false;
+            let dur = omtTimelineLiveEdgeSec();
+            if (!(dur > 0) && site && typeof site.effectiveDuration === 'function') {
+                const ed = site.effectiveDuration(vid);
+                if (ed && isFinite(ed)) dur = ed;
+            }
+            if (vTimeCurrent) vTimeCurrent.innerText = formatarTempoCompacto(playhead);
+            if (vTimeDuration) vTimeDuration.innerText = formatarTempoCompacto(dur);
+            return;
+        }
+
+        const liveEdge = omtTimelineLiveEdgeSec();
+        const delay = liveEdge > 0 ? Math.max(0, liveEdge - playhead) : 0;
+
+        // Hysteresis: enter LIVE when delay <= ENTER, leave only when delay > LEAVE.
+        if (omtTimelineLiveChipOn) {
+            if (delay > OMT_LIVE_CHIP_LEAVE_S) omtTimelineLiveChipOn = false;
+        } else if (delay <= OMT_LIVE_CHIP_ENTER_S) {
+            omtTimelineLiveChipOn = true;
+        }
+
+        if (omtTimelineLiveChipOn) {
+            liveDelayEl.hidden = true;
+            liveChipEl.hidden = false;
+            liveInd.classList.add('is-at-live');
+            liveInd.setAttribute('aria-label', 'At live');
+        } else {
+            liveDelayEl.hidden = false;
+            liveChipEl.hidden = true;
+            liveDelayEl.textContent = formatarAtrasoLive(delay);
+            liveInd.classList.remove('is-at-live');
+            liveInd.setAttribute('aria-label', 'Go to live');
+        }
+    }
+
     function inicializarMetadadosTimeline() {
         const mediaDuration = site.effectiveDuration(vid);
         // InplayIP path: only enters when duration is finite (effectiveDuration === vid.duration).
@@ -1695,9 +2064,9 @@
             }
             timelineSlider.min = minVal;
             timelineSlider.max = mediaDuration;
-            vTimeDuration.innerText = formatarTempoVideo(mediaDuration);
             timelineSlider.disabled = false;
             if (parseFloat(timelineSlider.value) < minVal) timelineSlider.value = minVal;
+            if (typeof atualizarTempoTimelineDireito === 'function') atualizarTempoTimelineDireito();
 
             // --- SE FOR DVR (REVIEW): Mostra os controlos (caso não tenham sido escondidos pelo H) ---
             if (controlsPanel && !isManuallyHidden) {
@@ -1709,8 +2078,8 @@
         } else {
             timelineSlider.min = 0;
             timelineSlider.max = 100;
-            vTimeDuration.innerText = 'LIVE';
             timelineSlider.disabled = true;
+            if (typeof atualizarTempoTimelineDireito === 'function') atualizarTempoTimelineDireito();
 
             // --- SE FOR LIVE PURO (HD): Esconde os controlos automaticamente ---
             if (controlsPanel) {
@@ -1789,6 +2158,7 @@
         inicializarMetadadosTimeline();
         atualizarMarcadores();
         atualizarRelogio();
+        if (typeof atualizarTempoTimelineDireito === 'function') atualizarTempoTimelineDireito();
         esconderSetup();
         const _kickoffBtn = q('omt-btn-set-kickoff');
         if (_kickoffBtn) _kickoffBtn.classList.add('kickoff-set');
@@ -1826,6 +2196,7 @@
 
         inicializarMetadadosTimeline();
         atualizarMarcadores();
+        if (typeof atualizarTempoTimelineDireito === 'function') atualizarTempoTimelineDireito();
         const _kickoffBtnClear = q('omt-btn-set-kickoff');
         if (_kickoffBtnClear) _kickoffBtnClear.classList.remove('kickoff-set');
         if (typeof omtSyncPublishKickoffs === 'function') omtSyncPublishKickoffs();
@@ -1876,6 +2247,7 @@
 
         atualizarMarcadores();
         atualizarRelogio();
+        if (typeof atualizarTempoTimelineDireito === 'function') atualizarTempoTimelineDireito();
         if (typeof omtSyncPublishKickoffs === 'function') omtSyncPublishKickoffs();
         mostrarOSD('Offset ' + (deltaSec > 0 ? '+' : '') + deltaSec + 's');
     }
@@ -2319,7 +2691,7 @@
         if (k1 !== null && t < k1) {
             return {
                 period: '',
-                clock: 'Pre-match'
+                clock: 'Pre-Match'
             };
         }
 
@@ -2721,6 +3093,8 @@
             if (timelineBar) timelineBar.classList.toggle('omt-at-live', atLive);
             if (controlsPanel) controlsPanel.classList.toggle('omt-at-live', atLive);
         }
+        // Right-side LIVE delay / POST times (UI only; same liveEdge/playhead values).
+        if (typeof atualizarTempoTimelineDireito === 'function') atualizarTempoTimelineDireito();
         // While the user is scrubbing, input handler owns the fill (avoid fighting the thumb).
         if (!isDraggingTimeline) paintTimelineScrubberProgress(false);
     }
@@ -2734,26 +3108,39 @@
         }
     }
 
+    function syncVolumeControlsFromVideo() {
+        if (!vid) return;
+        const muted = !!(vid.muted || vid.volume === 0);
+        const vol = muted ? 0 : (vid.volume || 0);
+        if (volumeRange) volumeRange.value = vol;
+        if (timelineVolRange) timelineVolRange.value = vol;
+        atualizarIconeVolume(vol);
+    }
+
     function toggleMute() {
         if (vid.volume > 0 && !vid.muted) {
             ultimoVolume = vid.volume;
             vid.volume = 0;
             vid.muted = true;
-            volumeRange.value = 0;
         } else {
             vid.volume = ultimoVolume > 0 ? ultimoVolume : 1;
             vid.muted = false;
-            volumeRange.value = vid.volume;
         }
-        atualizarIconeVolume(vid.volume);
-        localStorage.setItem('matchTimerVolume', vid.volume);
-        volumeIconBtn.blur();
+        syncVolumeControlsFromVideo();
+        localStorage.setItem('matchTimerVolume', vid.muted ? 0 : vid.volume);
+        if (volumeIconBtn) volumeIconBtn.blur();
+        if (timelineVolBtn) timelineVolBtn.blur();
     }
 
     function atualizarIconeVolume(vol) {
-        if (!volumeIconBtn) return;
         const name = vol === 0 ? 'volume-x' : vol < 0.5 ? 'volume-1' : 'volume-2';
-        volumeIconBtn.innerHTML = omtIcon(name, 15);
+        const html = omtIcon(name, 15);
+        if (volumeIconBtn) volumeIconBtn.innerHTML = html;
+        if (timelineVolBtn) {
+            timelineVolBtn.innerHTML = omtIcon(name, 16);
+            timelineVolBtn.setAttribute('aria-label', vol === 0 ? 'Unmute' : 'Mute');
+            timelineVolBtn.setAttribute('aria-pressed', vol === 0 ? 'true' : 'false');
+        }
     }
 
 /* Transient OSD toast messages. */
@@ -2843,7 +3230,7 @@
         const timelineBar = omtRoot.querySelector('#omt-timeline-bar');
         if (timelineBar) {
             trackHover(timelineBar.querySelector('.omt-timeline-track'));
-            trackHover(timelineBar.querySelector('.omt-timeline-times'));
+            trackHover(timelineBar.querySelector('.omt-timeline-chrome-row'));
         }
         if (timerUI) trackHover(timerUI);
     }
@@ -2925,12 +3312,12 @@
     function runHotkeyAction(actionId) {
         if (!ensureLiveVideo()) return;
         switch (actionId) {
-            case 'skipFwd2': saltarVideo(2); break;
-            case 'skipBack2': saltarVideo(-2); break;
-            case 'skipFwd10': saltarVideo(10); break;
-            case 'skipBack10': saltarVideo(-10); break;
-            case 'skipFwd2m': saltarVideo(120); break;
-            case 'skipBack2m': saltarVideo(-120); break;
+            case 'skipFwd2': saltarVideo(omtGetSkipForAction('skipFwd2')); break;
+            case 'skipBack2': saltarVideo(-omtGetSkipForAction('skipBack2')); break;
+            case 'skipFwd10': saltarVideo(omtGetSkipForAction('skipFwd10')); break;
+            case 'skipBack10': saltarVideo(-omtGetSkipForAction('skipBack10')); break;
+            case 'skipFwd2m': saltarVideo(omtGetSkipForAction('skipFwd2m')); break;
+            case 'skipBack2m': saltarVideo(-omtGetSkipForAction('skipBack2m')); break;
             case 'frameFwd': avancarFrame(); break;
             case 'frameBack': retrocederFrame(); break;
             case 'playPause': togglePlay(); break;
@@ -3437,6 +3824,9 @@
         clockSize: 'omtClockSize',
         clockShape: 'omtClockShape',
         clockCustom: 'omtClockCustomOffset',
+        panelSize: 'omtPanelSize',
+        panelCompact: 'omtPanelCompact',
+        skipSeconds: 'omtSkipSeconds',
         hotkeys: 'omtHotkeys',
         shuttlePrefs: 'omtShuttlePrefs'
     };
@@ -3594,7 +3984,7 @@
         }
 
         let customizeTouched = false;
-        [OMT_STORAGE_KEYS.clockPos, OMT_STORAGE_KEYS.clockSize, OMT_STORAGE_KEYS.clockShape].forEach((k) => {
+        [OMT_STORAGE_KEYS.clockPos, OMT_STORAGE_KEYS.clockSize, OMT_STORAGE_KEYS.clockShape, OMT_STORAGE_KEYS.panelSize].forEach((k) => {
             if (Object.prototype.hasOwnProperty.call(values, k)) {
                 try {
                     if (values[k] == null) localStorage.removeItem(k);
@@ -3603,8 +3993,21 @@
                 customizeTouched = true;
             }
         });
+        if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.panelCompact)) {
+            try {
+                localStorage.setItem(
+                    OMT_STORAGE_KEYS.panelCompact,
+                    values[OMT_STORAGE_KEYS.panelCompact] ? 'true' : 'false'
+                );
+            } catch (_) {}
+            customizeTouched = true;
+        }
         if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.clockCustom)) {
             omtMirrorJsonKey(OMT_STORAGE_KEYS.clockCustom, values[OMT_STORAGE_KEYS.clockCustom]);
+            customizeTouched = true;
+        }
+        if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.skipSeconds)) {
+            omtMirrorJsonKey(OMT_STORAGE_KEYS.skipSeconds, values[OMT_STORAGE_KEYS.skipSeconds]);
             customizeTouched = true;
         }
         if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.hotkeys)) {
@@ -3645,17 +4048,136 @@
         'speedDown', 'speedReset', 'speedUp', 'kickoff', 'live', 'hide'
     ];
 
-    const OMT_SHUTTLE_DEFAULTS = {
-        skipBtn1: 120,   // outer left (−)
-        skipBtn2: 10,    // inner left (−)
-        skipBtn3: 120,   // centre skip when Play/Pause moved away
-        skipBtn4: 10,    // inner right (+)
-        skipBtn5: 120,   // outer right (+)
-        playPauseBtn: 3, // centre button (1–5)
-        centreSkipSign: 1, // +1 / −1 when btn 3 holds a skip
-        jogStep: 0.04,   // seconds per jog tick (~1 frame @25fps)
-        shuttleScale: 1  // multiplies ring scrub factors
+    const OMT_SKIP_ACTION_DEFAULTS = {
+        skipBack2: 2, skipFwd2: 2,
+        skipBack10: 10, skipFwd10: 10,
+        skipBack2m: 120, skipFwd2m: 120
     };
+    const OMT_SKIP_ACTION_IDS = Object.keys(OMT_SKIP_ACTION_DEFAULTS);
+    const OMT_SKIP_MIN = 1;
+    const OMT_SKIP_MAX = 999;
+
+    function omtClampSkipSeconds(n, fallback) {
+        const v = Math.round(Number(n));
+        if (!Number.isFinite(v)) return fallback;
+        return Math.min(OMT_SKIP_MAX, Math.max(OMT_SKIP_MIN, v));
+    }
+
+    function omtFormatPanelSkipLabel(sec) {
+        const s = omtClampSkipSeconds(sec, 0);
+        if (s < 60) return s + ' s';
+        const m = Math.floor(s / 60);
+        const r = s % 60;
+        if (r === 0) return m + ' min';
+        return m + ':' + String(r).padStart(2, '0') + ' min';
+    }
+
+    function omtNormalizeSkipSecondsMap(raw) {
+        const out = Object.assign({}, OMT_SKIP_ACTION_DEFAULTS);
+        if (!raw || typeof raw !== 'object') return out;
+        // Migrate v2.0.1 short/medium/long shape → per-action map.
+        if (raw.short != null || raw.medium != null || raw.long != null) {
+            const short = omtClampSkipSeconds(raw.short, 2);
+            const medium = omtClampSkipSeconds(raw.medium, 10);
+            const long = omtClampSkipSeconds(raw.long, 120);
+            out.skipBack2 = short; out.skipFwd2 = short;
+            out.skipBack10 = medium; out.skipFwd10 = medium;
+            out.skipBack2m = long; out.skipFwd2m = long;
+        }
+        OMT_SKIP_ACTION_IDS.forEach((id) => {
+            if (raw[id] != null) out[id] = omtClampSkipSeconds(raw[id], out[id]);
+        });
+        return out;
+    }
+
+    function omtReadSkipSeconds() {
+        try {
+            const raw = localStorage.getItem(OMT_STORAGE_KEYS.skipSeconds);
+            if (raw) {
+                const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+                return omtNormalizeSkipSecondsMap(parsed);
+            }
+        } catch (_) {}
+        return Object.assign({}, OMT_SKIP_ACTION_DEFAULTS);
+    }
+
+    function omtGetSkipForAction(actionId) {
+        const map = omtReadSkipSeconds();
+        if (Object.prototype.hasOwnProperty.call(map, actionId)) return map[actionId];
+        return OMT_SKIP_ACTION_DEFAULTS[actionId] || 2;
+    }
+
+    /** Panel slots: [0]=smallest (next to play), [2]=largest (outer). */
+    function omtSortedSkipSlots(side) {
+        const ids = side === 'back'
+            ? ['skipBack2', 'skipBack10', 'skipBack2m']
+            : ['skipFwd2', 'skipFwd10', 'skipFwd2m'];
+        return ids
+            .map((id) => ({ id, sec: omtGetSkipForAction(id) }))
+            .sort((a, b) => (a.sec - b.sec) || a.id.localeCompare(b.id));
+    }
+
+    function omtPanelSkipSeconds(side, slotIndex) {
+        const slots = omtSortedSkipSlots(side);
+        const row = slots[slotIndex];
+        return row ? row.sec : 2;
+    }
+
+    // Shuttle Btn 1–5 defaults stay fixed (independent of Shortcuts skip seconds).
+    function omtShuttleDefaultsFixed() {
+        return {
+            skipBtn1: 120,
+            skipBtn2: 10,
+            skipBtn3: 120,
+            skipBtn4: 10,
+            skipBtn5: 120,
+            playPauseBtn: 3,
+            centreSkipSign: 1,
+            jogStep: 0.04,
+            shuttleScale: 1
+        };
+    }
+
+    const OMT_SHUTTLE_DEFAULTS = omtShuttleDefaultsFixed();
+
+    function omtReadPanelPrefs() {
+        let size = localStorage.getItem(OMT_STORAGE_KEYS.panelSize) || 'medium';
+        if (size !== 'small' && size !== 'medium') size = 'medium';
+        const compactRaw = localStorage.getItem(OMT_STORAGE_KEYS.panelCompact);
+        const compact = compactRaw === 'true';
+        return { size, compact };
+    }
+
+    function omtApplySkipButtonLabels() {
+        if (!omtRoot) return;
+        const back = omtSortedSkipSlots('back');
+        const fwd = omtSortedSkipSlots('fwd');
+        const map = [
+            ['omt-m2', back[0].sec],
+            ['omt-m10', back[1].sec],
+            ['omt-m120', back[2].sec],
+            ['omt-p2', fwd[0].sec],
+            ['omt-p10', fwd[1].sec],
+            ['omt-p120', fwd[2].sec]
+        ];
+        map.forEach(([id, sec]) => {
+            const btn = typeof q === 'function' ? q(id) : document.getElementById(id);
+            if (!btn) return;
+            const label = btn.querySelector('.omt-btn-label');
+            if (label) label.textContent = omtFormatPanelSkipLabel(sec);
+        });
+    }
+
+    function omtApplyPanelAppearance() {
+        if (!controlsPanel) return;
+        const prefs = omtReadPanelPrefs();
+        controlsPanel.classList.toggle('omt-panel-size-small', prefs.size === 'small');
+        controlsPanel.classList.toggle('omt-panel-compact', !!prefs.compact);
+        omtApplySkipButtonLabels();
+        if (typeof omtAnchorControlsPanelBottom === 'function') {
+            try { omtAnchorControlsPanelBottom(); } catch (_) {}
+        }
+    }
 
     let omtHotkeyMap = null; // actionId → binding
     let omtShuttlePrefs = null;
@@ -3840,7 +4362,8 @@
     }
 
     function omtMergeShuttlePrefs(stored) {
-        const out = Object.assign({}, OMT_SHUTTLE_DEFAULTS);
+        const defaults = omtShuttleDefaultsFixed();
+        const out = Object.assign({}, defaults);
         if (!stored || typeof stored !== 'object') return out;
         ['skipBtn1', 'skipBtn2', 'skipBtn3', 'skipBtn4', 'skipBtn5'].forEach((k) => {
             const n = Number(stored[k]);
@@ -3855,7 +4378,7 @@
         const scale = Number(stored.shuttleScale);
         if (Number.isFinite(scale) && scale > 0 && scale <= 4) out.shuttleScale = scale;
         if (stored.skipBtn3 == null && out.playPauseBtn !== 3) {
-            out.skipBtn3 = OMT_SHUTTLE_DEFAULTS.skipBtn3;
+            out.skipBtn3 = defaults.skipBtn3;
             out.centreSkipSign = omtPositionalSkipSign(out.playPauseBtn);
         }
         return out;
@@ -3881,6 +4404,7 @@
         omtLoadShuttlePrefsFromLocal();
         omtClearLegacyClockCustom();
         omtApplyClockAppearance();
+        omtApplyPanelAppearance();
         omtInstallClockClickEdit();
     }
 
@@ -4440,22 +4964,26 @@ var OMT_SYNC_FEATURE_ENABLED = false;
     }
 
     function injectExaminoHideCSS() {
-        if (document.getElementById('omt-examino-hide-css')) return;
-        const style = document.createElement('style');
-        style.id = 'omt-examino-hide-css';
+        let style = document.getElementById('omt-examino-hide-css');
+        if (!style) {
+            style = document.createElement('style');
+            style.id = 'omt-examino-hide-css';
+            (document.head || document.documentElement).appendChild(style);
+        }
         style.textContent = [
-            /* OpenPlayer built-in chrome */
-            '.op-controls,',
-            '.op-ui:not(.op-media-element-container),',
-            '.op-progressbar-container,',
-            '.op-player .button-bar,',
-            '.video-container > .button-bar,',
-            '.setting-holder,',
-            '.op-button.op-setting-button,',
-            /* Examino Svelte chrome from owner probe */
-            '.hamburger-menu,',
-            '.examino-bottom-controls,',
-            '.omt-examino-native-hidden {',
+            /* Only while HUD is active (html.omt-hud-on). When the video */
+            /* surface is obscured, host chrome must be usable again. */
+            'html.omt-hud-on .op-controls,',
+            /* Do not hide .op-ui when it wraps <video> (real Examino DOM). */
+            'html.omt-hud-on .op-ui:not(.op-media-element-container):not(:has(video)):not(:has(.op-media-element-container)),',
+            'html.omt-hud-on .op-progressbar-container,',
+            'html.omt-hud-on .op-player .button-bar,',
+            'html.omt-hud-on .video-container > .button-bar,',
+            'html.omt-hud-on .setting-holder,',
+            'html.omt-hud-on .op-button.op-setting-button,',
+            'html.omt-hud-on .hamburger-menu,',
+            'html.omt-hud-on .examino-bottom-controls,',
+            'html.omt-hud-on .omt-examino-native-hidden {',
             '  display: none !important;',
             '  opacity: 0 !important;',
             '  pointer-events: none !important;',
@@ -4464,13 +4992,13 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             '  margin: 0 !important;',
             '  padding: 0 !important;',
             '}',
-            /* Give the video the space freed by the ~108px bottom bars */
-            '.main-container.svelte-iq8mv8,',
-            '.main-container {',
+            'html.omt-hud-on .main-container.svelte-iq8mv8,',
+            'html.omt-hud-on .main-container {',
             '  height: 100% !important;',
             '  max-height: 100% !important;',
             '}',
-            /* Fallback raised settings panel when proxying native gear */
+            /* Raised settings panel while scraping Source — keep usable even */
+            /* if HUD paint state flaps; scoped to the temporary classes. */
             '.op-setting-panel.omt-settings-raised {',
             '  display: block !important;',
             '  opacity: 1 !important;',
@@ -4492,11 +5020,17 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             '  height: 1px !important;',
             '}'
         ].join('\n');
-        (document.head || document.documentElement).appendChild(style);
     }
 
     function markNativeHidden(el) {
         if (!el || el.id === 'omt-root' || (omtRoot && omtRoot.contains(el))) return;
+        // Never hide a node that contains the media — that makes <video>
+        // display:none and triggers Chrome power-save pause vs OpenPlayer play().
+        try {
+            if (el.tagName === 'VIDEO') return;
+            if (el.classList && el.classList.contains('op-media-element-container')) return;
+            if (el.querySelector && el.querySelector('video, .op-media-element-container, .op-player')) return;
+        } catch (_) { return; }
         el.classList.add('omt-examino-native-hidden');
     }
 
@@ -4826,6 +5360,11 @@ var OMT_SYNC_FEATURE_ENABLED = false;
 
             if (confirmed && wanted === 'DVR') {
                 examinoPendingDvrSettle = true;
+                // Settle now — do not wait for the 1.5s SPA monitor to notice a
+                // replaced <video> (avoids a frozen out-of-window DVR playhead).
+                if (typeof settleExaminoMediaAfterBind === 'function') {
+                    try { settleExaminoMediaAfterBind(); } catch (_) {}
+                }
             }
             return confirmed;
         });

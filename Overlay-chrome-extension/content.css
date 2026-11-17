@@ -4,7 +4,9 @@
    timeline. Accent orange: Stats Perform #F5831F. Live scrubber red.
    ============================================================ */
 
-:root {
+/* Design tokens live on #omt-root (not :root) so host rem / inherited
+   custom properties cannot shrink or restyle the overlay. */
+#omt-root {
     --omt-bg: rgba(15, 15, 15, 0.82);
     --omt-bg-solid: #0f0f0f;
     --omt-border: rgba(255, 255, 255, 0.10);
@@ -19,37 +21,60 @@
     --omt-mono: "Segoe UI", system-ui, ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 
-/* ---- HIDE NATIVE VIDEO.JS CONTROLS (InplayIP) ---- */
-.vjs-control-bar,
-.vjs-big-play-button,
-.vjs-loading-spinner,
-.vjs-poster,
-.vjs-menu-button-popup .vjs-menu,
-.vjs-text-track-display,
-.video-js .vjs-control-bar {
+/* Legacy alias for any host-page rules that still referenced :root tokens. */
+:root {
+    --omt-bg: rgba(15, 15, 15, 0.82);
+    --omt-bg-solid: #0f0f0f;
+    --omt-border: rgba(255, 255, 255, 0.10);
+    --omt-text: #f1f1f1;
+    --omt-muted: #aaaaaa;
+    --omt-orange: #F5831F;
+    --omt-orange-dim: rgba(245, 131, 31, 0.18);
+    --omt-live: #e0201b;
+    --omt-behind: #909090;
+    --omt-scrub: #b0b0b0;
+    --omt-font: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --omt-mono: "Segoe UI", system-ui, ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* ---- HIDE NATIVE VIDEO.JS CONTROLS (InplayIP) ----
+   Only while our HUD is active. When the video surface is obscured
+   (curtain / collapsed), html.omt-hud-on is removed so host chrome
+   returns and the analyst is never left with zero controls. */
+html.omt-hud-on .vjs-control-bar,
+html.omt-hud-on .vjs-big-play-button,
+html.omt-hud-on .vjs-loading-spinner,
+html.omt-hud-on .vjs-poster,
+html.omt-hud-on .vjs-menu-button-popup .vjs-menu,
+html.omt-hud-on .vjs-text-track-display,
+html.omt-hud-on .video-js .vjs-control-bar {
     display: none !important;
     opacity: 0 !important;
     pointer-events: none !important;
 }
 
-/* ---- HIDE OPENPLAYER / EXAMINO NATIVE CHROME ---- */
-.op-controls,
-.op-ui:not(.op-media-element-container),
-.op-progressbar-container,
-.op-player .button-bar,
-.video-container > .button-bar,
-.setting-holder,
-.op-button.op-setting-button,
-.hamburger-menu,
-.examino-bottom-controls,
-.omt-examino-native-hidden {
+/* ---- HIDE OPENPLAYER / EXAMINO NATIVE CHROME (HUD active only) ---- */
+/* Never hide a node that contains the <video> / media container.
+   On real Examino, .op-ui often WRAPS the media. Hiding it makes the
+   video display:none → Chrome power-save pause fights OpenPlayer play()
+   (~250 play+pause/s). Only hide chrome leaves. */
+html.omt-hud-on .op-controls,
+html.omt-hud-on .op-ui:not(.op-media-element-container):not(:has(video)):not(:has(.op-media-element-container)),
+html.omt-hud-on .op-progressbar-container,
+html.omt-hud-on .op-player .button-bar,
+html.omt-hud-on .video-container > .button-bar,
+html.omt-hud-on .setting-holder,
+html.omt-hud-on .op-button.op-setting-button,
+html.omt-hud-on .hamburger-menu,
+html.omt-hud-on .examino-bottom-controls,
+html.omt-hud-on .omt-examino-native-hidden {
     display: none !important;
     opacity: 0 !important;
     pointer-events: none !important;
 }
 
-.main-container.svelte-iq8mv8,
-.main-container {
+html.omt-hud-on .main-container.svelte-iq8mv8,
+html.omt-hud-on .main-container {
     height: 100% !important;
     max-height: 100% !important;
 }
@@ -69,9 +94,153 @@
     inset: 0;
     pointer-events: none;
     z-index: 2147483640;
-    font-family: var(--omt-font);
+    /* px root size: host html{font-size} / rem must not shrink the HUD */
+    font-size: 16px !important;
+    line-height: 1.25 !important;
+    font-family: var(--omt-font) !important;
+    font-weight: 400;
+    font-style: normal;
+    letter-spacing: normal;
+    text-transform: none;
     color: var(--omt-text);
     -webkit-font-smoothing: antialiased;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+}
+
+/* Host CSS isolation: box model + form controls ignore page resets. */
+#omt-root *,
+#omt-root *::before,
+#omt-root *::after {
+    box-sizing: border-box !important;
+}
+#omt-root button,
+#omt-root input,
+#omt-root select,
+#omt-root textarea {
+    font-family: inherit !important;
+    letter-spacing: normal;
+    text-transform: none;
+    text-shadow: none;
+    box-shadow: none;
+    margin: 0;
+    max-width: none;
+    -webkit-appearance: none;
+    appearance: none;
+}
+#omt-root button {
+    background-image: none;
+}
+/* Beat host `button/input { font-size: Nrem !important }` resets. */
+#omt-root button,
+#omt-root .ctrl-btn,
+#omt-root .handle-btn,
+#omt-root .omt-timeline-fs-btn,
+#omt-root .omt-speed-chip,
+#omt-root .omt-more-toggle,
+#omt-root .omt-offset-btn,
+#omt-root .btn-sync,
+#omt-root .btn-clear-timer {
+    font-size: 11px !important;
+    line-height: 1.25 !important;
+}
+#omt-root .omt-btn-label,
+#omt-root .omt-time-text,
+#omt-root .omt-more-label,
+#omt-root .live-label {
+    font-size: 11px !important;
+    line-height: 1.25 !important;
+}
+#omt-root .top-select,
+#omt-root select.omt-tip,
+#omt-root #omt-half-select,
+#omt-root #omt-examino-source,
+#omt-root #omt-speed-select {
+    font-size: 11px !important;
+    line-height: 1.25 !important;
+}
+/* Beat host button grey / grayscale / :not(:active) resets (InPlay). */
+#omt-root button,
+#omt-root .ctrl-btn,
+#omt-root .handle-btn,
+#omt-root .omt-speed-chip,
+#omt-root .omt-timeline-fs-btn,
+#omt-root .omt-more-toggle,
+#omt-root .omt-offset-btn,
+#omt-root .btn-sync,
+#omt-root .btn-clear-timer,
+#omt-root #omt-live-btn {
+    filter: none !important;
+    opacity: 1 !important;
+    -webkit-filter: none !important;
+}
+#omt-root .btn-sync,
+#omt-root #omt-btn-set-kickoff,
+#omt-root #omt-kickoff-bar .btn-sync,
+#omt-root #omt-kickoff-bar .btn-sync.kickoff-set {
+    background: #F5831F !important;
+    background-color: #F5831F !important;
+    background-image: none !important;
+    color: #111 !important;
+    border: none !important;
+    filter: none !important;
+    opacity: 1 !important;
+}
+#omt-root .btn-sync:hover,
+#omt-root #omt-btn-set-kickoff:hover,
+#omt-root #omt-kickoff-bar .btn-sync:hover {
+    filter: brightness(1.05) !important;
+    background: #F5831F !important;
+    background-color: #F5831F !important;
+    color: #111 !important;
+}
+#omt-root .omt-speed-chip.is-active,
+#omt-root .omt-speed-chip.is-active:hover {
+    background: transparent !important;
+    background-color: transparent !important;
+    color: #F5831F !important;
+    filter: none !important;
+}
+#omt-root .omt-transport-seg .ctrl-btn.btn-play.playing,
+#omt-root .omt-transport-seg .ctrl-btn.btn-play.playing:hover {
+    color: #F5831F !important;
+    filter: none !important;
+    background: transparent !important;
+    background-color: transparent !important;
+}
+#omt-root .omt-transport-seg .ctrl-btn.btn-play.playing:hover {
+    background: rgba(245, 131, 31, 0.12) !important;
+    background-color: rgba(245, 131, 31, 0.12) !important;
+}
+#omt-root #omt-live-btn {
+    background: transparent !important;
+    background-color: transparent !important;
+    color: #cfcfcf !important;
+    border: 1px solid rgba(255, 255, 255, 0.28) !important;
+    filter: none !important;
+}
+#omt-root #omt-live-btn.is-live {
+    background: rgba(224, 32, 27, 0.18) !important;
+    background-color: rgba(224, 32, 27, 0.18) !important;
+    color: #fff !important;
+    border-color: rgba(224, 32, 27, 0.7) !important;
+}
+#omt-root #omt-live-btn.is-live .live-dot {
+    background: #e0201b !important;
+    background-color: #e0201b !important;
+    filter: none !important;
+}
+/* Obscured: fully out of hit-testing. Descendants must not keep
+   pointer-events:auto (that would still steal clicks over host UI). */
+#omt-root.omt-video-obscured {
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    opacity: 0 !important;
+}
+#omt-root.omt-video-obscured,
+#omt-root.omt-video-obscured * {
+    pointer-events: none !important;
 }
 
 #omt-root .glass-panel,
@@ -89,7 +258,11 @@
     pointer-events: none;
 }
 #omt-root #omt-timeline-bar .omt-timeline-track,
-#omt-root #omt-timeline-bar .omt-timeline-times {
+#omt-root #omt-timeline-bar .omt-timeline-chrome-row,
+#omt-root #omt-timeline-bar .omt-timeline-times,
+#omt-root #omt-timeline-bar .omt-timeline-vol-btn,
+#omt-root #omt-timeline-bar .omt-timeline-vol-range,
+#omt-root #omt-timeline-bar .omt-timeline-fs-btn {
     pointer-events: auto;
 }
 
@@ -237,10 +410,10 @@
     top: auto;
     bottom: calc(100% + 5px);
 }
-#match-timer-wrap.omt-clock-size-small #match-timer { font-size: 18px; padding: 4px 8px; }
-#match-timer-wrap.omt-clock-size-medium #match-timer { font-size: 26px; padding: 7px 12px; }
-#match-timer-wrap.omt-clock-size-large #match-timer { font-size: 34px; padding: 8px 14px; }
-#match-timer-wrap.omt-clock-size-xlarge #match-timer { font-size: 44px; padding: 10px 16px; }
+#match-timer-wrap.omt-clock-size-small #match-timer { font-size: 18px !important; padding: 4px 8px; }
+#match-timer-wrap.omt-clock-size-medium #match-timer { font-size: 26px !important; padding: 7px 12px; }
+#match-timer-wrap.omt-clock-size-large #match-timer { font-size: 34px !important; padding: 8px 14px; }
+#match-timer-wrap.omt-clock-size-xlarge #match-timer { font-size: 44px !important; padding: 10px 16px; }
 #match-timer-wrap.omt-clock-style-rounded #match-timer {
     background: rgba(0, 0, 0, 0.62);
     border: 1px solid rgba(255, 255, 255, 0.12);
@@ -711,8 +884,8 @@
 
 /* ---- FLOATING CONTROLS PANEL (Option A polished transport) ---- */
 #controls-panel {
-    /* Sit above the full timeline shell (tip padding + track + labels). */
-    bottom: 72px;
+    /* Sit above the YouTube-style shell (tip pad + track + chrome row). */
+    bottom: 100px;
     top: auto;
     left: 50%;
     transform: translateX(-50%);
@@ -727,7 +900,76 @@
     top: auto;
 }
 
-/* ---- BOTTOM TIMELINE (alone at video edge) ---- */
+/* Customize: Control panel size S (M = current look, no extra class). */
+#controls-panel.omt-panel-size-small {
+    width: min(480px, calc(100% - 24px));
+}
+#controls-panel.omt-panel-size-small .drag-handle {
+    padding: 6px 8px;
+    gap: 6px;
+}
+#controls-panel.omt-panel-size-small .top-select {
+    font-size: 11px;
+    padding: 3px 6px;
+    max-width: 72px;
+}
+#controls-panel.omt-panel-size-small .handle-btn,
+#controls-panel.omt-panel-size-small .omt-more-toggle {
+    width: 28px;
+    height: 28px;
+}
+#controls-panel.omt-panel-size-small .handle-btn .omt-icon,
+#controls-panel.omt-panel-size-small .omt-more-toggle .omt-icon {
+    width: 14px;
+    height: 14px;
+}
+#controls-panel.omt-panel-size-small #omt-live-btn {
+    font-size: 10px;
+    padding: 4px 8px;
+}
+#controls-panel.omt-panel-size-small #omt-volume-range {
+    width: 56px;
+}
+#controls-panel.omt-panel-size-small .controls-content {
+    padding: 6px 8px 8px;
+    gap: 6px;
+}
+#controls-panel.omt-panel-size-small .omt-transport-seg .ctrl-btn {
+    min-height: 36px;
+    padding: 8px 4px;
+    gap: 3px;
+}
+#controls-panel.omt-panel-size-small .omt-transport-seg .ctrl-btn .omt-btn-label {
+    font-size: 10px;
+}
+#controls-panel.omt-panel-size-small .omt-transport-seg .ctrl-btn .omt-icon {
+    width: 14px;
+    height: 14px;
+}
+#controls-panel.omt-panel-size-small .omt-transport-seg .ctrl-btn.btn-play {
+    min-width: 52px;
+    padding: 8px 6px;
+}
+#controls-panel.omt-panel-size-small .omt-speed-chip {
+    min-height: 28px;
+    padding: 5px 2px;
+    font-size: 10px;
+}
+#controls-panel.omt-panel-size-small .omt-more-panel.is-open {
+    margin: 6px 8px 0;
+    padding: 6px;
+}
+#controls-panel.omt-panel-size-small .omt-more-label,
+#controls-panel.omt-panel-size-small .omt-more-block {
+    font-size: 11px;
+}
+
+/* Customize: Compact hides the lower speed-chip row (top speed select stays). */
+#controls-panel.omt-panel-compact .omt-speed-row {
+    display: none;
+}
+
+/* ---- BOTTOM TIMELINE (YouTube-style: full-width scrubber + chrome row) ---- */
 .omt-timeline-bar {
     position: absolute;
     left: 0;
@@ -735,10 +977,12 @@
     bottom: 0;
     z-index: 48;
     display: flex;
-    align-items: center;
-    gap: 10px;
-    /* Top: floating tip; bottom: tick labels. Shell is pointer-events:none. */
-    padding: 30px 10px 20px;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-end;
+    gap: 2px;
+    /* Top: floating tip; bottom: slim chrome row. Shell is pointer-events:none. */
+    padding: 28px 12px 6px;
     box-sizing: border-box;
     transition: opacity 0.3s ease;
     background: linear-gradient(to top, rgba(0, 0, 0, 0.55) 0%, rgba(0, 0, 0, 0) 100%);
@@ -746,13 +990,18 @@
     overflow: visible;
 }
 .omt-timeline-bar.omt-chrome-hidden .omt-timeline-track,
-.omt-timeline-bar.omt-chrome-hidden .omt-timeline-times {
+.omt-timeline-bar.omt-chrome-hidden .omt-timeline-chrome-row,
+.omt-timeline-bar.omt-chrome-hidden .omt-timeline-times,
+.omt-timeline-bar.omt-chrome-hidden .omt-timeline-vol-btn,
+.omt-timeline-bar.omt-chrome-hidden .omt-timeline-vol-range,
+.omt-timeline-bar.omt-chrome-hidden .omt-timeline-fs-btn {
     pointer-events: none !important;
 }
 
 .omt-timeline-track {
     position: relative;
-    flex: 1;
+    width: 100%;
+    flex: 0 0 auto;
     display: flex;
     align-items: center;
     height: 16px;
@@ -761,12 +1010,207 @@
     overflow: visible;
 }
 
+/* Slim always-with-panel row: volume + time left, fullscreen right. */
+.omt-timeline-chrome-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    min-height: 28px;
+    box-sizing: border-box;
+}
+.omt-timeline-chrome-left {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    flex: 1 1 auto;
+}
 .omt-timeline-times {
     display: inline-flex;
     align-items: center;
     gap: 4px;
+    flex-shrink: 1;
+    min-width: 0;
+    font-variant-numeric: tabular-nums;
+}
+#omt-root .omt-timeline-post-times {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 4px;
     flex-shrink: 0;
     font-variant-numeric: tabular-nums;
+    text-align: left;
+}
+#omt-root .omt-timeline-post-times[hidden] {
+    display: none !important;
+}
+#omt-root .omt-timeline-match-clock {
+    font-family: var(--omt-mono);
+    font-size: 12px !important;
+    font-variant-numeric: tabular-nums;
+    color: #f1f1f1;
+    line-height: 1;
+    white-space: nowrap;
+}
+#omt-root .omt-timeline-match-clock[hidden] {
+    display: none !important;
+}
+#omt-root .omt-timeline-live-indicator {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    height: 22px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: #ddd;
+    cursor: pointer;
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+    text-align: left;
+}
+#omt-root .omt-timeline-live-indicator[hidden] {
+    display: none !important;
+}
+#omt-root .omt-timeline-live-indicator:hover {
+    opacity: 0.92;
+}
+#omt-root .omt-timeline-live-indicator:focus-visible {
+    outline: 2px solid var(--omt-orange);
+    outline-offset: 1px;
+}
+#omt-root .omt-timeline-live-delay {
+    font-family: var(--omt-mono);
+    font-size: 12px !important;
+    font-variant-numeric: tabular-nums;
+    color: #f1f1f1;
+    line-height: 1;
+    white-space: nowrap;
+}
+#omt-root .omt-timeline-live-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--omt-font);
+    font-size: 10px !important;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #fff !important;
+    background: #e5383b !important;
+    border: 1px solid #e5383b !important;
+    border-radius: 999px;
+    padding: 3px 9px;
+    line-height: 1;
+    filter: none !important;
+}
+#omt-root .omt-timeline-live-chip[hidden] {
+    display: none !important;
+}
+#omt-root .omt-timeline-vol-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: #f1f1f1;
+    cursor: pointer;
+    opacity: 0.92;
+    flex-shrink: 0;
+}
+#omt-root .omt-timeline-vol-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    opacity: 1;
+}
+#omt-root .omt-timeline-vol-btn:focus-visible {
+    outline: 2px solid var(--omt-orange);
+    outline-offset: 1px;
+}
+#omt-root .omt-timeline-vol-btn .omt-icon {
+    width: 16px;
+    height: 16px;
+}
+#omt-root .omt-timeline-vol-range {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 56px;
+    height: 4px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.28);
+    outline: none;
+    cursor: pointer;
+    flex-shrink: 0;
+    accent-color: #fff;
+}
+#omt-root .omt-timeline-vol-range::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.28);
+}
+#omt-root .omt-timeline-vol-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    margin-top: -4px;
+    border-radius: 50%;
+    background: #fff;
+    border: none;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+    cursor: pointer;
+}
+#omt-root .omt-timeline-vol-range::-moz-range-track {
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.28);
+}
+#omt-root .omt-timeline-vol-range::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #fff;
+    border: none;
+    cursor: pointer;
+}
+.omt-timeline-fs-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: #f1f1f1;
+    cursor: pointer;
+    opacity: 0.92;
+    flex-shrink: 0;
+}
+.omt-timeline-fs-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    opacity: 1;
+}
+.omt-timeline-fs-btn:focus-visible {
+    outline: 2px solid var(--omt-orange);
+    outline-offset: 1px;
+}
+.omt-timeline-fs-btn .omt-icon {
+    width: 16px;
+    height: 16px;
 }
 
 #omt-timeline-markers {
@@ -1467,8 +1911,8 @@
 #omt-root.omt-examino.omt-compact #match-timer-wrap.omt-clock-pos-bottom-centre { bottom: 150px; left: 50%; transform: translateX(-50%); }
 #omt-root.omt-examino.omt-compact #match-timer-wrap.omt-clock-pos-bottom-right { bottom: 150px; right: 8px; }
 #omt-root.omt-examino.omt-compact #controls-panel {
-    /* Clear taller timeline (tip above + 1st/2nd labels below). */
-    bottom: 72px;
+    /* Clear YouTube-style timeline (tip + track + chrome row). */
+    bottom: 100px;
     width: min(560px, calc(100% - 16px));
 }
 #omt-root.omt-examino.omt-compact .controls-content {
@@ -1484,8 +1928,7 @@
     display: none;
 }
 #omt-root.omt-examino.omt-compact .omt-timeline-bar {
-    /* Top: tip clearance; bottom: room for 1st/2nd labels under ticks. */
-    padding: 28px 8px 22px;
+    padding: 24px 8px 6px;
 }
 #omt-root.omt-examino.omt-compact #omt-volume-range {
     width: 40px;

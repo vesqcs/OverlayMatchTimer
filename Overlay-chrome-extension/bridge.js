@@ -17,6 +17,9 @@
   const KEY_CLOCK_SIZE = 'omtClockSize';
   const KEY_CLOCK_SHAPE = 'omtClockShape';
   const KEY_CLOCK_CUSTOM = 'omtClockCustomOffset';
+  const KEY_PANEL_SIZE = 'omtPanelSize';
+  const KEY_PANEL_COMPACT = 'omtPanelCompact';
+  const KEY_SKIP_SECONDS = 'omtSkipSeconds';
   const KEY_HOTKEYS = 'omtHotkeys';
   const KEY_SHUTTLE_PREFS = 'omtShuttlePrefs';
   const KEY_SYNC_ENABLED = 'omtKickoffSyncEnabled';
@@ -32,6 +35,9 @@
     [KEY_CLOCK_SIZE]: 'medium',
     [KEY_CLOCK_SHAPE]: 'rounded',
     [KEY_CLOCK_CUSTOM]: null,
+    [KEY_PANEL_SIZE]: 'medium',
+    [KEY_PANEL_COMPACT]: false,
+    [KEY_SKIP_SECONDS]: null,
     [KEY_HOTKEYS]: null,
     [KEY_SHUTTLE_PREFS]: null,
     [KEY_SYNC_ENABLED]: false,
@@ -60,10 +66,13 @@
       if (Object.prototype.hasOwnProperty.call(values, KEY_AUTO_PAUSE)) {
         writeLocal(KEY_AUTO_PAUSE, !!values[KEY_AUTO_PAUSE]);
       }
-      [KEY_CLOCK_POS, KEY_CLOCK_SIZE, KEY_CLOCK_SHAPE].forEach((k) => {
+      [KEY_CLOCK_POS, KEY_CLOCK_SIZE, KEY_CLOCK_SHAPE, KEY_PANEL_SIZE].forEach((k) => {
         if (Object.prototype.hasOwnProperty.call(values, k)) writeLocal(k, values[k]);
       });
-      [KEY_CLOCK_CUSTOM, KEY_HOTKEYS, KEY_SHUTTLE_PREFS].forEach((k) => {
+      if (Object.prototype.hasOwnProperty.call(values, KEY_PANEL_COMPACT)) {
+        writeLocal(KEY_PANEL_COMPACT, !!values[KEY_PANEL_COMPACT]);
+      }
+      [KEY_CLOCK_CUSTOM, KEY_SKIP_SECONDS, KEY_HOTKEYS, KEY_SHUTTLE_PREFS].forEach((k) => {
         if (Object.prototype.hasOwnProperty.call(values, k)) writeLocal(k, values[k]);
       });
       if (SYNC_FEATURE) {

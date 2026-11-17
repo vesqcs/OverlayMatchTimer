@@ -53,6 +53,9 @@
         if (site.id !== 'examino') {
             document.removeEventListener('keydown', handleKeydown, true);
         }
+        if (typeof teardownVideoVisibilityGuard === 'function') {
+            try { teardownVideoVisibilityGuard(); } catch (_) {}
+        }
         // Remove the injected HUD from the DOM
         const existingRoot = document.getElementById('omt-root');
         if (existingRoot && existingRoot.parentNode) {
@@ -69,6 +72,7 @@
         shuttleToggle = null;
         shuttleCheatsheet = null;
         liveBtn = null;
+        omtTimelineLiveChipOn = false;
         btnMainPlay = null;
         timelineSlider = null;
         vTimeCurrent = null;
@@ -76,6 +80,8 @@
         speedSelect = null;
         volumeRange = null;
         volumeIconBtn = null;
+        timelineVolRange = null;
+        timelineVolBtn = null;
 
         // --- TOTAL LIFECYCLE RESET (Bug 1 fix) ---
         // Every SPA navigation must begin with a completely clean slate so that
@@ -213,6 +219,9 @@
         // this is a Review/DVR session with a seekable timeline.
         hlsInstance = getHlsInstance();
         patchHlsForDvr();
+        // Optimistic HUD-on so host-chrome CSS gates apply immediately;
+        // video-visibility guard turns it off if the surface is collapsed.
+        if (typeof omtSetHudActive === 'function') omtSetHudActive(true);
         suppressNativeControls();
         injectUI();
         cacheUIRefs();

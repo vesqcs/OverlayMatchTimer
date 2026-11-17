@@ -1,6 +1,6 @@
-# Kickoff sync — setup & planned design
+# Kickoff sync - setup and planned design
 
-**v1.7.1 status:** Sync is **disabled** in the shipped extension (`OMT_SYNC_FEATURE_ENABLED = false`). The migration file is kept for future use. Do **not** create or modify a real Supabase project from CI/agents unless the owner explicitly asks. Never commit service-role keys or production anon keys to git.
+**Status (v2.0.1):** Sync is **disabled** in the shipped extension (`OMT_SYNC_FEATURE_ENABLED = false`). The migration file is kept for future use. Do **not** create or modify a real Supabase project from CI/agents unless the owner explicitly asks. Never commit service-role keys or production anon keys to git.
 
 ---
 
@@ -8,13 +8,14 @@
 
 | Path | Role |
 |------|------|
-| `migrations/20261113120000_kickoff_sync.sql` | Prototype table + open anon RLS (too loose for the future design — replace before ship) |
+| `migrations/20261113120000_kickoff_sync.sql` | Prototype table + open anon RLS (too loose for the future design; replace before ship) |
+| `drafts/cleanup_match_timers.sql` | **Draft only** (not a migration). Daily retention job idea for when sync is re-enabled. Do not apply from CI. |
 | `Overlay-chrome-extension/src/sync/` | MAIN-world hooks (no-op while flag off) |
 | `Overlay-chrome-extension/sync-feature-flag.js` | Internal gate |
 
 ---
 
-## Future design (owner decision — **not implemented**)
+## Future design (owner decision: **not implemented**)
 
 Always on. Zero configuration for analysts.
 
@@ -22,7 +23,7 @@ Always on. Zero configuration for analysts.
 
 1. **One shared Supabase project** owned/operated for the team; URL + **anon** key are **bundled in extension config** (build-time / private config), not typed into Customize.
 2. **Match key** is derived automatically from the match page (e.g. Examino `/play/dvr|vod/<id>`, Inplay host+path). No user Room id.
-3. **First analyst who sets the timer** on that match creates/updates the row; everyone else on the same match receives it (poll or Realtime — TBD at implement time).
+3. **First analyst who sets the timer** on that match creates/updates the row; everyone else on the same match receives it (poll or Realtime; TBD at implement time).
 4. **Conflict rule:** **latest write wins** (upsert by `match_key` with `updated_at`). A later Set Kick-off / nudge replaces the previous values.
 5. Analysts never see sync settings in the popup.
 
@@ -36,7 +37,7 @@ Always on. Zero configuration for analysts.
 | SQL / RLS | Open `USING (true)` policies in the prototype migration | Tight RLS (below) |
 | Privacy / store | “User’s own project” wording | Disclosures for a shared operated project (draft below) |
 
-### Tight RLS (target — draft; owner/DBA to confirm)
+### Tight RLS (target: draft; owner/DBA to confirm)
 
 Goals: anon clients can only touch the row for the match they already know; no table-wide reads; no deletes; rate-limit abuse.
 
@@ -56,13 +57,13 @@ The existing `20261113120000_kickoff_sync.sql` is a **prototype** and must be su
 
 Suggested bullets for `store/privacy/`:
 
-- Kickoff sync is built into the extension and uses a Stats Perform–designated Supabase project.
+- Kickoff sync is built into the extension and uses a Stats Perform-designated Supabase project.
 - When you set or adjust kick-off / clock-reference values on a match page, those values (and a derived match key from the page URL) may be sent to that project so colleagues on the same match can share the same clock reference.
 - The extension does not upload match video, keystrokes, or personal account profiles for sync.
 - Retention: rows are kept only as needed for live / recent analysis rooms; exact retention period **[owner to specify]**.
 - Contact: internal Stats Perform channel for the extension owner.
 
-### Host permission note (v1.7.1)
+### Host permission note (v1.7.1+)
 
 While sync is disabled, the manifest must **not** declare Supabase optional/fixed host permissions. When implementing always-on sync, add only:
 
@@ -77,3 +78,17 @@ Document the project ref in the private release checklist; do not use a `*.supab
 ### Re-enabling the old prototype UI (internal only)
 
 Not recommended for ship. If needed for a lab build: see comments in `Overlay-chrome-extension/sync-feature-flag.js` (flag + restore `optional_host_permissions` + rebuild). Prefer implementing the always-on design above instead.
+
+---
+
+## Cleanup when sync is re-enabled
+
+Shared match-timer rows should not live forever. When (and only when) sync is turned on in a real project:
+
+1. Review table/column names against the then-current migration (prototype used `kickoff_sync`; future schema may rename).
+2. Enable `pg_cron` (or equivalent scheduled job) in that project.
+3. Apply a retention job that deletes rows older than about **48 hours** (use `updated_at`, or `created_at` if that is the retention clock you choose).
+4. Confirm RLS still denies `DELETE` for `anon`; the cron job must run as a privileged role (e.g. `postgres` / service role), not from the extension.
+5. Document the chosen retention in privacy copy before ship.
+
+A **draft** SQL sketch lives at `supabase/drafts/cleanup_match_timers.sql`. It is **not** under `migrations/`, is **not** applied by any script, and must **not** be run against a live project from CI or agents. Owner/DBA adapts and applies it only when re-enabling sync.
