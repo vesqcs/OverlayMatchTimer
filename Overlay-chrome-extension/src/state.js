@@ -1,6 +1,15 @@
 /* Shared mutable state for the Overlay MatchTimer content script.
  * Fragments are concatenated into one IIFE — do not use import/export here.
  */
+    // MAIN-world scripts share the page realm but each inject is a new IIFE.
+    // A second inject (dev reload, duplicate registration) would double every
+    // listener — abort before touching the DOM.
+    if (window.__OMT_MAIN_LOADED__) {
+        console.warn('[OMT] MAIN content script already loaded — skipping duplicate.');
+        return;
+    }
+    window.__OMT_MAIN_LOADED__ = true;
+
     // SPA monitor interval handle
     let spaMonitorInterval = null;
     let bootObserver = null;

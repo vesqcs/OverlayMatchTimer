@@ -3,6 +3,7 @@
        ENTRY POINT
        ========================================================= */
     if (site.id === 'examino') {
+        try { document.documentElement.classList.add('omt-host-examino'); } catch (_) {}
         installExaminoHotkeys();
         injectExaminoHideCSS();
         // Hide chrome as soon as nodes appear, even before <video>.

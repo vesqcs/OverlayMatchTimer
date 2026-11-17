@@ -55,10 +55,15 @@
         omtIsolatedAnchorPrev = '';
     }
 
-    /** Host-chrome hide CSS is gated on this; set on mount, cleared on teardown only. */
+    /** Host-chrome hide CSS is gated on this; set on mount, cleared on teardown only.
+     *  Also stamps omt-host-<site> so Examino :has() rules never match on InPlay. */
     function omtSetHudMounted(on) {
         try {
-            document.documentElement.classList.toggle('omt-hud-on', !!on);
+            const root = document.documentElement;
+            root.classList.toggle('omt-hud-on', !!on);
+            ['examino', 'inplayip', 'local'].forEach((id) => {
+                root.classList.toggle('omt-host-' + id, !!(on && site && site.id === id));
+            });
         } catch (_) {}
     }
 

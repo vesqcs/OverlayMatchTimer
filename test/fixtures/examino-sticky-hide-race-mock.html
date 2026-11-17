@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Examino sticky native-hidden race (Source-switch video gap)</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0b1220; font-family: "Segoe UI", sans-serif; color: #ddd; }
+    .page { width: 640px; height: 420px; margin: 16px auto; position: relative; background: #111; }
+    .main-container { height: 100%; position: relative; }
+    .top { position: relative; width: 100%; height: 100%; }
+    .op-player, .op-media-element-container, video { position: absolute; inset: 0; width: 100%; height: 100%; }
+    video { object-fit: contain; background: #000; }
+    /* Compact control chrome INSIDE .op-player — matches the LIVE/FOCUS/seek
+       heuristic. During a Source switch the <video> is briefly gone; a hide
+       pass must not stamp omt-examino-native-hidden on .op-player itself. */
+    .op-native-stack {
+      position: absolute; left: 8px; bottom: 8px; z-index: 4;
+      font-size: 12px; line-height: 1.3; max-width: 220px;
+      background: rgba(0,0,0,0.55); padding: 6px 8px; border-radius: 4px;
+    }
+    .op-controls { position: absolute; left: 0; right: 0; bottom: 0; height: 28px; background: rgba(255,80,0,0.35); }
+    #status { text-align: center; margin-top: 8px; color: #9ad; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="main-container">
+      <div class="top">
+        <div class="op-player" id="op-player">
+          <div class="op-media-element-container" id="media-host"></div>
+          <div class="op-native-stack" id="native-stack">LIVE FOCUS −30 s 7 s 2 s 0.1 x 1.5 x</div>
+          <div class="op-controls">OpenPlayer Controls</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="status">ready</div>
+  <script>
+    (function () {
+      const host = document.getElementById('media-host');
+      const status = document.getElementById('status');
+      const stats = window.__stickyRaceStats = {
+        play: 0, pause: 0, waiting: 0, gaps: 0, loads: 0
+      };
+      ['play', 'pause', 'waiting'].forEach((type) => {
+        document.addEventListener(type, () => { stats[type] += 1; }, true);
+      });
+
+      function makeVideo(label) {
+        const video = document.createElement('video');
+        video.muted = true;
+        video.playsInline = true;
+        video.dataset.label = label;
+        const canvas = document.createElement('canvas');
+        canvas.width = 640; canvas.height = 360;
+        const ctx = canvas.getContext('2d');
+        const t0 = performance.now();
+        (function draw() {
+          ctx.fillStyle = '#1a2740';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.fillStyle = '#7ec8ff';
+          ctx.font = '24px sans-serif';
+          ctx.fillText(label + ' t=' + ((performance.now() - t0) / 1000).toFixed(1), 20, 48);
+          if (video.isConnected || performance.now() - t0 < 2000) requestAnimationFrame(draw);
+        })();
+        video.srcObject = canvas.captureStream(30);
+        return video;
+      }
+
+      function load(label) {
+        stats.loads += 1;
+        const old = host.querySelector('video');
+        if (old) {
+          try { old.pause(); } catch (_) {}
+          old.remove();
+        }
+        const v = makeVideo(label);
+        host.appendChild(v);
+        v.play().catch(() => {});
+        status.textContent = 'loaded ' + label + ' #' + stats.loads;
+        return v;
+      }
+
+      /** Field Source-switch shape: remove video, leave .op-player with LIVE/FOCUS
+       *  chrome for a beat, then mount a new video (OpenPlayer rebuild). */
+      window.__stickyRaceGapReload = async function (ms) {
+        stats.gaps += 1;
+        const old = host.querySelector('video');
+        if (old) {
+          try { old.pause(); } catch (_) {}
+          old.remove();
+        }
+        status.textContent = 'gap…';
+        await new Promise((r) => setTimeout(r, ms == null ? 120 : ms));
+        return load('VOD-after-gap');
+      };
+
+      setTimeout(() => load('DVR'), 200);
+    })();
+  </script>
+</body>
+</html>

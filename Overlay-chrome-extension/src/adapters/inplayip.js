@@ -39,11 +39,14 @@
         },
 
         isLiveStream() {
-            const bodyText = document.body ? document.body.innerText : '';
-            if (/\b(hd|sd)\s+live\b/i.test(bodyText)) return true;
             const hasLiveUI = !!document.querySelector('.vjs-live-control, .vjs-live-display');
             const hasProgress = !!document.querySelector('.vjs-progress-control');
             if (hasLiveUI && !hasProgress) return true;
+            // Never read document.body.innerText on /schedule — that forces a
+            // full layout of the curtain table. Scan player chrome only.
+            const playerRoot = document.querySelector('.video-js, .player-container, .players-container');
+            const text = playerRoot ? (playerRoot.innerText || '') : '';
+            if (/\b(hd|sd)\s+live\b/i.test(text) && !hasProgress) return true;
             return false;
         },
 
