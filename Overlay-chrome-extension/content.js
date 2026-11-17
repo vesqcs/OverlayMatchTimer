@@ -1344,6 +1344,15 @@
 
     function omtVideoSurfaceVisible(videoEl) {
         if (!videoEl || !videoEl.isConnected) return false;
+        // Fullscreen owns the screen. IntersectionObserver often mis-reads the
+        // FS element (0 intersection vs layout viewport), which hid our HUD /
+        // flipped hud-on and left Chrome treating the media as background —
+        // local player: skip-forward freezes until exit fullscreen. Always
+        // treat FS that contains the video as visible.
+        try {
+            const fs = document.fullscreenElement;
+            if (fs && (fs === videoEl || fs.contains(videoEl))) return true;
+        } catch (_) {}
         try {
             const cs = getComputedStyle(videoEl);
             if (cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity) === 0) {
@@ -1786,10 +1795,22 @@
     }
 
     function seekTo(time) {
+        if (!vid) return;
         const t = clampToSeekable(time);
         userIntendedTime = t;
         seekLockUntil = Date.now() + 4000; // 4-second protection window
+        const wasPlaying = !vid.paused && !vid.ended;
         vid.currentTime = t;
+        // Local/FS: Chrome can leave decode stalled after a seek while the
+        // element is fullscreen (frames only catch up on exit). Re-assert
+        // play if we were already playing — does not toggle pause/play.
+        try {
+            if (wasPlaying && document.fullscreenElement &&
+                (document.fullscreenElement === vid || document.fullscreenElement.contains(vid))) {
+                const p = vid.play();
+                if (p && typeof p.catch === 'function') p.catch(() => {});
+            }
+        } catch (_) {}
     }
 
     function antiLiveSnap() {

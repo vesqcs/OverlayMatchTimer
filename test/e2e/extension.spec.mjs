@@ -5215,6 +5215,93 @@ async function run() {
       });
       results.push({ name: 'local-hotkey-seek', pass: localSeek.ok === true, detail: localSeek });
 
+      // Fullscreen seek must advance currentTime and deliver frames without exiting FS
+      // (v2.0.1 field: skip-forward froze until exit fullscreen).
+      const localFsSeek = await localPage.evaluate(async () => {
+        const v = document.getElementById('omt-local-video');
+        const stage = document.getElementById('omt-local-stage');
+        const root = document.getElementById('omt-root');
+        if (!v || !stage) return { ok: false, reason: 'missing' };
+        try { await v.play(); } catch (_) {}
+        try {
+          if (!document.fullscreenElement) {
+            await stage.requestFullscreen();
+          }
+        } catch (err) {
+          return { ok: false, reason: 'fs-denied', message: String(err && err.message || err) };
+        }
+        await new Promise((r) => setTimeout(r, 120));
+        if (typeof window.__omtVideoVisibilityStats === 'function') {
+          // Force a visibility pass while FS (must stay visible / not obscured).
+          try {
+            document.dispatchEvent(new Event('fullscreenchange'));
+          } catch (_) {}
+          await new Promise((r) => setTimeout(r, 200));
+        }
+        const obscuredInFs = !!root?.classList.contains('omt-video-obscured');
+        const hudOn = document.documentElement.classList.contains('omt-hud-on');
+        try { v.currentTime = 1; } catch (_) {}
+        await new Promise((r) => setTimeout(r, 80));
+        const before = v.currentTime;
+        let timeupdates = 0;
+        let frames = 0;
+        const onTu = () => { timeupdates += 1; };
+        v.addEventListener('timeupdate', onTu);
+        let rVFC = null;
+        if (typeof v.requestVideoFrameCallback === 'function') {
+          rVFC = new Promise((resolve) => {
+            try {
+              v.requestVideoFrameCallback(() => {
+                frames += 1;
+                resolve(true);
+              });
+              setTimeout(() => resolve(false), 2000);
+            } catch (_) {
+              resolve(false);
+            }
+          });
+        }
+        // Skip +2s via the same path as the panel / hotkey (seekTo).
+        document.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'ArrowRight', code: 'ArrowRight', bubbles: true, cancelable: true
+        }));
+        await new Promise((r) => setTimeout(r, 500));
+        const after = v.currentTime;
+        const stillFs = !!document.fullscreenElement && document.fullscreenElement.contains(v);
+        const paused = v.paused;
+        let gotFrame = false;
+        if (rVFC) gotFrame = await rVFC;
+        // If rVFC unavailable, require timeupdate while still in FS.
+        v.removeEventListener('timeupdate', onTu);
+        const ok = stillFs && !obscuredInFs && hudOn && !paused &&
+          after >= before + 1.2 &&
+          (gotFrame || timeupdates >= 1);
+        try {
+          if (document.fullscreenElement) await document.exitFullscreen();
+        } catch (_) {}
+        return {
+          ok,
+          stillFs,
+          obscuredInFs,
+          hudOn,
+          paused,
+          before,
+          after,
+          timeupdates,
+          gotFrame,
+          fsEl: document.fullscreenElement ? document.fullscreenElement.id : null
+        };
+      });
+      results.push({
+        name: 'local-fullscreen-seek-keeps-playing',
+        pass: localFsSeek.ok === true,
+        detail: localFsSeek
+      });
+      await localPage.screenshot({
+        path: path.join(ARTIFACTS, 'v202_local_fullscreen_seek.png'),
+        fullPage: true
+      });
+
       const localSpeed = await localPage.evaluate(async () => {
         const v = document.getElementById('omt-local-video');
         const chip = document.querySelector('.omt-speed-chip[data-speed="2.0"]');

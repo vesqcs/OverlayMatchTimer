@@ -46,6 +46,15 @@
 
     function omtVideoSurfaceVisible(videoEl) {
         if (!videoEl || !videoEl.isConnected) return false;
+        // Fullscreen owns the screen. IntersectionObserver often mis-reads the
+        // FS element (0 intersection vs layout viewport), which hid our HUD /
+        // flipped hud-on and left Chrome treating the media as background —
+        // local player: skip-forward freezes until exit fullscreen. Always
+        // treat FS that contains the video as visible.
+        try {
+            const fs = document.fullscreenElement;
+            if (fs && (fs === videoEl || fs.contains(videoEl))) return true;
+        } catch (_) {}
         try {
             const cs = getComputedStyle(videoEl);
             if (cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity) === 0) {

@@ -17,10 +17,22 @@
     }
 
     function seekTo(time) {
+        if (!vid) return;
         const t = clampToSeekable(time);
         userIntendedTime = t;
         seekLockUntil = Date.now() + 4000; // 4-second protection window
+        const wasPlaying = !vid.paused && !vid.ended;
         vid.currentTime = t;
+        // Local/FS: Chrome can leave decode stalled after a seek while the
+        // element is fullscreen (frames only catch up on exit). Re-assert
+        // play if we were already playing — does not toggle pause/play.
+        try {
+            if (wasPlaying && document.fullscreenElement &&
+                (document.fullscreenElement === vid || document.fullscreenElement.contains(vid))) {
+                const p = vid.play();
+                if (p && typeof p.catch === 'function') p.catch(() => {});
+            }
+        } catch (_) {}
     }
 
     function antiLiveSnap() {
