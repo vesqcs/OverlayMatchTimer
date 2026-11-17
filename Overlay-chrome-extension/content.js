@@ -3515,7 +3515,7 @@
         }
     }
 
-    function cleanupShuttle() {
+    function cleanupShuttle(opts) {
         if (shuttleInterval) {
             clearInterval(shuttleInterval);
             shuttleInterval = null;
@@ -3538,10 +3538,14 @@
         prevBytes4 = 0;
 
         updateToggleUI(false);
-        if (typeof storageSetShuttleEnabled === 'function') {
-            storageSetShuttleEnabled(false);
-        } else {
-            try { localStorage.setItem('shuttleXpressEnabled', 'false'); } catch (_) {}
+        // skipStorage: caller (bridge sync) already wrote the off flag — posting
+        // OMT_STORAGE_SET(false) again re-enters sync and storms the bus.
+        if (!(opts && opts.skipStorage)) {
+            if (typeof storageSetShuttleEnabled === 'function') {
+                storageSetShuttleEnabled(false);
+            } else {
+                try { localStorage.setItem('shuttleXpressEnabled', 'false'); } catch (_) {}
+            }
         }
         showShuttleCheatsheet(false);
     }
@@ -3774,9 +3778,49 @@
         mostrarOSD('Timer Restored');
     }
 
+/* Page ↔ isolated-world bridge bus.
+ *
+ * Examino's Shuttle/button-bar Svelte chunk listens for ALL same-origin
+ * window "message" events and treats missing/unknown `key` as play/pause
+ * toggle (BIyTHCyh.js function D). Our chrome.storage mirror used to
+ * window.postMessage({ source: 'omt-bridge'|'omt-page', ... }), which the
+ * host interpreted as Shuttle keys → thousands of pause/play pairs/sec.
+ *
+ * Production traffic uses a CustomEvent that the host does not hear.
+ * Legacy window.postMessage is still accepted as input (e2e helpers) but
+ * must never be our output channel on Examino.
+ */
+    const OMT_BUS_EVENT = 'omt-bridge-bus';
+
+    function omtBusPost(data) {
+        if (!data || typeof data !== 'object') return;
+        try {
+            window.dispatchEvent(new CustomEvent(OMT_BUS_EVENT, { detail: data }));
+        } catch (_) {}
+    }
+
+    function omtBusListen(handler) {
+        if (typeof handler !== 'function') return;
+        window.addEventListener(OMT_BUS_EVENT, (event) => {
+            const data = event && event.detail;
+            if (!data || typeof data !== 'object') return;
+            try { handler(data); } catch (_) {}
+        });
+        // E2E fixtures historically inject via window.postMessage. Accept those
+        // as input only — we never emit postMessage ourselves (see omtBusPost).
+        window.addEventListener('message', (event) => {
+            if (event.source !== window) return;
+            const data = event.data;
+            if (!data || typeof data !== 'object') return;
+            if (data.source !== 'omt-bridge' && data.source !== 'omt-page') return;
+            try { handler(data); } catch (_) {}
+        });
+    }
+
 /* Settings / storage bridge client (MAIN world).
  * chrome.storage is only reachable from bridge.js (ISOLATED).
- * Prefs are mirrored via localStorage + postMessage.
+ * Prefs are mirrored via localStorage + omt-bridge-bus CustomEvent
+ * (never window.postMessage — Examino Shuttle chunk treats those as keys).
  */
     const OMT_STORAGE_KEYS = {
         autoVod: 'omtAutoSwitchVod',
@@ -3801,15 +3845,19 @@
     }
 
     function storageSetAutoHideChrome(enabled) {
-        localStorage.setItem(OMT_STORAGE_KEYS.autoHideChrome, enabled ? 'true' : 'false');
-        try {
-            window.postMessage({
-                source: 'omt-page',
-                type: 'OMT_STORAGE_SET',
-                key: OMT_STORAGE_KEYS.autoHideChrome,
-                value: !!enabled
-            }, '*');
-        } catch (_) {}
+        const next = enabled ? 'true' : 'false';
+        let prev = null;
+        try { prev = localStorage.getItem(OMT_STORAGE_KEYS.autoHideChrome); } catch (_) {}
+        try { localStorage.setItem(OMT_STORAGE_KEYS.autoHideChrome, next); } catch (_) {}
+        // No-op bus when unchanged — prevents sync→set→sync storms (Examino host
+        // used to see each postMessage as play/pause; bus must stay quiet too).
+        if (prev === next) return;
+        omtBusPost({
+            source: 'omt-page',
+            type: 'OMT_STORAGE_SET',
+            key: OMT_STORAGE_KEYS.autoHideChrome,
+            value: !!enabled
+        });
     }
 
     function storageGetAutoPauseOnBlur() {
@@ -3819,15 +3867,17 @@
     }
 
     function storageSetAutoPauseOnBlur(enabled) {
-        localStorage.setItem(OMT_STORAGE_KEYS.autoPauseOnBlur, enabled ? 'true' : 'false');
-        try {
-            window.postMessage({
-                source: 'omt-page',
-                type: 'OMT_STORAGE_SET',
-                key: OMT_STORAGE_KEYS.autoPauseOnBlur,
-                value: !!enabled
-            }, '*');
-        } catch (_) {}
+        const next = enabled ? 'true' : 'false';
+        let prev = null;
+        try { prev = localStorage.getItem(OMT_STORAGE_KEYS.autoPauseOnBlur); } catch (_) {}
+        try { localStorage.setItem(OMT_STORAGE_KEYS.autoPauseOnBlur, next); } catch (_) {}
+        if (prev === next) return;
+        omtBusPost({
+            source: 'omt-page',
+            type: 'OMT_STORAGE_SET',
+            key: OMT_STORAGE_KEYS.autoPauseOnBlur,
+            value: !!enabled
+        });
     }
 
     function storageGetAutoVod() {
@@ -3837,15 +3887,17 @@
     }
 
     function storageSetAutoVod(enabled) {
-        localStorage.setItem(OMT_STORAGE_KEYS.autoVod, enabled ? 'true' : 'false');
-        try {
-            window.postMessage({
-                source: 'omt-page',
-                type: 'OMT_STORAGE_SET',
-                key: OMT_STORAGE_KEYS.autoVod,
-                value: !!enabled
-            }, '*');
-        } catch (_) {}
+        const next = enabled ? 'true' : 'false';
+        let prev = null;
+        try { prev = localStorage.getItem(OMT_STORAGE_KEYS.autoVod); } catch (_) {}
+        try { localStorage.setItem(OMT_STORAGE_KEYS.autoVod, next); } catch (_) {}
+        if (prev === next) return;
+        omtBusPost({
+            source: 'omt-page',
+            type: 'OMT_STORAGE_SET',
+            key: OMT_STORAGE_KEYS.autoVod,
+            value: !!enabled
+        });
     }
 
     function storageGetShuttleEnabled() {
@@ -3870,15 +3922,17 @@
             } catch (_) {}
             return;
         }
-        localStorage.setItem(OMT_STORAGE_KEYS.shuttle, enabled ? 'true' : 'false');
-        try {
-            window.postMessage({
-                source: 'omt-page',
-                type: 'OMT_STORAGE_SET',
-                key: OMT_STORAGE_KEYS.shuttle,
-                value: !!enabled
-            }, '*');
-        } catch (_) {}
+        const next = enabled ? 'true' : 'false';
+        let prev = null;
+        try { prev = localStorage.getItem(OMT_STORAGE_KEYS.shuttle); } catch (_) {}
+        try { localStorage.setItem(OMT_STORAGE_KEYS.shuttle, next); } catch (_) {}
+        if (prev === next) return;
+        omtBusPost({
+            source: 'omt-page',
+            type: 'OMT_STORAGE_SET',
+            key: OMT_STORAGE_KEYS.shuttle,
+            value: !!enabled
+        });
     }
 
     function syncShuttleToggleFromStorage() {
@@ -3898,10 +3952,8 @@
         } catch (_) {}
     }
 
-    // Popup / bridge → page sync
-    window.addEventListener('message', (event) => {
-        if (event.source !== window) return;
-        const data = event.data;
+    // Popup / bridge → page sync (CustomEvent bus; postMessage accepted for e2e only)
+    omtBusListen((data) => {
         if (!data || data.source !== 'omt-bridge' || data.type !== 'OMT_STORAGE_SYNC') return;
         const values = data.values || {};
         if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.shuttle)) {
@@ -3909,14 +3961,20 @@
             if (site && site.id === 'local') {
                 // ignore
             } else {
+                const wantOn = !!values[OMT_STORAGE_KEYS.shuttle];
+                const wasOn = typeof storageGetShuttleEnabled === 'function'
+                    ? storageGetShuttleEnabled()
+                    : false;
                 try {
-                    localStorage.setItem(OMT_STORAGE_KEYS.shuttle, values[OMT_STORAGE_KEYS.shuttle] ? 'true' : 'false');
+                    localStorage.setItem(OMT_STORAGE_KEYS.shuttle, wantOn ? 'true' : 'false');
                 } catch (_) {}
                 syncShuttleToggleFromStorage();
-                if (values[OMT_STORAGE_KEYS.shuttle] && typeof initShuttleXpress === 'function') {
+                // Only transition: avoid cleanupShuttle→storageSet(false)→sync loops
+                // when every bridge sync repeats shuttle:false (2.0.x vs 1.2.0).
+                if (wantOn && !wasOn && typeof initShuttleXpress === 'function') {
                     initShuttleXpress().catch(() => {});
-                } else if (!values[OMT_STORAGE_KEYS.shuttle] && typeof cleanupShuttle === 'function') {
-                    cleanupShuttle();
+                } else if (!wantOn && wasOn && typeof cleanupShuttle === 'function') {
+                    cleanupShuttle({ skipStorage: true });
                 }
             }
         }
@@ -3966,8 +4024,14 @@
             customizeTouched = true;
         }
         if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.clockCustom)) {
-            omtMirrorJsonKey(OMT_STORAGE_KEYS.clockCustom, values[OMT_STORAGE_KEYS.clockCustom]);
-            customizeTouched = true;
+            // Null/empty = already cleared; mirroring it must not re-enter
+            // omtClearLegacyClockCustom's storage SET path.
+            if (values[OMT_STORAGE_KEYS.clockCustom] != null && values[OMT_STORAGE_KEYS.clockCustom] !== '') {
+                omtMirrorJsonKey(OMT_STORAGE_KEYS.clockCustom, values[OMT_STORAGE_KEYS.clockCustom]);
+                customizeTouched = true;
+            } else {
+                try { localStorage.removeItem(OMT_STORAGE_KEYS.clockCustom); } catch (_) {}
+            }
         }
         if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.skipSeconds)) {
             omtMirrorJsonKey(OMT_STORAGE_KEYS.skipSeconds, values[OMT_STORAGE_KEYS.skipSeconds]);
@@ -4266,16 +4330,28 @@
         return { pos, size, shape };
     }
 
+    // One-shot migration only. Calling this on every storage sync used to
+    // OMT_STORAGE_SET(null) → bridge onChanged → OMT_STORAGE_SYNC → apply
+    // customize → clear again (postMessage storm). Examino's Shuttle chunk
+    // treats each same-origin message without a known key as play/pause.
+    let _omtClockCustomMigrated = false;
     function omtClearLegacyClockCustom() {
-        try { localStorage.removeItem(OMT_STORAGE_KEYS.clockCustom); } catch (_) {}
+        let hadLocal = false;
         try {
-            window.postMessage({
-                source: 'omt-page',
-                type: 'OMT_STORAGE_SET',
-                key: OMT_STORAGE_KEYS.clockCustom,
-                value: null
-            }, '*');
+            hadLocal = localStorage.getItem(OMT_STORAGE_KEYS.clockCustom) != null;
+            localStorage.removeItem(OMT_STORAGE_KEYS.clockCustom);
         } catch (_) {}
+        if (_omtClockCustomMigrated) return;
+        _omtClockCustomMigrated = true;
+        // Skip the bus when there was nothing local to clear — avoids a
+        // null→sync→null loop when chrome.storage defaults include this key.
+        if (!hadLocal) return;
+        omtBusPost({
+            source: 'omt-page',
+            type: 'OMT_STORAGE_SET',
+            key: OMT_STORAGE_KEYS.clockCustom,
+            value: null
+        });
     }
 
     function omtApplyClockAppearance() {
@@ -4597,13 +4673,11 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         if (!omtSyncFeatureOn()) return;
         if (typeof omtSyncIsEnabled !== 'function' || !omtSyncIsEnabled()) return;
         if (typeof omtSyncHasCredentials === 'function' && !omtSyncHasCredentials()) return;
-        try {
-            window.postMessage({
-                source: 'omt-page',
-                type: type,
-                payload: payload || {}
-            }, '*');
-        } catch (_) {}
+        omtBusPost({
+            source: 'omt-page',
+            type: type,
+            payload: payload || {}
+        });
     }
 
     function omtSyncCollectRow() {
@@ -4733,15 +4807,14 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             return;
         }
         if (_omtSyncStarted) {
-            try {
-                window.postMessage({ source: 'omt-page', type: 'OMT_SYNC_STOP', payload: {} }, '*');
-            } catch (_) {}
+            omtBusPost({ source: 'omt-page', type: 'OMT_SYNC_STOP', payload: {} });
         }
         _omtSyncStarted = false;
     }
 
     // Listeners only when the internal feature flag is on.
     if (omtSyncFeatureOn()) {
+        // E2E harness still drives sync via window.postMessage({ source: 'omt-e2e' }).
         window.addEventListener('message', (event) => {
             if (event.source !== window) return;
             const data = event.data;
@@ -4761,9 +4834,7 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             }
         });
 
-        window.addEventListener('message', (event) => {
-            if (event.source !== window) return;
-            const data = event.data;
+        omtBusListen((data) => {
             if (!data || data.source !== 'omt-bridge') return;
 
             if (data.type === 'OMT_SYNC_REMOTE') {

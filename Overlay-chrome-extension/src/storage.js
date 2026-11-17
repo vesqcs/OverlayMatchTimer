@@ -1,6 +1,7 @@
 /* Settings / storage bridge client (MAIN world).
  * chrome.storage is only reachable from bridge.js (ISOLATED).
- * Prefs are mirrored via localStorage + postMessage.
+ * Prefs are mirrored via localStorage + omt-bridge-bus CustomEvent
+ * (never window.postMessage — Examino Shuttle chunk treats those as keys).
  */
     const OMT_STORAGE_KEYS = {
         autoVod: 'omtAutoSwitchVod',
@@ -25,15 +26,19 @@
     }
 
     function storageSetAutoHideChrome(enabled) {
-        localStorage.setItem(OMT_STORAGE_KEYS.autoHideChrome, enabled ? 'true' : 'false');
-        try {
-            window.postMessage({
-                source: 'omt-page',
-                type: 'OMT_STORAGE_SET',
-                key: OMT_STORAGE_KEYS.autoHideChrome,
-                value: !!enabled
-            }, '*');
-        } catch (_) {}
+        const next = enabled ? 'true' : 'false';
+        let prev = null;
+        try { prev = localStorage.getItem(OMT_STORAGE_KEYS.autoHideChrome); } catch (_) {}
+        try { localStorage.setItem(OMT_STORAGE_KEYS.autoHideChrome, next); } catch (_) {}
+        // No-op bus when unchanged — prevents sync→set→sync storms (Examino host
+        // used to see each postMessage as play/pause; bus must stay quiet too).
+        if (prev === next) return;
+        omtBusPost({
+            source: 'omt-page',
+            type: 'OMT_STORAGE_SET',
+            key: OMT_STORAGE_KEYS.autoHideChrome,
+            value: !!enabled
+        });
     }
 
     function storageGetAutoPauseOnBlur() {
@@ -43,15 +48,17 @@
     }
 
     function storageSetAutoPauseOnBlur(enabled) {
-        localStorage.setItem(OMT_STORAGE_KEYS.autoPauseOnBlur, enabled ? 'true' : 'false');
-        try {
-            window.postMessage({
-                source: 'omt-page',
-                type: 'OMT_STORAGE_SET',
-                key: OMT_STORAGE_KEYS.autoPauseOnBlur,
-                value: !!enabled
-            }, '*');
-        } catch (_) {}
+        const next = enabled ? 'true' : 'false';
+        let prev = null;
+        try { prev = localStorage.getItem(OMT_STORAGE_KEYS.autoPauseOnBlur); } catch (_) {}
+        try { localStorage.setItem(OMT_STORAGE_KEYS.autoPauseOnBlur, next); } catch (_) {}
+        if (prev === next) return;
+        omtBusPost({
+            source: 'omt-page',
+            type: 'OMT_STORAGE_SET',
+            key: OMT_STORAGE_KEYS.autoPauseOnBlur,
+            value: !!enabled
+        });
     }
 
     function storageGetAutoVod() {
@@ -61,15 +68,17 @@
     }
 
     function storageSetAutoVod(enabled) {
-        localStorage.setItem(OMT_STORAGE_KEYS.autoVod, enabled ? 'true' : 'false');
-        try {
-            window.postMessage({
-                source: 'omt-page',
-                type: 'OMT_STORAGE_SET',
-                key: OMT_STORAGE_KEYS.autoVod,
-                value: !!enabled
-            }, '*');
-        } catch (_) {}
+        const next = enabled ? 'true' : 'false';
+        let prev = null;
+        try { prev = localStorage.getItem(OMT_STORAGE_KEYS.autoVod); } catch (_) {}
+        try { localStorage.setItem(OMT_STORAGE_KEYS.autoVod, next); } catch (_) {}
+        if (prev === next) return;
+        omtBusPost({
+            source: 'omt-page',
+            type: 'OMT_STORAGE_SET',
+            key: OMT_STORAGE_KEYS.autoVod,
+            value: !!enabled
+        });
     }
 
     function storageGetShuttleEnabled() {
@@ -94,15 +103,17 @@
             } catch (_) {}
             return;
         }
-        localStorage.setItem(OMT_STORAGE_KEYS.shuttle, enabled ? 'true' : 'false');
-        try {
-            window.postMessage({
-                source: 'omt-page',
-                type: 'OMT_STORAGE_SET',
-                key: OMT_STORAGE_KEYS.shuttle,
-                value: !!enabled
-            }, '*');
-        } catch (_) {}
+        const next = enabled ? 'true' : 'false';
+        let prev = null;
+        try { prev = localStorage.getItem(OMT_STORAGE_KEYS.shuttle); } catch (_) {}
+        try { localStorage.setItem(OMT_STORAGE_KEYS.shuttle, next); } catch (_) {}
+        if (prev === next) return;
+        omtBusPost({
+            source: 'omt-page',
+            type: 'OMT_STORAGE_SET',
+            key: OMT_STORAGE_KEYS.shuttle,
+            value: !!enabled
+        });
     }
 
     function syncShuttleToggleFromStorage() {
@@ -122,10 +133,8 @@
         } catch (_) {}
     }
 
-    // Popup / bridge → page sync
-    window.addEventListener('message', (event) => {
-        if (event.source !== window) return;
-        const data = event.data;
+    // Popup / bridge → page sync (CustomEvent bus; postMessage accepted for e2e only)
+    omtBusListen((data) => {
         if (!data || data.source !== 'omt-bridge' || data.type !== 'OMT_STORAGE_SYNC') return;
         const values = data.values || {};
         if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.shuttle)) {
@@ -133,14 +142,20 @@
             if (site && site.id === 'local') {
                 // ignore
             } else {
+                const wantOn = !!values[OMT_STORAGE_KEYS.shuttle];
+                const wasOn = typeof storageGetShuttleEnabled === 'function'
+                    ? storageGetShuttleEnabled()
+                    : false;
                 try {
-                    localStorage.setItem(OMT_STORAGE_KEYS.shuttle, values[OMT_STORAGE_KEYS.shuttle] ? 'true' : 'false');
+                    localStorage.setItem(OMT_STORAGE_KEYS.shuttle, wantOn ? 'true' : 'false');
                 } catch (_) {}
                 syncShuttleToggleFromStorage();
-                if (values[OMT_STORAGE_KEYS.shuttle] && typeof initShuttleXpress === 'function') {
+                // Only transition: avoid cleanupShuttle→storageSet(false)→sync loops
+                // when every bridge sync repeats shuttle:false (2.0.x vs 1.2.0).
+                if (wantOn && !wasOn && typeof initShuttleXpress === 'function') {
                     initShuttleXpress().catch(() => {});
-                } else if (!values[OMT_STORAGE_KEYS.shuttle] && typeof cleanupShuttle === 'function') {
-                    cleanupShuttle();
+                } else if (!wantOn && wasOn && typeof cleanupShuttle === 'function') {
+                    cleanupShuttle({ skipStorage: true });
                 }
             }
         }
@@ -190,8 +205,14 @@
             customizeTouched = true;
         }
         if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.clockCustom)) {
-            omtMirrorJsonKey(OMT_STORAGE_KEYS.clockCustom, values[OMT_STORAGE_KEYS.clockCustom]);
-            customizeTouched = true;
+            // Null/empty = already cleared; mirroring it must not re-enter
+            // omtClearLegacyClockCustom's storage SET path.
+            if (values[OMT_STORAGE_KEYS.clockCustom] != null && values[OMT_STORAGE_KEYS.clockCustom] !== '') {
+                omtMirrorJsonKey(OMT_STORAGE_KEYS.clockCustom, values[OMT_STORAGE_KEYS.clockCustom]);
+                customizeTouched = true;
+            } else {
+                try { localStorage.removeItem(OMT_STORAGE_KEYS.clockCustom); } catch (_) {}
+            }
         }
         if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.skipSeconds)) {
             omtMirrorJsonKey(OMT_STORAGE_KEYS.skipSeconds, values[OMT_STORAGE_KEYS.skipSeconds]);

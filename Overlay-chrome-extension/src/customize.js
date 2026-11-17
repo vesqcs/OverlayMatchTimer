@@ -278,16 +278,28 @@
         return { pos, size, shape };
     }
 
+    // One-shot migration only. Calling this on every storage sync used to
+    // OMT_STORAGE_SET(null) → bridge onChanged → OMT_STORAGE_SYNC → apply
+    // customize → clear again (postMessage storm). Examino's Shuttle chunk
+    // treats each same-origin message without a known key as play/pause.
+    let _omtClockCustomMigrated = false;
     function omtClearLegacyClockCustom() {
-        try { localStorage.removeItem(OMT_STORAGE_KEYS.clockCustom); } catch (_) {}
+        let hadLocal = false;
         try {
-            window.postMessage({
-                source: 'omt-page',
-                type: 'OMT_STORAGE_SET',
-                key: OMT_STORAGE_KEYS.clockCustom,
-                value: null
-            }, '*');
+            hadLocal = localStorage.getItem(OMT_STORAGE_KEYS.clockCustom) != null;
+            localStorage.removeItem(OMT_STORAGE_KEYS.clockCustom);
         } catch (_) {}
+        if (_omtClockCustomMigrated) return;
+        _omtClockCustomMigrated = true;
+        // Skip the bus when there was nothing local to clear — avoids a
+        // null→sync→null loop when chrome.storage defaults include this key.
+        if (!hadLocal) return;
+        omtBusPost({
+            source: 'omt-page',
+            type: 'OMT_STORAGE_SET',
+            key: OMT_STORAGE_KEYS.clockCustom,
+            value: null
+        });
     }
 
     function omtApplyClockAppearance() {
