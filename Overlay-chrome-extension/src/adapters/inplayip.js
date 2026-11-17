@@ -18,13 +18,19 @@
         },
 
         findAnchor(videoEl) {
+            // Prefer the Video.js shell (original). Also accept InPlay's
+            // current .player-container wrapper when VJS class is absent.
             return videoEl.closest('.video-js') ||
                 videoEl.closest('.vjs-player') ||
+                videoEl.closest('.player-container') ||
                 videoEl.parentElement;
         },
 
         findFullscreenTarget(videoEl) {
-            return videoEl.closest('.video-js') || videoEl.parentElement || videoEl;
+            return videoEl.closest('.video-js') ||
+                videoEl.closest('.player-container') ||
+                videoEl.parentElement ||
+                videoEl;
         },
 
         // Exact Inplay Review/Live signals from the known-good baseline.
