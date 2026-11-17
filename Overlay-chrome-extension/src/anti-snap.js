@@ -4,6 +4,43 @@
        Prevents the HLS player from auto-advancing the playhead
        back to the live edge after a user-initiated seek.
        ========================================================= */
+
+    /** Always catch play() rejection (AbortError / NotAllowedError) so the
+     *  console never shows an uncaught promise from our code. */
+    function safePlay(media) {
+        if (!media) return Promise.resolve();
+        try {
+            const p = media.play();
+            if (p && typeof p.then === 'function') {
+                return p.catch(() => {});
+            }
+        } catch (_) {}
+        return Promise.resolve();
+    }
+
+    function omtVideoInFullscreen(media) {
+        try {
+            const el = media || vid;
+            const fs = document.fullscreenElement;
+            return !!(fs && el && (fs === el || fs.contains(el)));
+        } catch (_) {
+            return false;
+        }
+    }
+
+    /**
+     * After Alt+Tab / visibility return, Chrome can leave a fullscreen
+     * <video> "playing" with a frozen last frame until FS exit. Re-assert
+     * play() only when media already thinks it is playing — never unpauses
+     * a user pause, never starts a play/pause loop.
+     */
+    function wakeFullscreenDecode() {
+        if (!vid || !vid.isConnected) return;
+        if (!omtVideoInFullscreen(vid)) return;
+        if (vid.paused || vid.ended) return;
+        safePlay(vid);
+    }
+
     function clampToSeekable(time) {
         if (!vid || !vid.seekable || vid.seekable.length === 0) return time;
         try {
@@ -23,16 +60,14 @@
         seekLockUntil = Date.now() + 4000; // 4-second protection window
         const wasPlaying = !vid.paused && !vid.ended;
         vid.currentTime = t;
-        // Local/FS: Chrome can leave decode stalled after a seek while the
-        // element is fullscreen (frames only catch up on exit). Re-assert
-        // play if we were already playing — does not toggle pause/play.
-        try {
-            if (wasPlaying && document.fullscreenElement &&
-                (document.fullscreenElement === vid || document.fullscreenElement.contains(vid))) {
-                const p = vid.play();
-                if (p && typeof p.catch === 'function') p.catch(() => {});
-            }
-        } catch (_) {}
+        wakeAfterFullscreenSeek(wasPlaying);
+    }
+
+    /** Local/FS: Chrome can leave decode stalled after a seek while the
+     *  element is fullscreen (frames only catch up on exit). Re-assert play
+     *  only if we were already playing — never toggles pause/play. */
+    function wakeAfterFullscreenSeek(wasPlaying) {
+        if (wasPlaying && omtVideoInFullscreen(vid)) safePlay(vid);
     }
 
     function antiLiveSnap() {

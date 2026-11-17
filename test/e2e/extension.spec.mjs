@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { resolveFixture, runExaminoFieldScenario, runInplayScheduleScenario } from './host-scenarios.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '../..');
@@ -50,8 +51,7 @@ function startServer() {
         res.end();
         return;
       }
-      const safe = urlPath.replace(/\.\./g, '');
-      const filePath = path.join(FIXTURES, safe === '/' ? 'examino-mock.html' : safe.replace(/^\//, ''));
+      const filePath = resolveFixture(FIXTURES, urlPath);
       if (!filePath.startsWith(FIXTURES) || !fs.existsSync(filePath)) {
         res.writeHead(404);
         res.end('not found');
@@ -393,10 +393,28 @@ async function run() {
         try { await v.play(); } catch (_) {}
       }
     });
-    const videoBox = await page.locator('video').boundingBox();
+    // Moving the pointer over the video re-shows our panel (auto-hide), so
+    // aim at a video point our HUD never covers, as an analyst would.
+    const videoPoint = await page.evaluate(() => {
+      const v = document.querySelector('video');
+      const panel = document.getElementById('controls-panel');
+      if (!v) return null;
+      if (panel) { panel.style.opacity = '1'; panel.style.pointerEvents = 'auto'; }
+      const r = v.getBoundingClientRect();
+      let pick = null;
+      for (let fy = 0.3; fy <= 0.6 && !pick; fy += 0.05) {
+        for (let fx = 0.5; fx >= 0.2 && !pick; fx -= 0.1) {
+          const x = r.left + r.width * fx;
+          const y = r.top + r.height * fy;
+          if (document.elementFromPoint(x, y) === v) pick = { x, y };
+        }
+      }
+      if (panel) { panel.style.opacity = '0'; panel.style.pointerEvents = 'none'; }
+      return pick;
+    });
     const clickVideoCenter = async () => {
-      if (!videoBox) return;
-      await page.mouse.click(videoBox.x + videoBox.width / 2, videoBox.y + videoBox.height / 2);
+      if (!videoPoint) return;
+      await page.mouse.click(videoPoint.x, videoPoint.y);
     };
     await clickVideoCenter();
     await page.waitForTimeout(200);
@@ -3202,85 +3220,72 @@ async function run() {
     await page.screenshot({ path: path.join(ARTIFACTS, 'v202_nested_op_ui.png'), fullPage: true });
 
 
-    // ---------- Video surface visibility (InPlay curtain / collapsed player) ----------
+    // ---------- InPlay collapsed player: HUD stays inside the player box ----------
+    // No visibility guard (2.0.1–2.0.2 toggled HUD/host chrome on layout
+    // changes). The HUD is mounted once; the anchor is a stacking context so
+    // host UI outside / above the player stays clickable.
     await page.goto(`${base}/inplayip-curtain-mock.html`, { waitUntil: 'domcontentloaded' });
     await waitForOmt(page, 15000);
     await page.waitForTimeout(200);
     const curtainClosed = await page.evaluate(() => {
       const root = document.getElementById('omt-root');
-      const v = document.querySelector('video');
-      const bar = document.querySelector('.vjs-control-bar');
-      const r = v?.getBoundingClientRect();
-      const rootCs = root ? getComputedStyle(root) : null;
-      const barCs = bar ? getComputedStyle(bar) : null;
+      const btn = document.getElementById('toggle-curtain');
+      const anchor = root?.parentElement;
+      const br = btn.getBoundingClientRect();
+      const hit = document.elementFromPoint(br.left + br.width / 2, br.top + br.height / 2);
       return {
-        obscured: !!root?.classList.contains('omt-video-obscured'),
-        attr: root?.getAttribute('data-omt-video-visible') || '',
-        vh: r ? Math.round(r.height) : -1,
-        rootVis: rootCs ? rootCs.visibility : null,
-        rootDisplay: rootCs ? rootCs.display : null,
-        rootPe: rootCs ? rootCs.pointerEvents : null,
         hudOn: document.documentElement.classList.contains('omt-hud-on'),
-        hostBarDisplay: barCs ? barCs.display : null,
-        hostBarPe: barCs ? barCs.pointerEvents : null
+        anchorIsolation: anchor ? getComputedStyle(anchor).isolation : null,
+        buttonHitIsHost: hit === btn,
+        hit: hit ? (hit.id || hit.tagName) : null
       };
     });
     results.push({
-      name: 'video-visibility-curtain-hidden',
-      pass: curtainClosed.obscured === true && curtainClosed.attr === '0' && curtainClosed.vh < 24 &&
-        curtainClosed.rootDisplay === 'none' && curtainClosed.rootPe === 'none' &&
-        curtainClosed.hudOn === false &&
-        curtainClosed.hostBarDisplay !== 'none',
+      name: 'inplayip-collapsed-player-host-ui-clickable',
+      pass: curtainClosed.hudOn === true && curtainClosed.anchorIsolation === 'isolate' && curtainClosed.buttonHitIsHost === true,
       detail: curtainClosed
     });
-    await page.screenshot({ path: path.join(ARTIFACTS, 'v201_overlay_hidden_curtain.png'), fullPage: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v203_inplay_collapsed_player.png'), fullPage: true });
 
-    // Curtain toggle outside the player must stay clickable while HUD is obscured.
     await page.click('#toggle-curtain');
     await page.waitForTimeout(280);
     const curtainOpen = await page.evaluate(() => {
       const root = document.getElementById('omt-root');
       const v = document.querySelector('video');
       const bar = document.querySelector('.vjs-control-bar');
+      const panel = document.getElementById('controls-panel');
       const r = v?.getBoundingClientRect();
       const rootCs = root ? getComputedStyle(root) : null;
-      const barCs = bar ? getComputedStyle(bar) : null;
       return {
-        obscured: !!root?.classList.contains('omt-video-obscured'),
-        attr: root?.getAttribute('data-omt-video-visible') || '',
         vh: r ? Math.round(r.height) : -1,
-        rootVis: rootCs ? rootCs.visibility : null,
         rootDisplay: rootCs ? rootCs.display : null,
+        rootVis: rootCs ? rootCs.visibility : null,
         hudOn: document.documentElement.classList.contains('omt-hud-on'),
-        hostBarDisplay: barCs ? barCs.display : null,
+        hostBarDisplay: bar ? getComputedStyle(bar).display : null,
+        panelVisible: !!panel && panel.getBoundingClientRect().height > 0,
         playerOpen: !!document.getElementById('vjs')?.classList.contains('is-open')
       };
     });
     results.push({
-      name: 'video-visibility-curtain-visible',
-      pass: curtainOpen.obscured === false && curtainOpen.attr === '1' && curtainOpen.vh >= 24 &&
-        curtainOpen.rootDisplay !== 'none' && curtainOpen.rootVis !== 'hidden' &&
-        curtainOpen.hudOn === true && curtainOpen.playerOpen === true &&
+      name: 'inplayip-open-player-shows-hud',
+      pass: curtainOpen.vh >= 24 && curtainOpen.rootDisplay !== 'none' && curtainOpen.rootVis !== 'hidden' &&
+        curtainOpen.hudOn === true && curtainOpen.playerOpen === true && curtainOpen.panelVisible === true &&
         curtainOpen.hostBarDisplay === 'none',
       detail: curtainOpen
     });
-    await page.screenshot({ path: path.join(ARTIFACTS, 'v201_overlay_visible_curtain.png'), fullPage: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v203_inplay_open_player.png'), fullPage: true });
 
-    // Centre host overlay must NOT hide our HUD (elementFromPoint removed in 2.0.2).
+    // Centre host overlay inside the player keeps its own click target.
     await page.goto(`${base}/inplayip-cover-mock.html`, { waitUntil: 'domcontentloaded' });
     await waitForOmt(page, 15000);
     await page.waitForTimeout(200);
     const coverState = await page.evaluate(() => {
       const root = document.getElementById('omt-root');
-      const panel = document.getElementById('controls-panel');
       const btn = document.getElementById('host-curtain-btn');
       const rootCs = root ? getComputedStyle(root) : null;
       return {
-        obscured: !!root?.classList.contains('omt-video-obscured'),
-        attr: root?.getAttribute('data-omt-video-visible') || '',
         hudOn: document.documentElement.classList.contains('omt-hud-on'),
         rootDisplay: rootCs ? rootCs.display : null,
-        panelPe: panel ? getComputedStyle(panel).pointerEvents : null,
         btnClicksBefore: Number(btn?.getAttribute('data-clicks') || 0)
       };
     });
@@ -3291,14 +3296,14 @@ async function run() {
       return { clicks: Number(btn?.getAttribute('data-clicks') || 0) };
     });
     results.push({
-      name: 'video-visibility-centre-cover-keeps-hud',
-      pass: coverState.obscured === false && coverState.attr === '1' && coverState.hudOn === true &&
-        coverState.rootDisplay !== 'none' && coverAfterClick.clicks === coverState.btnClicksBefore + 1,
+      name: 'inplayip-centre-cover-keeps-hud',
+      pass: coverState.hudOn === true && coverState.rootDisplay !== 'none' &&
+        coverAfterClick.clicks === coverState.btnClicksBefore + 1,
       detail: { coverState, coverAfterClick }
     });
-    await page.screenshot({ path: path.join(ARTIFACTS, 'v202_centre_cover_keeps_hud.png'), fullPage: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v203_centre_cover_keeps_hud.png'), fullPage: true });
 
-    // ---------- InPlay 10s CPU / loop guard (play-pause + visibility churn) ----------
+    // ---------- InPlay 10s CPU / loop guard ----------
     await page.goto(`${base}/inplayip-mock.html`, { waitUntil: 'domcontentloaded' });
     await waitForOmt(page, 15000);
     await page.waitForTimeout(400);
@@ -3306,12 +3311,11 @@ async function run() {
       const v = document.querySelector('video');
       if (!v) return { ok: false, reason: 'no-video' };
       try { await v.play(); } catch (_) {}
-      const statsFn = window.__omtVideoVisibilityStats;
-      const t0stats = typeof statsFn === 'function' ? statsFn() : null;
       let playN = 0;
       let pauseN = 0;
       let seekingN = 0;
       let waitingN = 0;
+      let hudClassFlips = 0;
       const onPlay = () => { playN += 1; };
       const onPause = () => { pauseN += 1; };
       const onSeeking = () => { seekingN += 1; };
@@ -3320,6 +3324,14 @@ async function run() {
       v.addEventListener('pause', onPause);
       v.addEventListener('seeking', onSeeking);
       v.addEventListener('waiting', onWaiting);
+      const htmlObs = new MutationObserver(() => { hudClassFlips += 1; });
+      htmlObs.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+      const longTasks = [];
+      let lto = null;
+      try {
+        lto = new PerformanceObserver((l) => l.getEntries().forEach((e) => longTasks.push(e.duration)));
+        lto.observe({ type: 'longtask' });
+      } catch (_) {}
       const started = performance.now();
       for (let i = 0; i < 20; i++) {
         window.dispatchEvent(new Event('resize'));
@@ -3332,13 +3344,10 @@ async function run() {
       v.removeEventListener('pause', onPause);
       v.removeEventListener('seeking', onSeeking);
       v.removeEventListener('waiting', onWaiting);
-      const t1stats = typeof statsFn === 'function' ? statsFn() : null;
-      const schedules = t1stats && t0stats ? (t1stats.schedules - t0stats.schedules) : -1;
-      const applies = t1stats && t0stats ? (t1stats.applies - t0stats.applies) : -1;
-      const domWrites = t1stats && t0stats ? (t1stats.domWrites - t0stats.domWrites) : -1;
-      const ok = playN <= 3 && pauseN <= 3 && seekingN <= 5 && waitingN <= 30 &&
-        schedules >= 0 && schedules < 80 && applies < 40 && domWrites < 20 &&
-        v.paused === false;
+      htmlObs.disconnect();
+      if (lto) lto.disconnect();
+      const ok = playN === 0 && pauseN === 0 && seekingN <= 5 && waitingN <= 30 &&
+        hudClassFlips === 0 && longTasks.length <= 2 && v.paused === false;
       return {
         ok,
         elapsedMs: Math.round(elapsed),
@@ -3346,12 +3355,10 @@ async function run() {
         pauseN,
         seekingN,
         waitingN,
-        schedules,
-        applies,
-        domWrites,
+        hudClassFlips,
+        longTasks: longTasks.length,
         paused: v.paused,
-        hudOn: document.documentElement.classList.contains('omt-hud-on'),
-        obscured: !!document.getElementById('omt-root')?.classList.contains('omt-video-obscured')
+        hudOn: document.documentElement.classList.contains('omt-hud-on')
       };
     });
     results.push({
@@ -3360,38 +3367,59 @@ async function run() {
       detail: inplayLoopGuard
     });
 
-    // Curtain open/close must stay snappy (no multi-second stall from vis churn).
-    await page.goto(`${base}/inplayip-curtain-mock.html`, { waitUntil: 'domcontentloaded' });
-    await waitForOmt(page, 15000);
-    await page.waitForTimeout(200);
-    const curtainSpeed = await page.evaluate(async () => {
-      const btn = document.getElementById('toggle-curtain');
-      const player = document.getElementById('vjs');
-      if (!btn || !player) return { ok: false, reason: 'missing' };
-      const t0 = performance.now();
-      btn.click();
-      await new Promise((r) => setTimeout(r, 50));
-      const opened = player.classList.contains('is-open');
-      const tOpen = performance.now() - t0;
-      await new Promise((r) => setTimeout(r, 200));
-      const t1 = performance.now();
-      btn.click();
-      await new Promise((r) => setTimeout(r, 50));
-      const closed = !player.classList.contains('is-open');
-      const tClose = performance.now() - t1;
-      return {
-        ok: opened && closed && tOpen < 500 && tClose < 500,
-        opened,
-        closed,
-        tOpen: Math.round(tOpen),
-        tClose: Math.round(tClose)
-      };
+    // ---------- Field scenarios (same code as compare-baseline.mjs vs 1.2.0) ----------
+    // InPlay /schedule: curtain arrow over a full-viewport Video.js player,
+    // fullscreen on #root like inplayip.tv.
+    const schedulePage = await context.newPage();
+    const inplaySchedule = await runInplayScheduleScenario(schedulePage, base);
+    await schedulePage.screenshot({ path: path.join(ARTIFACTS, 'v203_inplay_schedule_after_fs.png') }).catch(() => {});
+    await schedulePage.close();
+    const { detail: inplayScheduleDetail, ...inplayScheduleSummary } = inplaySchedule;
+    results.push({
+      name: 'inplayip-schedule-arrow-is-host-in-and-out-of-fs',
+      pass: inplaySchedule.mounted && inplaySchedule.enteredFullscreen &&
+        inplaySchedule.arrowsHost === inplaySchedule.arrowsTotal && inplaySchedule.allToggled,
+      detail: { ...inplayScheduleSummary, arrows: inplayScheduleDetail }
     });
     results.push({
-      name: 'inplayip-curtain-toggle-snappy',
-      pass: curtainSpeed.ok === true,
-      detail: curtainSpeed
+      name: 'inplayip-schedule-toggle-fast',
+      pass: inplaySchedule.toggleMaxMs != null && inplaySchedule.toggleMaxMs <= 250,
+      detail: { toggleTimes: inplaySchedule.toggleTimes }
     });
+    results.push({
+      name: 'inplayip-schedule-hud-never-over-curtain',
+      pass: inplaySchedule.hudCoveredPointsOpen === 0 && inplaySchedule.hudOnTopIds.length === 0,
+      detail: { covered: inplaySchedule.hudCoveredPointsOpen, ids: inplaySchedule.hudOnTopIds }
+    });
+    results.push({
+      name: 'inplayip-schedule-arrow-after-fs-exit',
+      pass: inplaySchedule.afterExitArrowPresent === true,
+      detail: inplayScheduleDetail.afterExit.collapsed
+    });
+    results.push({
+      name: 'inplayip-schedule-fs-idle-no-cpu-loop',
+      pass: inplaySchedule.idleFsOpen.longTasks <= 1,
+      detail: inplaySchedule.idleFsOpen
+    });
+
+    // Examino /play/dvr/: Source row never confirms, each pick replaces <video>.
+    const examinoFieldPage = await context.newPage();
+    const examinoField = await runExaminoFieldScenario(examinoFieldPage, base);
+    await examinoFieldPage.screenshot({ path: path.join(ARTIFACTS, 'v203_examino_field_idle.png') }).catch(() => {});
+    await examinoFieldPage.close();
+    results.push({
+      name: 'examino-field-idle-zero-media-events',
+      pass: examinoField.mounted && examinoField.idle.play === 0 && examinoField.idle.pause === 0 &&
+        examinoField.idle.waiting === 0 && examinoField.idle.sourceLoads === 0 && examinoField.idle.gearClicks === 0,
+      detail: examinoField
+    });
+    results.push({
+      name: 'examino-field-player-opens',
+      pass: examinoField.playerOpen === true && examinoField.boot.sourceLoads <= 2 && examinoField.uncaughtAbort === 0,
+      detail: { boot: examinoField.boot, playerOpen: examinoField.playerOpen, uncaughtAbort: examinoField.uncaughtAbort }
+    });
+    // Background tabs defer autoplay; later tests expect a playing video.
+    await page.bringToFront();
 
     // ---------- Host CSS isolation (html font-size 10px + aggressive resets) ----------
     await page.goto(`${base}/inplayip-css-leak-mock.html`, { waitUntil: 'domcontentloaded' });
@@ -3525,7 +3553,7 @@ async function run() {
       await popupPage.waitForTimeout(200);
       await popupPage.screenshot({ path: path.join(ARTIFACTS, 'popup.png') });
       await popupPage.screenshot({ path: path.join(ARTIFACTS, 'popup_logo_above.png') });
-      const popupOk = await popupPage.evaluate(() => {
+      const popupOk = await popupPage.evaluate((manifestVersion) => {
         const foot = (document.querySelector('.omt-popup-foot')?.textContent || '').trim();
         const soon = document.querySelector('.omt-soon-banner');
         const knob = (() => {
@@ -3556,7 +3584,7 @@ async function run() {
           noCredit: !document.querySelector('.omt-brand-credit'),
           noPersonalizar: !document.body.textContent.includes('Personalizar') &&
             !document.body.textContent.includes('Em breve'),
-          footOk: foot === 'v2.0.2',
+          footOk: foot === 'v' + manifestVersion,
           hasAutoPause: !!document.getElementById('omt-auto-pause-blur'),
           autoPauseDefaultOff: document.getElementById('omt-auto-pause-blur')
             ? document.getElementById('omt-auto-pause-blur').checked === false
@@ -3617,7 +3645,7 @@ async function run() {
           })(),
           toggleKnob: knob
         };
-      });
+      }, JSON.parse(fs.readFileSync(path.join(EXT, 'manifest.json'), 'utf8')).version);
       // Default General: Actions open, Shortcuts/Shuttle collapsed → short popup
       await popupPage.screenshot({
         path: path.join(ARTIFACTS, 'popup_general_default.png'),
@@ -5231,14 +5259,7 @@ async function run() {
           return { ok: false, reason: 'fs-denied', message: String(err && err.message || err) };
         }
         await new Promise((r) => setTimeout(r, 120));
-        if (typeof window.__omtVideoVisibilityStats === 'function') {
-          // Force a visibility pass while FS (must stay visible / not obscured).
-          try {
-            document.dispatchEvent(new Event('fullscreenchange'));
-          } catch (_) {}
-          await new Promise((r) => setTimeout(r, 200));
-        }
-        const obscuredInFs = !!root?.classList.contains('omt-video-obscured');
+        const obscuredInFs = !!root && getComputedStyle(root).display === 'none';
         const hudOn = document.documentElement.classList.contains('omt-hud-on');
         try { v.currentTime = 1; } catch (_) {}
         await new Promise((r) => setTimeout(r, 80));
@@ -5300,6 +5321,194 @@ async function run() {
       await localPage.screenshot({
         path: path.join(ARTIFACTS, 'v202_local_fullscreen_seek.png'),
         fullPage: true
+      });
+
+      // v2.0.3: after Alt+Tab-like blur/focus while fullscreen, keyboard + shuttle
+      // skips must advance time, paint frames, keep playing, stay in FS, and not
+      // leave uncaught AbortError from play().
+      const localFsReturn = await localPage.evaluate(async () => {
+        const v = document.getElementById('omt-local-video');
+        const stage = document.getElementById('omt-local-stage');
+        if (!v || !stage) return { ok: false, reason: 'missing' };
+
+        // Auto-pause off so the case matches typical local use; wake still runs.
+        try { localStorage.setItem('omtAutoPauseOnBlur', 'false'); } catch (_) {}
+
+        const uncaught = [];
+        const onRej = (ev) => {
+          const reason = ev && ev.reason;
+          const msg = reason && (reason.message || String(reason)) || '';
+          if (/AbortError|play\(\)|interrupted/i.test(msg) || (reason && reason.name === 'AbortError')) {
+            uncaught.push(msg || 'AbortError');
+          }
+        };
+        window.addEventListener('unhandledrejection', onRej);
+
+        try { await v.play(); } catch (_) {}
+        try {
+          if (!document.fullscreenElement) await stage.requestFullscreen();
+        } catch (err) {
+          window.removeEventListener('unhandledrejection', onRej);
+          return { ok: false, reason: 'fs-denied', message: String(err && err.message || err) };
+        }
+        await new Promise((r) => setTimeout(r, 100));
+
+        // Simulate leave window (Alt+Tab): hasFocus false, blur, visibility hidden.
+        let focusStub = false;
+        try {
+          Object.defineProperty(document, 'hasFocus', {
+            configurable: true,
+            value: () => focusStub
+          });
+        } catch (_) {}
+        Object.defineProperty(document, 'visibilityState', {
+          configurable: true,
+          get: () => 'hidden'
+        });
+        Object.defineProperty(document, 'hidden', {
+          configurable: true,
+          get: () => true
+        });
+        window.dispatchEvent(new Event('blur'));
+        document.dispatchEvent(new Event('visibilitychange'));
+        await new Promise((r) => setTimeout(r, 80));
+
+        // Return to window: hasFocus true, visibility visible, focus event.
+        focusStub = true;
+        Object.defineProperty(document, 'visibilityState', {
+          configurable: true,
+          get: () => 'visible'
+        });
+        Object.defineProperty(document, 'hidden', {
+          configurable: true,
+          get: () => false
+        });
+        document.dispatchEvent(new Event('visibilitychange'));
+        window.dispatchEvent(new Event('focus'));
+        await new Promise((r) => setTimeout(r, 120));
+
+        if (v.paused) {
+          try { await v.play(); } catch (_) {}
+        }
+        try { v.currentTime = 1; } catch (_) {}
+        await new Promise((r) => setTimeout(r, 60));
+
+        const beforeKb = v.currentTime;
+        let timeupdates = 0;
+        const onTu = () => { timeupdates += 1; };
+        v.addEventListener('timeupdate', onTu);
+        const waitFrame = () => new Promise((resolve) => {
+          if (typeof v.requestVideoFrameCallback !== 'function') {
+            resolve(false);
+            return;
+          }
+          try {
+            v.requestVideoFrameCallback(() => resolve(true));
+            setTimeout(() => resolve(false), 2000);
+          } catch (_) {
+            resolve(false);
+          }
+        });
+        let frameP = waitFrame();
+
+        document.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'ArrowRight', code: 'ArrowRight', bubbles: true, cancelable: true
+        }));
+        await new Promise((r) => setTimeout(r, 500));
+        const afterKb = v.currentTime;
+        const gotFrameKb = await frameP;
+
+        // ShuttleXpress skip path (same seekTo wake as hardware button, no HID).
+        const beforeSh = v.currentTime;
+        frameP = waitFrame();
+        if (typeof window.__omtTestShuttleSkipSeconds === 'function') {
+          window.__omtTestShuttleSkipSeconds(2);
+        } else {
+          return {
+            ok: false,
+            reason: 'no-shuttle-hook',
+            beforeKb,
+            afterKb,
+            uncaught
+          };
+        }
+        await new Promise((r) => setTimeout(r, 500));
+        const afterSh = v.currentTime;
+        const gotFrameSh = await frameP;
+
+        v.removeEventListener('timeupdate', onTu);
+        window.removeEventListener('unhandledrejection', onRej);
+
+        const stillFs = !!document.fullscreenElement && document.fullscreenElement.contains(v);
+        const paused = v.paused;
+        const kbOk = afterKb >= beforeKb + 1.2;
+        const shOk = afterSh >= beforeSh + 1.2;
+        const frameOk = (gotFrameKb || gotFrameSh || timeupdates >= 1);
+        const noAbort = uncaught.length === 0;
+        const ok = stillFs && !paused && kbOk && shOk && frameOk && noAbort;
+
+        try {
+          if (document.fullscreenElement) await document.exitFullscreen();
+        } catch (_) {}
+
+        return {
+          ok,
+          stillFs,
+          paused,
+          beforeKb,
+          afterKb,
+          beforeSh,
+          afterSh,
+          timeupdates,
+          gotFrameKb,
+          gotFrameSh,
+          uncaught,
+          hasShuttleHook: true
+        };
+      });
+      results.push({
+        name: 'local-fullscreen-return-seek-paints',
+        pass: localFsReturn.ok === true,
+        detail: localFsReturn
+      });
+      await localPage.screenshot({
+        path: path.join(ARTIFACTS, 'v203_local_fullscreen_return_seek.png'),
+        fullPage: true
+      });
+
+      // Confirm togglePlay / Space catches play() AbortError (no uncaught rejection).
+      const localPlayCatch = await localPage.evaluate(async () => {
+        const v = document.getElementById('omt-local-video');
+        if (!v) return { ok: false, reason: 'missing' };
+        const uncaught = [];
+        const onRej = (ev) => {
+          const reason = ev && ev.reason;
+          if (reason && (reason.name === 'AbortError' || /play\(\)|interrupted/i.test(String(reason.message || reason)))) {
+            uncaught.push(String(reason.message || reason));
+          }
+        };
+        window.addEventListener('unhandledrejection', onRej);
+        try { await v.play(); } catch (_) {}
+        // Force a pending play then immediate pause (classic AbortError pattern).
+        const p = v.play();
+        v.pause();
+        try { await p; } catch (_) {}
+        // Our toggle path must also catch.
+        document.dispatchEvent(new KeyboardEvent('keydown', {
+          key: ' ', code: 'Space', bubbles: true, cancelable: true
+        }));
+        await new Promise((r) => setTimeout(r, 40));
+        document.dispatchEvent(new KeyboardEvent('keydown', {
+          key: ' ', code: 'Space', bubbles: true, cancelable: true
+        }));
+        await new Promise((r) => setTimeout(r, 40));
+        window.removeEventListener('unhandledrejection', onRej);
+        return { ok: uncaught.length === 0, uncaught };
+      });
+      results.push({
+        name: 'local-play-promise-caught',
+        pass: localPlayCatch.ok === true,
+        detail: localPlayCatch
       });
 
       const localSpeed = await localPage.evaluate(async () => {

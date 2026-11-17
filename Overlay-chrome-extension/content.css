@@ -38,9 +38,9 @@
 }
 
 /* ---- HIDE NATIVE VIDEO.JS CONTROLS (InplayIP) ----
-   Only while our HUD is active. When the video surface is obscured
-   (curtain / collapsed), html.omt-hud-on is removed so host chrome
-   returns and the analyst is never left with zero controls. */
+   html.omt-hud-on is set once when our HUD mounts and cleared on
+   teardown (never toggled by layout/visibility observers). Without a
+   mounted HUD (Live, not-yet-booted, failed inject) host controls stay. */
 html.omt-hud-on .vjs-control-bar,
 html.omt-hud-on .vjs-big-play-button,
 html.omt-hud-on .vjs-loading-spinner,
@@ -53,11 +53,8 @@ html.omt-hud-on .video-js .vjs-control-bar {
     pointer-events: none !important;
 }
 
-/* ---- HIDE OPENPLAYER / EXAMINO NATIVE CHROME (HUD active only) ---- */
-/* Never hide a node that contains the <video> / media container.
-   On real Examino, .op-ui often WRAPS the media. Hiding it makes the
-   video display:none → Chrome power-save pause fights OpenPlayer play()
-   (~250 play+pause/s). Only hide chrome leaves. */
+/* ---- HIDE OPENPLAYER / EXAMINO NATIVE CHROME (HUD mounted only) ---- */
+/* Never hide a node that contains the <video> / media container. */
 html.omt-hud-on .op-controls,
 html.omt-hud-on .op-ui:not(.op-media-element-container):not(:has(video)):not(:has(.op-media-element-container)),
 html.omt-hud-on .op-progressbar-container,
@@ -230,19 +227,6 @@ html.omt-hud-on .main-container {
     background-color: #e0201b !important;
     filter: none !important;
 }
-/* Obscured: fully out of hit-testing. Descendants must not keep
-   pointer-events:auto (that would still steal clicks over host UI). */
-#omt-root.omt-video-obscured {
-    display: none !important;
-    visibility: hidden !important;
-    pointer-events: none !important;
-    opacity: 0 !important;
-}
-#omt-root.omt-video-obscured,
-#omt-root.omt-video-obscured * {
-    pointer-events: none !important;
-}
-
 #omt-root .glass-panel,
 #omt-root #controls-panel,
 #omt-root #match-timer-wrap,
@@ -491,12 +475,13 @@ html.omt-hud-on .main-container {
 }
 
 /* ---- PANELS ---- */
+/* No backdrop-filter: blurring live video under the panel forces the GPU
+   to re-read and re-blur every decoded frame (worst in fullscreen) and
+   keeps Chrome off the hardware video overlay path. */
 .glass-panel,
 .omt-panel {
     position: absolute;
-    background: var(--omt-bg);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
+    background: rgba(15, 15, 15, 0.9);
     border: 1px solid var(--omt-border);
     border-radius: 8px;
     box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);

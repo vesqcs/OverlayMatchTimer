@@ -38,7 +38,7 @@
         if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
         if (btn === prefs.playPauseBtn) {
             if (vid.paused) {
-                vid.play().catch(() => {});
+                safePlay(vid);
                 mostrarOSD('Play');
             } else {
                 vid.pause();
@@ -52,12 +52,26 @@
             ? omtSkipSignForButton(btn, prefs)
             : ((btn === 1 || btn === 2) ? -1 : 1);
         const delta = sign * secs;
-        vid.currentTime = Math.max(0, (vid.currentTime || 0) + delta);
+        shuttleSkipBy(delta);
         const label = Math.abs(delta) >= 60
             ? ((delta < 0 ? 'Skip -' : 'Skip +') + (Math.abs(delta) / 60) + 'm')
             : ((delta < 0 ? 'Skip -' : 'Skip +') + Math.abs(delta) + 's');
         mostrarOSD(label);
     }
+
+    function shuttleSkipBy(delta) {
+        const wasPlaying = !vid.paused && !vid.ended;
+        vid.currentTime = Math.max(0, (vid.currentTime || 0) + delta);
+        wakeAfterFullscreenSeek(wasPlaying);
+    }
+
+    /** E2E / diagnostics: same skip path as a ShuttleXpress button (no HID). */
+    function omtTestShuttleSkipSeconds(delta) {
+        if (!vid || !Number.isFinite(delta) || delta === 0) return;
+        if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
+        shuttleSkipBy(delta);
+    }
+    try { window.__omtTestShuttleSkipSeconds = omtTestShuttleSkipSeconds; } catch (_) {}
 
     function showShuttleCheatsheet(visible) {
         if (shuttleCheatsheet) {

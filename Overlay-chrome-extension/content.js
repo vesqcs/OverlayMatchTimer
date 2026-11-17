@@ -123,13 +123,19 @@
         },
 
         findAnchor(videoEl) {
+            // Prefer the Video.js shell (original). Also accept InPlay's
+            // current .player-container wrapper when VJS class is absent.
             return videoEl.closest('.video-js') ||
                 videoEl.closest('.vjs-player') ||
+                videoEl.closest('.player-container') ||
                 videoEl.parentElement;
         },
 
         findFullscreenTarget(videoEl) {
-            return videoEl.closest('.video-js') || videoEl.parentElement || videoEl;
+            return videoEl.closest('.video-js') ||
+                videoEl.closest('.player-container') ||
+                videoEl.parentElement ||
+                videoEl;
         },
 
         // Exact Inplay Review/Live signals from the known-good baseline.
@@ -403,9 +409,8 @@
         if (site.id !== 'examino') {
             document.removeEventListener('keydown', handleKeydown, true);
         }
-        if (typeof teardownVideoVisibilityGuard === 'function') {
-            try { teardownVideoVisibilityGuard(); } catch (_) {}
-        }
+        omtSetHudMounted(false);
+        omtReleaseHudStacking();
         // Remove the injected HUD from the DOM
         const existingRoot = document.getElementById('omt-root');
         if (existingRoot && existingRoot.parentNode) {
@@ -518,6 +523,19 @@
         return site.findVideo();
     }
 
+    /**
+     * A replaced <video> must go through teardown/boot so every per-video
+     * listener (timeupdate, play/pause, mousemove) moves with it. Assigning
+     * `vid = newEl` directly leaves those listeners on the dead element and
+     * the SPA monitor then sees `currentVid === vid` and never rebinds.
+     */
+    function omtAdoptReplacedVideo(el) {
+        if (!el || el === vid || !el.isConnected) return vid;
+        teardown();
+        boot();
+        return vid || el;
+    }
+
     /* =========================================================
        1C. SPA MONITOR — DETECT VIDEO REMOVAL / STREAM SWITCH
        =========================================================
@@ -569,11 +587,9 @@
         // this is a Review/DVR session with a seekable timeline.
         hlsInstance = getHlsInstance();
         patchHlsForDvr();
-        // Optimistic HUD-on so host-chrome CSS gates apply immediately;
-        // video-visibility guard turns it off if the surface is collapsed.
-        if (typeof omtSetHudActive === 'function') omtSetHudActive(true);
         suppressNativeControls();
         injectUI();
+        if (omtRoot) omtSetHudMounted(true);
         cacheUIRefs();
         if (typeof omtApplyCustomizeFromStorage === 'function') omtApplyCustomizeFromStorage();
         wireEvents();
@@ -816,6 +832,7 @@
 
         const cs = getComputedStyle(anchor);
         if (cs.position === 'static') anchor.style.position = 'relative';
+        omtContainHudStacking(anchor);
 
         omtRoot = document.createElement('div');
         omtRoot.id = 'omt-root';
@@ -826,7 +843,43 @@
         updateCompactLayout();
         ensureFullscreenHook();
         updateFullscreenButton();
-        if (typeof installVideoVisibilityGuard === 'function') installVideoVisibilityGuard();
+    }
+
+    /**
+     * #omt-root uses a huge z-index to beat the player's own layers. Without a
+     * stacking context on the player box that z-index escapes to the page and
+     * paints over host UI stacked above the player (InPlay schedule curtain
+     * z-index 3, its arrow z-index 4). isolation:isolate keeps the HUD inside
+     * the player's layer; it does not move, resize or hide the host node.
+     */
+    let omtIsolatedAnchor = null;
+    let omtIsolatedAnchorPrev = '';
+
+    function omtContainHudStacking(anchor) {
+        omtReleaseHudStacking();
+        if (!anchor || !anchor.style) return;
+        try {
+            omtIsolatedAnchorPrev = anchor.style.getPropertyValue('isolation') || '';
+            anchor.style.setProperty('isolation', 'isolate');
+            omtIsolatedAnchor = anchor;
+        } catch (_) {}
+    }
+
+    function omtReleaseHudStacking() {
+        if (!omtIsolatedAnchor) return;
+        try {
+            if (omtIsolatedAnchorPrev) omtIsolatedAnchor.style.setProperty('isolation', omtIsolatedAnchorPrev);
+            else omtIsolatedAnchor.style.removeProperty('isolation');
+        } catch (_) {}
+        omtIsolatedAnchor = null;
+        omtIsolatedAnchorPrev = '';
+    }
+
+    /** Host-chrome hide CSS is gated on this; set on mount, cleared on teardown only. */
+    function omtSetHudMounted(on) {
+        try {
+            document.documentElement.classList.toggle('omt-hud-on', !!on);
+        } catch (_) {}
     }
 
     function updateCompactLayout() {
@@ -865,9 +918,6 @@
                 if (anchor && omtRoot.parentElement !== anchor) {
                     anchor.appendChild(omtRoot);
                 }
-            }
-            if (typeof omtApplyVideoSurfaceVisibility === 'function') {
-                try { omtApplyVideoSurfaceVisibility(); } catch (_) {}
             }
         });
         window.addEventListener('resize', () => updateCompactLayout());
@@ -1296,163 +1346,6 @@
         setMorePanelOpen(!panel.classList.contains('is-open'));
     }
 
-/* Hide overlay when the video surface is not meaningfully visible
-       (InPlay Review curtain / collapsed player). Layout only — does not
-       read or change video time / PDT.
-
-       v2.0.2:
-       - No elementFromPoint (forced layout + false hides).
-       - No ResizeObserver on the video (toggling #omt-root display was
-         feeding RO → apply → layout → RO storms on InPlay).
-       - Size hysteresis so curtain animations do not flap hud-on.
-       - Debounced IntersectionObserver + window resize/fullscreen only.
-       - When obscured, clear html.omt-hud-on so host chrome can show. */
-    const OMT_VIDEO_VIS_SHOW_MIN_PX = 24;
-    const OMT_VIDEO_VIS_HIDE_MAX_PX = 12;
-    const OMT_VIDEO_VIS_DEBOUNCE_MS = 150;
-
-    let omtVisApplyTimer = null;
-    let omtVisLastVisible = null;
-    let omtVisIntersectionObserver = null;
-    let omtVisListenersBound = false;
-    // Test/diagnostics counters (idle pages should stay tiny).
-    let omtVisSchedules = 0;
-    let omtVisApplies = 0;
-    let omtVisDomWrites = 0;
-
-    function omtVideoVisibilityStats() {
-        return {
-            schedules: omtVisSchedules,
-            applies: omtVisApplies,
-            domWrites: omtVisDomWrites,
-            lastVisible: omtVisLastVisible
-        };
-    }
-
-    function omtSetHudActive(active) {
-        try {
-            const on = !!active;
-            if (document.documentElement.classList.contains('omt-hud-on') === on &&
-                (!document.body || document.body.classList.contains('omt-hud-on') === on)) {
-                return;
-            }
-            document.documentElement.classList.toggle('omt-hud-on', on);
-            if (document.body) document.body.classList.toggle('omt-hud-on', on);
-            omtVisDomWrites += 1;
-        } catch (_) {}
-    }
-
-    function omtVideoSurfaceVisible(videoEl) {
-        if (!videoEl || !videoEl.isConnected) return false;
-        // Fullscreen owns the screen. IntersectionObserver often mis-reads the
-        // FS element (0 intersection vs layout viewport), which hid our HUD /
-        // flipped hud-on and left Chrome treating the media as background —
-        // local player: skip-forward freezes until exit fullscreen. Always
-        // treat FS that contains the video as visible.
-        try {
-            const fs = document.fullscreenElement;
-            if (fs && (fs === videoEl || fs.contains(videoEl))) return true;
-        } catch (_) {}
-        try {
-            const cs = getComputedStyle(videoEl);
-            if (cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity) === 0) {
-                return false;
-            }
-        } catch (_) {}
-        const r = videoEl.getBoundingClientRect();
-        const minSide = Math.min(r.width, r.height);
-        // Hysteresis: once hidden, need SHOW_MIN to become visible; once
-        // visible, only hide below HIDE_MAX (avoids curtain-animation flaps).
-        const need = (omtVisLastVisible === true) ? OMT_VIDEO_VIS_HIDE_MAX_PX : OMT_VIDEO_VIS_SHOW_MIN_PX;
-        if (!(minSide >= need)) return false;
-        const vw = window.innerWidth || document.documentElement.clientWidth || 0;
-        const vh = window.innerHeight || document.documentElement.clientHeight || 0;
-        if (vw <= 0 || vh <= 0) return false;
-        return r.bottom > 0 && r.right > 0 && r.top < vh && r.left < vw;
-    }
-
-    function omtApplyVideoSurfaceVisibility() {
-        omtVisApplies += 1;
-        if (!omtRoot) {
-            omtSetHudActive(false);
-            return;
-        }
-        const visible = omtVideoSurfaceVisible(vid);
-        if (omtVisLastVisible === visible) {
-            return;
-        }
-        omtVisLastVisible = visible;
-        omtVisDomWrites += 1;
-        omtRoot.classList.toggle('omt-video-obscured', !visible);
-        omtRoot.setAttribute('data-omt-video-visible', visible ? '1' : '0');
-        omtSetHudActive(visible);
-    }
-
-    function omtScheduleVideoSurfaceVisibility() {
-        omtVisSchedules += 1;
-        if (omtVisApplyTimer) return;
-        omtVisApplyTimer = setTimeout(() => {
-            omtVisApplyTimer = null;
-            try { omtApplyVideoSurfaceVisibility(); } catch (_) {}
-        }, OMT_VIDEO_VIS_DEBOUNCE_MS);
-    }
-
-    function teardownVideoVisibilityGuard() {
-        if (omtVisApplyTimer) {
-            clearTimeout(omtVisApplyTimer);
-            omtVisApplyTimer = null;
-        }
-        if (omtVisIntersectionObserver) {
-            try { omtVisIntersectionObserver.disconnect(); } catch (_) {}
-            omtVisIntersectionObserver = null;
-        }
-        if (omtVisListenersBound) {
-            window.removeEventListener('scroll', omtScheduleVideoSurfaceVisibility);
-            window.removeEventListener('resize', omtScheduleVideoSurfaceVisibility);
-            document.removeEventListener('fullscreenchange', omtScheduleVideoSurfaceVisibility);
-            omtVisListenersBound = false;
-        }
-        omtVisLastVisible = null;
-        omtSetHudActive(false);
-    }
-
-    function installVideoVisibilityGuard() {
-        if (!vid || !omtRoot) return;
-        if (omtRoot.dataset.omtVisGuard === '1') {
-            omtApplyVideoSurfaceVisibility();
-            return;
-        }
-        omtRoot.dataset.omtVisGuard = '1';
-        omtVisSchedules = 0;
-        omtVisApplies = 0;
-        omtVisDomWrites = 0;
-
-        // IntersectionObserver only — do NOT ResizeObserver(vid): showing/hiding
-        // #omt-root inside the player changes layout and re-enters RO forever.
-        if (typeof IntersectionObserver === 'function') {
-            try {
-                omtVisIntersectionObserver = new IntersectionObserver(
-                    () => omtScheduleVideoSurfaceVisibility(),
-                    { threshold: [0, 1] }
-                );
-                omtVisIntersectionObserver.observe(vid);
-            } catch (_) {
-                omtVisIntersectionObserver = null;
-            }
-        }
-        if (!omtVisListenersBound) {
-            // Bubble scroll only (not capture) — InPlay curtains scroll often;
-            // capture+every scroll was scheduling visibility work constantly.
-            window.addEventListener('scroll', omtScheduleVideoSurfaceVisibility, { passive: true });
-            window.addEventListener('resize', omtScheduleVideoSurfaceVisibility, { passive: true });
-            document.addEventListener('fullscreenchange', omtScheduleVideoSurfaceVisibility);
-            omtVisListenersBound = true;
-        }
-        // Expose counters for e2e (MAIN world).
-        try { window.__omtVideoVisibilityStats = omtVideoVisibilityStats; } catch (_) {}
-        omtApplyVideoSurfaceVisibility();
-    }
-
 /* Wire UI controls to timer / playback / auto-hide / site extras. */
     /* =========================================================
        6. WIRE ALL EVENTS
@@ -1744,7 +1637,7 @@
                 if (e.target !== vid) return;
                 if (!vid.src && !vid.currentSrc && !vid.srcObject) return;
                 if (vid.paused) {
-                    vid.play().catch(() => {});
+                    safePlay(vid);
                 } else {
                     vid.pause();
                 }
@@ -1782,6 +1675,43 @@
        Prevents the HLS player from auto-advancing the playhead
        back to the live edge after a user-initiated seek.
        ========================================================= */
+
+    /** Always catch play() rejection (AbortError / NotAllowedError) so the
+     *  console never shows an uncaught promise from our code. */
+    function safePlay(media) {
+        if (!media) return Promise.resolve();
+        try {
+            const p = media.play();
+            if (p && typeof p.then === 'function') {
+                return p.catch(() => {});
+            }
+        } catch (_) {}
+        return Promise.resolve();
+    }
+
+    function omtVideoInFullscreen(media) {
+        try {
+            const el = media || vid;
+            const fs = document.fullscreenElement;
+            return !!(fs && el && (fs === el || fs.contains(el)));
+        } catch (_) {
+            return false;
+        }
+    }
+
+    /**
+     * After Alt+Tab / visibility return, Chrome can leave a fullscreen
+     * <video> "playing" with a frozen last frame until FS exit. Re-assert
+     * play() only when media already thinks it is playing — never unpauses
+     * a user pause, never starts a play/pause loop.
+     */
+    function wakeFullscreenDecode() {
+        if (!vid || !vid.isConnected) return;
+        if (!omtVideoInFullscreen(vid)) return;
+        if (vid.paused || vid.ended) return;
+        safePlay(vid);
+    }
+
     function clampToSeekable(time) {
         if (!vid || !vid.seekable || vid.seekable.length === 0) return time;
         try {
@@ -1801,16 +1731,14 @@
         seekLockUntil = Date.now() + 4000; // 4-second protection window
         const wasPlaying = !vid.paused && !vid.ended;
         vid.currentTime = t;
-        // Local/FS: Chrome can leave decode stalled after a seek while the
-        // element is fullscreen (frames only catch up on exit). Re-assert
-        // play if we were already playing — does not toggle pause/play.
-        try {
-            if (wasPlaying && document.fullscreenElement &&
-                (document.fullscreenElement === vid || document.fullscreenElement.contains(vid))) {
-                const p = vid.play();
-                if (p && typeof p.catch === 'function') p.catch(() => {});
-            }
-        } catch (_) {}
+        wakeAfterFullscreenSeek(wasPlaying);
+    }
+
+    /** Local/FS: Chrome can leave decode stalled after a seek while the
+     *  element is fullscreen (frames only catch up on exit). Re-assert play
+     *  only if we were already playing — never toggles pause/play. */
+    function wakeAfterFullscreenSeek(wasPlaying) {
+        if (wasPlaying && omtVideoInFullscreen(vid)) safePlay(vid);
     }
 
     function antiLiveSnap() {
@@ -2955,8 +2883,7 @@
         const found = (site && typeof site.findVideo === 'function')
             ? site.findVideo()
             : document.querySelector('video');
-        if (found) vid = found;
-        return vid;
+        return found ? omtAdoptReplacedVideo(found) : vid;
     }
 
     function closestSpeedRate(rate) {
@@ -2976,8 +2903,13 @@
     function togglePlay() {
         if (!ensureLiveVideo()) return;
         if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
-        if (vid.paused || vid.ended) { vid.play(); mostrarOSD('Play'); }
-        else { vid.pause(); mostrarOSD('Pause'); }
+        if (vid.paused || vid.ended) {
+            safePlay(vid);
+            mostrarOSD('Play');
+        } else {
+            vid.pause();
+            mostrarOSD('Pause');
+        }
     }
 
     function avancarFrame() {
@@ -3519,7 +3451,7 @@
         if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
         if (btn === prefs.playPauseBtn) {
             if (vid.paused) {
-                vid.play().catch(() => {});
+                safePlay(vid);
                 mostrarOSD('Play');
             } else {
                 vid.pause();
@@ -3533,12 +3465,26 @@
             ? omtSkipSignForButton(btn, prefs)
             : ((btn === 1 || btn === 2) ? -1 : 1);
         const delta = sign * secs;
-        vid.currentTime = Math.max(0, (vid.currentTime || 0) + delta);
+        shuttleSkipBy(delta);
         const label = Math.abs(delta) >= 60
             ? ((delta < 0 ? 'Skip -' : 'Skip +') + (Math.abs(delta) / 60) + 'm')
             : ((delta < 0 ? 'Skip -' : 'Skip +') + Math.abs(delta) + 's');
         mostrarOSD(label);
     }
+
+    function shuttleSkipBy(delta) {
+        const wasPlaying = !vid.paused && !vid.ended;
+        vid.currentTime = Math.max(0, (vid.currentTime || 0) + delta);
+        wakeAfterFullscreenSeek(wasPlaying);
+    }
+
+    /** E2E / diagnostics: same skip path as a ShuttleXpress button (no HID). */
+    function omtTestShuttleSkipSeconds(delta) {
+        if (!vid || !Number.isFinite(delta) || delta === 0) return;
+        if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
+        shuttleSkipBy(delta);
+    }
+    try { window.__omtTestShuttleSkipSeconds = omtTestShuttleSkipSeconds; } catch (_) {}
 
     function showShuttleCheatsheet(visible) {
         if (shuttleCheatsheet) {
@@ -4471,8 +4417,7 @@
         }
         autoResumeInProgress = true;
         autoPausedByBlur = false;
-        Promise.resolve(vid.play())
-            .catch(() => {})
+        safePlay(vid)
             .finally(() => {
                 autoResumeInProgress = false;
                 syncPlayButtonFromVideo();
@@ -4481,7 +4426,11 @@
 
     function onDocumentVisibilityChange() {
         if (document.visibilityState === 'hidden') maybeAutoPauseOnAway();
-        else if (document.visibilityState === 'visible') maybeAutoResumeOnReturn();
+        else if (document.visibilityState === 'visible') {
+            maybeAutoResumeOnReturn();
+            // FS decode can stall after Alt+Tab even when auto-pause is off.
+            wakeFullscreenDecode();
+        }
     }
 
     function onWindowBlur() {
@@ -4492,6 +4441,7 @@
 
     function onWindowFocus() {
         maybeAutoResumeOnReturn();
+        wakeFullscreenDecode();
     }
 
     function installAutoPauseOnBlur() {
@@ -4907,14 +4857,14 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         if (!isExaminoPlayerMediaTarget(e.target)) return;
         const media = resolveExaminoMedia(e.target);
         if (!media) return;
-        vid = media;
+        if (media !== vid) omtAdoptReplacedVideo(media);
         // Own the click exclusively so OpenPlayer cannot also toggle (net no-op).
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
         if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
         if (media.paused) {
-            media.play().catch(() => {});
+            safePlay(media);
             mostrarOSD('Play');
         } else {
             media.pause();
@@ -5086,15 +5036,28 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         });
     }
 
+    // hideExaminoNativeChrome reads innerText on every div (forced layout).
+    // Ignore our own HUD writes (timeupdate re-renders time text several times
+    // a second) and run at most once per second.
+    const OMT_NATIVE_CHROME_MIN_GAP_MS = 1000;
+
     function startExaminoNativeChromeObserver() {
         if (nativeChromeObserver) return;
         let scheduled = null;
-        nativeChromeObserver = new MutationObserver(() => {
+        let lastRun = 0;
+        nativeChromeObserver = new MutationObserver((records) => {
             if (scheduled) return;
+            const hostChange = records.some((r) => {
+                const t = r.target;
+                return !(t && t.nodeType === 1 && (t.id === 'omt-root' || (t.closest && t.closest('#omt-root'))));
+            });
+            if (!hostChange) return;
+            const wait = Math.max(50, OMT_NATIVE_CHROME_MIN_GAP_MS - (Date.now() - lastRun));
             scheduled = setTimeout(() => {
                 scheduled = null;
+                lastRun = Date.now();
                 hideExaminoNativeChrome();
-            }, 50);
+            }, wait);
         });
         const root = document.documentElement || document.body;
         if (root) {
@@ -5294,6 +5257,10 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         });
     }
 
+    // Last Source we picked in the host menu; survives SPA teardown/boot so the
+    // overlay select shows it even when the row/path can't confirm it.
+    let examinoLastAppliedSource = null;
+
     async function applyOpSource(value, { manual = true } = {}) {
         if (!value) return false;
         const wanted = normalizeSourceToken(value) || String(value).toUpperCase();
@@ -5338,6 +5305,7 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             }
 
             try { option.click(); } catch (_) {}
+            examinoLastAppliedSource = wanted;
             // Wait until the root Source row reflects the new value (or panel closes).
             let confirmed = false;
             for (let i = 0; i < 20; i++) {
@@ -5422,8 +5390,9 @@ var OMT_SYNC_FEATURE_ENABLED = false;
                 if (autoBox.checked) {
                     examinoManualSourceChoice = null;
                     examinoAutoVodDone = false;
+                    examinoAutoVodAttempts = 0;
                     mostrarOSD('VOD auto-switch ON');
-                    maybeAutoSwitchToVod(0).catch(() => {});
+                    maybeAutoSwitchToVod().catch(() => {});
                 } else {
                     examinoManualSourceChoice = examinoManualSourceChoice || 'DVR';
                     examinoAutoVodDone = true;
@@ -5459,17 +5428,62 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             });
         }
 
-        // Lightweight placeholder until menus exist
-        fillSourceSelect({ current: detectCurrentSource(null), options: [], loading: true });
+        // DVR/VOD straight away (no host-menu scrape). 2.0.2 showed "Loading…"
+        // here and relied on the auto-VOD loop re-scraping to clear it.
+        fillSourceSelect({
+            current: examinoLastAppliedSource || detectCurrentSource(null),
+            options: [],
+            loading: false
+        });
         startAutoVodWatcher();
     }
 
-    async function maybeAutoSwitchToVod(attempt = 0) {
+    /*
+     * Auto-VOD budget. 1.2.2–2.0.2 re-ran this from a document-wide
+     * MutationObserver and from every teardown/boot, so whenever the menu did
+     * not confirm VOD (e.g. /play/dvr/ path keeps reading as DVR) it clicked
+     * Source → VOD again and again. Each click makes OpenPlayer pause, reload
+     * and play() the media: the player flashes, never opens, and the console
+     * fills with page-side "play() interrupted by pause()" errors.
+     * Now: bounded attempts per page load, and at most ONE Source click per
+     * page load (module state survives SPA teardown/boot).
+     */
+    const OMT_AUTO_VOD_MAX_ATTEMPTS = 6;
+    let examinoAutoVodAttempts = 0;
+    let examinoAutoVodClicked = false;
+
+    function autoVodAlreadyClicked() {
+        return examinoAutoVodClicked;
+    }
+
+    function markAutoVodClicked() {
+        examinoAutoVodClicked = true;
+    }
+
+    function scheduleAutoVodRetry(delayMs) {
+        if (examinoAutoVodAttempts >= OMT_AUTO_VOD_MAX_ATTEMPTS) {
+            examinoAutoVodDone = true;
+            return;
+        }
+        setTimeout(() => maybeAutoSwitchToVod().catch(() => {}), delayMs);
+    }
+
+    async function maybeAutoSwitchToVod() {
         if (site.id !== 'examino') return;
         if (!storageGetAutoVod()) return;
         if (examinoManualSourceChoice === 'DVR') return;
         if (examinoAutoVodDone) return;
         if (examinoAutoVodInFlight) return;
+        if (autoVodAlreadyClicked()) {
+            examinoAutoVodDone = true;
+            return;
+        }
+        if (examinoAutoVodAttempts >= OMT_AUTO_VOD_MAX_ATTEMPTS) {
+            examinoAutoVodDone = true;
+            return;
+        }
+        examinoAutoVodAttempts += 1;
+        const attempt = examinoAutoVodAttempts;
 
         examinoAutoVodInFlight = true;
         try {
@@ -5486,9 +5500,7 @@ var OMT_SYNC_FEATURE_ENABLED = false;
 
             const source = await scrapeOpSourceOptions();
             if (source.loading) {
-                if (attempt < 10) {
-                    setTimeout(() => maybeAutoSwitchToVod(attempt + 1).catch(() => {}), 300);
-                }
+                scheduleAutoVodRetry(700);
                 return;
             }
             const current = detectCurrentSource(source.current);
@@ -5499,30 +5511,24 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             }
             const vod = source.options.find((o) => o.value === 'VOD');
             if (!vod) {
-                if (attempt < 10) {
-                    setTimeout(() => maybeAutoSwitchToVod(attempt + 1).catch(() => {}), 300);
-                }
+                scheduleAutoVodRetry(700);
                 return;
             }
             console.log('[OMT] Auto-switching Examino source to VOD (attempt ' + attempt + ')');
+            // One Source click per tab session, confirmed or not: a second
+            // click would reload the media again.
+            markAutoVodClicked();
+            examinoAutoVodDone = true;
             const ok = await applyOpSource('VOD', { manual: false });
-            if (ok) {
-                examinoAutoVodDone = true;
-                fillSourceSelect({
-                    current: 'VOD',
-                    options: [{ value: 'DVR', label: 'DVR' }, { value: 'VOD', label: 'VOD' }],
-                    loading: false
-                });
-                mostrarOSD('Switched to VOD');
-                setTimeout(() => refreshExaminoSourceSelect().catch(() => {}), 800);
-            } else if (attempt < 10) {
-                setTimeout(() => maybeAutoSwitchToVod(attempt + 1).catch(() => {}), 400);
-            }
+            fillSourceSelect({
+                current: ok ? 'VOD' : (examinoLastAppliedSource || detectCurrentSource(null)),
+                options: [{ value: 'DVR', label: 'DVR' }, { value: 'VOD', label: 'VOD' }],
+                loading: false
+            });
+            if (ok) mostrarOSD('Switched to VOD');
         } catch (err) {
             console.warn('[OMT] Auto-VOD failed:', err && err.message);
-            if (attempt < 10) {
-                setTimeout(() => maybeAutoSwitchToVod(attempt + 1).catch(() => {}), 400);
-            }
+            if (!autoVodAlreadyClicked()) scheduleAutoVodRetry(700);
         } finally {
             examinoAutoVodInFlight = false;
             closeOpSettingsUi();
@@ -5533,27 +5539,13 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         if (site.id !== 'examino') return;
         if (examinoManualSourceChoice === 'DVR' || examinoAutoVodDone) return;
         if (!storageGetAutoVod()) return;
-
-        // Immediate attempt (no fixed 1.2s delay)
-        maybeAutoSwitchToVod(0).catch(() => {});
-
         if (examinoAutoVodWatcher) return;
-        examinoAutoVodWatcher = new MutationObserver(() => {
-            if (examinoAutoVodDone || examinoManualSourceChoice === 'DVR' || !storageGetAutoVod()) {
-                if (examinoAutoVodWatcher) {
-                    examinoAutoVodWatcher.disconnect();
-                    examinoAutoVodWatcher = null;
-                }
-                return;
-            }
-            if (document.querySelector('.op-setting-button, .op-setting-panel, .setting-holder')) {
-                maybeAutoSwitchToVod(0).catch(() => {});
-            }
-        });
-        const root = document.documentElement || document.body;
-        if (root) {
-            examinoAutoVodWatcher.observe(root, { childList: true, subtree: true });
-        }
+        // Single delayed kick (OpenPlayer settings mount late); retries are
+        // bounded inside maybeAutoSwitchToVod. No DOM observer.
+        examinoAutoVodWatcher = setTimeout(() => {
+            examinoAutoVodWatcher = null;
+            maybeAutoSwitchToVod().catch(() => {});
+        }, 1200);
     }
 
     function initExaminoPlayerFeatures() {
@@ -5599,10 +5591,7 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         const nameEl = document.getElementById('omt-local-filename');
         if (nameEl) nameEl.textContent = file.name || 'Local video';
         mostrarOSD('Loaded: ' + (file.name || 'video'));
-        const playPromise = vid.play();
-        if (playPromise && typeof playPromise.catch === 'function') {
-            playPromise.catch(() => {});
-        }
+        safePlay(vid);
         // Refresh timeline bounds once metadata is ready.
         const onMeta = () => {
             try {

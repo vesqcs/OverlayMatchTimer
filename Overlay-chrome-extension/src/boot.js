@@ -53,9 +53,8 @@
         if (site.id !== 'examino') {
             document.removeEventListener('keydown', handleKeydown, true);
         }
-        if (typeof teardownVideoVisibilityGuard === 'function') {
-            try { teardownVideoVisibilityGuard(); } catch (_) {}
-        }
+        omtSetHudMounted(false);
+        omtReleaseHudStacking();
         // Remove the injected HUD from the DOM
         const existingRoot = document.getElementById('omt-root');
         if (existingRoot && existingRoot.parentNode) {
@@ -168,6 +167,19 @@
         return site.findVideo();
     }
 
+    /**
+     * A replaced <video> must go through teardown/boot so every per-video
+     * listener (timeupdate, play/pause, mousemove) moves with it. Assigning
+     * `vid = newEl` directly leaves those listeners on the dead element and
+     * the SPA monitor then sees `currentVid === vid` and never rebinds.
+     */
+    function omtAdoptReplacedVideo(el) {
+        if (!el || el === vid || !el.isConnected) return vid;
+        teardown();
+        boot();
+        return vid || el;
+    }
+
     /* =========================================================
        1C. SPA MONITOR — DETECT VIDEO REMOVAL / STREAM SWITCH
        =========================================================
@@ -219,11 +231,9 @@
         // this is a Review/DVR session with a seekable timeline.
         hlsInstance = getHlsInstance();
         patchHlsForDvr();
-        // Optimistic HUD-on so host-chrome CSS gates apply immediately;
-        // video-visibility guard turns it off if the surface is collapsed.
-        if (typeof omtSetHudActive === 'function') omtSetHudActive(true);
         suppressNativeControls();
         injectUI();
+        if (omtRoot) omtSetHudMounted(true);
         cacheUIRefs();
         if (typeof omtApplyCustomizeFromStorage === 'function') omtApplyCustomizeFromStorage();
         wireEvents();

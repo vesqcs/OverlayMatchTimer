@@ -61,8 +61,7 @@
         }
         autoResumeInProgress = true;
         autoPausedByBlur = false;
-        Promise.resolve(vid.play())
-            .catch(() => {})
+        safePlay(vid)
             .finally(() => {
                 autoResumeInProgress = false;
                 syncPlayButtonFromVideo();
@@ -71,7 +70,11 @@
 
     function onDocumentVisibilityChange() {
         if (document.visibilityState === 'hidden') maybeAutoPauseOnAway();
-        else if (document.visibilityState === 'visible') maybeAutoResumeOnReturn();
+        else if (document.visibilityState === 'visible') {
+            maybeAutoResumeOnReturn();
+            // FS decode can stall after Alt+Tab even when auto-pause is off.
+            wakeFullscreenDecode();
+        }
     }
 
     function onWindowBlur() {
@@ -82,6 +85,7 @@
 
     function onWindowFocus() {
         maybeAutoResumeOnReturn();
+        wakeFullscreenDecode();
     }
 
     function installAutoPauseOnBlur() {

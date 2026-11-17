@@ -12,6 +12,7 @@
 
         const cs = getComputedStyle(anchor);
         if (cs.position === 'static') anchor.style.position = 'relative';
+        omtContainHudStacking(anchor);
 
         omtRoot = document.createElement('div');
         omtRoot.id = 'omt-root';
@@ -22,7 +23,43 @@
         updateCompactLayout();
         ensureFullscreenHook();
         updateFullscreenButton();
-        if (typeof installVideoVisibilityGuard === 'function') installVideoVisibilityGuard();
+    }
+
+    /**
+     * #omt-root uses a huge z-index to beat the player's own layers. Without a
+     * stacking context on the player box that z-index escapes to the page and
+     * paints over host UI stacked above the player (InPlay schedule curtain
+     * z-index 3, its arrow z-index 4). isolation:isolate keeps the HUD inside
+     * the player's layer; it does not move, resize or hide the host node.
+     */
+    let omtIsolatedAnchor = null;
+    let omtIsolatedAnchorPrev = '';
+
+    function omtContainHudStacking(anchor) {
+        omtReleaseHudStacking();
+        if (!anchor || !anchor.style) return;
+        try {
+            omtIsolatedAnchorPrev = anchor.style.getPropertyValue('isolation') || '';
+            anchor.style.setProperty('isolation', 'isolate');
+            omtIsolatedAnchor = anchor;
+        } catch (_) {}
+    }
+
+    function omtReleaseHudStacking() {
+        if (!omtIsolatedAnchor) return;
+        try {
+            if (omtIsolatedAnchorPrev) omtIsolatedAnchor.style.setProperty('isolation', omtIsolatedAnchorPrev);
+            else omtIsolatedAnchor.style.removeProperty('isolation');
+        } catch (_) {}
+        omtIsolatedAnchor = null;
+        omtIsolatedAnchorPrev = '';
+    }
+
+    /** Host-chrome hide CSS is gated on this; set on mount, cleared on teardown only. */
+    function omtSetHudMounted(on) {
+        try {
+            document.documentElement.classList.toggle('omt-hud-on', !!on);
+        } catch (_) {}
     }
 
     function updateCompactLayout() {
@@ -61,9 +98,6 @@
                 if (anchor && omtRoot.parentElement !== anchor) {
                     anchor.appendChild(omtRoot);
                 }
-            }
-            if (typeof omtApplyVideoSurfaceVisibility === 'function') {
-                try { omtApplyVideoSurfaceVisibility(); } catch (_) {}
             }
         });
         window.addEventListener('resize', () => updateCompactLayout());
