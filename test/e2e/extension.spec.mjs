@@ -393,10 +393,28 @@ async function run() {
         try { await v.play(); } catch (_) {}
       }
     });
-    const videoBox = await page.locator('video').boundingBox();
+    // Moving the pointer over the video re-shows our panel (auto-hide), so
+    // aim at a video point our HUD never covers, as an analyst would.
+    const videoPoint = await page.evaluate(() => {
+      const v = document.querySelector('video');
+      const panel = document.getElementById('controls-panel');
+      if (!v) return null;
+      if (panel) { panel.style.opacity = '1'; panel.style.pointerEvents = 'auto'; }
+      const r = v.getBoundingClientRect();
+      let pick = null;
+      for (let fy = 0.3; fy <= 0.6 && !pick; fy += 0.05) {
+        for (let fx = 0.5; fx >= 0.2 && !pick; fx -= 0.1) {
+          const x = r.left + r.width * fx;
+          const y = r.top + r.height * fy;
+          if (document.elementFromPoint(x, y) === v) pick = { x, y };
+        }
+      }
+      if (panel) { panel.style.opacity = '0'; panel.style.pointerEvents = 'none'; }
+      return pick;
+    });
     const clickVideoCenter = async () => {
-      if (!videoBox) return;
-      await page.mouse.click(videoBox.x + videoBox.width / 2, videoBox.y + videoBox.height / 2);
+      if (!videoPoint) return;
+      await page.mouse.click(videoPoint.x, videoPoint.y);
     };
     await clickVideoCenter();
     await page.waitForTimeout(200);
@@ -3400,6 +3418,8 @@ async function run() {
       pass: examinoField.playerOpen === true && examinoField.boot.sourceLoads <= 2 && examinoField.uncaughtAbort === 0,
       detail: { boot: examinoField.boot, playerOpen: examinoField.playerOpen, uncaughtAbort: examinoField.uncaughtAbort }
     });
+    // Background tabs defer autoplay; later tests expect a playing video.
+    await page.bringToFront();
 
     // ---------- Host CSS isolation (html font-size 10px + aggressive resets) ----------
     await page.goto(`${base}/inplayip-css-leak-mock.html`, { waitUntil: 'domcontentloaded' });
@@ -3533,7 +3553,7 @@ async function run() {
       await popupPage.waitForTimeout(200);
       await popupPage.screenshot({ path: path.join(ARTIFACTS, 'popup.png') });
       await popupPage.screenshot({ path: path.join(ARTIFACTS, 'popup_logo_above.png') });
-      const popupOk = await popupPage.evaluate(() => {
+      const popupOk = await popupPage.evaluate((manifestVersion) => {
         const foot = (document.querySelector('.omt-popup-foot')?.textContent || '').trim();
         const soon = document.querySelector('.omt-soon-banner');
         const knob = (() => {
@@ -3564,7 +3584,7 @@ async function run() {
           noCredit: !document.querySelector('.omt-brand-credit'),
           noPersonalizar: !document.body.textContent.includes('Personalizar') &&
             !document.body.textContent.includes('Em breve'),
-          footOk: foot === 'v2.0.2',
+          footOk: foot === 'v' + manifestVersion,
           hasAutoPause: !!document.getElementById('omt-auto-pause-blur'),
           autoPauseDefaultOff: document.getElementById('omt-auto-pause-blur')
             ? document.getElementById('omt-auto-pause-blur').checked === false
@@ -3625,7 +3645,7 @@ async function run() {
           })(),
           toggleKnob: knob
         };
-      });
+      }, JSON.parse(fs.readFileSync(path.join(EXT, 'manifest.json'), 'utf8')).version);
       // Default General: Actions open, Shortcuts/Shuttle collapsed → short popup
       await popupPage.screenshot({
         path: path.join(ARTIFACTS, 'popup_general_default.png'),
