@@ -31,10 +31,7 @@
         const nameEl = document.getElementById('omt-local-filename');
         if (nameEl) nameEl.textContent = file.name || 'Local video';
         mostrarOSD('Loaded: ' + (file.name || 'video'));
-        const playPromise = vid.play();
-        if (playPromise && typeof playPromise.catch === 'function') {
-            playPromise.catch(() => {});
-        }
+        safePlay(vid);
         // Refresh timeline bounds once metadata is ready.
         const onMeta = () => {
             try {

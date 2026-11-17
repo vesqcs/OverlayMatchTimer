@@ -289,7 +289,7 @@
                 if (e.target !== vid) return;
                 if (!vid.src && !vid.currentSrc && !vid.srcObject) return;
                 if (vid.paused) {
-                    vid.play().catch(() => {});
+                    safePlay(vid);
                 } else {
                     vid.pause();
                 }

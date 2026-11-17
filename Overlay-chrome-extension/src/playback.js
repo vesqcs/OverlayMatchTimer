@@ -42,8 +42,13 @@
     function togglePlay() {
         if (!ensureLiveVideo()) return;
         if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
-        if (vid.paused || vid.ended) { vid.play(); mostrarOSD('Play'); }
-        else { vid.pause(); mostrarOSD('Pause'); }
+        if (vid.paused || vid.ended) {
+            safePlay(vid);
+            mostrarOSD('Play');
+        } else {
+            vid.pause();
+            mostrarOSD('Pause');
+        }
     }
 
     function avancarFrame() {
