@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test:e2e": "node e2e/extension.spec.mjs"
+    "test:e2e": "node e2e/extension.spec.mjs",
+    "test:compare": "node e2e/compare-baseline.mjs"
   },
   "devDependencies": {
     "playwright": "^1.51.0"
