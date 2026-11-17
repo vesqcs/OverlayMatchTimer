@@ -1,7 +1,48 @@
 /* Hide overlay when the video surface is not meaningfully visible
-       (InPlay Review curtain/drawer, collapsed/offscreen player, etc.).
-       Layout/observer only — does not read or change video time / PDT. */
-    const OMT_VIDEO_VIS_MIN_PX = 24;
+       (InPlay Review curtain / collapsed player). Layout only — does not
+       read or change video time / PDT.
+
+       v2.0.2:
+       - No elementFromPoint (forced layout + false hides).
+       - No ResizeObserver on the video (toggling #omt-root display was
+         feeding RO → apply → layout → RO storms on InPlay).
+       - Size hysteresis so curtain animations do not flap hud-on.
+       - Debounced IntersectionObserver + window resize/fullscreen only.
+       - When obscured, clear html.omt-hud-on so host chrome can show. */
+    const OMT_VIDEO_VIS_SHOW_MIN_PX = 24;
+    const OMT_VIDEO_VIS_HIDE_MAX_PX = 12;
+    const OMT_VIDEO_VIS_DEBOUNCE_MS = 150;
+
+    let omtVisApplyTimer = null;
+    let omtVisLastVisible = null;
+    let omtVisIntersectionObserver = null;
+    let omtVisListenersBound = false;
+    // Test/diagnostics counters (idle pages should stay tiny).
+    let omtVisSchedules = 0;
+    let omtVisApplies = 0;
+    let omtVisDomWrites = 0;
+
+    function omtVideoVisibilityStats() {
+        return {
+            schedules: omtVisSchedules,
+            applies: omtVisApplies,
+            domWrites: omtVisDomWrites,
+            lastVisible: omtVisLastVisible
+        };
+    }
+
+    function omtSetHudActive(active) {
+        try {
+            const on = !!active;
+            if (document.documentElement.classList.contains('omt-hud-on') === on &&
+                (!document.body || document.body.classList.contains('omt-hud-on') === on)) {
+                return;
+            }
+            document.documentElement.classList.toggle('omt-hud-on', on);
+            if (document.body) document.body.classList.toggle('omt-hud-on', on);
+            omtVisDomWrites += 1;
+        } catch (_) {}
+    }
 
     function omtVideoSurfaceVisible(videoEl) {
         if (!videoEl || !videoEl.isConnected) return false;
@@ -12,38 +53,60 @@
             }
         } catch (_) {}
         const r = videoEl.getBoundingClientRect();
-        if (!(r.width >= OMT_VIDEO_VIS_MIN_PX && r.height >= OMT_VIDEO_VIS_MIN_PX)) return false;
+        const minSide = Math.min(r.width, r.height);
+        // Hysteresis: once hidden, need SHOW_MIN to become visible; once
+        // visible, only hide below HIDE_MAX (avoids curtain-animation flaps).
+        const need = (omtVisLastVisible === true) ? OMT_VIDEO_VIS_HIDE_MAX_PX : OMT_VIDEO_VIS_SHOW_MIN_PX;
+        if (!(minSide >= need)) return false;
         const vw = window.innerWidth || document.documentElement.clientWidth || 0;
         const vh = window.innerHeight || document.documentElement.clientHeight || 0;
         if (vw <= 0 || vh <= 0) return false;
-        const intersects = r.bottom > 0 && r.right > 0 && r.top < vh && r.left < vw;
-        if (!intersects) return false;
-
-        // Soft cover check: if the centre pixel is neither the video, its
-        // player container, nor our overlay, treat as covered (drawer/list).
-        try {
-            const cx = Math.min(vw - 1, Math.max(0, r.left + r.width / 2));
-            const cy = Math.min(vh - 1, Math.max(0, r.top + r.height / 2));
-            const topEl = document.elementFromPoint(cx, cy);
-            if (topEl) {
-                if (topEl === videoEl || videoEl.contains(topEl)) return true;
-                if (omtRoot && (omtRoot === topEl || omtRoot.contains(topEl))) return true;
-                const anchor = (typeof site !== 'undefined' && site && typeof site.findAnchor === 'function')
-                    ? site.findAnchor(videoEl)
-                    : (videoEl.parentElement);
-                if (anchor && (anchor === topEl || anchor.contains(topEl))) return true;
-                // Something else is painted at the video centre.
-                return false;
-            }
-        } catch (_) {}
-        return true;
+        return r.bottom > 0 && r.right > 0 && r.top < vh && r.left < vw;
     }
 
     function omtApplyVideoSurfaceVisibility() {
-        if (!omtRoot) return;
+        omtVisApplies += 1;
+        if (!omtRoot) {
+            omtSetHudActive(false);
+            return;
+        }
         const visible = omtVideoSurfaceVisible(vid);
+        if (omtVisLastVisible === visible) {
+            return;
+        }
+        omtVisLastVisible = visible;
+        omtVisDomWrites += 1;
         omtRoot.classList.toggle('omt-video-obscured', !visible);
         omtRoot.setAttribute('data-omt-video-visible', visible ? '1' : '0');
+        omtSetHudActive(visible);
+    }
+
+    function omtScheduleVideoSurfaceVisibility() {
+        omtVisSchedules += 1;
+        if (omtVisApplyTimer) return;
+        omtVisApplyTimer = setTimeout(() => {
+            omtVisApplyTimer = null;
+            try { omtApplyVideoSurfaceVisibility(); } catch (_) {}
+        }, OMT_VIDEO_VIS_DEBOUNCE_MS);
+    }
+
+    function teardownVideoVisibilityGuard() {
+        if (omtVisApplyTimer) {
+            clearTimeout(omtVisApplyTimer);
+            omtVisApplyTimer = null;
+        }
+        if (omtVisIntersectionObserver) {
+            try { omtVisIntersectionObserver.disconnect(); } catch (_) {}
+            omtVisIntersectionObserver = null;
+        }
+        if (omtVisListenersBound) {
+            window.removeEventListener('scroll', omtScheduleVideoSurfaceVisibility);
+            window.removeEventListener('resize', omtScheduleVideoSurfaceVisibility);
+            document.removeEventListener('fullscreenchange', omtScheduleVideoSurfaceVisibility);
+            omtVisListenersBound = false;
+        }
+        omtVisLastVisible = null;
+        omtSetHudActive(false);
     }
 
     function installVideoVisibilityGuard() {
@@ -53,30 +116,32 @@
             return;
         }
         omtRoot.dataset.omtVisGuard = '1';
+        omtVisSchedules = 0;
+        omtVisApplies = 0;
+        omtVisDomWrites = 0;
 
-        const apply = () => {
-            try { omtApplyVideoSurfaceVisibility(); } catch (_) {}
-        };
-
+        // IntersectionObserver only — do NOT ResizeObserver(vid): showing/hiding
+        // #omt-root inside the player changes layout and re-enters RO forever.
         if (typeof IntersectionObserver === 'function') {
             try {
-                const io = new IntersectionObserver(() => apply(), {
-                    threshold: [0, 0.01, 0.05, 0.1, 0.25, 0.5, 1]
-                });
-                io.observe(vid);
-                const anchor = omtRoot.parentElement;
-                if (anchor && anchor !== vid) io.observe(anchor);
-            } catch (_) {}
+                omtVisIntersectionObserver = new IntersectionObserver(
+                    () => omtScheduleVideoSurfaceVisibility(),
+                    { threshold: [0, 1] }
+                );
+                omtVisIntersectionObserver.observe(vid);
+            } catch (_) {
+                omtVisIntersectionObserver = null;
+            }
         }
-        if (typeof ResizeObserver === 'function') {
-            try {
-                const ro = new ResizeObserver(() => apply());
-                ro.observe(vid);
-                if (omtRoot.parentElement) ro.observe(omtRoot.parentElement);
-            } catch (_) {}
+        if (!omtVisListenersBound) {
+            // Bubble scroll only (not capture) — InPlay curtains scroll often;
+            // capture+every scroll was scheduling visibility work constantly.
+            window.addEventListener('scroll', omtScheduleVideoSurfaceVisibility, { passive: true });
+            window.addEventListener('resize', omtScheduleVideoSurfaceVisibility, { passive: true });
+            document.addEventListener('fullscreenchange', omtScheduleVideoSurfaceVisibility);
+            omtVisListenersBound = true;
         }
-        window.addEventListener('scroll', apply, true);
-        window.addEventListener('resize', apply);
-        document.addEventListener('fullscreenchange', apply);
-        apply();
+        // Expose counters for e2e (MAIN world).
+        try { window.__omtVideoVisibilityStats = omtVideoVisibilityStats; } catch (_) {}
+        omtApplyVideoSurfaceVisibility();
     }

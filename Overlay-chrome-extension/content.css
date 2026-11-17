@@ -37,37 +37,44 @@
     --omt-mono: "Segoe UI", system-ui, ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 
-/* ---- HIDE NATIVE VIDEO.JS CONTROLS (InplayIP) ---- */
-.vjs-control-bar,
-.vjs-big-play-button,
-.vjs-loading-spinner,
-.vjs-poster,
-.vjs-menu-button-popup .vjs-menu,
-.vjs-text-track-display,
-.video-js .vjs-control-bar {
+/* ---- HIDE NATIVE VIDEO.JS CONTROLS (InplayIP) ----
+   Only while our HUD is active. When the video surface is obscured
+   (curtain / collapsed), html.omt-hud-on is removed so host chrome
+   returns and the analyst is never left with zero controls. */
+html.omt-hud-on .vjs-control-bar,
+html.omt-hud-on .vjs-big-play-button,
+html.omt-hud-on .vjs-loading-spinner,
+html.omt-hud-on .vjs-poster,
+html.omt-hud-on .vjs-menu-button-popup .vjs-menu,
+html.omt-hud-on .vjs-text-track-display,
+html.omt-hud-on .video-js .vjs-control-bar {
     display: none !important;
     opacity: 0 !important;
     pointer-events: none !important;
 }
 
-/* ---- HIDE OPENPLAYER / EXAMINO NATIVE CHROME ---- */
-.op-controls,
-.op-ui:not(.op-media-element-container),
-.op-progressbar-container,
-.op-player .button-bar,
-.video-container > .button-bar,
-.setting-holder,
-.op-button.op-setting-button,
-.hamburger-menu,
-.examino-bottom-controls,
-.omt-examino-native-hidden {
+/* ---- HIDE OPENPLAYER / EXAMINO NATIVE CHROME (HUD active only) ---- */
+/* Never hide a node that contains the <video> / media container.
+   On real Examino, .op-ui often WRAPS the media. Hiding it makes the
+   video display:none → Chrome power-save pause fights OpenPlayer play()
+   (~250 play+pause/s). Only hide chrome leaves. */
+html.omt-hud-on .op-controls,
+html.omt-hud-on .op-ui:not(.op-media-element-container):not(:has(video)):not(:has(.op-media-element-container)),
+html.omt-hud-on .op-progressbar-container,
+html.omt-hud-on .op-player .button-bar,
+html.omt-hud-on .video-container > .button-bar,
+html.omt-hud-on .setting-holder,
+html.omt-hud-on .op-button.op-setting-button,
+html.omt-hud-on .hamburger-menu,
+html.omt-hud-on .examino-bottom-controls,
+html.omt-hud-on .omt-examino-native-hidden {
     display: none !important;
     opacity: 0 !important;
     pointer-events: none !important;
 }
 
-.main-container.svelte-iq8mv8,
-.main-container {
+html.omt-hud-on .main-container.svelte-iq8mv8,
+html.omt-hud-on .main-container {
     height: 100% !important;
     max-height: 100% !important;
 }
@@ -223,10 +230,17 @@
     background-color: #e0201b !important;
     filter: none !important;
 }
+/* Obscured: fully out of hit-testing. Descendants must not keep
+   pointer-events:auto (that would still steal clicks over host UI). */
 #omt-root.omt-video-obscured {
+    display: none !important;
     visibility: hidden !important;
     pointer-events: none !important;
     opacity: 0 !important;
+}
+#omt-root.omt-video-obscured,
+#omt-root.omt-video-obscured * {
+    pointer-events: none !important;
 }
 
 #omt-root .glass-panel,

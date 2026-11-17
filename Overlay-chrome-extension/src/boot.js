@@ -53,6 +53,9 @@
         if (site.id !== 'examino') {
             document.removeEventListener('keydown', handleKeydown, true);
         }
+        if (typeof teardownVideoVisibilityGuard === 'function') {
+            try { teardownVideoVisibilityGuard(); } catch (_) {}
+        }
         // Remove the injected HUD from the DOM
         const existingRoot = document.getElementById('omt-root');
         if (existingRoot && existingRoot.parentNode) {
@@ -216,6 +219,9 @@
         // this is a Review/DVR session with a seekable timeline.
         hlsInstance = getHlsInstance();
         patchHlsForDvr();
+        // Optimistic HUD-on so host-chrome CSS gates apply immediately;
+        // video-visibility guard turns it off if the surface is collapsed.
+        if (typeof omtSetHudActive === 'function') omtSetHudActive(true);
         suppressNativeControls();
         injectUI();
         cacheUIRefs();

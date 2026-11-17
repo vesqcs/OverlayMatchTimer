@@ -403,6 +403,9 @@
         if (site.id !== 'examino') {
             document.removeEventListener('keydown', handleKeydown, true);
         }
+        if (typeof teardownVideoVisibilityGuard === 'function') {
+            try { teardownVideoVisibilityGuard(); } catch (_) {}
+        }
         // Remove the injected HUD from the DOM
         const existingRoot = document.getElementById('omt-root');
         if (existingRoot && existingRoot.parentNode) {
@@ -566,6 +569,9 @@
         // this is a Review/DVR session with a seekable timeline.
         hlsInstance = getHlsInstance();
         patchHlsForDvr();
+        // Optimistic HUD-on so host-chrome CSS gates apply immediately;
+        // video-visibility guard turns it off if the surface is collapsed.
+        if (typeof omtSetHudActive === 'function') omtSetHudActive(true);
         suppressNativeControls();
         injectUI();
         cacheUIRefs();
@@ -1291,9 +1297,50 @@
     }
 
 /* Hide overlay when the video surface is not meaningfully visible
-       (InPlay Review curtain/drawer, collapsed/offscreen player, etc.).
-       Layout/observer only — does not read or change video time / PDT. */
-    const OMT_VIDEO_VIS_MIN_PX = 24;
+       (InPlay Review curtain / collapsed player). Layout only — does not
+       read or change video time / PDT.
+
+       v2.0.2:
+       - No elementFromPoint (forced layout + false hides).
+       - No ResizeObserver on the video (toggling #omt-root display was
+         feeding RO → apply → layout → RO storms on InPlay).
+       - Size hysteresis so curtain animations do not flap hud-on.
+       - Debounced IntersectionObserver + window resize/fullscreen only.
+       - When obscured, clear html.omt-hud-on so host chrome can show. */
+    const OMT_VIDEO_VIS_SHOW_MIN_PX = 24;
+    const OMT_VIDEO_VIS_HIDE_MAX_PX = 12;
+    const OMT_VIDEO_VIS_DEBOUNCE_MS = 150;
+
+    let omtVisApplyTimer = null;
+    let omtVisLastVisible = null;
+    let omtVisIntersectionObserver = null;
+    let omtVisListenersBound = false;
+    // Test/diagnostics counters (idle pages should stay tiny).
+    let omtVisSchedules = 0;
+    let omtVisApplies = 0;
+    let omtVisDomWrites = 0;
+
+    function omtVideoVisibilityStats() {
+        return {
+            schedules: omtVisSchedules,
+            applies: omtVisApplies,
+            domWrites: omtVisDomWrites,
+            lastVisible: omtVisLastVisible
+        };
+    }
+
+    function omtSetHudActive(active) {
+        try {
+            const on = !!active;
+            if (document.documentElement.classList.contains('omt-hud-on') === on &&
+                (!document.body || document.body.classList.contains('omt-hud-on') === on)) {
+                return;
+            }
+            document.documentElement.classList.toggle('omt-hud-on', on);
+            if (document.body) document.body.classList.toggle('omt-hud-on', on);
+            omtVisDomWrites += 1;
+        } catch (_) {}
+    }
 
     function omtVideoSurfaceVisible(videoEl) {
         if (!videoEl || !videoEl.isConnected) return false;
@@ -1304,38 +1351,60 @@
             }
         } catch (_) {}
         const r = videoEl.getBoundingClientRect();
-        if (!(r.width >= OMT_VIDEO_VIS_MIN_PX && r.height >= OMT_VIDEO_VIS_MIN_PX)) return false;
+        const minSide = Math.min(r.width, r.height);
+        // Hysteresis: once hidden, need SHOW_MIN to become visible; once
+        // visible, only hide below HIDE_MAX (avoids curtain-animation flaps).
+        const need = (omtVisLastVisible === true) ? OMT_VIDEO_VIS_HIDE_MAX_PX : OMT_VIDEO_VIS_SHOW_MIN_PX;
+        if (!(minSide >= need)) return false;
         const vw = window.innerWidth || document.documentElement.clientWidth || 0;
         const vh = window.innerHeight || document.documentElement.clientHeight || 0;
         if (vw <= 0 || vh <= 0) return false;
-        const intersects = r.bottom > 0 && r.right > 0 && r.top < vh && r.left < vw;
-        if (!intersects) return false;
-
-        // Soft cover check: if the centre pixel is neither the video, its
-        // player container, nor our overlay, treat as covered (drawer/list).
-        try {
-            const cx = Math.min(vw - 1, Math.max(0, r.left + r.width / 2));
-            const cy = Math.min(vh - 1, Math.max(0, r.top + r.height / 2));
-            const topEl = document.elementFromPoint(cx, cy);
-            if (topEl) {
-                if (topEl === videoEl || videoEl.contains(topEl)) return true;
-                if (omtRoot && (omtRoot === topEl || omtRoot.contains(topEl))) return true;
-                const anchor = (typeof site !== 'undefined' && site && typeof site.findAnchor === 'function')
-                    ? site.findAnchor(videoEl)
-                    : (videoEl.parentElement);
-                if (anchor && (anchor === topEl || anchor.contains(topEl))) return true;
-                // Something else is painted at the video centre.
-                return false;
-            }
-        } catch (_) {}
-        return true;
+        return r.bottom > 0 && r.right > 0 && r.top < vh && r.left < vw;
     }
 
     function omtApplyVideoSurfaceVisibility() {
-        if (!omtRoot) return;
+        omtVisApplies += 1;
+        if (!omtRoot) {
+            omtSetHudActive(false);
+            return;
+        }
         const visible = omtVideoSurfaceVisible(vid);
+        if (omtVisLastVisible === visible) {
+            return;
+        }
+        omtVisLastVisible = visible;
+        omtVisDomWrites += 1;
         omtRoot.classList.toggle('omt-video-obscured', !visible);
         omtRoot.setAttribute('data-omt-video-visible', visible ? '1' : '0');
+        omtSetHudActive(visible);
+    }
+
+    function omtScheduleVideoSurfaceVisibility() {
+        omtVisSchedules += 1;
+        if (omtVisApplyTimer) return;
+        omtVisApplyTimer = setTimeout(() => {
+            omtVisApplyTimer = null;
+            try { omtApplyVideoSurfaceVisibility(); } catch (_) {}
+        }, OMT_VIDEO_VIS_DEBOUNCE_MS);
+    }
+
+    function teardownVideoVisibilityGuard() {
+        if (omtVisApplyTimer) {
+            clearTimeout(omtVisApplyTimer);
+            omtVisApplyTimer = null;
+        }
+        if (omtVisIntersectionObserver) {
+            try { omtVisIntersectionObserver.disconnect(); } catch (_) {}
+            omtVisIntersectionObserver = null;
+        }
+        if (omtVisListenersBound) {
+            window.removeEventListener('scroll', omtScheduleVideoSurfaceVisibility);
+            window.removeEventListener('resize', omtScheduleVideoSurfaceVisibility);
+            document.removeEventListener('fullscreenchange', omtScheduleVideoSurfaceVisibility);
+            omtVisListenersBound = false;
+        }
+        omtVisLastVisible = null;
+        omtSetHudActive(false);
     }
 
     function installVideoVisibilityGuard() {
@@ -1345,32 +1414,34 @@
             return;
         }
         omtRoot.dataset.omtVisGuard = '1';
+        omtVisSchedules = 0;
+        omtVisApplies = 0;
+        omtVisDomWrites = 0;
 
-        const apply = () => {
-            try { omtApplyVideoSurfaceVisibility(); } catch (_) {}
-        };
-
+        // IntersectionObserver only — do NOT ResizeObserver(vid): showing/hiding
+        // #omt-root inside the player changes layout and re-enters RO forever.
         if (typeof IntersectionObserver === 'function') {
             try {
-                const io = new IntersectionObserver(() => apply(), {
-                    threshold: [0, 0.01, 0.05, 0.1, 0.25, 0.5, 1]
-                });
-                io.observe(vid);
-                const anchor = omtRoot.parentElement;
-                if (anchor && anchor !== vid) io.observe(anchor);
-            } catch (_) {}
+                omtVisIntersectionObserver = new IntersectionObserver(
+                    () => omtScheduleVideoSurfaceVisibility(),
+                    { threshold: [0, 1] }
+                );
+                omtVisIntersectionObserver.observe(vid);
+            } catch (_) {
+                omtVisIntersectionObserver = null;
+            }
         }
-        if (typeof ResizeObserver === 'function') {
-            try {
-                const ro = new ResizeObserver(() => apply());
-                ro.observe(vid);
-                if (omtRoot.parentElement) ro.observe(omtRoot.parentElement);
-            } catch (_) {}
+        if (!omtVisListenersBound) {
+            // Bubble scroll only (not capture) — InPlay curtains scroll often;
+            // capture+every scroll was scheduling visibility work constantly.
+            window.addEventListener('scroll', omtScheduleVideoSurfaceVisibility, { passive: true });
+            window.addEventListener('resize', omtScheduleVideoSurfaceVisibility, { passive: true });
+            document.addEventListener('fullscreenchange', omtScheduleVideoSurfaceVisibility);
+            omtVisListenersBound = true;
         }
-        window.addEventListener('scroll', apply, true);
-        window.addEventListener('resize', apply);
-        document.addEventListener('fullscreenchange', apply);
-        apply();
+        // Expose counters for e2e (MAIN world).
+        try { window.__omtVideoVisibilityStats = omtVideoVisibilityStats; } catch (_) {}
+        omtApplyVideoSurfaceVisibility();
     }
 
 /* Wire UI controls to timer / playback / auto-hide / site extras. */
@@ -4872,22 +4943,26 @@ var OMT_SYNC_FEATURE_ENABLED = false;
     }
 
     function injectExaminoHideCSS() {
-        if (document.getElementById('omt-examino-hide-css')) return;
-        const style = document.createElement('style');
-        style.id = 'omt-examino-hide-css';
+        let style = document.getElementById('omt-examino-hide-css');
+        if (!style) {
+            style = document.createElement('style');
+            style.id = 'omt-examino-hide-css';
+            (document.head || document.documentElement).appendChild(style);
+        }
         style.textContent = [
-            /* OpenPlayer built-in chrome */
-            '.op-controls,',
-            '.op-ui:not(.op-media-element-container),',
-            '.op-progressbar-container,',
-            '.op-player .button-bar,',
-            '.video-container > .button-bar,',
-            '.setting-holder,',
-            '.op-button.op-setting-button,',
-            /* Examino Svelte chrome from owner probe */
-            '.hamburger-menu,',
-            '.examino-bottom-controls,',
-            '.omt-examino-native-hidden {',
+            /* Only while HUD is active (html.omt-hud-on). When the video */
+            /* surface is obscured, host chrome must be usable again. */
+            'html.omt-hud-on .op-controls,',
+            /* Do not hide .op-ui when it wraps <video> (real Examino DOM). */
+            'html.omt-hud-on .op-ui:not(.op-media-element-container):not(:has(video)):not(:has(.op-media-element-container)),',
+            'html.omt-hud-on .op-progressbar-container,',
+            'html.omt-hud-on .op-player .button-bar,',
+            'html.omt-hud-on .video-container > .button-bar,',
+            'html.omt-hud-on .setting-holder,',
+            'html.omt-hud-on .op-button.op-setting-button,',
+            'html.omt-hud-on .hamburger-menu,',
+            'html.omt-hud-on .examino-bottom-controls,',
+            'html.omt-hud-on .omt-examino-native-hidden {',
             '  display: none !important;',
             '  opacity: 0 !important;',
             '  pointer-events: none !important;',
@@ -4896,13 +4971,13 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             '  margin: 0 !important;',
             '  padding: 0 !important;',
             '}',
-            /* Give the video the space freed by the ~108px bottom bars */
-            '.main-container.svelte-iq8mv8,',
-            '.main-container {',
+            'html.omt-hud-on .main-container.svelte-iq8mv8,',
+            'html.omt-hud-on .main-container {',
             '  height: 100% !important;',
             '  max-height: 100% !important;',
             '}',
-            /* Fallback raised settings panel when proxying native gear */
+            /* Raised settings panel while scraping Source — keep usable even */
+            /* if HUD paint state flaps; scoped to the temporary classes. */
             '.op-setting-panel.omt-settings-raised {',
             '  display: block !important;',
             '  opacity: 1 !important;',
@@ -4924,11 +4999,17 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             '  height: 1px !important;',
             '}'
         ].join('\n');
-        (document.head || document.documentElement).appendChild(style);
     }
 
     function markNativeHidden(el) {
         if (!el || el.id === 'omt-root' || (omtRoot && omtRoot.contains(el))) return;
+        // Never hide a node that contains the media — that makes <video>
+        // display:none and triggers Chrome power-save pause vs OpenPlayer play().
+        try {
+            if (el.tagName === 'VIDEO') return;
+            if (el.classList && el.classList.contains('op-media-element-container')) return;
+            if (el.querySelector && el.querySelector('video, .op-media-element-container, .op-player')) return;
+        } catch (_) { return; }
         el.classList.add('omt-examino-native-hidden');
     }
 
@@ -5258,6 +5339,11 @@ var OMT_SYNC_FEATURE_ENABLED = false;
 
             if (confirmed && wanted === 'DVR') {
                 examinoPendingDvrSettle = true;
+                // Settle now — do not wait for the 1.5s SPA monitor to notice a
+                // replaced <video> (avoids a frozen out-of-window DVR playhead).
+                if (typeof settleExaminoMediaAfterBind === 'function') {
+                    try { settleExaminoMediaAfterBind(); } catch (_) {}
+                }
             }
             return confirmed;
         });

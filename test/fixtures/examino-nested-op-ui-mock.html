@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en" data-omt-site="examino">
+<head>
+  <meta charset="UTF-8" />
+  <title>Examino nested .op-ui mock (video inside .op-ui)</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0b1220; color: #ddd; font-family: "Segoe UI", sans-serif; }
+    .page { width: 640px; height: 420px; margin: 24px auto; background: #111; position: relative; }
+    .main-container { height: calc(100% - 40px); position: relative; background: #000; }
+    .op-player { position: absolute; inset: 0; }
+    /* Real Examino-like: .op-ui WRAPS the media container */
+    .op-ui {
+      position: absolute; inset: 0;
+      background: rgba(0, 40, 0, 0.15);
+    }
+    .op-media-element-container, video {
+      position: absolute; inset: 0; width: 100%; height: 100%;
+    }
+    video { object-fit: contain; background: #000; }
+    .op-controls, .op-progressbar-container {
+      position: absolute; left: 0; right: 0; bottom: 0; height: 28px;
+      background: rgba(255,80,0,0.35); z-index: 5;
+    }
+    .examino-bottom-controls { height: 40px; background: #1a2230; }
+    #status { text-align: center; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="main-container" id="main-container">
+      <div class="op-player" id="op-player">
+        <div class="op-ui op-clear" id="op-ui-wrap">
+          <div class="op-media-element-container op-clear" id="media-host"></div>
+          <div class="op-controls">OpenPlayer Controls</div>
+          <div class="op-progressbar-container op-clear">Progress</div>
+        </div>
+      </div>
+    </div>
+    <div class="examino-bottom-controls">Bottom</div>
+  </div>
+  <div id="status">nested op-ui mock</div>
+  <script>
+    (function () {
+      const host = document.getElementById('media-host');
+      const video = document.createElement('video');
+      video.muted = true;
+      video.playsInline = true;
+      host.appendChild(video);
+      const canvas = document.createElement('canvas');
+      canvas.width = 640; canvas.height = 360;
+      const ctx = canvas.getContext('2d');
+      const t0 = performance.now();
+      function draw() {
+        const t = (performance.now() - t0) / 1000;
+        ctx.fillStyle = '#102010';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#8f8';
+        ctx.font = '28px sans-serif';
+        ctx.fillText('NESTED OP-UI t=' + t.toFixed(1), 24, 48);
+        requestAnimationFrame(draw);
+      }
+      draw();
+      video.srcObject = canvas.captureStream(30);
+      Object.defineProperty(video, 'duration', { configurable: true, get: () => 400 });
+      const seekable = { length: 1, start: () => 0, end: () => 400 };
+      Object.defineProperty(video, 'seekable', { configurable: true, get: () => seekable });
+      let _ct = 10;
+      Object.defineProperty(video, 'currentTime', {
+        configurable: true,
+        get: () => _ct,
+        set: (v) => { _ct = Math.max(0, Math.min(400, Number(v) || 0)); }
+      });
+      // Host-like resume: if something pauses us while we should play, call play().
+      // With a hidden video this recreates the field AbortError storm.
+      let wantPlay = true;
+      video.addEventListener('pause', () => {
+        if (!wantPlay) return;
+        video.play().catch(() => {});
+      });
+      video.play().catch(() => {});
+      window.__omtMockSource = 'DVR';
+      window.__omtNestedOpUiReady = true;
+    })();
+  </script>
+</body>
+</html>
