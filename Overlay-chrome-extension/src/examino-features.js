@@ -86,7 +86,7 @@
         e.stopImmediatePropagation();
         if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
         if (media.paused) {
-            media.play().catch(() => {});
+            safePlay(media);
             mostrarOSD('Play');
         } else {
             media.pause();
@@ -258,15 +258,28 @@
         });
     }
 
+    // hideExaminoNativeChrome reads innerText on every div (forced layout).
+    // Ignore our own HUD writes (timeupdate re-renders time text several times
+    // a second) and run at most once per second.
+    const OMT_NATIVE_CHROME_MIN_GAP_MS = 1000;
+
     function startExaminoNativeChromeObserver() {
         if (nativeChromeObserver) return;
         let scheduled = null;
-        nativeChromeObserver = new MutationObserver(() => {
+        let lastRun = 0;
+        nativeChromeObserver = new MutationObserver((records) => {
             if (scheduled) return;
+            const hostChange = records.some((r) => {
+                const t = r.target;
+                return !(t && t.nodeType === 1 && (t.id === 'omt-root' || (t.closest && t.closest('#omt-root'))));
+            });
+            if (!hostChange) return;
+            const wait = Math.max(50, OMT_NATIVE_CHROME_MIN_GAP_MS - (Date.now() - lastRun));
             scheduled = setTimeout(() => {
                 scheduled = null;
+                lastRun = Date.now();
                 hideExaminoNativeChrome();
-            }, 50);
+            }, wait);
         });
         const root = document.documentElement || document.body;
         if (root) {
@@ -594,8 +607,9 @@
                 if (autoBox.checked) {
                     examinoManualSourceChoice = null;
                     examinoAutoVodDone = false;
+                    examinoAutoVodAttempts = 0;
                     mostrarOSD('VOD auto-switch ON');
-                    maybeAutoSwitchToVod(0).catch(() => {});
+                    maybeAutoSwitchToVod().catch(() => {});
                 } else {
                     examinoManualSourceChoice = examinoManualSourceChoice || 'DVR';
                     examinoAutoVodDone = true;
@@ -636,12 +650,52 @@
         startAutoVodWatcher();
     }
 
-    async function maybeAutoSwitchToVod(attempt = 0) {
+    /*
+     * Auto-VOD budget. 1.2.2–2.0.2 re-ran this from a document-wide
+     * MutationObserver and from every teardown/boot, so whenever the menu did
+     * not confirm VOD (e.g. /play/dvr/ path keeps reading as DVR) it clicked
+     * Source → VOD again and again. Each click makes OpenPlayer pause, reload
+     * and play() the media: the player flashes, never opens, and the console
+     * fills with page-side "play() interrupted by pause()" errors.
+     * Now: bounded attempts per page load, and at most ONE Source click per
+     * page load (module state survives SPA teardown/boot).
+     */
+    const OMT_AUTO_VOD_MAX_ATTEMPTS = 6;
+    let examinoAutoVodAttempts = 0;
+    let examinoAutoVodClicked = false;
+
+    function autoVodAlreadyClicked() {
+        return examinoAutoVodClicked;
+    }
+
+    function markAutoVodClicked() {
+        examinoAutoVodClicked = true;
+    }
+
+    function scheduleAutoVodRetry(delayMs) {
+        if (examinoAutoVodAttempts >= OMT_AUTO_VOD_MAX_ATTEMPTS) {
+            examinoAutoVodDone = true;
+            return;
+        }
+        setTimeout(() => maybeAutoSwitchToVod().catch(() => {}), delayMs);
+    }
+
+    async function maybeAutoSwitchToVod() {
         if (site.id !== 'examino') return;
         if (!storageGetAutoVod()) return;
         if (examinoManualSourceChoice === 'DVR') return;
         if (examinoAutoVodDone) return;
         if (examinoAutoVodInFlight) return;
+        if (autoVodAlreadyClicked()) {
+            examinoAutoVodDone = true;
+            return;
+        }
+        if (examinoAutoVodAttempts >= OMT_AUTO_VOD_MAX_ATTEMPTS) {
+            examinoAutoVodDone = true;
+            return;
+        }
+        examinoAutoVodAttempts += 1;
+        const attempt = examinoAutoVodAttempts;
 
         examinoAutoVodInFlight = true;
         try {
@@ -658,9 +712,7 @@
 
             const source = await scrapeOpSourceOptions();
             if (source.loading) {
-                if (attempt < 10) {
-                    setTimeout(() => maybeAutoSwitchToVod(attempt + 1).catch(() => {}), 300);
-                }
+                scheduleAutoVodRetry(700);
                 return;
             }
             const current = detectCurrentSource(source.current);
@@ -671,30 +723,24 @@
             }
             const vod = source.options.find((o) => o.value === 'VOD');
             if (!vod) {
-                if (attempt < 10) {
-                    setTimeout(() => maybeAutoSwitchToVod(attempt + 1).catch(() => {}), 300);
-                }
+                scheduleAutoVodRetry(700);
                 return;
             }
             console.log('[OMT] Auto-switching Examino source to VOD (attempt ' + attempt + ')');
+            // One Source click per tab session, confirmed or not: a second
+            // click would reload the media again.
+            markAutoVodClicked();
+            examinoAutoVodDone = true;
             const ok = await applyOpSource('VOD', { manual: false });
-            if (ok) {
-                examinoAutoVodDone = true;
-                fillSourceSelect({
-                    current: 'VOD',
-                    options: [{ value: 'DVR', label: 'DVR' }, { value: 'VOD', label: 'VOD' }],
-                    loading: false
-                });
-                mostrarOSD('Switched to VOD');
-                setTimeout(() => refreshExaminoSourceSelect().catch(() => {}), 800);
-            } else if (attempt < 10) {
-                setTimeout(() => maybeAutoSwitchToVod(attempt + 1).catch(() => {}), 400);
-            }
+            fillSourceSelect({
+                current: ok ? 'VOD' : detectCurrentSource(null),
+                options: [{ value: 'DVR', label: 'DVR' }, { value: 'VOD', label: 'VOD' }],
+                loading: false
+            });
+            if (ok) mostrarOSD('Switched to VOD');
         } catch (err) {
             console.warn('[OMT] Auto-VOD failed:', err && err.message);
-            if (attempt < 10) {
-                setTimeout(() => maybeAutoSwitchToVod(attempt + 1).catch(() => {}), 400);
-            }
+            if (!autoVodAlreadyClicked()) scheduleAutoVodRetry(700);
         } finally {
             examinoAutoVodInFlight = false;
             closeOpSettingsUi();
@@ -705,27 +751,13 @@
         if (site.id !== 'examino') return;
         if (examinoManualSourceChoice === 'DVR' || examinoAutoVodDone) return;
         if (!storageGetAutoVod()) return;
-
-        // Immediate attempt (no fixed 1.2s delay)
-        maybeAutoSwitchToVod(0).catch(() => {});
-
         if (examinoAutoVodWatcher) return;
-        examinoAutoVodWatcher = new MutationObserver(() => {
-            if (examinoAutoVodDone || examinoManualSourceChoice === 'DVR' || !storageGetAutoVod()) {
-                if (examinoAutoVodWatcher) {
-                    examinoAutoVodWatcher.disconnect();
-                    examinoAutoVodWatcher = null;
-                }
-                return;
-            }
-            if (document.querySelector('.op-setting-button, .op-setting-panel, .setting-holder')) {
-                maybeAutoSwitchToVod(0).catch(() => {});
-            }
-        });
-        const root = document.documentElement || document.body;
-        if (root) {
-            examinoAutoVodWatcher.observe(root, { childList: true, subtree: true });
-        }
+        // Single delayed kick (OpenPlayer settings mount late); retries are
+        // bounded inside maybeAutoSwitchToVod. No DOM observer.
+        examinoAutoVodWatcher = setTimeout(() => {
+            examinoAutoVodWatcher = null;
+            maybeAutoSwitchToVod().catch(() => {});
+        }, 1200);
     }
 
     function initExaminoPlayerFeatures() {
