@@ -523,6 +523,19 @@
         return site.findVideo();
     }
 
+    /**
+     * A replaced <video> must go through teardown/boot so every per-video
+     * listener (timeupdate, play/pause, mousemove) moves with it. Assigning
+     * `vid = newEl` directly leaves those listeners on the dead element and
+     * the SPA monitor then sees `currentVid === vid` and never rebinds.
+     */
+    function omtAdoptReplacedVideo(el) {
+        if (!el || el === vid || !el.isConnected) return vid;
+        teardown();
+        boot();
+        return vid || el;
+    }
+
     /* =========================================================
        1C. SPA MONITOR — DETECT VIDEO REMOVAL / STREAM SWITCH
        =========================================================
@@ -2870,8 +2883,7 @@
         const found = (site && typeof site.findVideo === 'function')
             ? site.findVideo()
             : document.querySelector('video');
-        if (found) vid = found;
-        return vid;
+        return found ? omtAdoptReplacedVideo(found) : vid;
     }
 
     function closestSpeedRate(rate) {
@@ -4845,7 +4857,7 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         if (!isExaminoPlayerMediaTarget(e.target)) return;
         const media = resolveExaminoMedia(e.target);
         if (!media) return;
-        vid = media;
+        if (media !== vid) omtAdoptReplacedVideo(media);
         // Own the click exclusively so OpenPlayer cannot also toggle (net no-op).
         e.preventDefault();
         e.stopPropagation();
@@ -5245,6 +5257,10 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         });
     }
 
+    // Last Source we picked in the host menu; survives SPA teardown/boot so the
+    // overlay select shows it even when the row/path can't confirm it.
+    let examinoLastAppliedSource = null;
+
     async function applyOpSource(value, { manual = true } = {}) {
         if (!value) return false;
         const wanted = normalizeSourceToken(value) || String(value).toUpperCase();
@@ -5289,6 +5305,7 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             }
 
             try { option.click(); } catch (_) {}
+            examinoLastAppliedSource = wanted;
             // Wait until the root Source row reflects the new value (or panel closes).
             let confirmed = false;
             for (let i = 0; i < 20; i++) {
@@ -5411,8 +5428,13 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             });
         }
 
-        // Lightweight placeholder until menus exist
-        fillSourceSelect({ current: detectCurrentSource(null), options: [], loading: true });
+        // DVR/VOD straight away (no host-menu scrape). 2.0.2 showed "Loading…"
+        // here and relied on the auto-VOD loop re-scraping to clear it.
+        fillSourceSelect({
+            current: examinoLastAppliedSource || detectCurrentSource(null),
+            options: [],
+            loading: false
+        });
         startAutoVodWatcher();
     }
 
@@ -5499,7 +5521,7 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             examinoAutoVodDone = true;
             const ok = await applyOpSource('VOD', { manual: false });
             fillSourceSelect({
-                current: ok ? 'VOD' : detectCurrentSource(null),
+                current: ok ? 'VOD' : (examinoLastAppliedSource || detectCurrentSource(null)),
                 options: [{ value: 'DVR', label: 'DVR' }, { value: 'VOD', label: 'VOD' }],
                 loading: false
             });

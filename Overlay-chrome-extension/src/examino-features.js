@@ -79,7 +79,7 @@
         if (!isExaminoPlayerMediaTarget(e.target)) return;
         const media = resolveExaminoMedia(e.target);
         if (!media) return;
-        vid = media;
+        if (media !== vid) omtAdoptReplacedVideo(media);
         // Own the click exclusively so OpenPlayer cannot also toggle (net no-op).
         e.preventDefault();
         e.stopPropagation();
@@ -479,6 +479,10 @@
         });
     }
 
+    // Last Source we picked in the host menu; survives SPA teardown/boot so the
+    // overlay select shows it even when the row/path can't confirm it.
+    let examinoLastAppliedSource = null;
+
     async function applyOpSource(value, { manual = true } = {}) {
         if (!value) return false;
         const wanted = normalizeSourceToken(value) || String(value).toUpperCase();
@@ -523,6 +527,7 @@
             }
 
             try { option.click(); } catch (_) {}
+            examinoLastAppliedSource = wanted;
             // Wait until the root Source row reflects the new value (or panel closes).
             let confirmed = false;
             for (let i = 0; i < 20; i++) {
@@ -645,8 +650,13 @@
             });
         }
 
-        // Lightweight placeholder until menus exist
-        fillSourceSelect({ current: detectCurrentSource(null), options: [], loading: true });
+        // DVR/VOD straight away (no host-menu scrape). 2.0.2 showed "Loading…"
+        // here and relied on the auto-VOD loop re-scraping to clear it.
+        fillSourceSelect({
+            current: examinoLastAppliedSource || detectCurrentSource(null),
+            options: [],
+            loading: false
+        });
         startAutoVodWatcher();
     }
 
@@ -733,7 +743,7 @@
             examinoAutoVodDone = true;
             const ok = await applyOpSource('VOD', { manual: false });
             fillSourceSelect({
-                current: ok ? 'VOD' : detectCurrentSource(null),
+                current: ok ? 'VOD' : (examinoLastAppliedSource || detectCurrentSource(null)),
                 options: [{ value: 'DVR', label: 'DVR' }, { value: 'VOD', label: 'VOD' }],
                 loading: false
             });

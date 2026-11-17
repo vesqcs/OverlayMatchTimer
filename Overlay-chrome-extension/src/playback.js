@@ -21,8 +21,7 @@
         const found = (site && typeof site.findVideo === 'function')
             ? site.findVideo()
             : document.querySelector('video');
-        if (found) vid = found;
-        return vid;
+        return found ? omtAdoptReplacedVideo(found) : vid;
     }
 
     function closestSpeedRate(rate) {

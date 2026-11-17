@@ -167,6 +167,19 @@
         return site.findVideo();
     }
 
+    /**
+     * A replaced <video> must go through teardown/boot so every per-video
+     * listener (timeupdate, play/pause, mousemove) moves with it. Assigning
+     * `vid = newEl` directly leaves those listeners on the dead element and
+     * the SPA monitor then sees `currentVid === vid` and never rebinds.
+     */
+    function omtAdoptReplacedVideo(el) {
+        if (!el || el === vid || !el.isConnected) return vid;
+        teardown();
+        boot();
+        return vid || el;
+    }
+
     /* =========================================================
        1C. SPA MONITOR — DETECT VIDEO REMOVAL / STREAM SWITCH
        =========================================================
