@@ -37,41 +37,71 @@
     --omt-mono: "Segoe UI", system-ui, ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 
-/* ---- HIDE NATIVE VIDEO.JS CONTROLS (InplayIP) ----
-   html.omt-hud-on is set once when our HUD mounts and cleared on
-   teardown (never toggled by layout/visibility observers). Without a
-   mounted HUD (Live, not-yet-booted, failed inject) host controls stay. */
-html.omt-hud-on .vjs-control-bar,
-html.omt-hud-on .vjs-big-play-button,
-html.omt-hud-on .vjs-loading-spinner,
-html.omt-hud-on .vjs-poster,
-html.omt-hud-on .vjs-menu-button-popup .vjs-menu,
-html.omt-hud-on .vjs-text-track-display,
-html.omt-hud-on .video-js .vjs-control-bar {
+/* ---- HIDE NATIVE VIDEO.JS CONTROLS (InplayIP only) ----
+   Host class is set with the HUD so Examino :has() rules never run on
+   InPlay's heavy /schedule DOM (style recalc cost). */
+html.omt-host-inplayip.omt-hud-on .vjs-control-bar,
+html.omt-host-inplayip.omt-hud-on .vjs-big-play-button,
+html.omt-host-inplayip.omt-hud-on .vjs-loading-spinner,
+html.omt-host-inplayip.omt-hud-on .vjs-poster,
+html.omt-host-inplayip.omt-hud-on .vjs-menu-button-popup .vjs-menu,
+html.omt-host-inplayip.omt-hud-on .vjs-text-track-display,
+html.omt-host-inplayip.omt-hud-on .video-js .vjs-control-bar {
     display: none !important;
     opacity: 0 !important;
     pointer-events: none !important;
 }
 
-/* ---- HIDE OPENPLAYER / EXAMINO NATIVE CHROME (HUD mounted only) ---- */
-/* Never hide a node that contains the <video> / media container. */
-html.omt-hud-on .op-controls,
-html.omt-hud-on .op-ui:not(.op-media-element-container):not(:has(video)):not(:has(.op-media-element-container)),
-html.omt-hud-on .op-progressbar-container,
-html.omt-hud-on .op-player .button-bar,
-html.omt-hud-on .video-container > .button-bar,
-html.omt-hud-on .setting-holder,
-html.omt-hud-on .op-button.op-setting-button,
-html.omt-hud-on .hamburger-menu,
-html.omt-hud-on .examino-bottom-controls,
-html.omt-hud-on .omt-examino-native-hidden {
+/* ---- HIDE OPENPLAYER / EXAMINO NATIVE CHROME (Examino only) ----
+   Never hide a node that contains the <video> / media container.
+   Scoped to omt-host-examino so InPlay does not pay :has() matching. */
+html.omt-host-examino.omt-hud-on .op-controls,
+html.omt-host-examino.omt-hud-on .op-ui:not(.op-media-element-container):not(:has(video)):not(:has(.op-media-element-container)),
+html.omt-host-examino.omt-hud-on .op-progressbar-container,
+html.omt-host-examino.omt-hud-on .op-player .button-bar,
+html.omt-host-examino.omt-hud-on .video-container > .button-bar,
+html.omt-host-examino.omt-hud-on .setting-holder,
+html.omt-host-examino.omt-hud-on .op-button.op-setting-button,
+html.omt-host-examino.omt-hud-on .hamburger-menu,
+html.omt-host-examino.omt-hud-on .examino-bottom-controls {
     display: none !important;
     opacity: 0 !important;
     pointer-events: none !important;
 }
 
-html.omt-hud-on .main-container.svelte-iq8mv8,
-html.omt-hud-on .main-container {
+/* Sticky JS class for leaf native chrome. */
+html.omt-host-examino.omt-hud-on .omt-examino-native-hidden {
+    display: none !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    max-height: 0 !important;
+    overflow: hidden !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+/* Undo: if the sticky class was stamped on a media host during a Source-switch
+   video gap, force the host painted again. Higher specificity than the hide
+   rule; also covers ancestors that later gain a <video>. */
+html.omt-host-examino.omt-hud-on .op-player.omt-examino-native-hidden,
+html.omt-host-examino.omt-hud-on .op-media-element-container.omt-examino-native-hidden,
+html.omt-host-examino.omt-hud-on .video-container.omt-examino-native-hidden,
+html.omt-host-examino.omt-hud-on .main-container.omt-examino-native-hidden,
+html.omt-host-examino.omt-hud-on .top.omt-examino-native-hidden,
+html.omt-host-examino.omt-hud-on .omt-examino-native-hidden:has(video),
+html.omt-host-examino.omt-hud-on .omt-examino-native-hidden:has(.op-media-element-container),
+html.omt-host-examino.omt-hud-on .omt-examino-native-hidden:has(.op-player) {
+    display: block !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+html.omt-host-examino.omt-hud-on .main-container.svelte-iq8mv8,
+html.omt-host-examino.omt-hud-on .main-container {
     height: 100% !important;
     max-height: 100% !important;
 }

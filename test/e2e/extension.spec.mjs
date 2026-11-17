@@ -3219,6 +3219,76 @@ async function run() {
     });
     await page.screenshot({ path: path.join(ARTIFACTS, 'v202_nested_op_ui.png'), fullPage: true });
 
+    // ---- Sticky native-hidden race: Source-switch video gap must not blank .op-player ----
+    await page.goto(`${base}/examino-sticky-hide-race-mock.html`, { waitUntil: 'domcontentloaded' });
+    await waitForOmt(page, 15000);
+    await page.waitForTimeout(400);
+    const stickyRace = await page.evaluate(async () => {
+      if (typeof window.__stickyRaceGapReload !== 'function') {
+        return { ok: false, reason: 'missing-gap-fn' };
+      }
+      document.documentElement.classList.add('omt-hud-on', 'omt-host-examino');
+
+      // 1) With video present, sticky class on .op-player must NOT blank media
+      //    (CSS undo rule). This is the field failure mode after VOD remount.
+      const player0 = document.getElementById('op-player');
+      if (!player0) return { ok: false, reason: 'no-player' };
+      player0.classList.add('omt-examino-native-hidden');
+      const v0 = document.querySelector('video');
+      const cs0 = getComputedStyle(player0);
+      const visibleWithSticky = cs0.display !== 'none' && cs0.maxHeight !== '0px' &&
+        v0 && v0.getBoundingClientRect().height >= 24;
+
+      // 2) Source-switch gap: remove video, keep sticky class, remount video.
+      const gapPromise = window.__stickyRaceGapReload(180);
+      await new Promise((r) => setTimeout(r, 50));
+      const playerMid = document.getElementById('op-player');
+      if (playerMid) playerMid.classList.add('omt-examino-native-hidden');
+      // Nudge the extension's hide observer (same as a host DOM mutation).
+      document.body.appendChild(document.createElement('div')).setAttribute('data-omt-gap', '1');
+      await gapPromise;
+      await new Promise((r) => setTimeout(r, 1200)); // observer throttle is 1s
+
+      const player = document.getElementById('op-player');
+      const v = document.querySelector('video');
+      if (!player || !v) return { ok: false, reason: 'no-player-or-video', visibleWithSticky };
+      // Ensure undo classes present even if SPA cleared them mid-gap.
+      document.documentElement.classList.add('omt-hud-on', 'omt-host-examino');
+      player.classList.add('omt-examino-native-hidden');
+      const vCs = getComputedStyle(v);
+      const pCs = getComputedStyle(player);
+      const mediaVisible = vCs.display !== 'none' && v.getBoundingClientRect().height >= 24;
+      const playerVisible = pCs.display !== 'none' && pCs.maxHeight !== '0px';
+
+      let playN = 0;
+      let pauseN = 0;
+      const onPlay = () => { playN += 1; };
+      const onPause = () => { pauseN += 1; };
+      v.addEventListener('play', onPlay);
+      v.addEventListener('pause', onPause);
+      try { await v.play(); } catch (_) {}
+      await new Promise((r) => setTimeout(r, 3000));
+      v.removeEventListener('play', onPlay);
+      v.removeEventListener('pause', onPause);
+      return {
+        ok: visibleWithSticky && mediaVisible && playerVisible &&
+          playN <= 3 && pauseN <= 3 && v.paused === false,
+        visibleWithSticky,
+        mediaVisible,
+        playerVisible,
+        playN,
+        pauseN,
+        paused: v.paused,
+        pDisplay: pCs.display,
+        stats: window.__stickyRaceStats || {}
+      };
+    });
+    results.push({
+      name: 'examino-sticky-hide-race-no-loop',
+      pass: stickyRace.ok === true,
+      detail: stickyRace
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v204_sticky_hide_race.png'), fullPage: true });
 
     // ---------- InPlay collapsed player: HUD stays inside the player box ----------
     // No visibility guard (2.0.1–2.0.2 toggled HUD/host chrome on layout

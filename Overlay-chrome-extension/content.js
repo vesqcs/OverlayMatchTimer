@@ -15,6 +15,15 @@
 /* Shared mutable state for the Overlay MatchTimer content script.
  * Fragments are concatenated into one IIFE — do not use import/export here.
  */
+    // MAIN-world scripts share the page realm but each inject is a new IIFE.
+    // A second inject (dev reload, duplicate registration) would double every
+    // listener — abort before touching the DOM.
+    if (window.__OMT_MAIN_LOADED__) {
+        console.warn('[OMT] MAIN content script already loaded — skipping duplicate.');
+        return;
+    }
+    window.__OMT_MAIN_LOADED__ = true;
+
     // SPA monitor interval handle
     let spaMonitorInterval = null;
     let bootObserver = null;
@@ -144,11 +153,14 @@
         },
 
         isLiveStream() {
-            const bodyText = document.body ? document.body.innerText : '';
-            if (/\b(hd|sd)\s+live\b/i.test(bodyText)) return true;
             const hasLiveUI = !!document.querySelector('.vjs-live-control, .vjs-live-display');
             const hasProgress = !!document.querySelector('.vjs-progress-control');
             if (hasLiveUI && !hasProgress) return true;
+            // Never read document.body.innerText on /schedule — that forces a
+            // full layout of the curtain table. Scan player chrome only.
+            const playerRoot = document.querySelector('.video-js, .player-container, .players-container');
+            const text = playerRoot ? (playerRoot.innerText || '') : '';
+            if (/\b(hd|sd)\s+live\b/i.test(text) && !hasProgress) return true;
             return false;
         },
 
@@ -875,10 +887,15 @@
         omtIsolatedAnchorPrev = '';
     }
 
-    /** Host-chrome hide CSS is gated on this; set on mount, cleared on teardown only. */
+    /** Host-chrome hide CSS is gated on this; set on mount, cleared on teardown only.
+     *  Also stamps omt-host-<site> so Examino :has() rules never match on InPlay. */
     function omtSetHudMounted(on) {
         try {
-            document.documentElement.classList.toggle('omt-hud-on', !!on);
+            const root = document.documentElement;
+            root.classList.toggle('omt-hud-on', !!on);
+            ['examino', 'inplayip', 'local'].forEach((id) => {
+                root.classList.toggle('omt-host-' + id, !!(on && site && site.id === id));
+            });
         } catch (_) {}
     }
 
@@ -4923,17 +4940,16 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         style.textContent = [
             /* Only while HUD is active (html.omt-hud-on). When the video */
             /* surface is obscured, host chrome must be usable again. */
-            'html.omt-hud-on .op-controls,',
+            'html.omt-host-examino.omt-hud-on .op-controls,',
             /* Do not hide .op-ui when it wraps <video> (real Examino DOM). */
-            'html.omt-hud-on .op-ui:not(.op-media-element-container):not(:has(video)):not(:has(.op-media-element-container)),',
-            'html.omt-hud-on .op-progressbar-container,',
-            'html.omt-hud-on .op-player .button-bar,',
-            'html.omt-hud-on .video-container > .button-bar,',
-            'html.omt-hud-on .setting-holder,',
-            'html.omt-hud-on .op-button.op-setting-button,',
-            'html.omt-hud-on .hamburger-menu,',
-            'html.omt-hud-on .examino-bottom-controls,',
-            'html.omt-hud-on .omt-examino-native-hidden {',
+            'html.omt-host-examino.omt-hud-on .op-ui:not(.op-media-element-container):not(:has(video)):not(:has(.op-media-element-container)),',
+            'html.omt-host-examino.omt-hud-on .op-progressbar-container,',
+            'html.omt-host-examino.omt-hud-on .op-player .button-bar,',
+            'html.omt-host-examino.omt-hud-on .video-container > .button-bar,',
+            'html.omt-host-examino.omt-hud-on .setting-holder,',
+            'html.omt-host-examino.omt-hud-on .op-button.op-setting-button,',
+            'html.omt-host-examino.omt-hud-on .hamburger-menu,',
+            'html.omt-host-examino.omt-hud-on .examino-bottom-controls {',
             '  display: none !important;',
             '  opacity: 0 !important;',
             '  pointer-events: none !important;',
@@ -4942,8 +4958,35 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             '  margin: 0 !important;',
             '  padding: 0 !important;',
             '}',
-            'html.omt-hud-on .main-container.svelte-iq8mv8,',
-            'html.omt-hud-on .main-container {',
+            'html.omt-host-examino.omt-hud-on .omt-examino-native-hidden {',
+            '  display: none !important;',
+            '  opacity: 0 !important;',
+            '  pointer-events: none !important;',
+            '  max-height: 0 !important;',
+            '  overflow: hidden !important;',
+            '  margin: 0 !important;',
+            '  padding: 0 !important;',
+            '}',
+            /* Undo sticky class on media hosts / ancestors that contain media
+               (Source-switch gap race). Higher specificity than the hide rule. */
+            'html.omt-host-examino.omt-hud-on .op-player.omt-examino-native-hidden,',
+            'html.omt-host-examino.omt-hud-on .op-media-element-container.omt-examino-native-hidden,',
+            'html.omt-host-examino.omt-hud-on .video-container.omt-examino-native-hidden,',
+            'html.omt-host-examino.omt-hud-on .main-container.omt-examino-native-hidden,',
+            'html.omt-host-examino.omt-hud-on .top.omt-examino-native-hidden,',
+            'html.omt-host-examino.omt-hud-on .omt-examino-native-hidden:has(video),',
+            'html.omt-host-examino.omt-hud-on .omt-examino-native-hidden:has(.op-media-element-container),',
+            'html.omt-host-examino.omt-hud-on .omt-examino-native-hidden:has(.op-player) {',
+            '  display: block !important;',
+            '  opacity: 1 !important;',
+            '  pointer-events: auto !important;',
+            '  max-height: none !important;',
+            '  overflow: visible !important;',
+            '  margin: 0 !important;',
+            '  padding: 0 !important;',
+            '}',
+            'html.omt-host-examino.omt-hud-on .main-container.svelte-iq8mv8,',
+            'html.omt-host-examino.omt-hud-on .main-container {',
             '  height: 100% !important;',
             '  max-height: 100% !important;',
             '}',
@@ -4972,20 +5015,49 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         ].join('\n');
     }
 
+    function omtIsMediaHostNode(el) {
+        if (!el || el.nodeType !== 1) return false;
+        try {
+            if (el.tagName === 'VIDEO') return true;
+            if (el.id === 'omt-root') return true;
+            if (el.matches && el.matches('.op-player, .op-media-element-container, .video-container, .main-container, .top')) {
+                return true;
+            }
+            if (el.querySelector && el.querySelector('video, .op-media-element-container, .op-player, #omt-root')) {
+                return true;
+            }
+        } catch (_) {
+            return true;
+        }
+        return false;
+    }
+
     function markNativeHidden(el) {
         if (!el || el.id === 'omt-root' || (omtRoot && omtRoot.contains(el))) return;
-        // Never hide a node that contains the media — that makes <video>
-        // display:none and triggers Chrome power-save pause vs OpenPlayer play().
-        try {
-            if (el.tagName === 'VIDEO') return;
-            if (el.classList && el.classList.contains('op-media-element-container')) return;
-            if (el.querySelector && el.querySelector('video, .op-media-element-container, .op-player')) return;
-        } catch (_) { return; }
+        // Never hide a media host — display:none on an ancestor of <video>
+        // makes Chrome power-save pause fight OpenPlayer play().
+        if (omtIsMediaHostNode(el)) return;
         el.classList.add('omt-examino-native-hidden');
+    }
+
+    function scrubStaleNativeHiddenOnMedia() {
+        // Source DVR↔VOD briefly removes <video>. A hide pass in that gap can
+        // stamp omt-examino-native-hidden on .op-player; the class must not stick.
+        document.querySelectorAll('.omt-examino-native-hidden').forEach((el) => {
+            if (omtIsMediaHostNode(el)) el.classList.remove('omt-examino-native-hidden');
+        });
+        document.querySelectorAll(
+            '.op-player.omt-examino-native-hidden, ' +
+            '.op-media-element-container.omt-examino-native-hidden, ' +
+            '.video-container.omt-examino-native-hidden, ' +
+            '.main-container.omt-examino-native-hidden, ' +
+            '.top.omt-examino-native-hidden'
+        ).forEach((el) => el.classList.remove('omt-examino-native-hidden'));
     }
 
     function hideExaminoNativeChrome() {
         injectExaminoHideCSS();
+        scrubStaleNativeHiddenOnMedia();
 
         // Probe layout: main-container uses height calc(100% - 108px) for the
         // three Examino button rows that sit as siblings under the same parent.
@@ -5005,9 +5077,12 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         document.querySelectorAll('.hamburger-menu, .setting-holder, .examino-bottom-controls').forEach(markNativeHidden);
 
         // Heuristic: hide compact control stacks that contain LIVE + FOCUS + seek labels.
+        // Never touch anything inside the player tree — a Source-switch video gap
+        // used to let this stamp omt-examino-native-hidden on .op-player itself.
         document.querySelectorAll('div, section, nav, aside').forEach((el) => {
             if (!el || el.closest('#omt-root')) return;
-            if (el.querySelector && el.querySelector('video, .op-player, .op-media-element-container, #omt-root')) return;
+            if (el.closest && el.closest('.op-player, .op-media-element-container, .video-container')) return;
+            if (omtIsMediaHostNode(el)) return;
             const text = (el.innerText || '').replace(/\s+/g, ' ').trim();
             if (!text || text.length > 280) return;
             const hasLiveFocus = /\bLIVE\b/i.test(text) && /\bFOCUS\b/i.test(text);
@@ -5021,8 +5096,7 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         // Top-right clock / idle chrome inside .top (keep player media).
         document.querySelectorAll('.top.svelte-iq8mv8, .top').forEach((top) => {
             Array.from(top.children || []).forEach((child) => {
-                if (child.matches && child.matches('.op-player, .video-container, .op-media-element-container')) return;
-                if (child.querySelector && child.querySelector('video, .op-player, .op-media-element-container')) return;
+                if (omtIsMediaHostNode(child)) return;
                 if (child.classList && child.classList.contains('hamburger-menu')) {
                     markNativeHidden(child);
                     return;
@@ -5040,6 +5114,8 @@ var OMT_SYNC_FEATURE_ENABLED = false;
     // Ignore our own HUD writes (timeupdate re-renders time text several times
     // a second) and run at most once per second.
     const OMT_NATIVE_CHROME_MIN_GAP_MS = 1000;
+
+    try { window.__omtHideExaminoNativeChrome = hideExaminoNativeChrome; } catch (_) {}
 
     function startExaminoNativeChromeObserver() {
         if (nativeChromeObserver) return;
@@ -5690,6 +5766,7 @@ var OMT_SYNC_FEATURE_ENABLED = false;
        ENTRY POINT
        ========================================================= */
     if (site.id === 'examino') {
+        try { document.documentElement.classList.add('omt-host-examino'); } catch (_) {}
         installExaminoHotkeys();
         injectExaminoHideCSS();
         // Hide chrome as soon as nodes appear, even before <video>.
