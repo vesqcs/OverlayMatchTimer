@@ -8,7 +8,8 @@ import {
   resolveFixture,
   runExaminoFieldScenario,
   runInplayScheduleScenario,
-  EXAMINO_BUS_MOCK_PATH
+  EXAMINO_BUS_MOCK_PATH,
+  XEATRE_DVR_PATH
 } from './host-scenarios.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -3385,6 +3386,96 @@ async function run() {
       detail: busLoop
     });
     await page.screenshot({ path: path.join(ARTIFACTS, 'v205_ovenplayer_bus.png'), fullPage: true });
+
+    // ---- v2.1.0: Xeatre DVR — host chrome hidden, our HUD clickable, no play/pause loop ----
+    await page.goto(`${base}${XEATRE_DVR_PATH}`, { waitUntil: 'domcontentloaded' });
+    await waitForOmt(page, 15000);
+    await page.waitForFunction(() => {
+      const v = document.querySelector('video');
+      return !!(v && document.getElementById('omt-root') &&
+        document.documentElement.classList.contains('omt-host-xeatre'));
+    }, { timeout: 15000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    const xeatreGuard = await page.evaluate(async () => {
+      const v = document.querySelector('video');
+      const root = document.getElementById('omt-root');
+      const bar = document.querySelector('.vjs-control-bar');
+      const dock = document.getElementById('xeatre-panel-dock');
+      const flt = document.getElementById('xeatre-panel-float');
+      const autoHide = document.getElementById('AutoHide');
+      const playBtn = document.getElementById('omt-btn-play');
+      const cs = (el) => (el ? getComputedStyle(el) : null);
+      const hidden = (el) => {
+        const c = cs(el);
+        if (!c) return true;
+        return c.display === 'none' || c.visibility === 'hidden' || Number(c.opacity) === 0 ||
+          c.pointerEvents === 'none';
+      };
+      // Video / media shell must stay painted.
+      const shell = document.querySelector('.video-js');
+      const mediaVisible = !!(v && v.getBoundingClientRect().height >= 24 &&
+        cs(v).display !== 'none' && cs(shell).display !== 'none');
+
+      const hostHidden = hidden(bar) && hidden(dock) && hidden(flt) && hidden(autoHide) &&
+        hidden(document.getElementById('jwplay')) && hidden(document.getElementById('GoLive'));
+
+      // Hit-test: centre of a host button must NOT receive the click (hidden).
+      let hostHitBlocked = true;
+      const hostBtn = document.getElementById('jwplay');
+      if (hostBtn) {
+        const r = hostBtn.getBoundingClientRect();
+        // Even if rect is zero when display:none, treat as blocked.
+        if (r.width > 0 && r.height > 0) {
+          const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+          hostHitBlocked = !(top === hostBtn || (top && hostBtn.contains(top)));
+        }
+      }
+
+      // Our play button must be hittable.
+      let ourHitOk = false;
+      if (playBtn) {
+        playBtn.scrollIntoView({ block: 'center' });
+        const panel = document.getElementById('controls-panel');
+        if (panel) {
+          panel.style.opacity = '1';
+          panel.style.pointerEvents = 'auto';
+        }
+        const r = playBtn.getBoundingClientRect();
+        const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        ourHitOk = !!(top && (top === playBtn || playBtn.contains(top) || top.closest('#omt-btn-play')));
+      }
+
+      const s0 = { ...(window.__xeatreStats || {}) };
+      try { await v.play(); } catch (_) {}
+      await new Promise((r) => setTimeout(r, 3000));
+      const s1 = { ...(window.__xeatreStats || {}) };
+      const dPlay = (s1.play || 0) - (s0.play || 0);
+      const dPause = (s1.pause || 0) - (s0.pause || 0);
+      const dMsg = (s1.messages || 0) - (s0.messages || 0);
+
+      return {
+        ok: mediaVisible && hostHidden && hostHitBlocked && ourHitOk && !!root &&
+          dPlay <= 3 && dPause <= 3 && dMsg === 0 &&
+          document.documentElement.classList.contains('omt-host-xeatre') &&
+          document.documentElement.classList.contains('omt-hud-on'),
+        mediaVisible,
+        hostHidden,
+        hostHitBlocked,
+        ourHitOk,
+        dPlay,
+        dPause,
+        dMsg,
+        hasHud: !!root,
+        adapter: document.documentElement.classList.contains('omt-host-xeatre'),
+        liveChrome: !!(root && root.querySelector('#omt-timeline-live-indicator'))
+      };
+    });
+    results.push({
+      name: 'xeatre-host-chrome-hidden-no-loop',
+      pass: xeatreGuard.ok === true,
+      detail: xeatreGuard
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v210_xeatre_dvr.png'), fullPage: true });
 
     // ---------- InPlay collapsed player: HUD stays inside the player box ----------
     // No visibility guard (2.0.1–2.0.2 toggled HUD/host chrome on layout

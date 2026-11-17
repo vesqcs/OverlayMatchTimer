@@ -33,6 +33,7 @@
   "src/sync/match-key.js",
   "src/sync/hooks.js",
   "src/examino-features.js",
+  "src/xeatre-features.js",
   "src/local-features.js",
   "src/entry.js"
 ]

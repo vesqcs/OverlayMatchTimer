@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Overlay MatchTimer",
-  "version": "2.0.5",
-  "description": "Injects the Overlay MatchTimer UI over InplayIP and Examino DVR/VOD streams, plus a local file player for offline / NAS analysis.",
+  "version": "2.1.0",
+  "description": "Injects the Overlay MatchTimer UI over InplayIP, Examino, and Xeatre DVR streams, plus a local file player for offline / NAS analysis.",
   "author": "Vasco Oliveira",
   "icons": {
     "16": "assets/icon-16.png",
@@ -16,6 +16,7 @@
   "host_permissions": [
     "*://*.inplayip.tv/*",
     "*://examino.statsperform.io/*",
+    "*://*.xeatre.cloud/*",
     "http://127.0.0.1/*",
     "http://localhost/*"
   ],
@@ -89,6 +90,34 @@
         "content.css"
       ],
       "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "*://*.xeatre.cloud/*",
+        "http://127.0.0.1/*xeatre*",
+        "http://localhost/*xeatre*"
+      ],
+      "js": [
+        "sync-feature-flag.js",
+        "bridge.js"
+      ],
+      "run_at": "document_start",
+      "world": "ISOLATED"
+    },
+    {
+      "matches": [
+        "*://*.xeatre.cloud/*",
+        "http://127.0.0.1/*xeatre*",
+        "http://localhost/*xeatre*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "run_at": "document_idle",
       "world": "MAIN"
     }
   ]

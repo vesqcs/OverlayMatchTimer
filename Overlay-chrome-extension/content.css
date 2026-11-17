@@ -52,6 +52,46 @@ html.omt-host-inplayip.omt-hud-on .video-js .vjs-control-bar {
     pointer-events: none !important;
 }
 
+/* ---- HIDE XEATRE HOST CHROME (Xeatre only) ----
+   Hide the native VJS bar AND the 6-column DOC/FRAME/PLAY/LIVE/FULL panel
+   (docked + floating) + Auto hide. Never hide .video-js / media hosts. */
+html.omt-host-xeatre.omt-hud-on .vjs-control-bar,
+html.omt-host-xeatre.omt-hud-on .vjs-big-play-button,
+html.omt-host-xeatre.omt-hud-on .vjs-loading-spinner,
+html.omt-host-xeatre.omt-hud-on .vjs-poster,
+html.omt-host-xeatre.omt-hud-on .vjs-menu-button-popup .vjs-menu,
+html.omt-host-xeatre.omt-hud-on .vjs-text-track-display,
+html.omt-host-xeatre.omt-hud-on .vjs-error-display,
+html.omt-host-xeatre.omt-hud-on .vjs-modal-dialog,
+html.omt-host-xeatre.omt-hud-on #jwplay,
+html.omt-host-xeatre.omt-hud-on #GoLive,
+html.omt-host-xeatre.omt-hud-on #GoStart,
+html.omt-host-xeatre.omt-hud-on #FullScreen,
+html.omt-host-xeatre.omt-hud-on #Speed025,
+html.omt-host-xeatre.omt-hud-on #Speed05,
+html.omt-host-xeatre.omt-hud-on #Speed1,
+html.omt-host-xeatre.omt-hud-on #Speed15,
+html.omt-host-xeatre.omt-hud-on #Speed2,
+html.omt-host-xeatre.omt-hud-on #AutoHide,
+html.omt-host-xeatre.omt-hud-on #autohide,
+html.omt-host-xeatre.omt-hud-on .xeatre-control-panel,
+html.omt-host-xeatre.omt-hud-on .xeatre-host-panel,
+html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+html.omt-host-xeatre.omt-hud-on .video-js.omt-xeatre-host-hidden,
+html.omt-host-xeatre.omt-hud-on .vjs-tech.omt-xeatre-host-hidden,
+html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(video),
+html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(.vjs-tech) {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+}
+
 /* ---- HIDE OPENPLAYER / EXAMINO NATIVE CHROME (Examino only) ----
    Never hide a node that contains the <video> / media container.
    Scoped to omt-host-examino so InPlay does not pay :has() matching. */

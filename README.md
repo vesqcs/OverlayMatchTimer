@@ -12,7 +12,7 @@ Supported surfaces:
 - **Examino** (`examino.statsperform.io/play/dvr/*` and `/play/vod/*`) - OpenPlayer
 - **Local player** (`chrome-extension://…/player.html`) - offline / NAS files
 
-Xeatre content-script injection remains out of scope until material is provided (stub adapter + legacy HTML URL paste only).
+Xeatre DVR popup (`*.xeatre.cloud`) is supported from **v2.1.0** (Video.js + VHS; host chrome hidden). Legacy HTML URL paste remains in `OverlayMatchTimer.html`.
 
 > **Planned (disabled):** team Kickoff sync: always on, zero analyst config, one bundled Supabase project, match key from the page. See `ARCHITECTURE.md` and `supabase/SETUP.md`. Not enabled in this build.
 

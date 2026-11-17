@@ -110,6 +110,9 @@
 
    Optional:
      stub: true                        // detectSite idles the script
+
+   Xeatre (v2.1.0): Video.js + VHS Wowza DVR; host chrome fully hidden via
+   html.omt-host-xeatre scoped CSS — never hide media hosts / <video> ancestors.
    ========================================================= */
 
 /* InplayIP (Video.js Review/DVR) site adapter */
@@ -302,22 +305,76 @@
         }
     };
 
-/* Xeatre stub — out of scope for injection; URL paste stays in the HTML companion. */
-    // Xeatre works differently (URL paste into the HTML app). Out of scope —
-    // leave a stub so a future adapter can plug in without another rewrite.
+/* Xeatre (Stats Perform Global Media Manager DVR popup) site adapter.
+ * Player: Video.js 7.7.4 + videojs-http-streaming over Wowza nDVR HLS.
+ * Host-only hide/CSS lives in xeatre-features.js — do not touch Examino/InPlay.
+ */
     const SITE_XEATRE = {
         id: 'xeatre',
         rootClass: 'omt-xeatre',
-        findVideo() { return null; },
-        findAnchor() { return null; },
-        findFullscreenTarget() { return null; },
-        isReviewStream() { return false; },
+
+        findVideo() {
+            const tech = document.querySelector('.video-js video.vjs-tech, .video-js video, video.vjs-tech');
+            if (tech && tech.tagName === 'VIDEO') return tech;
+            const any = document.querySelector('video');
+            return any || null;
+        },
+
+        findAnchor(videoEl) {
+            // Prefer the Video.js shell (same idea as InPlay). Never use a node
+            // we hide — .vjs-control-bar is a sibling of the tech, not the shell.
+            return videoEl.closest('.video-js') ||
+                videoEl.closest('.vjs-player') ||
+                videoEl.closest('#video-player') ||
+                videoEl.closest('.player-container') ||
+                videoEl.parentElement;
+        },
+
+        findFullscreenTarget(videoEl) {
+            return videoEl.closest('.video-js') ||
+                videoEl.closest('#video-player') ||
+                videoEl.parentElement ||
+                videoEl;
+        },
+
+        // Xeatre DVR popup is always the review/DVR surface (live=true Wowza window).
+        isReviewStream() { return true; },
         isLiveStream() { return false; },
-        suppressHostControls() {},
-        mediaReady() { return false; },
-        effectiveDuration() { return NaN; },
-        // TODO(xeatre): dedicated adapter when Xeatre DVR is reachable again.
-        stub: true
+
+        suppressHostControls(videoEl) {
+            if (typeof injectXeatreHideCSS === 'function') injectXeatreHideCSS();
+            if (typeof hideXeatreNativeChrome === 'function') hideXeatreNativeChrome();
+            if (typeof startXeatreNativeChromeObserver === 'function') startXeatreNativeChromeObserver();
+            // Soften VJS keyboard capture so our capture-phase hotkeys win; CSS hides chrome.
+            try {
+                document.querySelectorAll('.video-js, .vjs-tech').forEach((el) => {
+                    if (el.id === 'omt-root' || (omtRoot && omtRoot.contains(el))) return;
+                    try { el.setAttribute('tabindex', '-1'); } catch (_) {}
+                });
+            } catch (_) {}
+        },
+
+        // Wowza DVR / VHS often reports Infinity duration; seekable end is enough.
+        mediaReady(videoEl) {
+            if (!videoEl) return false;
+            if (videoEl.duration && isFinite(videoEl.duration)) return true;
+            try {
+                return !!(videoEl.seekable && videoEl.seekable.length > 0);
+            } catch (_) {
+                return false;
+            }
+        },
+
+        effectiveDuration(videoEl) {
+            if (!videoEl) return NaN;
+            if (videoEl.duration && isFinite(videoEl.duration)) return videoEl.duration;
+            try {
+                if (videoEl.seekable && videoEl.seekable.length > 0) {
+                    return videoEl.seekable.end(videoEl.seekable.length - 1);
+                }
+            } catch (_) {}
+            return NaN;
+        }
     };
 
 /* Resolve the active site adapter from host / path / data-omt-site. */
@@ -339,8 +396,13 @@
         if (forced === 'examino' || host.includes('examino') || /examino/i.test(path)) {
             return SITE_EXAMINO;
         }
-        // TODO(xeatre): enable when Vasco provides material
-        if (forced === 'xeatre' || host.includes('xeatre')) {
+        // Xeatre GMM DVR popup (statsperform.media.xeatre.cloud / *.xeatre.cloud)
+        if (
+            forced === 'xeatre' ||
+            host.includes('xeatre') ||
+            /dvrplayer\.html/i.test(path) ||
+            /xeatre/i.test(path)
+        ) {
             return SITE_XEATRE;
         }
         if (forced === 'inplayip' || host.includes('inplayip') || /inplay/i.test(path)) {
@@ -349,6 +411,7 @@
         // Local Playwright fixtures served from 127.0.0.1 / localhost
         if (host === 'localhost' || host === '127.0.0.1') {
             if (/examino/i.test(path)) return SITE_EXAMINO;
+            if (/xeatre/i.test(path)) return SITE_XEATRE;
             if (/inplay/i.test(path)) return SITE_INPLAYIP;
             if (/player\.html/i.test(path) || forced === 'local') return SITE_LOCAL;
         }
@@ -361,7 +424,7 @@
         return;
     }
     if (site.stub) {
-        console.log('[OMT] Xeatre adapter is a stub (out of scope) — content script idle.');
+        console.log('[OMT] Site adapter stub — content script idle:', site.id);
         return;
     }
     console.log('[OMT] Site adapter:', site.id);
@@ -405,6 +468,9 @@
         if (nativeChromeObserver) {
             nativeChromeObserver.disconnect();
             nativeChromeObserver = null;
+        }
+        if (typeof stopXeatreNativeChromeObserver === 'function') {
+            try { stopXeatreNativeChromeObserver(); } catch (_) {}
         }
         if (examinoSettingsRefreshTimer) {
             clearTimeout(examinoSettingsRefreshTimer);
@@ -612,6 +678,9 @@
         if (typeof omtKickoffSyncStart === 'function') omtKickoffSyncStart();
         if (site.id === 'examino') {
             initExaminoPlayerFeatures();
+        }
+        if (site.id === 'xeatre' && typeof initXeatrePlayerFeatures === 'function') {
+            initXeatrePlayerFeatures();
         }
         if (site.id === 'local') {
             installLocalPlayerFeatures();
@@ -5705,6 +5774,192 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         startAutoVodWatcher();
     }
 
+/* Xeatre-only: hide ALL host chrome (6-column panel + native VJS bar).
+ * Safe rules only — never remove nodes, never hide a media host / <video>
+ * ancestor (Examino 2.0.4 lesson). No window.postMessage (Examino 2.0.5).
+ */
+    let xeatreChromeObserver = null;
+
+    function injectXeatreHideCSS() {
+        let style = document.getElementById('omt-xeatre-hide-css');
+        if (!style) {
+            style = document.createElement('style');
+            style.id = 'omt-xeatre-hide-css';
+            (document.head || document.documentElement).appendChild(style);
+        }
+        style.textContent = [
+            /* Native Video.js chrome — leaf controls only, never .video-js shell. */
+            'html.omt-host-xeatre.omt-hud-on .vjs-control-bar,',
+            'html.omt-host-xeatre.omt-hud-on .vjs-big-play-button,',
+            'html.omt-host-xeatre.omt-hud-on .vjs-loading-spinner,',
+            'html.omt-host-xeatre.omt-hud-on .vjs-poster,',
+            'html.omt-host-xeatre.omt-hud-on .vjs-text-track-display,',
+            'html.omt-host-xeatre.omt-hud-on .vjs-menu-button-popup .vjs-menu,',
+            'html.omt-host-xeatre.omt-hud-on .vjs-error-display,',
+            'html.omt-host-xeatre.omt-hud-on .vjs-modal-dialog,',
+            /* Known host panel controls from js/dvrplayer.js + screenshot layout. */
+            'html.omt-host-xeatre.omt-hud-on #jwplay,',
+            'html.omt-host-xeatre.omt-hud-on #GoLive,',
+            'html.omt-host-xeatre.omt-hud-on #GoStart,',
+            'html.omt-host-xeatre.omt-hud-on #FullScreen,',
+            'html.omt-host-xeatre.omt-hud-on #Speed025,',
+            'html.omt-host-xeatre.omt-hud-on #Speed05,',
+            'html.omt-host-xeatre.omt-hud-on #Speed1,',
+            'html.omt-host-xeatre.omt-hud-on #Speed15,',
+            'html.omt-host-xeatre.omt-hud-on #Speed2,',
+            'html.omt-host-xeatre.omt-hud-on #AutoHide,',
+            'html.omt-host-xeatre.omt-hud-on #autohide,',
+            'html.omt-host-xeatre.omt-hud-on .xeatre-control-panel,',
+            'html.omt-host-xeatre.omt-hud-on .xeatre-host-panel,',
+            'html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden {',
+            '  display: none !important;',
+            '  visibility: hidden !important;',
+            '  opacity: 0 !important;',
+            '  pointer-events: none !important;',
+            '}',
+            /* Undo if a sticky class ever lands on a media host. */
+            'html.omt-host-xeatre.omt-hud-on .video-js.omt-xeatre-host-hidden,',
+            'html.omt-host-xeatre.omt-hud-on .vjs-tech.omt-xeatre-host-hidden,',
+            'html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(video),',
+            'html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(.vjs-tech) {',
+            '  display: block !important;',
+            '  visibility: visible !important;',
+            '  opacity: 1 !important;',
+            '  pointer-events: auto !important;',
+            '}'
+        ].join('\n');
+    }
+
+    function omtXeatreIsMediaHostNode(el) {
+        if (!el || el.nodeType !== 1) return true;
+        try {
+            if (el.tagName === 'VIDEO' || el.tagName === 'AUDIO') return true;
+            if (el.classList && (
+                el.classList.contains('video-js') ||
+                el.classList.contains('vjs-tech') ||
+                el.classList.contains('vjs-player')
+            )) return true;
+            if (el.id === 'omt-root' || (omtRoot && omtRoot.contains(el))) return true;
+            if (el.querySelector && el.querySelector('video, .vjs-tech, .video-js')) return true;
+        } catch (_) {
+            return true;
+        }
+        return false;
+    }
+
+    function markXeatreHostHidden(el) {
+        if (!el || el.id === 'omt-root' || (omtRoot && omtRoot.contains(el))) return;
+        if (omtXeatreIsMediaHostNode(el)) return;
+        el.classList.add('omt-xeatre-host-hidden');
+    }
+
+    function scrubXeatreHiddenOnMedia() {
+        document.querySelectorAll('.omt-xeatre-host-hidden').forEach((el) => {
+            if (omtXeatreIsMediaHostNode(el)) el.classList.remove('omt-xeatre-host-hidden');
+        });
+    }
+
+    /** Hide the 6-column host panel (below-video and floating) + Auto hide. */
+    function hideXeatreNativeChrome() {
+        injectXeatreHideCSS();
+        scrubXeatreHiddenOnMedia();
+
+        // Stamp the nearest non-media ancestor of known control IDs so both the
+        // docked and floating panel copies disappear without touching <video>.
+        const controlIds = [
+            'jwplay', 'GoLive', 'GoStart', 'FullScreen',
+            'Speed025', 'Speed05', 'Speed1', 'Speed15', 'Speed2',
+            'AutoHide', 'autohide'
+        ];
+        const panels = new Set();
+        controlIds.forEach((id) => {
+            const btn = document.getElementById(id);
+            if (!btn) return;
+            markXeatreHostHidden(btn);
+            let node = btn.parentElement;
+            for (let i = 0; i < 5 && node; i++) {
+                if (omtXeatreIsMediaHostNode(node)) break;
+                // Prefer a panel-sized container (multiple columns / many buttons).
+                const kids = node.querySelectorAll
+                    ? node.querySelectorAll('button, [id], .selected').length
+                    : 0;
+                if (kids >= 6) {
+                    panels.add(node);
+                    break;
+                }
+                node = node.parentElement;
+            }
+        });
+        panels.forEach((p) => markXeatreHostHidden(p));
+
+        document.querySelectorAll(
+            '.xeatre-control-panel, .xeatre-host-panel, [data-xeatre-panel], #xeatre-controls'
+        ).forEach(markXeatreHostHidden);
+
+        // Heuristic: docked/floating grids that look like the screenshot panel
+        // (PLAY/PAUSE + LIVE + Speed labels) but never inside .video-js media tree
+        // beyond the control bar (control bar already CSS-hidden).
+        document.querySelectorAll('div, section, aside, nav').forEach((el) => {
+            if (!el || el.closest('#omt-root')) return;
+            if (omtXeatreIsMediaHostNode(el)) return;
+            if (el.closest && el.closest('.vjs-control-bar')) {
+                markXeatreHostHidden(el);
+                return;
+            }
+            const text = (el.innerText || '').replace(/\s+/g, ' ').trim();
+            if (!text || text.length > 400) return;
+            const hasPlay = /\bPLAY\b/i.test(text) && /\bPAUSE\b/i.test(text);
+            const hasLive = /\bLIVE\b/i.test(text);
+            const hasSpeed = /\b0\.25\s*Speed\b/i.test(text) || /\bSpeed\b/i.test(text);
+            const hasSkip = /(-|−|\+)\s*30\s*s/i.test(text) && /(-|−|\+)\s*2\s*s/i.test(text);
+            const hasAutoHide = /\bAuto\s*hide\b/i.test(text);
+            if ((hasPlay && hasLive && (hasSpeed || hasSkip)) || (hasAutoHide && hasLive && hasPlay)) {
+                markXeatreHostHidden(el);
+            }
+        });
+    }
+
+    const OMT_XEATRE_CHROME_MIN_GAP_MS = 1000;
+    try { window.__omtHideXeatreNativeChrome = hideXeatreNativeChrome; } catch (_) {}
+
+    function startXeatreNativeChromeObserver() {
+        if (xeatreChromeObserver) return;
+        let scheduled = null;
+        let lastRun = 0;
+        xeatreChromeObserver = new MutationObserver((records) => {
+            if (scheduled) return;
+            const hostChange = records.some((r) => {
+                const t = r.target;
+                return !(t && t.nodeType === 1 && (t.id === 'omt-root' || (t.closest && t.closest('#omt-root'))));
+            });
+            if (!hostChange) return;
+            const wait = Math.max(50, OMT_XEATRE_CHROME_MIN_GAP_MS - (Date.now() - lastRun));
+            scheduled = setTimeout(() => {
+                scheduled = null;
+                lastRun = Date.now();
+                hideXeatreNativeChrome();
+            }, wait);
+        });
+        const root = document.documentElement || document.body;
+        if (root) {
+            xeatreChromeObserver.observe(root, { childList: true, subtree: true });
+        }
+    }
+
+    function stopXeatreNativeChromeObserver() {
+        if (xeatreChromeObserver) {
+            try { xeatreChromeObserver.disconnect(); } catch (_) {}
+            xeatreChromeObserver = null;
+        }
+    }
+
+    function initXeatrePlayerFeatures() {
+        injectXeatreHideCSS();
+        hideXeatreNativeChrome();
+        startXeatreNativeChromeObserver();
+        console.log('[OMT] Xeatre host chrome hide installed.');
+    }
+
 /* Local player: file picker, drag-and-drop, per-window open-file control. */
     let localObjectUrl = null;
     let localFeaturesInstalled = false;
@@ -5832,7 +6087,7 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         console.log('[OMT] Local player file/dnd installed.');
     }
 
-/* Content-script entry: early Examino hooks, then boot. */
+/* Content-script entry: early Examino / Xeatre hooks, then boot. */
     /* =========================================================
        ENTRY POINT
        ========================================================= */
@@ -5844,6 +6099,15 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         if (document.documentElement) {
             startExaminoNativeChromeObserver();
             hideExaminoNativeChrome();
+        }
+    }
+
+    if (site.id === 'xeatre') {
+        try { document.documentElement.classList.add('omt-host-xeatre'); } catch (_) {}
+        if (typeof injectXeatreHideCSS === 'function') injectXeatreHideCSS();
+        if (document.documentElement) {
+            if (typeof startXeatreNativeChromeObserver === 'function') startXeatreNativeChromeObserver();
+            if (typeof hideXeatreNativeChrome === 'function') hideXeatreNativeChrome();
         }
     }
 
