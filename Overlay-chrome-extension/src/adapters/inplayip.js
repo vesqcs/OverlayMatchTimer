@@ -39,15 +39,13 @@
         },
 
         isLiveStream() {
+            // Selectors only — never innerText. Close-X tears down the VJS tree
+            // under .players-container; reading innerText there from a boot
+            // MutationObserver forced full layout on every mutation and froze
+            // Chrome ("page unresponsive") with the extension on (2.1.1 field).
             const hasLiveUI = !!document.querySelector('.vjs-live-control, .vjs-live-display');
             const hasProgress = !!document.querySelector('.vjs-progress-control');
-            if (hasLiveUI && !hasProgress) return true;
-            // Never read document.body.innerText on /schedule — that forces a
-            // full layout of the curtain table. Scan player chrome only.
-            const playerRoot = document.querySelector('.video-js, .player-container, .players-container');
-            const text = playerRoot ? (playerRoot.innerText || '') : '';
-            if (/\b(hd|sd)\s+live\b/i.test(text) && !hasProgress) return true;
-            return false;
+            return !!(hasLiveUI && !hasProgress);
         },
 
         suppressHostControls(videoEl) {

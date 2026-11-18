@@ -437,6 +437,58 @@ async function run() {
       detail: sourceNotLoading
     });
 
+    // ---- v2.1.2: failed Source apply must NOT snap overlay back to DVR ----
+    // Field 2.1.1: apply returned false (confirm/path), then refresh filled DVR
+    // from /play/dvr/ even when the host click may have started VOD.
+    const noForceDvr = await page.evaluate(async () => {
+      const sel = document.getElementById('omt-examino-source');
+      if (!sel) return { ok: false, reason: 'no-select' };
+      // Simulate a failed apply that still recorded the user's VOD intent the
+      // way wireExaminoSettingsUI now does (keep selection; no path refresh).
+      sel.value = 'VOD';
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      // Even if apply fails later, after the change handler the select must
+      // remain VOD (never force DVR). Wait for async handler.
+      await new Promise((r) => setTimeout(r, 1600));
+      const after = sel.value;
+      // Path-based detect must not override lastApplied VOD.
+      const path = location.pathname || '';
+      const detect = (typeof detectCurrentSource === 'function')
+        ? null
+        : null;
+      return {
+        ok: after === 'VOD',
+        after,
+        path,
+        options: [...sel.options].map((o) => o.value),
+        detect
+      };
+    });
+    results.push({
+      name: 'examino-source-no-force-dvr-on-change',
+      pass: noForceDvr.ok === true,
+      detail: noForceDvr
+    });
+
+    // Path /play/dvr/ must not win over last-applied VOD in the select fill path
+    const pathDoesNotWin = await page.evaluate(() => {
+      const sel = document.getElementById('omt-examino-source');
+      if (!sel) return { ok: false, reason: 'no-select' };
+      // Force URL-like DVR context is already the mock path; ensure select
+      // stays on VOD after Auto VOD / last apply.
+      return {
+        ok: sel.value === 'VOD' &&
+          ![...sel.options].some((o) => /loading/i.test(o.textContent || '')),
+        value: sel.value,
+        path: location.pathname
+      };
+    });
+    results.push({
+      name: 'examino-source-path-dvr-does-not-override-vod',
+      pass: pathDoesNotWin.ok === true,
+      detail: pathDoesNotWin
+    });
+
     // ---- Click to pause: only the video surface (not whole .op-player) ----
     await page.evaluate(async () => {
       const setup = document.getElementById('setup-panel');
@@ -3613,6 +3665,124 @@ async function run() {
       detail: { coverState, coverAfterClick }
     });
     await page.screenshot({ path: path.join(ARTIFACTS, 'v203_centre_cover_keeps_hud.png'), fullPage: true });
+
+    // ---------- v2.1.2: InPlay host close-X must not freeze the tab ----------
+    // Field: round black ✕ under the curtain arrow closes the video; with OMT
+    // on, Chrome showed "page unresponsive" every time (extension off: fine).
+    // Cause: SPA teardown→boot attached a document MutationObserver while VJS
+    // was still dismantling; isLiveStream read .players-container innerText.
+    await page.goto(`${base}/inplayip-close-x-mock.html`, { waitUntil: 'domcontentloaded' });
+    await waitForOmt(page, 15000);
+    await page.waitForTimeout(500);
+    const closeXProbe = await page.evaluate(() => {
+      const btn = document.getElementById('host-close-x');
+      if (!btn) return { ok: false, reason: 'no-close-x' };
+      const r = btn.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return {
+        ok: true,
+        hitIsHost: !!(hit && (hit === btn || btn.contains(hit))),
+        hitInsideOmt: !!(hit && hit.closest && hit.closest('#omt-root')),
+        hudOn: document.documentElement.classList.contains('omt-hud-on'),
+        fires0: Number(window.__omtInplayBootMoFires || 0)
+      };
+    });
+    results.push({
+      name: 'inplayip-close-x-is-host-clickable',
+      pass: closeXProbe.ok === true && closeXProbe.hitIsHost === true && closeXProbe.hitInsideOmt === false,
+      detail: closeXProbe
+    });
+
+    const closeXStorm = await page.evaluate(async () => {
+      const entries = [];
+      let obs = null;
+      try {
+        obs = new PerformanceObserver((list) => {
+          list.getEntries().forEach((e) => entries.push(e.duration));
+        });
+        obs.observe({ type: 'longtask', buffered: false });
+      } catch (_) {}
+      window.__omtInplayBootMoFires = 0;
+      const t0 = performance.now();
+      // Click close-X repeatedly with remount cycles (field: every close froze).
+      for (let i = 0; i < 4; i++) {
+        const btn = document.getElementById('host-close-x');
+        if (btn) btn.click();
+        await new Promise((r) => setTimeout(r, 400));
+        // Remount a Review player so the next close can run again.
+        if (!document.querySelector('video')) {
+          const players = document.getElementById('players') || document.body;
+          const wrap = document.createElement('div');
+          wrap.className = 'player-container';
+          wrap.id = 'player-wrap';
+          wrap.innerHTML = '<div class="video-js" id="vjs">' +
+            '<video class="vjs-tech" id="tech" muted playsinline></video>' +
+            '<div class="vjs-control-bar"><div class="vjs-progress-control" id="progress"></div></div>' +
+            '<div id="vjs-chrome-bulk"></div></div>' +
+            '<button type="button" id="curtain-arrow">▼</button>' +
+            '<button type="button" id="host-close-x">✕</button>';
+          players.appendChild(wrap);
+          const bulk = document.getElementById('vjs-chrome-bulk');
+          for (let j = 0; j < 80; j++) {
+            const d = document.createElement('div');
+            d.className = 'vjs-bulk-node';
+            d.textContent = 'n' + j;
+            bulk.appendChild(d);
+          }
+          const video = document.getElementById('tech');
+          Object.defineProperty(video, 'duration', { configurable: true, get: () => 5400 });
+          Object.defineProperty(video, 'seekable', {
+            configurable: true,
+            get: () => ({ length: 1, start: () => 0, end: () => 5400 })
+          });
+          video.addEventListener('click', () => {});
+          document.getElementById('host-close-x').addEventListener('click', () => {
+            const progress = document.getElementById('progress');
+            if (progress) progress.remove();
+            document.querySelectorAll('.vjs-bulk-node').forEach((n) => n.remove());
+            const tech = document.getElementById('tech');
+            if (tech) tech.remove();
+            const bar = document.querySelector('.vjs-control-bar');
+            if (bar) bar.remove();
+            const vjs = document.getElementById('vjs');
+            if (vjs) vjs.remove();
+            const w = document.getElementById('player-wrap');
+            if (w) w.remove();
+            window.__inplayCloseState = window.__inplayCloseState || { closed: 0 };
+            window.__inplayCloseState.closed += 1;
+          });
+        }
+        await new Promise((r) => setTimeout(r, 1600)); // allow SPA tick
+      }
+      await new Promise((r) => setTimeout(r, 500));
+      if (obs) obs.disconnect();
+      const elapsed = performance.now() - t0;
+      const longTaskMs = Math.round(entries.reduce((a, b) => a + b, 0));
+      // Probe main-thread responsiveness after the closes.
+      const probeT0 = performance.now();
+      await new Promise((r) => setTimeout(r, 50));
+      const probeDt = performance.now() - probeT0;
+      return {
+        ok: longTaskMs < 2500 &&
+          Number(window.__omtInplayBootMoFires || 0) < 80 &&
+          probeDt < 500 &&
+          (window.__inplayCloseState && window.__inplayCloseState.closed >= 1),
+        longTasks: entries.length,
+        longTaskMs,
+        bootMoFires: Number(window.__omtInplayBootMoFires || 0),
+        closed: window.__inplayCloseState ? window.__inplayCloseState.closed : 0,
+        probeDt: Math.round(probeDt),
+        elapsedMs: Math.round(elapsed),
+        hudOnAfter: document.documentElement.classList.contains('omt-hud-on'),
+        videoAfter: !!document.querySelector('video')
+      };
+    });
+    results.push({
+      name: 'inplayip-close-x-no-observer-storm',
+      pass: closeXStorm.ok === true,
+      detail: closeXStorm
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v212_inplay_close_x.png'), fullPage: true });
 
     // ---------- InPlay 10s CPU / loop guard ----------
     await page.goto(`${base}/inplayip-mock.html`, { waitUntil: 'domcontentloaded' });

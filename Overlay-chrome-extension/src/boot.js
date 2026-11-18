@@ -12,6 +12,9 @@
             bootObserver.disconnect();
             bootObserver = null;
         }
+        if (typeof clearInplayBootMoTimer === 'function') {
+            try { clearInplayBootMoTimer(); } catch (_) {}
+        }
         // Stop any running timers
         if (mouseMoveTimeout) {
             clearTimeout(mouseMoveTimeout);
@@ -118,11 +121,33 @@
        Examino waits for a (possibly late / replaced) <video> via
        MutationObserver — OpenPlayer mounts after document_idle.
     */
+
+    // InPlay close-X: after video is gone, never attach a document-wide
+    // MutationObserver while the host is still tearing down the player tree.
+    // Poll quietly until a new Review <video> appears (SPA interval).
+    let inplayBootMoTimer = null;
+    let inplayQuietUntil = 0;
+    try { window.__omtInplayBootMoFires = 0; } catch (_) {}
+
+    function clearInplayBootMoTimer() {
+        if (inplayBootMoTimer) {
+            clearTimeout(inplayBootMoTimer);
+            inplayBootMoTimer = null;
+        }
+    }
+
+    function startInplayIdleWatch() {
+        // Poll-only wait for the next Review session. No MutationObserver.
+        console.log('[OMT] InPlay idle watch (no MutationObserver) — waiting for next video.');
+        startSPAMonitor();
+    }
+
     function boot() {
         if (bootObserver) {
             bootObserver.disconnect();
             bootObserver = null;
         }
+        clearInplayBootMoTimer();
 
         // --- Immediate check: player may already be in the DOM ---
         if (isReviewStream()) {
@@ -136,23 +161,45 @@
             return;
         }
 
+        // InPlay: after close-X quiet period, stay on interval polling only.
+        if (site.id === 'inplayip' && Date.now() < inplayQuietUntil) {
+            startInplayIdleWatch();
+            return;
+        }
+
         // --- Player / video not ready yet: observe DOM mutations ---
+        // InPlay: debounce heavily. Close-X mutates hundreds of VJS nodes; a
+        // sync observer callback per batch used to re-enter mode detection and
+        // freeze the tab. Examino keeps the immediate observer (OpenPlayer).
         bootObserver = new MutationObserver(() => {
             if (site.id === 'inplayip') {
-                if (isReviewStream()) {
-                    const v = findVideo();
-                    if (!v) return; // Video element itself not yet attached — keep watching.
-                    bootObserver.disconnect();
-                    bootObserver = null;
-                    init(v);
-                    return;
-                }
-                if (isLiveStream()) {
-                    bootObserver.disconnect();
-                    bootObserver = null;
-                    console.log('[OMT] Live stream — extension inactive. Watching for next session.');
-                    startSPAMonitor();
-                }
+                try { window.__omtInplayBootMoFires = (window.__omtInplayBootMoFires || 0) + 1; } catch (_) {}
+                if (inplayBootMoTimer) return;
+                inplayBootMoTimer = setTimeout(() => {
+                    inplayBootMoTimer = null;
+                    if (!bootObserver) return;
+                    if (Date.now() < inplayQuietUntil) return;
+                    if (isReviewStream()) {
+                        const v = findVideo();
+                        if (!v) return;
+                        if (bootObserver) {
+                            bootObserver.disconnect();
+                            bootObserver = null;
+                        }
+                        clearInplayBootMoTimer();
+                        init(v);
+                        return;
+                    }
+                    if (isLiveStream()) {
+                        if (bootObserver) {
+                            bootObserver.disconnect();
+                            bootObserver = null;
+                        }
+                        clearInplayBootMoTimer();
+                        console.log('[OMT] Live stream — extension inactive. Watching for next session.');
+                        startSPAMonitor();
+                    }
+                }, 250);
                 return;
             }
 
@@ -203,8 +250,18 @@
             const currentRoot = document.getElementById('omt-root');
 
             if (!currentVid) {
-                // Video element gone — player was closed. Clean up and go back
-                // to watching state so the next session triggers correctly.
+                // Video element gone — player was closed (InPlay close-X / leave).
+                if (site.id === 'inplayip') {
+                    // Do NOT boot() → document MutationObserver while the host is
+                    // still dismantling VJS. Quiet poll until a new video appears.
+                    const hadSession = !!(omtRoot || vid || bootObserver);
+                    if (hadSession) {
+                        teardown();
+                        inplayQuietUntil = Date.now() + 4000;
+                        startInplayIdleWatch();
+                    }
+                    return;
+                }
                 teardown();
                 boot();
                 return;
@@ -213,6 +270,9 @@
             if (currentVid && !currentRoot) {
                 // A new stream loaded but our HUD is missing — stream was swapped.
                 // Full teardown, then re-evaluate mode from scratch.
+                if (site.id === 'inplayip' && Date.now() < inplayQuietUntil) {
+                    return; // still in close-X quiet window
+                }
                 teardown();
                 boot();
                 return;
@@ -220,6 +280,9 @@
 
             if (currentVid && currentVid !== vid) {
                 // The video element itself was replaced by a new one.
+                if (site.id === 'inplayip' && Date.now() < inplayQuietUntil) {
+                    return;
+                }
                 teardown();
                 boot();
             }
