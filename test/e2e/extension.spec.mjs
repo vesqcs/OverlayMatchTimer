@@ -221,19 +221,37 @@ async function run() {
     await page.goto(`${base}/examino-mock.html`, { waitUntil: 'domcontentloaded' });
     await waitForOmt(page, 20000);
 
-    // Auto-VOD should land quickly via MutationObserver (not a fixed 1.2s+ delay).
+    // Auto-VOD must change the real media (duration + media URL), not just the select label.
     const autoVodStarted = Date.now();
     await page.waitForFunction(() => {
       const v = document.querySelector('video');
       const sel = document.getElementById('omt-examino-source');
+      const url = (window.__omtMockMediaUrl || (v && v.dataset && v.dataset.omtMediaUrl) ||
+        (v && v.currentSrc) || '');
       return v && v.dataset.omtSource === 'VOD' && v.duration >= 7000 &&
-        sel && sel.value === 'VOD' && !sel.disabled;
+        /vod/i.test(url) && !/\/live\//i.test(url) &&
+        sel && /vod/i.test(sel.value) && !sel.disabled;
     }, null, { timeout: 12000 });
     const autoVodMs = Date.now() - autoVodStarted;
+    const autoVodMedia = await page.evaluate(() => {
+      const v = document.querySelector('video');
+      return {
+        omtSource: v && v.dataset.omtSource,
+        duration: v && v.duration,
+        mediaUrl: window.__omtMockMediaUrl || (v && v.dataset && v.dataset.omtMediaUrl) || (v && v.currentSrc) || null,
+        sel: (document.getElementById('omt-examino-source') || {}).value || null
+      };
+    });
     results.push({
       name: 'examino-auto-vod-fast',
-      pass: autoVodMs < 9000,
-      detail: { autoVodMs }
+      pass: autoVodMs < 9000 && autoVodMedia.omtSource === 'VOD' && autoVodMedia.duration >= 7000 &&
+        /vod/i.test(String(autoVodMedia.mediaUrl || '')),
+      detail: { autoVodMs, autoVodMedia }
+    });
+    results.push({
+      name: 'examino-auto-vod-media-url-is-vod',
+      pass: /vod/i.test(String(autoVodMedia.mediaUrl || '')) && !/\/live\//i.test(String(autoVodMedia.mediaUrl || '')),
+      detail: autoVodMedia
     });
 
     // ---- Simplified settings: Source + Auto-VOD only ----
@@ -267,10 +285,9 @@ async function run() {
     });
     results.push({
       name: 'examino-source-options-clean',
-      pass: settingsShape.sourceOptions.length === 2 &&
-        settingsShape.sourceOptions.includes('DVR') &&
-        settingsShape.sourceOptions.includes('VOD') &&
-        settingsShape.sourceOptions.every((t) => t === 'DVR' || t === 'VOD'),
+      // v1.2.0 scrape keeps host op-data-values (may include decoys); must include DVR+VOD.
+      pass: settingsShape.sourceOptions.includes('DVR') &&
+        settingsShape.sourceOptions.includes('VOD'),
       detail: { sourceOptions: settingsShape.sourceOptions }
     });
     results.push({
@@ -358,30 +375,40 @@ async function run() {
     });
     results.push({ name: 'examino-native-source-switch', pass: nativeSource.ok === true, detail: nativeSource });
 
-    // Overlay Source select must apply without "Source change failed"
+    // Overlay Source select must apply VOD media (URL + duration), not only the label
     const overlaySwitch = await page.evaluate(async () => {
       const sel = document.getElementById('omt-examino-source');
       if (!sel) return { ok: false, reason: 'no-select' };
-      sel.focus();
-      await new Promise((r) => setTimeout(r, 700));
-      if ([...sel.options].every((o) => o.value !== 'VOD')) {
+      // Prefer a scraped option whose value/label looks like VOD (v1.2.0 path).
+      const vodOpt = [...sel.options].find((o) => /vod/i.test(o.value) || /vod/i.test(o.textContent || ''));
+      if (!vodOpt) {
         return { ok: false, reason: 'no-vod-option', options: [...sel.options].map((o) => o.value) };
       }
-      sel.value = 'VOD';
+      sel.value = vodOpt.value;
       sel.dispatchEvent(new Event('change', { bubbles: true }));
       await new Promise((r) => setTimeout(r, 1400));
+      const v = document.querySelector('video');
       const osd = document.getElementById('osd-message');
       const osdText = osd ? (osd.textContent || '') : '';
+      const mediaUrl = window.__omtMockMediaUrl || (v && v.dataset && v.dataset.omtMediaUrl) || (v && v.currentSrc) || '';
       return {
-        ok: (window.__omtMockSource || document.querySelector('video')?.dataset?.omtSource) === 'VOD' &&
-          sel.value === 'VOD' &&
+        ok: (window.__omtMockSource || (v && v.dataset && v.dataset.omtSource)) === 'VOD' &&
+          v && v.duration >= 7000 &&
+          /vod/i.test(mediaUrl) && !/\/live\//i.test(mediaUrl) &&
           !/Source change failed/i.test(osdText),
         source: window.__omtMockSource,
         sel: sel.value,
+        mediaUrl,
+        duration: v && v.duration,
         osdText
       };
     });
     results.push({ name: 'examino-overlay-source-switch', pass: overlaySwitch.ok === true, detail: overlaySwitch });
+    results.push({
+      name: 'examino-overlay-source-media-url-is-vod',
+      pass: overlaySwitch.ok === true && /vod/i.test(String(overlaySwitch.mediaUrl || '')),
+      detail: { mediaUrl: overlaySwitch.mediaUrl, duration: overlaySwitch.duration }
+    });
 
     // ---- v2.1.1: temp-visible gear must beat scoped host-hide (Auto VOD path) ----
     // Field 2.1.0: html.omt-host-examino.omt-hud-on .setting-holder / .omt-examino-native-hidden

@@ -270,6 +270,19 @@
           }
         });
         video.dataset.omtSource = source;
+        // Field-shaped media URL: DVR = live/chunklist, VOD = vod/chunklist.
+        // Real Examino swaps the HLS manifest this way when gear→VOD succeeds.
+        const mediaUrl = source === 'VOD'
+            ? 'https://cdn.example.test/vod/dm-mock/chunklist_vod.m3u8'
+            : 'https://10.217.82.32:8001/live/dm-mock/chunklist_dvr.m3u8';
+        video.dataset.omtMediaUrl = mediaUrl;
+        window.__omtMockMediaUrl = mediaUrl;
+        try {
+            Object.defineProperty(video, 'currentSrc', {
+                configurable: true,
+                get: () => mediaUrl
+            });
+        } catch (_) {}
         // OpenPlayer-like: click plays when paused but does NOT pause when playing.
         video.addEventListener('click', () => {
           window.__omtNativeClickPlay = (window.__omtNativeClickPlay || 0) + 1;
@@ -292,6 +305,7 @@
         host.appendChild(next);
         status.textContent = 'Source=' + source + ' — video replaced';
         window.__omtMockSource = source;
+        window.__omtMockMediaUrl = next.dataset.omtMediaUrl || window.__omtMockMediaUrl;
         window.__omtDvrFrozen = !!window.__omtDvrFrozen;
       }
 
