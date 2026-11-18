@@ -441,7 +441,7 @@ async function run() {
       }
       sel.value = vodOpt.value;
       sel.dispatchEvent(new Event('change', { bubbles: true }));
-      await new Promise((r) => setTimeout(r, 1400));
+      await new Promise((r) => setTimeout(r, 2500));
       const v = document.querySelector('video');
       const osd = document.getElementById('osd-message');
       const osdText = osd ? (osd.textContent || '') : '';
@@ -478,7 +478,7 @@ async function run() {
       }
       sel.value = dvrOpt.value;
       sel.dispatchEvent(new Event('change', { bubbles: true }));
-      await new Promise((r) => setTimeout(r, 1600));
+      await new Promise((r) => setTimeout(r, 2800));
       const v = document.querySelector('video');
       const mediaUrl = window.__omtMockMediaUrl || (v && v.dataset && v.dataset.omtMediaUrl) || '';
       return {
@@ -939,7 +939,7 @@ async function run() {
       await new Promise((r) => setTimeout(r, 700));
       sel.value = 'DVR';
       sel.dispatchEvent(new Event('change', { bubbles: true }));
-      await new Promise((r) => setTimeout(r, 1200));
+      await new Promise((r) => setTimeout(r, 2800));
       const v2 = document.querySelector('video');
       const frozen = window.__omtDvrFrozen === true;
       const source = window.__omtMockSource || v2?.dataset?.omtSource;
@@ -982,21 +982,23 @@ async function run() {
       // Switch to VOD (exact) — media URL must become VOD chunklist.
       sel.value = 'VOD';
       sel.dispatchEvent(new Event('change', { bubbles: true }));
-      await new Promise((r) => setTimeout(r, 1400));
+      await new Promise((r) => setTimeout(r, 2500));
       const vodUrl = window.__omtMockMediaUrl || '';
       const vodSrc = window.__omtMockSource || (document.querySelector('video') || {}).dataset?.omtSource;
       const vodCt = (document.querySelector('video') || {}).currentTime;
-      // Deep seek then DVR — media URL live + clamp.
+      // Deep seek then DVR — media URL live + clamp. Re-query select after shell rebuild.
       const v = document.querySelector('video');
       if (v) v.currentTime = 3000;
       await new Promise((r) => setTimeout(r, 80));
-      sel.value = 'DVR';
-      sel.dispatchEvent(new Event('change', { bubbles: true }));
-      await new Promise((r) => setTimeout(r, 1400));
+      const sel2 = document.getElementById('omt-examino-source') || sel;
+      sel2.value = 'DVR';
+      sel2.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 2800));
       const dvrUrl = window.__omtMockMediaUrl || '';
       const dvrSrc = window.__omtMockSource || (document.querySelector('video') || {}).dataset?.omtSource;
       const dvrCt = (document.querySelector('video') || {}).currentTime;
       const frozen = window.__omtDvrFrozen === true;
+      const selAfter = document.getElementById('omt-examino-source') || sel2;
       return {
         ok: opts.length === 2 && opts[0] === 'DVR' && opts[1] === 'VOD' &&
           vodSrc === 'VOD' && /vod/i.test(vodUrl) && !/\/live\//i.test(vodUrl) &&
@@ -1011,7 +1013,7 @@ async function run() {
         dvrSrc,
         dvrCt,
         frozen,
-        sel: sel.value
+        sel: selAfter.value
       };
     });
     results.push({
@@ -1020,10 +1022,108 @@ async function run() {
       detail: dupRoundTrip
     });
 
+    // v2.2.3: post-VOD player shell rebuild + media-confirm — VOD→DVR must change
+    // chunklist back to DVR and clamp near live; then DVR→VOD→DVR→VOD round-trip.
+    const postVodShell = await page.evaluate(async () => {
+      const sel = document.getElementById('omt-examino-source');
+      if (!sel) return { ok: false, reason: 'no-select' };
+      const genBefore = window.__omtPlayerGeneration || 0;
+      // Ensure VOD first (media URL).
+      sel.value = 'VOD';
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 2000));
+      const vodUrl = window.__omtMockMediaUrl || '';
+      const vodSrc = window.__omtMockSource;
+      const genAfterVod = window.__omtPlayerGeneration || 0;
+      const v = document.querySelector('video');
+      if (v) v.currentTime = 5000;
+      await new Promise((r) => setTimeout(r, 80));
+      // Concurrent refresh pressure while switching (field race).
+      const refreshN = window.__omtMockPostSwapRefresh || 0;
+      sel.value = 'DVR';
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 2500));
+      const dvrUrl = window.__omtMockMediaUrl || '';
+      const dvrSrc = window.__omtMockSource;
+      const dvrCt = (document.querySelector('video') || {}).currentTime;
+      const frozen = window.__omtDvrFrozen === true;
+      const genAfterDvr = window.__omtPlayerGeneration || 0;
+      const osd = (document.getElementById('osd-message') || {}).textContent || '';
+      // Round-trip DVR→VOD→DVR→VOD
+      const trip = [];
+      for (const target of ['VOD', 'DVR', 'VOD']) {
+        sel.value = target;
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        await new Promise((r) => setTimeout(r, 2000));
+        trip.push({
+          target,
+          source: window.__omtMockSource,
+          url: window.__omtMockMediaUrl || '',
+          sel: sel.value,
+          gen: window.__omtPlayerGeneration || 0
+        });
+      }
+      const tripOk = trip.length === 3 &&
+        trip[0].source === 'VOD' && /vod/i.test(trip[0].url) &&
+        trip[1].source === 'DVR' && /dvr|\/live\//i.test(trip[1].url) &&
+        trip[2].source === 'VOD' && /vod/i.test(trip[2].url) &&
+        trip.every((t) => t.sel === t.target);
+      return {
+        ok: vodSrc === 'VOD' && /vod/i.test(vodUrl) &&
+          dvrSrc === 'DVR' && /dvr|\/live\//i.test(dvrUrl) && !/\/vod\//i.test(dvrUrl) &&
+          !frozen && typeof dvrCt === 'number' && dvrCt <= 330 && dvrCt > 200 &&
+          genAfterVod > genBefore && genAfterDvr > genAfterVod &&
+          !/Source change failed/i.test(osd) &&
+          tripOk,
+        genBefore,
+        genAfterVod,
+        genAfterDvr,
+        refreshN,
+        vodUrl,
+        vodSrc,
+        dvrUrl,
+        dvrSrc,
+        dvrCt,
+        frozen,
+        osd,
+        trip,
+        sel: sel.value
+      };
+    });
+    results.push({
+      name: 'examino-source-vod-to-dvr-media-url-after-shell-rebuild',
+      pass: postVodShell.ok === true &&
+        postVodShell.dvrSrc === 'DVR' &&
+        /dvr|\/live\//i.test(String(postVodShell.dvrUrl || '')),
+      detail: postVodShell
+    });
+    results.push({
+      name: 'examino-source-dvr-vod-dvr-vod-roundtrip',
+      pass: postVodShell.ok === true && Array.isArray(postVodShell.trip) && postVodShell.trip.length === 3,
+      detail: { trip: postVodShell.trip, genAfterDvr: postVodShell.genAfterDvr }
+    });
+
     // Manual DVR must stop auto-VOD from flipping back
     await page.waitForTimeout(2500);
     const stayedDvr = await page.evaluate(() => window.__omtMockSource || document.querySelector('video')?.dataset?.omtSource);
-    results.push({ name: 'examino-manual-dvr-wins', pass: stayedDvr === 'DVR', detail: { stayedDvr } });
+    // After round-trip we end on VOD — flip to DVR once more for the manual-wins check.
+    const stayedDvrFinal = await page.evaluate(async () => {
+      const sel = document.getElementById('omt-examino-source');
+      if (!sel) return { ok: false };
+      sel.value = 'DVR';
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 2200));
+      await new Promise((r) => setTimeout(r, 2500));
+      return {
+        ok: (window.__omtMockSource || document.querySelector('video')?.dataset?.omtSource) === 'DVR',
+        source: window.__omtMockSource
+      };
+    });
+    results.push({
+      name: 'examino-manual-dvr-wins',
+      pass: stayedDvrFinal.ok === true,
+      detail: { stayedDvr, stayedDvrFinal }
+    });
 
     // Floating glass control panel + bottom-only timeline (v1.2.2 structure restored)
     const chromeShape = await page.evaluate(() => {
@@ -2458,7 +2558,7 @@ async function run() {
       detail: liveAt
     });
 
-    // Live + kickoff + behind → match clock + delay + range; not red
+    // Live + kickoff + behind → delay only on bar (no match clock) + range; not red
     await seekLiveDelay(40);
     await page.evaluate(() => {
       const half = document.getElementById('omt-half-select');
@@ -2473,21 +2573,21 @@ async function run() {
     const liveKickBehind = await readLiveConsistency();
     results.push({
       name: 'live-consistency-behind-with-kickoff',
-      pass: liveKickBehind.mode === 'kickoff' && liveKickBehind.coherent &&
-        liveKickBehind.matchVisible === true && liveKickBehind.liveIsRed === false &&
+      pass: liveKickBehind.mode === 'live' && liveKickBehind.coherent &&
+        liveKickBehind.matchVisible === false && liveKickBehind.liveIsRed === false &&
         liveKickBehind.delayVisible === true && liveKickBehind.chipVisible === false &&
         liveKickBehind.postVisible === false && liveKickBehind.rangeVisible === true,
       detail: liveKickBehind
     });
 
-    // Live + kickoff + LIVE click → match + red chip + range; no delay text
+    // Live + kickoff + LIVE click → red chip + range; no delay; no bar match clock
     await page.evaluate(() => document.getElementById('omt-live-btn')?.click());
     await page.waitForTimeout(150);
     const liveKickAt = await readLiveConsistency();
     results.push({
       name: 'live-consistency-at-live-with-kickoff',
-      pass: liveKickAt.mode === 'kickoff' && liveKickAt.coherent &&
-        liveKickAt.matchVisible === true && liveKickAt.liveIsRed === true &&
+      pass: liveKickAt.mode === 'live' && liveKickAt.coherent &&
+        liveKickAt.matchVisible === false && liveKickAt.liveIsRed === true &&
         liveKickAt.chipVisible === true && liveKickAt.delayVisible === false &&
         liveKickAt.rangeVisible === true && liveKickAt.postVisible === false,
       detail: liveKickAt
@@ -2498,9 +2598,12 @@ async function run() {
       document.getElementById('omt-btn-clear-timer')?.click();
       const v = document.querySelector('video');
       const slider = document.getElementById('omt-timeline-slider');
+      const vodUrl = 'https://cdn.example.test/vod/dm-mock/chunklist_vod.m3u8';
       window.__omtMockSource = 'VOD';
+      window.__omtMockMediaUrl = vodUrl;
       if (v) {
         v.dataset.omtSource = 'VOD';
+        v.dataset.omtMediaUrl = vodUrl;
         const postDur = 1 * 3600 + 52 * 60 + 40;
         const postAt = 34 * 60 + 12;
         Object.defineProperty(v, 'duration', { configurable: true, get: () => postDur });
@@ -2534,7 +2637,7 @@ async function run() {
       detail: postCons
     });
 
-    // POST + kickoff → match only
+    // POST + kickoff → current/duration on bar (match clock stays on panel / scrubber tip)
     await page.evaluate(() => {
       const half = document.getElementById('omt-half-select');
       if (half) {
@@ -2549,10 +2652,11 @@ async function run() {
     const postKickCons = await readLiveConsistency();
     results.push({
       name: 'live-consistency-post-with-kickoff',
-      pass: postKickCons.mode === 'kickoff' && postKickCons.coherent &&
-        postKickCons.matchVisible === true && postKickCons.liveIsRed === false &&
+      pass: postKickCons.mode === 'post' && postKickCons.coherent &&
+        postKickCons.matchVisible === false && postKickCons.liveIsRed === false &&
         postKickCons.delayVisible === false && postKickCons.chipVisible === false &&
-        postKickCons.rangeVisible === false && postKickCons.postVisible === false,
+        postKickCons.rangeVisible === false && postKickCons.postVisible === true &&
+        postKickCons.curText === '34:12' && postKickCons.durText === '1:52:40',
       detail: postKickCons
     });
 
@@ -2561,9 +2665,12 @@ async function run() {
       document.getElementById('omt-btn-clear-timer')?.click();
       const v = document.querySelector('video');
       const slider = document.getElementById('omt-timeline-slider');
+      const dvrUrl = 'https://10.217.82.32:8001/live/dm-mock/chunklist_dvr.m3u8';
       window.__omtMockSource = 'DVR';
+      window.__omtMockMediaUrl = dvrUrl;
       if (v) {
         v.dataset.omtSource = 'DVR';
+        v.dataset.omtMediaUrl = dvrUrl;
         const dvrDur = 330;
         let ct = 100;
         Object.defineProperty(v, 'duration', { configurable: true, get: () => dvrDur });
@@ -2678,15 +2785,16 @@ async function run() {
     const liveKick = await readTimelineChrome();
     const onVideoClock = await page.evaluate(() => document.getElementById('match-timer')?.innerText || '');
     results.push({
-      name: 'timeline-live-with-kickoff-match-clock',
-      pass: liveKick.mode === 'kickoff' && liveKick.matchText &&
-        liveKick.matchText === onVideoClock && /^\d{2}:\d{2}$/.test(liveKick.matchText) &&
+      name: 'timeline-live-with-kickoff-no-bar-match-clock',
+      // v2.2.3: bar left = delay/LIVE only; match clock remains on panel (and scrubber tip).
+      pass: liveKick.mode === 'live' && liveKick.matchHidden === true &&
+        /^\d{2}:\d{2}$/.test(String(onVideoClock || '')) &&
         !liveKick.liveHidden && liveKick.postHidden &&
         (liveKick.delayText === '-0:12' || liveKick.chipVisible === true) &&
         liveKick.edgeClockGone === true && liveKick.videoRangeOk === true,
       detail: { liveKick, onVideoClock }
     });
-    await shotTimelineFrame('v221_timeline_live_kickoff_clock.png');
+    await shotTimelineFrame('v223_timeline_live_kickoff_no_bar_clock.png');
 
     // Timeline play/pause mirrors panel button
     const tlPlay = await page.evaluate(async () => {
@@ -2737,8 +2845,11 @@ async function run() {
       const bar = document.getElementById('omt-timeline-bar');
       if (!v) return;
       try { v.pause(); } catch (_) {}
+      const vodUrl = 'https://cdn.example.test/vod/dm-mock/chunklist_vod.m3u8';
       window.__omtMockSource = 'VOD';
+      window.__omtMockMediaUrl = vodUrl;
       v.dataset.omtSource = 'VOD';
+      v.dataset.omtMediaUrl = vodUrl;
       const postDur = 1 * 3600 + 52 * 60 + 40; // 1:52:40
       const postAt = 34 * 60 + 12; // 34:12
       Object.defineProperty(v, 'duration', { configurable: true, get: () => postDur });
@@ -2775,7 +2886,7 @@ async function run() {
     });
     await shotTimelineFrame('v201_timeline_post.png');
 
-    // POST + kickoff → match clock
+    // POST + kickoff → current/duration on bar (not match clock)
     await page.evaluate(() => {
       const half = document.getElementById('omt-half-select');
       if (half) {
@@ -2793,13 +2904,15 @@ async function run() {
     const postKick = await readTimelineChrome();
     const postKickClock = await page.evaluate(() => document.getElementById('match-timer')?.innerText || '');
     results.push({
-      name: 'timeline-post-with-kickoff-match-clock',
-      pass: postKick.mode === 'kickoff' && postKick.matchText === postKickClock &&
-        postKick.liveHidden && postKick.postHidden &&
-        postKick.videoRangeText == null && postKick.edgeClockGone === true,
+      name: 'timeline-post-with-kickoff-current-duration',
+      pass: postKick.mode === 'post' && postKick.matchHidden === true &&
+        postKick.liveHidden && !postKick.postHidden &&
+        postKick.curText === '34:12' && postKick.durText === '1:52:40' &&
+        postKick.videoRangeText == null && postKick.edgeClockGone === true &&
+        /^\d{2}:\d{2}$/.test(String(postKickClock || '')),
       detail: { postKick, postKickClock }
     });
-    await shotTimelineFrame('v201_timeline_post_kickoff_clock.png');
+    await shotTimelineFrame('v223_timeline_post_kickoff_post_times.png');
 
     // Restore DVR metadata, then panel spacing over LIVE chrome row
     await page.evaluate(() => {
@@ -2807,8 +2920,11 @@ async function run() {
       const v = document.querySelector('video');
       const slider = document.getElementById('omt-timeline-slider');
       if (!v) return;
+      const dvrUrl = 'https://10.217.82.32:8001/live/dm-mock/chunklist_dvr.m3u8';
       window.__omtMockSource = 'DVR';
+      window.__omtMockMediaUrl = dvrUrl;
       v.dataset.omtSource = 'DVR';
+      v.dataset.omtMediaUrl = dvrUrl;
       const dvrDur = 330;
       let ct = 100;
       Object.defineProperty(v, 'duration', { configurable: true, get: () => dvrDur });

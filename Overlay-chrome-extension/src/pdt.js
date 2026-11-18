@@ -387,8 +387,10 @@
 
     /**
      * Paint timeline chrome-row from a live presentation snapshot (or resolve one).
-     * Left: match clock and/or LIVE delay/chip, or POST current/duration.
-     * Right (live/DVR): playhead / furthest — never duplicates left POST times.
+     * Left: LIVE delay/chip (live/DVR) or POST current/duration (VOD/post/local).
+     * Match clock is NOT shown on this bar when kickoff is set — it already lives
+     * on the clock panel and scrubber hover (v2.2.3). Right (live/DVR): playhead /
+     * furthest — never duplicates left POST times.
      */
     function atualizarTempoTimelineDireito(snapIn) {
         if (!omtRoot) return;
@@ -402,30 +404,9 @@
         if (!timesWrap || !liveInd || !liveDelayEl || !liveChipEl || !postWrap || !matchClockEl) return;
 
         const snap = snapIn || omtResolveLivePresentation();
-        const { liveMode, kickoffOn, playhead, liveEdge, delay, atLive } = snap;
+        const { liveMode, playhead, liveEdge, delay, atLive } = snap;
 
-        if (kickoffOn) {
-            timesWrap.dataset.omtTimeMode = 'kickoff';
-            postWrap.hidden = true;
-            matchClockEl.hidden = false;
-            let clockText = '';
-            if (typeof matchClockAtVideoTime === 'function') {
-                const info = matchClockAtVideoTime(playhead);
-                clockText = (info && info.clock) ? info.clock : '';
-            }
-            if (!clockText && timerUI && timerUI.innerText) clockText = timerUI.innerText;
-            matchClockEl.textContent = clockText || '00:00';
-
-            if (liveMode) {
-                omtPaintLiveDelayChip(liveInd, liveDelayEl, liveChipEl, delay, atLive);
-                omtPaintVideoRange(videoRangeEl, playhead, liveEdge, true);
-            } else {
-                liveInd.hidden = true;
-                omtPaintVideoRange(videoRangeEl, playhead, liveEdge, false);
-            }
-            return;
-        }
-
+        // Always hide the bar match clock (kickoff or not). Panel + scrubber tip keep it.
         matchClockEl.hidden = true;
         timesWrap.dataset.omtTimeMode = liveMode ? 'live' : 'post';
         liveInd.hidden = !liveMode;
