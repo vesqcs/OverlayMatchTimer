@@ -207,23 +207,9 @@
       ['play', 'pause', 'waiting'].forEach((type) => {
         v.addEventListener(type, () => { stats[type] += 1; });
       });
-
-      // Paint visible frames via canvas captureStream so e2e can assert non-black.
-      const canvas = document.createElement('canvas');
-      canvas.width = 960; canvas.height = 540;
-      const ctx = canvas.getContext('2d');
-      const t0 = performance.now();
-      (function draw() {
-        const t = (performance.now() - t0) / 1000;
-        ctx.fillStyle = '#143d2b';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = '#00ff88';
-        ctx.font = '28px sans-serif';
-        ctx.fillText('XEATRE-HDMI t=' + t.toFixed(1) + 's', 24, 48);
-        stats.paintedFrames += 1;
-        if (v.isConnected) requestAnimationFrame(draw);
-      })();
-      v.srcObject = canvas.captureStream(30);
+      // Real mp4 so screenshots / e2e see painted frames (captureStream screenshots black).
+      v.addEventListener('timeupdate', () => { stats.paintedFrames += 1; });
+      v.src = '/xeatre-color-bars.mp4';
       v.addEventListener('loadeddata', () => {
         v.play().catch(() => {});
         document.getElementById('status').textContent = 'Ready hdmi-video';
