@@ -137,11 +137,18 @@
       }, false);
 
       const state = {
-        source: 'DVR',
+        source: 'DVR',       // top-row op-data-value label (DVR | VOD(1))
+        sourceIndex: '0',    // leaf op-data-value index
+        quality: '1920x1080, 1.5Mbps',
         audio: 'Audio_3',
         speed: '1x',
         view: 'root' // root | source | audio | speed
       };
+      // Leaf catalog: index → title (field: opDataValue is index, title is label).
+      const sourceLeaves = [
+        { index: '0', title: 'DVR' },
+        { index: '1', title: 'VOD(1)' }
+      ];
 
       function bindGear() {
         if (!gear) return;
@@ -162,18 +169,20 @@
             <div class="op-setting-item-container">
               <div class="op-setting-item" op-panel-type="speed" op-data-value="${state.speed}"><span class="op-setting-item-title">Speed</span><span class="op-setting-item-nexticon">&gt;</span><span class="op-setting-item-value">${state.speed}</span></div>
               <div class="op-setting-item" op-panel-type="source" op-data-value="${state.source}"><span class="op-setting-item-title">Source</span><span class="op-setting-item-nexticon">&gt;</span><span class="op-setting-item-value">${state.source}</span></div>
-              <div class="op-setting-item" op-panel-type="audioTrack" op-data-value="${state.audio}"><span class="op-setting-item-title">Audio</span><span class="op-setting-item-nexticon">&gt;</span><span class="op-setting-item-value">${state.audio}</span></div>
+              <div class="op-setting-item" op-panel-type="quality" op-data-value="${state.quality}"><span class="op-setting-item-title">Quality</span><span class="op-setting-item-nexticon">&gt;</span><span class="op-setting-item-value">${state.quality}</span></div>
             </div>`;
         } else if (state.view === 'source') {
-          // Field-shaped duplicates: two DVR rows + VOD(1) decoy + real VOD.
-          // Overlay must expose exactly DVR + VOD (dedupe by op-data-value).
-          // First DVR = page-open default; last VOD = Auto VOD target.
+          // Exact field shape: top rows (hasNext) stay visible + Source leaves
+          // (opPanelType=source, hasNext=false, opDataValue=index, title=label).
+          const leaves = sourceLeaves.map((leaf) =>
+            `<div class="op-setting-item" op-panel-type="source" op-data-value="${leaf.index}"><span class="op-setting-item-title">${leaf.title}</span></div>`
+          ).join('');
           panel.innerHTML = `
             <div class="op-setting-title-container"><div class="op-setting-title" tabindex="0"><span class="op-setting-title-title">Source</span></div></div>
-            <div class="op-setting-item" op-data-value="DVR"><span class="op-setting-item-title">DVR</span></div>
-            <div class="op-setting-item" op-data-value="DVR"><span class="op-setting-item-title">DVR</span></div>
-            <div class="op-setting-item" op-data-value="VOD(1)"><span class="op-setting-item-title">VOD(1)</span></div>
-            <div class="op-setting-item" op-data-value="VOD"><span class="op-setting-item-title">VOD</span></div>`;
+            <div class="op-setting-item" op-panel-type="speed" op-data-value="${state.speed}"><span class="op-setting-item-title">Speed</span><span class="op-setting-item-nexticon">&gt;</span></div>
+            <div class="op-setting-item" op-panel-type="source" op-data-value="${state.source}"><span class="op-setting-item-title">Source</span><span class="op-setting-item-nexticon">&gt;</span><span class="op-setting-item-value">${state.source}</span></div>
+            <div class="op-setting-item" op-panel-type="quality" op-data-value="${state.quality}"><span class="op-setting-item-title">Quality</span><span class="op-setting-item-nexticon">&gt;</span></div>
+            ${leaves}`;
         } else if (state.view === 'audio') {
           panel.innerHTML = `
             <div class="op-setting-title-container"><div class="op-setting-title" tabindex="0"><span class="op-setting-title-title">Audio</span></div></div>
@@ -204,36 +213,36 @@
       function onItemClick(item) {
         const type = item.getAttribute('op-panel-type');
         const value = item.getAttribute('op-data-value');
-        if (type === 'source') { state.view = 'source'; renderPanel(); panel.classList.add('open'); return; }
+        // Top-level rows (hasNext): open submenu. Source top row keeps op-panel-type=source.
+        if (type === 'source' && item.querySelector('.op-setting-item-nexticon')) {
+          state.view = 'source';
+          renderPanel();
+          panel.classList.add('open');
+          return;
+        }
         if (type === 'audioTrack') { state.view = 'audio'; renderPanel(); panel.classList.add('open'); return; }
-        if (type === 'speed') { state.view = 'speed'; renderPanel(); panel.classList.add('open'); return; }
+        if (type === 'speed' && item.querySelector('.op-setting-item-nexticon')) {
+          state.view = 'speed'; renderPanel(); panel.classList.add('open'); return;
+        }
+        if (type === 'quality') { return; }
 
-        if (state.view === 'source') {
-          // Map host op-data-value → canonical media kind (ignore decoys like VOD(1)).
-          const kind = /^vod$/i.test(String(value).trim()) ? 'VOD'
-            : /^dvr$/i.test(String(value).trim()) ? 'DVR'
-            : /vod/i.test(String(value)) ? 'VOD_DECOY'
-            : /dvr/i.test(String(value)) ? 'DVR'
-            : null;
-          if (kind === 'VOD_DECOY') {
-            // Selecting VOD(1) must NOT switch media — mirrors bad host entries.
-            state.view = 'root';
-            renderPanel();
-            panel.classList.remove('open');
-            status.textContent = 'Ignored decoy source ' + value;
-            return;
-          }
-          if (kind !== 'VOD' && kind !== 'DVR') {
-            state.view = 'root';
-            renderPanel();
-            panel.classList.remove('open');
-            return;
-          }
-          state.source = kind;
+        // Source leaf: opPanelType=source, hasNext=false, opDataValue=index, title=label.
+        if (type === 'source' && !item.querySelector('.op-setting-item-nexticon')) {
+          const label = ((item.querySelector('.op-setting-item-title') || {}).textContent || '').trim();
+          const lab = label.replace(/\s+/g, '').toLowerCase();
+          const kind = lab.startsWith('dvr') ? 'DVR' : lab.startsWith('vod') ? 'VOD' : null;
+          if (!kind) return;
+          state.source = label; // top-row opDataValue becomes the title ("DVR" / "VOD(1)")
+          state.sourceIndex = String(value);
           state.view = 'root';
+          window.__omtSourceValueGen = (window.__omtSourceValueGen || 1) + 1;
           renderPanel();
           panel.classList.remove('open');
           replaceVideoForSource(kind);
+          return;
+        }
+
+        if (state.view === 'source') {
           return;
         }
         if (state.view === 'audio') {
@@ -333,17 +342,21 @@
           }
         });
         video.dataset.omtSource = source;
-        // Field-shaped media URL: DVR = live/chunklist, VOD = vod/chunklist.
-        // Real Examino swaps the HLS manifest this way when gear→VOD succeeds.
-        const mediaUrl = source === 'VOD'
-            ? 'https://cdn.example.test/vod/dm-mock/chunklist_vod.m3u8'
-            : 'https://10.217.82.32:8001/live/dm-mock/chunklist_dvr.m3u8';
+        // Field: MSE uses blob: currentSrc — mediaUrl is often null / not an https chunklist.
+        const gen = window.__omtPlayerGeneration || 1;
+        const mediaUrl = 'blob:https://examino.local/' + source.toLowerCase() + '-' + gen;
         video.dataset.omtMediaUrl = mediaUrl;
-        window.__omtMockMediaUrl = mediaUrl;
+        // Real host often has no readable media URL on window — leave null unless tests set it.
+        window.__omtMockMediaUrl = null;
         try {
             Object.defineProperty(video, 'currentSrc', {
                 configurable: true,
                 get: () => mediaUrl
+            });
+            Object.defineProperty(video, 'src', {
+                configurable: true,
+                get: () => mediaUrl,
+                set: () => {}
             });
         } catch (_) {}
         // OpenPlayer-like: click plays when paused but does NOT pause when playing.
@@ -369,9 +382,12 @@
         host.appendChild(next);
         status.textContent = 'Source=' + source + ' — player shell gen=' + window.__omtPlayerGeneration;
         window.__omtMockSource = source;
-        window.__omtMockMediaUrl = next.dataset.omtMediaUrl || window.__omtMockMediaUrl;
+        // Keep mediaUrl null (field MSE) — confirm must not require it.
+        window.__omtMockMediaUrl = null;
         window.__omtDvrFrozen = !!window.__omtDvrFrozen;
       }
+
+      window.__omtSourceValueGen = 1;
 
       // Late mount then one replacement (player init), then leave Source=DVR until extension/auto-VOD switches.
       setTimeout(() => {

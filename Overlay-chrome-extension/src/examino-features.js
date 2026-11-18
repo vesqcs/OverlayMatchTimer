@@ -177,10 +177,20 @@
 
     // ---- v1.2.0 host-hide / settings / Source (811be7b) + OMT-DEBUG ----
 
+    // Always one string line — field consoles paste "Object" for raw objects.
     function omtDebugSource(step, detail) {
         try {
-            if (detail !== undefined) console.log('[OMT-DEBUG][examino-source]', step, detail);
-            else console.log('[OMT-DEBUG][examino-source]', step);
+            if (detail === undefined) {
+                console.log('[OMT-DEBUG][examino-source] ' + step);
+                return;
+            }
+            let payload;
+            try {
+                payload = typeof detail === 'string' ? detail : JSON.stringify(detail);
+            } catch (_) {
+                payload = String(detail);
+            }
+            console.log('[OMT-DEBUG][examino-source] ' + step + ' ' + payload);
         } catch (_) {}
     }
 
@@ -529,12 +539,19 @@
             }
 
             // Return to root menu if needed, without closing the panel.
-            if (!document.querySelector(`.op-setting-panel .op-setting-item[op-panel-type="${panelType}"]`)) {
+            if (panelType === 'source') {
+                if (!findExaminoSourceTopRowEl()) {
+                    await clickOpSettingBack();
+                    panel = await ensureOpSettingsOpen();
+                }
+            } else if (!document.querySelector(`.op-setting-panel .op-setting-item[op-panel-type="${panelType}"]`)) {
                 await clickOpSettingBack();
                 panel = await ensureOpSettingsOpen();
             }
 
-            const mainItem = document.querySelector(`.op-setting-panel .op-setting-item[op-panel-type="${panelType}"]`);
+            const mainItem = panelType === 'source'
+                ? findExaminoSourceTopRowEl()
+                : document.querySelector(`.op-setting-panel .op-setting-item[op-panel-type="${panelType}"]`);
             if (!mainItem) {
                 omtDebugSource('scrape:no-row', { panelType });
                 return { current: null, options: [] };
@@ -543,22 +560,31 @@
             const current = mainItem.getAttribute('op-data-value') ||
                 (mainItem.querySelector('.op-setting-item-value') || {}).textContent || null;
 
-            omtDebugSource('scrape:click-row', { panelType, current, opDataValue: mainItem.getAttribute('op-data-value') });
+            omtDebugSource('scrape:click-row', {
+                panelType,
+                current,
+                opDataValue: mainItem.getAttribute('op-data-value'),
+                hasNext: examinoItemHasNext(mainItem)
+            });
             try { mainItem.click(); } catch (_) {}
 
             let options = [];
             for (let i = 0; i < 12; i++) {
-                options = [];
-                document.querySelectorAll('.op-setting-panel .op-setting-item').forEach((el) => {
-                    const value = el.getAttribute('op-data-value');
-                    if (!value) return;
-                    // Skip root rows that still show a submenu chevron
-                    if (el.querySelector('.op-setting-item-nexticon')) return;
-                    const label = (el.querySelector('.op-setting-item-title') || el.querySelector('.op-setting-item-value') || el).textContent.trim();
-                    if (!options.some((o) => o.value === value)) {
-                        options.push({ value, label: label || value });
-                    }
-                });
+                if (panelType === 'source') {
+                    // Field: leaves are opPanelType=source + hasNext false (opDataValue index).
+                    options = readOpenSourceSubmenuOptions();
+                } else {
+                    options = [];
+                    document.querySelectorAll('.op-setting-panel .op-setting-item').forEach((el) => {
+                        const value = el.getAttribute('op-data-value');
+                        if (!value) return;
+                        if (el.querySelector('.op-setting-item-nexticon')) return;
+                        const label = examinoItemTitle(el);
+                        if (!options.some((o) => o.value === value)) {
+                            options.push({ value, label: label || value });
+                        }
+                    });
+                }
                 if (options.length >= 2) break;
                 await sleep(50);
             }
@@ -567,9 +593,8 @@
             if (!options.length && current) {
                 options.push({ value: current, label: current });
             }
+            omtDebugSource('scrape:rawItems', dumpExaminoSourceRawItems());
             // Return to root for the next scrape without closing.
-            // (Source DVR/VOD floor + host mapping happen in normalizeExaminoSourceScraped —
-            // do not inject synthetic options into the scrape itself.)
             if (!document.querySelector('.op-setting-panel .op-setting-item[op-panel-type]')) {
                 await clickOpSettingBack();
             }
@@ -578,14 +603,165 @@
         }));
     }
 
+    function normalizeExaminoSourceToken(s) {
+        return String(s || '').replace(/\s+/g, '').toLowerCase();
+    }
+
+    function examinoItemTitle(el) {
+        return ((el.querySelector('.op-setting-item-title') ||
+            el.querySelector('.op-setting-item-value') || el).textContent || '').trim();
+    }
+
+    function examinoItemHasNext(el) {
+        return !!(el && el.querySelector('.op-setting-item-nexticon'));
+    }
+
+    /**
+     * Field OpenPlayer (2.2.4): when Source is open the panel mixes
+     *   - top rows: Speed/Source/Quality (hasNext:true; Source opDataValue = current label e.g. "VOD(1)")
+     *   - leaf opts: opPanelType=source AND hasNext:false; opDataValue = index "0"/"1"; title = "DVR"/"VOD(1)"
+     */
+    function isExaminoSourceLeafOption(el) {
+        if (!el) return false;
+        if (el.getAttribute('op-panel-type') !== 'source') return false;
+        if (examinoItemHasNext(el)) return false;
+        return true;
+    }
+
+    function isExaminoSourceTopRow(el) {
+        if (!el) return false;
+        if (el.getAttribute('op-panel-type') !== 'source') return false;
+        return examinoItemHasNext(el);
+    }
+
+    /** Current Source selection from the top Source row (hasNext), not a leaf index. */
+    function readExaminoHostSourceTopRow() {
+        const top = Array.from(document.querySelectorAll('.op-setting-panel .op-setting-item[op-panel-type="source"]'))
+            .find((el) => isExaminoSourceTopRow(el));
+        if (!top) return { value: null, label: null };
+        const value = top.getAttribute('op-data-value');
+        const label = ((top.querySelector('.op-setting-item-value') || {}).textContent || '').trim() ||
+            (value != null ? String(value) : '') ||
+            examinoItemTitle(top);
+        return {
+            value: value != null ? String(value) : null,
+            label: String(label || '').trim() || null
+        };
+    }
+
+    /** Top-level Source row used to open the submenu (hasNext:true). */
+    function findExaminoSourceTopRowEl() {
+        return Array.from(document.querySelectorAll('.op-setting-panel .op-setting-item[op-panel-type="source"]'))
+            .find((el) => isExaminoSourceTopRow(el)) || null;
+    }
+
+    /** Dump every panel row for field paste (JSON-string via omtDebugSource). */
+    function dumpExaminoSourceRawItems() {
+        return Array.from(document.querySelectorAll('.op-setting-panel .op-setting-item')).map((el) => {
+            const attrs = {};
+            try {
+                Array.from(el.attributes || []).forEach((a) => { attrs[a.name] = a.value; });
+            } catch (_) {}
+            const title = examinoItemTitle(el);
+            const value = el.getAttribute('op-data-value');
+            const hasNext = examinoItemHasNext(el);
+            const panelType = el.getAttribute('op-panel-type');
+            const selected = el.classList.contains('op-checked') ||
+                el.classList.contains('selected') ||
+                el.getAttribute('aria-checked') === 'true' ||
+                el.getAttribute('aria-selected') === 'true';
+            // Kind from TITLE for leaves; top-row kind from its opDataValue (current label).
+            const kindLabel = (panelType === 'source' && !hasNext) ? title : (value || title);
+            return {
+                title,
+                label: title,
+                value,
+                opDataValue: value,
+                opPanelType: panelType,
+                hasNext,
+                attrs,
+                selected: !!selected,
+                isSourceLeaf: isExaminoSourceLeafOption(el),
+                isSourceTop: isExaminoSourceTopRow(el),
+                kind: classifyExaminoHostSourceOption({ value: kindLabel, label: kindLabel })
+            };
+        });
+    }
+
+    /**
+     * Source options = opPanelType "source" AND hasNext false.
+     * Match by title (DVR… / VOD…); click by op-data-value index ("0","1").
+     */
+    function readOpenSourceSubmenuOptions() {
+        const options = [];
+        document.querySelectorAll('.op-setting-panel .op-setting-item').forEach((el) => {
+            if (!isExaminoSourceLeafOption(el)) return;
+            const value = el.getAttribute('op-data-value');
+            const label = examinoItemTitle(el);
+            if ((value == null || value === '') && !label) return;
+            const kind = classifyExaminoHostSourceOption({ value: label, label });
+            if (!kind) return;
+            options.push({
+                value: value != null && value !== '' ? String(value) : String(label),
+                label: label || String(value || ''),
+                selected: false,
+                kind
+            });
+        });
+        return options;
+    }
+
+    /** Pick leaf by title role — never by cached "DVR" string as op-data-value. */
+    function pickSourceOptionByRole(options, canonical) {
+        const kind = String(canonical || '').toUpperCase() === 'VOD' ? 'VOD' : 'DVR';
+        const list = (options || []).filter((o) => o.kind === kind);
+        if (!list.length) return null;
+        if (kind === 'DVR' && examinoPageOpenDvr) {
+            const wantLab = normalizeExaminoSourceToken(examinoPageOpenDvr.label || 'dvr');
+            const byLabel = list.find((o) => normalizeExaminoSourceToken(o.label) === wantLab);
+            if (byLabel) return byLabel;
+            const byPrefix = list.find((o) =>
+                normalizeExaminoSourceToken(o.label).startsWith('dvr'));
+            if (byPrefix) return byPrefix;
+        }
+        // Prefer exact "VOD" title over "VOD(1)"; else first of kind.
+        const preferred = pickPreferredHostSourceOption(list, kind);
+        return preferred || list[0];
+    }
+
+    function findSourceOptionElement(picked) {
+        if (!picked) return null;
+        const items = Array.from(document.querySelectorAll('.op-setting-panel .op-setting-item'))
+            .filter((el) => isExaminoSourceLeafOption(el));
+        const wantLab = normalizeExaminoSourceToken(picked.label);
+        return items.find((el) => el.getAttribute('op-data-value') === picked.value) ||
+            items.find((el) => normalizeExaminoSourceToken(examinoItemTitle(el)) === wantLab) ||
+            items.find((el) => {
+                const lab = examinoItemTitle(el);
+                return classifyExaminoHostSourceOption({ value: lab, label: lab }) === picked.kind &&
+                    normalizeExaminoSourceToken(lab).startsWith(kindPrefix(picked.kind));
+            }) ||
+            null;
+    }
+
+    function kindPrefix(kind) {
+        return kind === 'VOD' ? 'vod' : 'dvr';
+    }
+
     async function applyOpSetting(panelType, value) {
         if (!value) return false;
+        // Source: treat value as canonical role (DVR|VOD); re-scrape live op-data-value inside lock.
+        const sourceRole = panelType === 'source'
+            ? (/^vod/i.test(String(value)) ? 'VOD' : /^dvr/i.test(String(value)) ? 'DVR' : null)
+            : null;
         omtDebugSource('apply:start', {
             panelType,
             value,
+            sourceRole,
             path: location.pathname,
             v120: OMT_EXAMINO_SOURCE_V120,
-            gen: examinoSettingsGen
+            gen: examinoSettingsGen,
+            pageOpenDvr: examinoPageOpenDvr
         });
         // Drop pending refresh/settle so they cannot steal the submenu or toggle the gear shut.
         bumpExaminoSettingsGen('apply:' + panelType);
@@ -597,64 +773,121 @@
                     omtDebugSource('apply:no-panel', describeExaminoSettingsDom());
                     return false;
                 }
-                if (!document.querySelector(`.op-setting-panel .op-setting-item[op-panel-type="${panelType}"]`)) {
+                // Source top row may share op-panel-type with leaf options — prefer hasNext.
+                let mainItem = panelType === 'source'
+                    ? findExaminoSourceTopRowEl()
+                    : document.querySelector(`.op-setting-panel .op-setting-item[op-panel-type="${panelType}"]`);
+                if (!mainItem) {
                     await clickOpSettingBack();
                     panel = await ensureOpSettingsOpen();
+                    mainItem = panelType === 'source'
+                        ? findExaminoSourceTopRowEl()
+                        : document.querySelector(`.op-setting-panel .op-setting-item[op-panel-type="${panelType}"]`);
                 }
-                const mainItem = document.querySelector(`.op-setting-panel .op-setting-item[op-panel-type="${panelType}"]`);
                 if (!mainItem) {
-                    omtDebugSource('apply:no-row', { panelType, ...describeExaminoSettingsDom() });
+                    omtDebugSource('apply:no-row', { panelType, dom: describeExaminoSettingsDom() });
                     return false;
                 }
                 omtDebugSource('apply:click-row', {
                     opDataValue: mainItem.getAttribute('op-data-value'),
-                    opPanelType: mainItem.getAttribute('op-panel-type')
+                    opPanelType: mainItem.getAttribute('op-panel-type'),
+                    title: examinoItemTitle(mainItem),
+                    hasNext: examinoItemHasNext(mainItem)
                 });
                 try { mainItem.click(); } catch (_) {}
                 await sleep(200);
-                const rawItems = Array.from(document.querySelectorAll('.op-setting-panel .op-setting-item')).map((el) => ({
-                    opDataValue: el.getAttribute('op-data-value'),
-                    opPanelType: el.getAttribute('op-panel-type'),
-                    title: ((el.querySelector('.op-setting-item-title') || {}).textContent || '').trim(),
-                    hasNext: !!el.querySelector('.op-setting-item-nexticon')
-                }));
-                const option = Array.from(document.querySelectorAll('.op-setting-panel .op-setting-item'))
-                    .find((el) => el.getAttribute('op-data-value') === value && !el.querySelector('.op-setting-item-nexticon'));
-                if (option) {
-                    omtDebugSource('apply:click-option', {
-                        value,
-                        opDataValue: option.getAttribute('op-data-value'),
-                        title: ((option.querySelector('.op-setting-item-title') || {}).textContent || '').trim()
+
+                let clickValue = value;
+                let optionEl = null;
+                let scrapedOpts = [];
+
+                const rawItems = dumpExaminoSourceRawItems();
+                if (panelType === 'source' && sourceRole) {
+                    // Leaves: opPanelType=source + hasNext false; values are indices "0"/"1".
+                    scrapedOpts = readOpenSourceSubmenuOptions();
+                    const topBefore = readExaminoHostSourceTopRow();
+                    updateExaminoHostSourceMap({
+                        current: topBefore.value || topBefore.label,
+                        options: scrapedOpts
                     });
-                    try { option.click(); } catch (_) {}
-                    await sleep(250);
-                    concealNativeSettingsButton();
-                    // v1.2.0: remove raised only — never strip host `.open`.
-                    document.querySelectorAll('.op-setting-panel').forEach((p) => p.classList.remove('omt-settings-raised'));
-                    // Remember host op-data-value only. Do NOT flip lastApplied / live UI /
-                    // DVR settle until media URL confirms (v2.2.3 field: UI raced ahead of stream).
-                    if (panelType === 'source') {
-                        const kind = classifyExaminoHostSourceOption({ value, label: value }) ||
-                            (/vod/i.test(String(value)) ? 'VOD' : /dvr/i.test(String(value)) ? 'DVR' : null);
-                        if (kind === 'VOD') examinoHostSourceMap.VOD = String(value);
-                        else if (kind === 'DVR') examinoHostSourceMap.DVR = String(value);
-                        omtDebugSource('apply:source-kind', {
+                    const picked = pickSourceOptionByRole(scrapedOpts, sourceRole);
+                    omtDebugSource('apply:rescrape', {
+                        sourceRole,
+                        scraped: scrapedOpts,
+                        rawItems,
+                        topRow: topBefore,
+                        picked: picked ? { value: picked.value, label: picked.label, kind: picked.kind } : null,
+                        map: { DVR: examinoHostSourceMap.DVR, VOD: examinoHostSourceMap.VOD },
+                        pageOpenDvr: examinoPageOpenDvr
+                    });
+                    if (!picked) {
+                        omtDebugSource('apply:option-not-found', {
                             value,
-                            kind,
+                            sourceRole,
+                            scraped: scrapedOpts,
+                            rawItems
+                        });
+                        panel.classList.add('omt-settings-raised');
+                        return false;
+                    }
+                    clickValue = picked.value;
+                    examinoHostSourceMap[sourceRole] = String(clickValue);
+                    optionEl = findSourceOptionElement(picked);
+                } else {
+                    optionEl = Array.from(document.querySelectorAll('.op-setting-panel .op-setting-item'))
+                        .find((el) => el.getAttribute('op-data-value') === value &&
+                            !el.querySelector('.op-setting-item-nexticon'));
+                }
+
+                if (optionEl) {
+                    omtDebugSource('apply:click-option', {
+                        requested: value,
+                        sourceRole,
+                        clickedValue: optionEl.getAttribute('op-data-value'),
+                        clickedLabel: ((optionEl.querySelector('.op-setting-item-title') || {}).textContent || '').trim(),
+                        rawItems
+                    });
+                    try { optionEl.click(); } catch (_) {}
+                    await sleep(250);
+                    if (panelType === 'source' && sourceRole) {
+                        // Top row opDataValue should now be the label ("DVR" / "VOD(1)").
+                        const topAfter = readExaminoHostSourceTopRow();
+                        if (topAfter.value || topAfter.label) {
+                            examinoLastSeenHostSource = topAfter;
+                        } else {
+                            // Panel closed before top row readable — trust the leaf title we clicked.
+                            const clickedLabel = ((optionEl.querySelector('.op-setting-item-title') ||
+                                {}).textContent || '').trim() || sourceRole;
+                            examinoLastSeenHostSource = { value: clickedLabel, label: clickedLabel };
+                        }
+                        omtDebugSource('apply:source-kind', {
+                            kind: sourceRole,
+                            clickedValue: clickValue,
+                            clickedLabel: examinoLastSeenHostSource.label,
+                            topRow: examinoLastSeenHostSource,
                             map: { DVR: examinoHostSourceMap.DVR, VOD: examinoHostSourceMap.VOD },
                             pendingMediaConfirm: true
                         });
                     }
+                    concealNativeSettingsButton();
+                    // v1.2.0: remove raised only — never strip host `.open`.
+                    document.querySelectorAll('.op-setting-panel').forEach((p) => p.classList.remove('omt-settings-raised'));
+                    const afterSnap = snapshotExaminoMedia();
                     omtDebugSource('apply:success', {
-                        value,
-                        mediaUrl: (typeof window.__omtMockMediaUrl === 'string') ? window.__omtMockMediaUrl : null,
-                        duration: vid && vid.duration,
-                        omtSource: vid && vid.dataset && vid.dataset.omtSource
+                        value: clickValue,
+                        sourceRole,
+                        topRow: examinoLastSeenHostSource,
+                        media: afterSnap
                     });
                     return true;
                 }
-                // Fallback: leave raised native panel for manual pick
-                omtDebugSource('apply:option-not-found', { value, rawItems });
+                omtDebugSource('apply:option-not-found', {
+                    value,
+                    clickValue,
+                    sourceRole,
+                    scraped: scrapedOpts,
+                    rawItems
+                });
                 panel.classList.add('omt-settings-raised');
                 return false;
             }), 'apply:' + panelType);
@@ -669,32 +902,149 @@
     // Field: host menu can list duplicates (DVR, DVR, VOD(1), VOD) — overlay shows
     // exactly two choices; apply still clicks the mapped host op-data-value.
     let examinoLastAppliedSource = null;
-    let examinoHostSourceMap = { DVR: null, VOD: null }; // host op-data-value strings
+    let examinoHostSourceMap = { DVR: null, VOD: null }; // last-seen host op-data-value (may go stale)
+    // Page-open DVR fingerprint (label/value when the page first showed DVR) — match by role.
+    let examinoPageOpenDvr = null;
+    // Last seen top Source row after a successful leaf click (panel may close).
+    let examinoLastSeenHostSource = { value: null, label: null };
     let examinoVodResumeSec = null; // optional restore when leaving DVR back to VOD
     let examinoLastGoodSourceOptions = [
         { value: 'DVR', label: 'DVR' },
         { value: 'VOD', label: 'VOD' }
     ];
-    /** Media-URL / dataset only — never lastApplied / manual choice (those may race ahead). */
+
+    function readExaminoHostSourceRow() {
+        // Prefer live top Source row (current selection label in op-data-value).
+        const top = readExaminoHostSourceTopRow();
+        if (top.value || top.label) return top;
+        if (examinoLastSeenHostSource && (examinoLastSeenHostSource.value || examinoLastSeenHostSource.label)) {
+            return {
+                value: examinoLastSeenHostSource.value,
+                label: examinoLastSeenHostSource.label
+            };
+        }
+        return { value: null, label: null };
+    }
+
+    /** Serializable media snapshot for confirm + field logs (no DOM objects). */
+    function snapshotExaminoMedia() {
+        const el = (vid && vid.isConnected ? vid : null) ||
+            (typeof site.findVideo === 'function' && site.findVideo()) ||
+            document.querySelector('video');
+        let seekStart = null;
+        let seekEnd = null;
+        try {
+            if (el && el.seekable && el.seekable.length > 0) {
+                seekStart = el.seekable.start(0);
+                seekEnd = el.seekable.end(el.seekable.length - 1);
+            }
+        } catch (_) {}
+        const hostRow = readExaminoHostSourceRow();
+        const currentSrc = el ? String(el.currentSrc || '') : '';
+        const src = el ? String(el.getAttribute('src') || el.src || '') : '';
+        return {
+            videoId: el ? (el.id || null) : null,
+            videoIndex: el ? Array.from(document.querySelectorAll('video')).indexOf(el) : -1,
+            videoCount: document.querySelectorAll('video').length,
+            connected: !!(el && el.isConnected),
+            currentSrc: currentSrc.slice(0, 160),
+            src: src.slice(0, 160),
+            isBlob: /^blob:/i.test(currentSrc) || /^blob:/i.test(src),
+            hasSrcObject: !!(el && el.srcObject),
+            duration: (el && isFinite(el.duration)) ? el.duration : null,
+            seekStart,
+            seekEnd,
+            currentTime: el ? el.currentTime : null,
+            omtSource: (el && el.dataset && el.dataset.omtSource) || null,
+            mockSource: (typeof window.__omtMockSource === 'string') ? window.__omtMockSource : null,
+            mockMediaUrl: (typeof window.__omtMockMediaUrl === 'string')
+                ? String(window.__omtMockMediaUrl).slice(0, 160) : null,
+            hostSourceValue: hostRow.value,
+            hostSourceLabel: hostRow.label,
+            playerGen: (typeof window.__omtPlayerGeneration === 'number')
+                ? window.__omtPlayerGeneration : null
+        };
+    }
+
+    function diffExaminoMediaSnapshots(before, after) {
+        const reasons = [];
+        if (!before || !after) return { changed: !!after, reasons: ['missing-snapshot'] };
+        if (before.videoIndex !== after.videoIndex || before.videoId !== after.videoId) {
+            reasons.push('video-element');
+        }
+        if (before.videoCount !== after.videoCount) reasons.push('video-count');
+        if (before.currentSrc !== after.currentSrc) reasons.push('currentSrc');
+        if (before.src !== after.src) reasons.push('src');
+        if (before.isBlob !== after.isBlob) reasons.push('blob-flag');
+        if (before.hasSrcObject !== after.hasSrcObject) reasons.push('srcObject');
+        if (before.duration !== after.duration) {
+            const bd = before.duration;
+            const ad = after.duration;
+            if (!(typeof bd === 'number' && typeof ad === 'number' && Math.abs(bd - ad) < 0.5)) {
+                reasons.push('duration');
+            }
+        }
+        if (before.seekEnd !== after.seekEnd) {
+            const be = before.seekEnd;
+            const ae = after.seekEnd;
+            if (!(typeof be === 'number' && typeof ae === 'number' && Math.abs(be - ae) < 0.5)) {
+                reasons.push('seekable-end');
+            }
+        }
+        if (before.seekStart !== after.seekStart) {
+            const bs = before.seekStart;
+            const as = after.seekStart;
+            if (!(typeof bs === 'number' && typeof as === 'number' && Math.abs(bs - as) < 0.5)) {
+                reasons.push('seekable-start');
+            }
+        }
+        if (before.omtSource !== after.omtSource && after.omtSource) reasons.push('dataset-omtSource');
+        if (before.mockSource !== after.mockSource && after.mockSource) reasons.push('mockSource');
+        if (before.hostSourceValue !== after.hostSourceValue && after.hostSourceValue) {
+            reasons.push('host-source-value');
+        }
+        if (before.hostSourceLabel !== after.hostSourceLabel && after.hostSourceLabel) {
+            reasons.push('host-source-label');
+        }
+        if (before.playerGen !== after.playerGen && after.playerGen != null) reasons.push('player-gen');
+        return { changed: reasons.length > 0, reasons };
+    }
+
+    /**
+     * Infer kind for UI only — never require a field URL regex.
+     * Prefer confirmed apply / dataset / mock / host label; URL patterns are optional hints.
+     */
     function inferExaminoSourceFromMedia() {
+        if (examinoLastAppliedSource === 'VOD' || examinoLastAppliedSource === 'DVR') {
+            // Only use lastApplied when media confirm already committed it.
+        }
         try {
             const el = (vid && vid.isConnected ? vid : null) ||
                 (typeof site.findVideo === 'function' && site.findVideo()) ||
                 document.querySelector('video');
-            const url = (typeof window.__omtMockMediaUrl === 'string' && window.__omtMockMediaUrl) ||
-                (el && el.dataset && el.dataset.omtMediaUrl) ||
-                (el && (el.currentSrc || el.src)) || '';
-            if (/chunklist_vod|\/vod\//i.test(url)) return 'VOD';
-            if (/chunklist_dvr|\/live\//i.test(url)) return 'DVR';
             if (el && el.dataset && el.dataset.omtSource) {
                 const s = String(el.dataset.omtSource).toUpperCase();
                 if (s === 'VOD' || s === 'DVR') return s;
             }
+            if (typeof window.__omtMockSource === 'string') {
+                const s = String(window.__omtMockSource).toUpperCase();
+                if (s === 'VOD' || s === 'DVR') return s;
+            }
+            const hostRow = readExaminoHostSourceRow();
+            const hostKind = classifyExaminoHostSourceOption({
+                value: hostRow.value,
+                label: hostRow.label
+            });
+            if (hostKind) return hostKind;
+            // Optional URL hints only (mock https OR known path tokens) — never required for confirm.
+            const url = (typeof window.__omtMockMediaUrl === 'string' && window.__omtMockMediaUrl) ||
+                (el && el.dataset && el.dataset.omtMediaUrl) ||
+                (el && (el.currentSrc || el.src)) || '';
+            if (url && !/^blob:/i.test(url)) {
+                if (/chunklist_vod|\/vod\//i.test(url)) return 'VOD';
+                if (/chunklist_dvr|\/live\//i.test(url)) return 'DVR';
+            }
         } catch (_) {}
-        if (typeof window.__omtMockSource === 'string') {
-            const s = String(window.__omtMockSource).toUpperCase();
-            if (s === 'VOD' || s === 'DVR') return s;
-        }
         return null;
     }
 
@@ -711,11 +1061,20 @@
         return null;
     }
 
-    /** Wait until the active media URL/dataset matches kind; adopt replaced <video> if needed. */
-    async function waitExaminoMediaKind(kind, timeoutMs) {
-        const want = String(kind || '').toUpperCase();
-        const budget = typeof timeoutMs === 'number' ? timeoutMs : 5000;
+    /**
+     * Confirm Source apply by any real media/host change (v2.2.4).
+     * Field: mediaUrl is always null (MSE blob) — never a hard gate.
+     * Soft: apply:success + short wait with no host error ⇒ success.
+     */
+    async function waitExaminoMediaChange(before, opts) {
+        const want = opts && opts.kind ? String(opts.kind).toUpperCase() : null;
+        const budget = (opts && typeof opts.timeoutMs === 'number') ? opts.timeoutMs : 5500;
+        const softAfterMs = (opts && typeof opts.softAfterMs === 'number') ? opts.softAfterMs : 1200;
+        const allowSoft = !opts || opts.softAfterApply !== false;
         const started = Date.now();
+        let last = before;
+        let lastDiff = { changed: false, reasons: [] };
+        let softDone = false;
         while (Date.now() - started < budget) {
             try {
                 const el = document.querySelector('video');
@@ -723,24 +1082,106 @@
                     omtAdoptReplacedVideo(el);
                 }
             } catch (_) {}
-            const got = inferExaminoSourceFromMedia();
-            if (got === want) {
+            last = snapshotExaminoMedia();
+            lastDiff = diffExaminoMediaSnapshots(before, last);
+
+            // Confirm via top Source row label/opDataValue (e.g. "DVR" vs "VOD(1)") — never mediaUrl.
+            if (want) {
+                const top = {
+                    value: last.hostSourceValue,
+                    label: last.hostSourceLabel
+                };
+                const hostKind = classifyExaminoHostSourceOption({
+                    value: top.value || top.label,
+                    label: top.label || top.value
+                });
+                if (hostKind === want) {
+                    omtDebugSource('media-confirm:ok', {
+                        kind: want,
+                        ms: Date.now() - started,
+                        reasons: ['host-top-row-kind'].concat(lastDiff.reasons),
+                        topRow: top,
+                        before,
+                        after: last
+                    });
+                    return true;
+                }
+                if (last.omtSource && String(last.omtSource).toUpperCase() === want) {
+                    omtDebugSource('media-confirm:ok', {
+                        kind: want,
+                        ms: Date.now() - started,
+                        reasons: ['dataset-omtSource'].concat(lastDiff.reasons),
+                        before,
+                        after: last
+                    });
+                    return true;
+                }
+                if (last.mockSource && String(last.mockSource).toUpperCase() === want) {
+                    omtDebugSource('media-confirm:ok', {
+                        kind: want,
+                        ms: Date.now() - started,
+                        reasons: ['mockSource'].concat(lastDiff.reasons),
+                        before,
+                        after: last
+                    });
+                    return true;
+                }
+            }
+
+            if (lastDiff.changed) {
                 omtDebugSource('media-confirm:ok', {
                     kind: want,
                     ms: Date.now() - started,
-                    mediaUrl: (typeof window.__omtMockMediaUrl === 'string') ? window.__omtMockMediaUrl : null
+                    reasons: lastDiff.reasons,
+                    before,
+                    after: last
+                });
+                return true;
+            }
+
+            // Soft success: click already returned apply:success; mediaUrl null is normal.
+            if (allowSoft && !softDone && (Date.now() - started) >= softAfterMs) {
+                softDone = true;
+                omtDebugSource('media-confirm:soft-ok', {
+                    kind: want,
+                    ms: Date.now() - started,
+                    reasons: ['apply-success-soft-wait'],
+                    before,
+                    after: last,
+                    note: 'mediaUrl-null-is-ok-on-mse'
                 });
                 return true;
             }
             await sleep(100);
         }
+        // Final soft accept if apply path asked for it (never fail only on null mediaUrl).
+        if (allowSoft) {
+            omtDebugSource('media-confirm:soft-ok', {
+                kind: want,
+                ms: Date.now() - started,
+                reasons: ['apply-success-soft-timeout'],
+                before,
+                after: last
+            });
+            return true;
+        }
         omtDebugSource('media-confirm:timeout', {
             kind: want,
-            got: inferExaminoSourceFromMedia(),
-            mediaUrl: (typeof window.__omtMockMediaUrl === 'string') ? window.__omtMockMediaUrl : null,
-            ...describeExaminoSettingsDom()
+            ms: Date.now() - started,
+            why: 'no-media-or-host-change',
+            reasons: lastDiff.reasons,
+            before,
+            after: last,
+            inferred: inferExaminoSourceFromMedia(),
+            dom: describeExaminoSettingsDom()
         });
         return false;
+    }
+
+    /** Snapshot-before + change/soft confirm. Callers must pass before from pre-apply. */
+    async function waitExaminoMediaKind(kind, timeoutMs, beforeSnap) {
+        const before = beforeSnap || snapshotExaminoMedia();
+        return waitExaminoMediaChange(before, { kind, timeoutMs, softAfterApply: true });
     }
 
     function commitExaminoSourceSuccess(canonical) {
@@ -776,36 +1217,43 @@
         }
     }
 
-    /** Classify a host Source row by op-data-value (primary) / label — not display duplicates. */
+    /**
+     * Classify by normalized label/value prefix (field: labels "DVR", "DVR", "VOD(1)", "VOD";
+     * values often regenerated and NOT the string "DVR").
+     */
     function classifyExaminoHostSourceOption(o) {
-        if (!o || o.value == null) return null;
-        const value = String(o.value).trim();
-        const label = String(o.label != null ? o.label : o.value).trim();
-        if (/^dvr$/i.test(value)) return 'DVR';
-        if (/^vod$/i.test(value)) return 'VOD';
-        if (/^dvr$/i.test(label) && !/vod/i.test(value)) return 'DVR';
-        if (/^vod$/i.test(label)) return 'VOD';
-        // Loose: value wins over label; ignore decoys that are neither.
-        if (/dvr/i.test(value) && !/vod/i.test(value)) return 'DVR';
-        if (/vod/i.test(value)) return 'VOD';
-        if (/dvr/i.test(label) && !/vod/i.test(label)) return 'DVR';
-        if (/vod/i.test(label)) return 'VOD';
+        if (!o) return null;
+        const value = String(o.value != null ? o.value : '').trim();
+        const label = String(o.label != null ? o.label : o.value || '').trim();
+        const nv = normalizeExaminoSourceToken(value);
+        const nl = normalizeExaminoSourceToken(label);
+        // Label prefix wins for human-visible menu (ignore counters/suffixes).
+        if (nl.startsWith('vod')) return 'VOD';
+        if (nl.startsWith('dvr')) return 'DVR';
+        if (nv.startsWith('vod')) return 'VOD';
+        if (nv.startsWith('dvr')) return 'DVR';
+        // Loose contains fallback
+        if (/vod/i.test(label) || /vod/i.test(value)) return 'VOD';
+        if (/dvr/i.test(label) || /dvr/i.test(value)) return 'DVR';
         return null;
     }
 
     function examinoHostOptionExactness(o, kind) {
         const value = String(o && o.value || '').trim();
         const label = String(o && o.label || '').trim();
+        const nv = normalizeExaminoSourceToken(value);
+        const nl = normalizeExaminoSourceToken(label);
         if (kind === 'DVR') {
-            if (/^dvr$/i.test(value)) return 3;
-            if (/^dvr$/i.test(label)) return 2;
-            if (/dvr/i.test(value)) return 1;
+            if (nl === 'dvr') return 3;
+            if (nv === 'dvr') return 2;
+            if (nl.startsWith('dvr')) return 1;
             return 0;
         }
-        if (/^vod$/i.test(value)) return 3;
-        if (/^vod$/i.test(label)) return 2;
-        if (/vod/i.test(value) && !/\(/i.test(value)) return 1; // prefer VOD over VOD(1)
-        if (/vod/i.test(value) || /vod/i.test(label)) return 0;
+        // Prefer exact "VOD" over "VOD(1)"
+        if (nl === 'vod') return 3;
+        if (nv === 'vod') return 2;
+        if (nl.startsWith('vod') && !/\(/i.test(label)) return 1;
+        if (nl.startsWith('vod') || nv.startsWith('vod')) return 0;
         return -1;
     }
 
@@ -859,8 +1307,20 @@
         if (!examinoHostSourceMap.DVR) examinoHostSourceMap.DVR = 'DVR';
         if (!examinoHostSourceMap.VOD) examinoHostSourceMap.VOD = 'VOD';
 
+        // Lock page-open DVR fingerprint once (label preferred — values regenerate).
+        if (!examinoPageOpenDvr) {
+            const openDvr = (currentKind === 'DVR' && current)
+                ? { value: current, label: current }
+                : (pickDvr ? { value: String(pickDvr.value), label: String(pickDvr.label || pickDvr.value) } : null);
+            if (openDvr) {
+                examinoPageOpenDvr = openDvr;
+                omtDebugSource('source-map:page-open-dvr', examinoPageOpenDvr);
+            }
+        }
+
         omtDebugSource('source-map:chosen', {
             map: { DVR: examinoHostSourceMap.DVR, VOD: examinoHostSourceMap.VOD },
+            pageOpenDvr: examinoPageOpenDvr,
             scrapedCurrent: current,
             inferred: inferExaminoSourceLabel()
         });
@@ -1033,33 +1493,35 @@
                 const canonical = /^vod/i.test(String(sourceSel.value)) ? 'VOD'
                     : /^dvr/i.test(String(sourceSel.value)) ? 'DVR'
                     : String(sourceSel.value);
-                const hostValue = resolveExaminoHostSourceValue(canonical);
                 const prevMedia = inferExaminoSourceFromMedia() || examinoLastAppliedSource || 'VOD';
+                const beforeSnap = snapshotExaminoMedia();
                 omtDebugSource('ui-change', {
                     value: sourceSel.value,
                     canonical,
-                    hostValue,
                     prevMedia,
-                    map: { DVR: examinoHostSourceMap.DVR, VOD: examinoHostSourceMap.VOD }
+                    before: beforeSnap,
+                    map: { DVR: examinoHostSourceMap.DVR, VOD: examinoHostSourceMap.VOD },
+                    pageOpenDvr: examinoPageOpenDvr
                 });
                 // Stop Auto VOD retries without flipping liveMode (manual choice waits
-                // for media URL confirm — field 2.2.2: UI went live while stream stayed VOD).
+                // for media confirm — field 2.2.2: UI went live while stream stayed VOD).
                 if (canonical === 'DVR') {
                     try {
                         const el = (typeof site.findVideo === 'function' && site.findVideo()) ||
                             document.querySelector('video');
                         if (el && (inferExaminoSourceFromMedia() === 'VOD' ||
-                            /vod/i.test(String(el.dataset && el.dataset.omtSource || '')))) {
+                            /vod/i.test(String(el.dataset && el.dataset.omtSource || '')) ||
+                            prevMedia === 'VOD')) {
                             examinoVodResumeSec = Number(el.currentTime) || 0;
                         }
                     } catch (_) {}
                     examinoAutoVodClicked = true;
                 }
-                // Keep working v1.2.0 apply path — click host op-data-value, not the label.
-                const okClick = await applyOpSetting('source', hostValue);
+                // Pass canonical role — apply re-scrapes live op-data-value by label/kind.
+                const okClick = await applyOpSetting('source', canonical);
                 let mediaOk = false;
                 if (okClick && (canonical === 'VOD' || canonical === 'DVR')) {
-                    mediaOk = await waitExaminoMediaKind(canonical, 5500);
+                    mediaOk = await waitExaminoMediaKind(canonical, 5500, beforeSnap);
                 }
                 const ok = !!(okClick && mediaOk);
                 // Player shell / HUD may have been rebuilt during media wait — re-query select.
@@ -1095,13 +1557,8 @@
                     okClick,
                     mediaOk,
                     canonical,
-                    hostValue,
                     prevMedia,
-                    mediaUrl: (typeof window.__omtMockMediaUrl === 'string') ? window.__omtMockMediaUrl : null,
-                    duration: (document.querySelector('video') || {}).duration,
-                    omtSource: (document.querySelector('video') || {}).dataset
-                        ? document.querySelector('video').dataset.omtSource
-                        : null,
+                    after: snapshotExaminoMedia(),
                     sel: selNow ? selNow.value : null,
                     disabled: selNow ? selNow.disabled : null,
                     lastApplied: examinoLastAppliedSource,
@@ -1161,15 +1618,17 @@
             examinoAutoVodClicked = true;
             examinoHostSourceMap.VOD = String(vod.value);
             rememberGoodSourceOptions();
+            const beforeSnap = snapshotExaminoMedia();
             omtDebugSource('auto-vod:chosen', {
                 hostValue: vod.value,
                 label: vod.label,
                 map: { DVR: examinoHostSourceMap.DVR, VOD: examinoHostSourceMap.VOD },
-                scraped: source.options.map((o) => ({ value: o.value, label: o.label }))
+                scraped: source.options.map((o) => ({ value: o.value, label: o.label, kind: o.kind || null })),
+                before: beforeSnap
             });
-            // Keep working v1.2.0 apply path — click the preferred host op-data-value.
-            const okClick = await applyOpSetting('source', vod.value);
-            const mediaOk = okClick ? await waitExaminoMediaKind('VOD', 5500) : false;
+            // Canonical role — apply re-scrapes and matches by label/kind (values regenerate).
+            const okClick = await applyOpSetting('source', 'VOD');
+            const mediaOk = okClick ? await waitExaminoMediaKind('VOD', 5500, beforeSnap) : false;
             if (okClick && mediaOk) {
                 commitExaminoSourceSuccess('VOD');
                 mostrarOSD('Switched to VOD');
@@ -1181,13 +1640,14 @@
                         { value: 'VOD', label: 'VOD' }
                     ]
                 });
-                // One delayed refresh after quiet window — do not stack settle scrapes.
-                examinoSourceNeedsSettleRescrape = true;
-                const autoGen = examinoSettingsGen;
-                setTimeout(() => {
-                    if (autoGen !== examinoSettingsGen || examinoSettingsApplyBusy) return;
-                    refreshExaminoSettingsPanel().catch(() => {});
-                }, 2000);
+                // Select already canonical from apply + map; do NOT schedule another gear
+                // scrape (field idle: delayed refresh was still clicking settings after settle).
+                examinoSourceNeedsSettleRescrape = false;
+                examinoSettingsQuietUntil = Date.now() + 10000;
+                omtDebugSource('auto-vod:success-quiet', {
+                    quietMs: 10000,
+                    map: { DVR: examinoHostSourceMap.DVR, VOD: examinoHostSourceMap.VOD }
+                });
             } else {
                 examinoAutoVodClicked = false;
                 omtDebugSource('auto-vod:apply-or-media-failed', { okClick, mediaOk });
