@@ -20,11 +20,57 @@
     // Serialize OpenPlayer settings scrape/apply/refresh. Video replace →
     // teardown/boot re-wires a 600 ms refresh that otherwise races mid-apply
     // and steals the Source submenu (option-not-found → "Source change failed").
+    // v2.2.3: generation + busy reason so settle/refresh cannot overlap an apply
+    // or reopen gear while the post-VOD player shell is still mounting.
     let examinoSettingsChain = Promise.resolve();
-    function withExaminoSettingsLock(fn) {
-        const run = examinoSettingsChain.then(() => fn(), () => fn());
+    let examinoSettingsLockDepth = 0;
+    let examinoSettingsBusyReason = null;
+    let examinoSettingsGen = 0;
+    let examinoSettingsApplyBusy = false;
+    let examinoSettingsQuietUntil = 0;
+    // Declared early: cancelExaminoSettingsRefreshTimers may run before the Source block.
+    let examinoSourceSettleTimer = null;
+    let examinoSourceNeedsSettleRescrape = false;
+
+    function withExaminoSettingsLock(fn, reason) {
+        const tag = reason || 'work';
+        const run = examinoSettingsChain.then(() => runLocked(fn, tag), () => runLocked(fn, tag));
         examinoSettingsChain = run.then(() => {}, () => {});
         return run;
+    }
+
+    async function runLocked(fn, tag) {
+        examinoSettingsLockDepth++;
+        examinoSettingsBusyReason = tag;
+        omtDebugSource('lock:enter', { reason: tag, depth: examinoSettingsLockDepth, gen: examinoSettingsGen });
+        try {
+            return await fn();
+        } finally {
+            examinoSettingsLockDepth--;
+            omtDebugSource('lock:leave', { reason: tag, depth: examinoSettingsLockDepth, gen: examinoSettingsGen });
+            if (examinoSettingsLockDepth <= 0) {
+                examinoSettingsLockDepth = 0;
+                examinoSettingsBusyReason = null;
+            }
+        }
+    }
+
+    function cancelExaminoSettingsRefreshTimers() {
+        if (examinoSettingsRefreshTimer) {
+            clearTimeout(examinoSettingsRefreshTimer);
+            examinoSettingsRefreshTimer = null;
+        }
+        if (examinoSourceSettleTimer) {
+            clearTimeout(examinoSourceSettleTimer);
+            examinoSourceSettleTimer = null;
+        }
+    }
+
+    function bumpExaminoSettingsGen(reason) {
+        examinoSettingsGen++;
+        cancelExaminoSettingsRefreshTimers();
+        omtDebugSource('settings-gen:bump', { gen: examinoSettingsGen, reason: reason || null });
+        return examinoSettingsGen;
     }
 
     function installExaminoHotkeys() {
@@ -287,17 +333,73 @@
         return new Promise((resolve) => setTimeout(resolve, ms));
     }
 
+    /** Active OpenPlayer shell for the current <video> (post-VOD rebuild may create a new one). */
+    function findExaminoActivePlayer() {
+        const media = (vid && vid.isConnected ? vid : null) ||
+            (typeof site.findVideo === 'function' && site.findVideo()) ||
+            document.querySelector('video');
+        if (media && media.closest) {
+            const root = media.closest('.op-player') ||
+                media.closest('.video-container') ||
+                media.closest('.main-container') ||
+                media.closest('.top');
+            if (root) return root;
+        }
+        return document.querySelector('.op-player') || document;
+    }
+
+    function findExaminoSettingsGear() {
+        const player = findExaminoActivePlayer();
+        const scope = (player && player.querySelector) ? player : document;
+        let holder = scope.querySelector('.setting-holder');
+        let btn = scope.querySelector('.op-button.op-setting-button, .op-setting-button, #native-gear');
+        // Fall back to document if the active player shell has no gear yet (mount race).
+        if (!btn) {
+            holder = document.querySelector('.setting-holder');
+            btn = document.querySelector('.op-button.op-setting-button, .op-setting-button, #native-gear');
+        }
+        // Prefer a connected gear that lives under a player that still has a video.
+        if (btn && !btn.isConnected) btn = null;
+        return { player, holder, btn };
+    }
+
+    function describeExaminoSettingsDom() {
+        const { player, holder, btn } = findExaminoSettingsGear();
+        const panels = Array.from(document.querySelectorAll('.op-setting-panel'));
+        const videos = Array.from(document.querySelectorAll('video'));
+        const players = Array.from(document.querySelectorAll('.op-player'));
+        let btnCs = null;
+        let holderCs = null;
+        try { if (btn) btnCs = getComputedStyle(btn); } catch (_) {}
+        try { if (holder) holderCs = getComputedStyle(holder); } catch (_) {}
+        return {
+            gearFound: !!btn,
+            gearConnected: !!(btn && btn.isConnected),
+            gearVisibleClass: !!(btn && btn.classList.contains('omt-settings-temp-visible')),
+            gearDisplay: btnCs ? btnCs.display : null,
+            gearPE: btnCs ? btnCs.pointerEvents : null,
+            gearOpacity: btnCs ? btnCs.opacity : null,
+            holderFound: !!holder,
+            holderDisplay: holderCs ? holderCs.display : null,
+            holderHiddenClass: !!(holder && holder.classList.contains('omt-examino-native-hidden')),
+            panelFound: panels.length > 0,
+            panelCount: panels.length,
+            panelOpen: panels.some((p) => p.classList.contains('open') || p.classList.contains('omt-settings-raised')),
+            panelItems: panels.reduce((n, p) => n + p.querySelectorAll('.op-setting-item').length, 0),
+            videoCount: videos.length,
+            playerCount: players.length,
+            activePlayerIsOp: !!(player && player.classList && player.classList.contains('op-player')),
+            gearInActivePlayer: !!(btn && player && player.contains && player.contains(btn)),
+            playerGen: (typeof window.__omtPlayerGeneration === 'number') ? window.__omtPlayerGeneration : null,
+            mediaUrl: (typeof window.__omtMockMediaUrl === 'string') ? window.__omtMockMediaUrl : null
+        };
+    }
+
     function revealNativeSettingsButton() {
-        const holder = document.querySelector('.setting-holder');
-        const btn = document.querySelector('.op-button.op-setting-button, .op-setting-button');
+        const { holder, btn } = findExaminoSettingsGear();
         if (holder) holder.classList.add('omt-settings-temp-visible');
         if (btn) btn.classList.add('omt-settings-temp-visible');
-        omtDebugSource('reveal-gear', {
-            holder: !!holder,
-            btn: !!btn,
-            holderDisplay: holder ? getComputedStyle(holder).display : null,
-            btnPE: btn ? getComputedStyle(btn).pointerEvents : null
-        });
+        omtDebugSource('reveal-gear', describeExaminoSettingsDom());
         return btn;
     }
 
@@ -318,36 +420,80 @@
     function isOpSettingsPanelVisible(panel) {
         if (!panel) return false;
         if (panel.classList.contains('omt-settings-raised') || panel.classList.contains('open')) return true;
+        if (panel.querySelector('.op-setting-item')) return true;
         const cs = getComputedStyle(panel);
         return cs.display !== 'none' && cs.visibility !== 'hidden' && Number(cs.opacity) > 0;
     }
 
+    function findOpenOpSettingsPanel() {
+        const player = findExaminoActivePlayer();
+        const scoped = (player && player.querySelectorAll)
+            ? Array.from(player.querySelectorAll('.op-setting-panel'))
+            : [];
+        const all = scoped.length ? scoped : Array.from(document.querySelectorAll('.op-setting-panel'));
+        return all.find((p) => isOpSettingsPanelVisible(p) || p.querySelector('.op-setting-item')) || null;
+    }
+
     async function ensureOpSettingsOpen() {
-        // v1.2.0 body + suppress so click-to-toggle cannot steal gear clicks.
+        // v1.2.0 click path + suppress so click-to-toggle cannot steal gear clicks.
+        // v2.2.3: close first (avoid toggle-shut), wait for post-VOD gear, rich timeout logs.
         return withClickToggleSuppressed(async () => {
-            revealNativeSettingsButton();
-            let panel = document.querySelector('.op-setting-panel');
-            if (panel && isOpSettingsPanelVisible(panel)) {
-                panel.classList.add('omt-settings-raised');
-                omtDebugSource('ensure-panel:already-open');
-                return panel;
+            // Known-closed start so gear click opens instead of toggling an half-open panel shut.
+            document.querySelectorAll('.op-setting-panel').forEach((p) => {
+                p.classList.remove('open');
+                p.classList.remove('omt-settings-raised');
+            });
+
+            let btn = null;
+            for (let w = 0; w < 40; w++) {
+                btn = revealNativeSettingsButton();
+                if (btn && btn.isConnected) break;
+                await sleep(50);
             }
-            const btn = revealNativeSettingsButton();
             if (!btn) {
-                omtDebugSource('ensure-panel:no-gear');
+                omtDebugSource('ensure-panel:no-gear', describeExaminoSettingsDom());
                 return null;
             }
-            try { btn.click(); } catch (_) {}
+
+            const clickGear = () => {
+                const again = revealNativeSettingsButton() || btn;
+                if (!again) return;
+                try { again.click(); } catch (_) {}
+            };
+
+            clickGear();
             for (let i = 0; i < 24; i++) {
                 await sleep(50);
-                panel = document.querySelector('.op-setting-panel');
-                if (panel && (isOpSettingsPanelVisible(panel) || panel.querySelector('.op-setting-item'))) {
+                const panel = findOpenOpSettingsPanel();
+                if (panel) {
                     panel.classList.add('omt-settings-raised');
-                    omtDebugSource('ensure-panel:opened', { items: panel.querySelectorAll('.op-setting-item').length });
+                    omtDebugSource('ensure-panel:opened', {
+                        items: panel.querySelectorAll('.op-setting-item').length,
+                        ...describeExaminoSettingsDom()
+                    });
+                    return panel;
+                }
+                // Mid-wait: gear may have been replaced by a new player shell.
+                if (i === 8 || i === 16) clickGear();
+            }
+
+            // One hard retry after a short settle (post-VOD player mount).
+            await sleep(200);
+            clickGear();
+            for (let i = 0; i < 16; i++) {
+                await sleep(50);
+                const panel = findOpenOpSettingsPanel();
+                if (panel) {
+                    panel.classList.add('omt-settings-raised');
+                    omtDebugSource('ensure-panel:opened-retry', {
+                        items: panel.querySelectorAll('.op-setting-item').length,
+                        ...describeExaminoSettingsDom()
+                    });
                     return panel;
                 }
             }
-            omtDebugSource('ensure-panel:timeout');
+
+            omtDebugSource('ensure-panel:timeout', describeExaminoSettingsDom());
             return null;
         });
     }
@@ -368,11 +514,17 @@
     }
 
     async function scrapeOpSettingOptions(panelType) {
-        omtDebugSource('scrape:start', { panelType });
         return withExaminoSettingsLock(() => withClickToggleSuppressed(async () => {
+            // Log inside the lock so overlapping scrape:start cannot appear for concurrent callers.
+            omtDebugSource('scrape:start', {
+                panelType,
+                gen: examinoSettingsGen,
+                busy: examinoSettingsBusyReason,
+                applyBusy: examinoSettingsApplyBusy
+            });
             let panel = await ensureOpSettingsOpen();
             if (!panel) {
-                omtDebugSource('scrape:no-panel');
+                omtDebugSource('scrape:no-panel', describeExaminoSettingsDom());
                 return { current: null, options: [] };
             }
 
@@ -428,106 +580,89 @@
 
     async function applyOpSetting(panelType, value) {
         if (!value) return false;
-        omtDebugSource('apply:start', { panelType, value, path: location.pathname, v120: OMT_EXAMINO_SOURCE_V120 });
-        // Drop a pending post-wire refresh so it cannot steal the submenu.
-        if (examinoSettingsRefreshTimer) {
-            clearTimeout(examinoSettingsRefreshTimer);
-            examinoSettingsRefreshTimer = null;
-        }
-        return withExaminoSettingsLock(() => withClickToggleSuppressed(async () => {
-            let panel = await ensureOpSettingsOpen();
-            if (!panel) {
-                omtDebugSource('apply:no-panel');
-                return false;
-            }
-            if (!document.querySelector(`.op-setting-panel .op-setting-item[op-panel-type="${panelType}"]`)) {
-                await clickOpSettingBack();
-                panel = await ensureOpSettingsOpen();
-            }
-            const mainItem = document.querySelector(`.op-setting-panel .op-setting-item[op-panel-type="${panelType}"]`);
-            if (!mainItem) {
-                omtDebugSource('apply:no-row', { panelType });
-                return false;
-            }
-            omtDebugSource('apply:click-row', {
-                opDataValue: mainItem.getAttribute('op-data-value'),
-                opPanelType: mainItem.getAttribute('op-panel-type')
-            });
-            try { mainItem.click(); } catch (_) {}
-            await sleep(200);
-            const rawItems = Array.from(document.querySelectorAll('.op-setting-panel .op-setting-item')).map((el) => ({
-                opDataValue: el.getAttribute('op-data-value'),
-                opPanelType: el.getAttribute('op-panel-type'),
-                title: ((el.querySelector('.op-setting-item-title') || {}).textContent || '').trim(),
-                hasNext: !!el.querySelector('.op-setting-item-nexticon')
-            }));
-            const option = Array.from(document.querySelectorAll('.op-setting-panel .op-setting-item'))
-                .find((el) => el.getAttribute('op-data-value') === value && !el.querySelector('.op-setting-item-nexticon'));
-            if (option) {
-                omtDebugSource('apply:click-option', {
-                    value,
-                    opDataValue: option.getAttribute('op-data-value'),
-                    title: ((option.querySelector('.op-setting-item-title') || {}).textContent || '').trim()
-                });
-                try { option.click(); } catch (_) {}
-                await sleep(250);
-                concealNativeSettingsButton();
-                // v1.2.0: remove raised only — never strip host `.open`.
-                document.querySelectorAll('.op-setting-panel').forEach((p) => p.classList.remove('omt-settings-raised'));
-                // Post-1.2.0 (kept): VOD→DVR must snap off a carried VOD playhead
-                // or the short DVR window freezes. Does not alter the click path.
-                if (panelType === 'source') {
-                    const kind = classifyExaminoHostSourceOption({ value, label: value }) ||
-                        (/vod/i.test(String(value)) ? 'VOD' : /dvr/i.test(String(value)) ? 'DVR' : null);
-                    if (kind === 'VOD') {
-                        examinoLastAppliedSource = 'VOD';
-                        examinoHostSourceMap.VOD = String(value);
-                        // Optional restore of previous VOD playhead after a DVR detour.
-                        if (typeof examinoVodResumeSec === 'number' && isFinite(examinoVodResumeSec)) {
-                            const resumeAt = examinoVodResumeSec;
-                            examinoVodResumeSec = null;
-                            setTimeout(() => {
-                                try {
-                                    const el = (typeof site.findVideo === 'function' && site.findVideo()) ||
-                                        document.querySelector('video');
-                                    if (!el) return;
-                                    const end = (el.seekable && el.seekable.length)
-                                        ? el.seekable.end(el.seekable.length - 1)
-                                        : (el.duration || resumeAt);
-                                    el.currentTime = Math.max(0, Math.min(resumeAt, end));
-                                } catch (_) {}
-                            }, 80);
-                        }
-                    } else if (kind === 'DVR') {
-                        examinoLastAppliedSource = 'DVR';
-                        examinoHostSourceMap.DVR = String(value);
-                        examinoPendingDvrSettle = true;
-                        try {
-                            settleExaminoMediaAfterBind(
-                                (typeof site.findVideo === 'function' && site.findVideo()) ||
-                                document.querySelector('video')
-                            );
-                        } catch (_) {}
-                    }
-                    omtDebugSource('apply:source-kind', {
-                        value,
-                        kind,
-                        map: { DVR: examinoHostSourceMap.DVR, VOD: examinoHostSourceMap.VOD }
-                    });
+        omtDebugSource('apply:start', {
+            panelType,
+            value,
+            path: location.pathname,
+            v120: OMT_EXAMINO_SOURCE_V120,
+            gen: examinoSettingsGen
+        });
+        // Drop pending refresh/settle so they cannot steal the submenu or toggle the gear shut.
+        bumpExaminoSettingsGen('apply:' + panelType);
+        examinoSettingsApplyBusy = true;
+        try {
+            return await withExaminoSettingsLock(() => withClickToggleSuppressed(async () => {
+                let panel = await ensureOpSettingsOpen();
+                if (!panel) {
+                    omtDebugSource('apply:no-panel', describeExaminoSettingsDom());
+                    return false;
                 }
-                omtDebugSource('apply:success', {
-                    value,
-                    mediaUrl: (typeof window.__omtMockMediaUrl === 'string') ? window.__omtMockMediaUrl : null,
-                    duration: vid && vid.duration,
-                    omtSource: vid && vid.dataset && vid.dataset.omtSource
+                if (!document.querySelector(`.op-setting-panel .op-setting-item[op-panel-type="${panelType}"]`)) {
+                    await clickOpSettingBack();
+                    panel = await ensureOpSettingsOpen();
+                }
+                const mainItem = document.querySelector(`.op-setting-panel .op-setting-item[op-panel-type="${panelType}"]`);
+                if (!mainItem) {
+                    omtDebugSource('apply:no-row', { panelType, ...describeExaminoSettingsDom() });
+                    return false;
+                }
+                omtDebugSource('apply:click-row', {
+                    opDataValue: mainItem.getAttribute('op-data-value'),
+                    opPanelType: mainItem.getAttribute('op-panel-type')
                 });
-                return true;
-            }
-            // Fallback: leave raised native panel for manual pick
-            omtDebugSource('apply:option-not-found', { value, rawItems });
-            panel.classList.add('omt-settings-raised');
-            return false;
-        }));
+                try { mainItem.click(); } catch (_) {}
+                await sleep(200);
+                const rawItems = Array.from(document.querySelectorAll('.op-setting-panel .op-setting-item')).map((el) => ({
+                    opDataValue: el.getAttribute('op-data-value'),
+                    opPanelType: el.getAttribute('op-panel-type'),
+                    title: ((el.querySelector('.op-setting-item-title') || {}).textContent || '').trim(),
+                    hasNext: !!el.querySelector('.op-setting-item-nexticon')
+                }));
+                const option = Array.from(document.querySelectorAll('.op-setting-panel .op-setting-item'))
+                    .find((el) => el.getAttribute('op-data-value') === value && !el.querySelector('.op-setting-item-nexticon'));
+                if (option) {
+                    omtDebugSource('apply:click-option', {
+                        value,
+                        opDataValue: option.getAttribute('op-data-value'),
+                        title: ((option.querySelector('.op-setting-item-title') || {}).textContent || '').trim()
+                    });
+                    try { option.click(); } catch (_) {}
+                    await sleep(250);
+                    concealNativeSettingsButton();
+                    // v1.2.0: remove raised only — never strip host `.open`.
+                    document.querySelectorAll('.op-setting-panel').forEach((p) => p.classList.remove('omt-settings-raised'));
+                    // Remember host op-data-value only. Do NOT flip lastApplied / live UI /
+                    // DVR settle until media URL confirms (v2.2.3 field: UI raced ahead of stream).
+                    if (panelType === 'source') {
+                        const kind = classifyExaminoHostSourceOption({ value, label: value }) ||
+                            (/vod/i.test(String(value)) ? 'VOD' : /dvr/i.test(String(value)) ? 'DVR' : null);
+                        if (kind === 'VOD') examinoHostSourceMap.VOD = String(value);
+                        else if (kind === 'DVR') examinoHostSourceMap.DVR = String(value);
+                        omtDebugSource('apply:source-kind', {
+                            value,
+                            kind,
+                            map: { DVR: examinoHostSourceMap.DVR, VOD: examinoHostSourceMap.VOD },
+                            pendingMediaConfirm: true
+                        });
+                    }
+                    omtDebugSource('apply:success', {
+                        value,
+                        mediaUrl: (typeof window.__omtMockMediaUrl === 'string') ? window.__omtMockMediaUrl : null,
+                        duration: vid && vid.duration,
+                        omtSource: vid && vid.dataset && vid.dataset.omtSource
+                    });
+                    return true;
+                }
+                // Fallback: leave raised native panel for manual pick
+                omtDebugSource('apply:option-not-found', { value, rawItems });
+                panel.classList.add('omt-settings-raised');
+                return false;
+            }), 'apply:' + panelType);
+        } finally {
+            examinoSettingsApplyBusy = false;
+            // Quiet window: block settle/refresh gear thrash while the new player mounts.
+            examinoSettingsQuietUntil = Date.now() + 1800;
+        }
     }
 
     // Last successful Source apply + host op-data-value map for canonical DVR/VOD.
@@ -540,35 +675,105 @@
         { value: 'DVR', label: 'DVR' },
         { value: 'VOD', label: 'VOD' }
     ];
-    // One-shot settle re-scrape after Auto VOD / thin scrape — do not re-arm on
-    // every refresh while VOD (that open/dismiss loop blocks native gear).
-    let examinoSourceSettleTimer = null;
-    let examinoSourceNeedsSettleRescrape = false;
-
-    /** Infer DVR/VOD from last apply, media URL, or dataset — not from /play/dvr/ path. */
-    function inferExaminoSourceLabel() {
-        if (examinoLastAppliedSource === 'VOD' || examinoLastAppliedSource === 'DVR') {
-            return examinoLastAppliedSource;
-        }
-        if (examinoManualSourceChoice === 'VOD' || examinoManualSourceChoice === 'DVR') {
-            return examinoManualSourceChoice;
-        }
+    /** Media-URL / dataset only — never lastApplied / manual choice (those may race ahead). */
+    function inferExaminoSourceFromMedia() {
         try {
+            const el = (vid && vid.isConnected ? vid : null) ||
+                (typeof site.findVideo === 'function' && site.findVideo()) ||
+                document.querySelector('video');
             const url = (typeof window.__omtMockMediaUrl === 'string' && window.__omtMockMediaUrl) ||
-                (vid && vid.dataset && vid.dataset.omtMediaUrl) ||
-                (vid && (vid.currentSrc || vid.src)) || '';
+                (el && el.dataset && el.dataset.omtMediaUrl) ||
+                (el && (el.currentSrc || el.src)) || '';
             if (/chunklist_vod|\/vod\//i.test(url)) return 'VOD';
             if (/chunklist_dvr|\/live\//i.test(url)) return 'DVR';
+            if (el && el.dataset && el.dataset.omtSource) {
+                const s = String(el.dataset.omtSource).toUpperCase();
+                if (s === 'VOD' || s === 'DVR') return s;
+            }
         } catch (_) {}
-        if (vid && vid.dataset && vid.dataset.omtSource) {
-            const s = String(vid.dataset.omtSource).toUpperCase();
-            if (s === 'VOD' || s === 'DVR') return s;
-        }
         if (typeof window.__omtMockSource === 'string') {
             const s = String(window.__omtMockSource).toUpperCase();
             if (s === 'VOD' || s === 'DVR') return s;
         }
         return null;
+    }
+
+    /** Prefer confirmed apply, then media — not an in-flight select value. */
+    function inferExaminoSourceLabel() {
+        if (examinoLastAppliedSource === 'VOD' || examinoLastAppliedSource === 'DVR') {
+            return examinoLastAppliedSource;
+        }
+        const fromMedia = inferExaminoSourceFromMedia();
+        if (fromMedia) return fromMedia;
+        if (examinoManualSourceChoice === 'VOD' || examinoManualSourceChoice === 'DVR') {
+            return examinoManualSourceChoice;
+        }
+        return null;
+    }
+
+    /** Wait until the active media URL/dataset matches kind; adopt replaced <video> if needed. */
+    async function waitExaminoMediaKind(kind, timeoutMs) {
+        const want = String(kind || '').toUpperCase();
+        const budget = typeof timeoutMs === 'number' ? timeoutMs : 5000;
+        const started = Date.now();
+        while (Date.now() - started < budget) {
+            try {
+                const el = document.querySelector('video');
+                if (el && el !== vid && typeof omtAdoptReplacedVideo === 'function') {
+                    omtAdoptReplacedVideo(el);
+                }
+            } catch (_) {}
+            const got = inferExaminoSourceFromMedia();
+            if (got === want) {
+                omtDebugSource('media-confirm:ok', {
+                    kind: want,
+                    ms: Date.now() - started,
+                    mediaUrl: (typeof window.__omtMockMediaUrl === 'string') ? window.__omtMockMediaUrl : null
+                });
+                return true;
+            }
+            await sleep(100);
+        }
+        omtDebugSource('media-confirm:timeout', {
+            kind: want,
+            got: inferExaminoSourceFromMedia(),
+            mediaUrl: (typeof window.__omtMockMediaUrl === 'string') ? window.__omtMockMediaUrl : null,
+            ...describeExaminoSettingsDom()
+        });
+        return false;
+    }
+
+    function commitExaminoSourceSuccess(canonical) {
+        examinoLastAppliedSource = canonical;
+        examinoManualSourceChoice = canonical;
+        if (canonical === 'DVR') {
+            examinoPendingDvrSettle = true;
+            try {
+                settleExaminoMediaAfterBind(
+                    (typeof site.findVideo === 'function' && site.findVideo()) ||
+                    document.querySelector('video')
+                );
+            } catch (_) {}
+        } else if (canonical === 'VOD') {
+            if (typeof examinoVodResumeSec === 'number' && isFinite(examinoVodResumeSec)) {
+                const resumeAt = examinoVodResumeSec;
+                examinoVodResumeSec = null;
+                setTimeout(() => {
+                    try {
+                        const el = (typeof site.findVideo === 'function' && site.findVideo()) ||
+                            document.querySelector('video');
+                        if (!el) return;
+                        const end = (el.seekable && el.seekable.length)
+                            ? el.seekable.end(el.seekable.length - 1)
+                            : (el.duration || resumeAt);
+                        el.currentTime = Math.max(0, Math.min(resumeAt, end));
+                    } catch (_) {}
+                }, 80);
+            }
+        }
+        if (typeof atualizarEstadoLive === 'function') {
+            try { atualizarEstadoLive(); } catch (_) {}
+        }
     }
 
     /** Classify a host Source row by op-data-value (primary) / label — not display duplicates. */
@@ -724,10 +929,21 @@
 
     async function refreshExaminoSettingsPanel() {
         if (site.id !== 'examino' || !omtRoot) return;
+        if (examinoSettingsApplyBusy) {
+            omtDebugSource('refresh:skipped-apply-busy');
+            return;
+        }
+        if (Date.now() < examinoSettingsQuietUntil) {
+            omtDebugSource('refresh:skipped-quiet', {
+                remainMs: examinoSettingsQuietUntil - Date.now()
+            });
+            return;
+        }
         const section = q('omt-examino-settings');
         if (section) section.style.display = 'flex';
 
-        omtDebugSource('refresh:start');
+        const genAtStart = examinoSettingsGen;
+        omtDebugSource('refresh:start', { gen: genAtStart });
         let source = { current: null, options: [] };
         try {
             source = await scrapeOpSettingOptions('source');
@@ -737,6 +953,10 @@
                 current: inferExaminoSourceLabel(),
                 options: examinoLastGoodSourceOptions.slice()
             };
+        }
+        if (genAtStart !== examinoSettingsGen || examinoSettingsApplyBusy) {
+            omtDebugSource('refresh:aborted-stale', { genAtStart, gen: examinoSettingsGen });
+            return;
         }
         rememberGoodSourceOptions();
         // Thin scrape = host returned fewer than 2 real rows before mapping.
@@ -749,14 +969,26 @@
         dismissOpSettingsChrome();
 
         // Re-scrape once after settle when Auto VOD asked for it, or scrape was thin.
+        // Never stack settle scrapes while apply/quiet is active (field: gear thrash).
         const needsSettle = thin || examinoSourceNeedsSettleRescrape;
         if (needsSettle) {
             examinoSourceNeedsSettleRescrape = false;
-            omtDebugSource('refresh:reschedule-after-settle');
+            omtDebugSource('refresh:reschedule-after-settle', { gen: examinoSettingsGen });
             if (examinoSourceSettleTimer) clearTimeout(examinoSourceSettleTimer);
+            const settleGen = examinoSettingsGen;
             examinoSourceSettleTimer = setTimeout(() => {
                 examinoSourceSettleTimer = null;
+                if (settleGen !== examinoSettingsGen || examinoSettingsApplyBusy ||
+                    Date.now() < examinoSettingsQuietUntil) {
+                    omtDebugSource('refresh:settle-skipped', {
+                        settleGen,
+                        gen: examinoSettingsGen,
+                        applyBusy: examinoSettingsApplyBusy
+                    });
+                    return;
+                }
                 scrapeOpSettingOptions('source').then((again) => {
+                    if (settleGen !== examinoSettingsGen || examinoSettingsApplyBusy) return;
                     rememberGoodSourceOptions();
                     fillSelect(q('omt-examino-source'), again && again.options && again.options.length
                         ? again
@@ -766,12 +998,13 @@
                         });
                     dismissOpSettingsChrome();
                 }).catch(() => {
+                    if (settleGen !== examinoSettingsGen) return;
                     fillSelect(q('omt-examino-source'), {
                         current: inferExaminoSourceLabel(),
                         options: examinoLastGoodSourceOptions.slice()
                     });
                 });
-            }, 900);
+            }, 1200);
         }
     }
 
@@ -780,81 +1013,110 @@
         if (section) section.style.display = 'flex';
 
         const autoBox = q('omt-examino-auto-vod');
-        if (autoBox) {
+        // Bind once per DOM node (teardown/boot builds a new select after player swap).
+        if (autoBox && autoBox.dataset.omtWired !== '1') {
+            autoBox.dataset.omtWired = '1';
             autoBox.checked = storageGetAutoVod();
             autoBox.addEventListener('change', () => {
                 storageSetAutoVod(!!autoBox.checked);
                 mostrarOSD(autoBox.checked ? 'VOD auto-switch ON' : 'VOD auto-switch OFF');
                 if (autoBox.checked) maybeAutoSwitchToVod(0).catch(() => {});
             });
+        } else if (autoBox) {
+            autoBox.checked = storageGetAutoVod();
         }
 
         const sourceSel = q('omt-examino-source');
-        if (sourceSel) {
+        if (sourceSel && sourceSel.dataset.omtWired !== '1') {
+            sourceSel.dataset.omtWired = '1';
             sourceSel.addEventListener('change', async () => {
                 const canonical = /^vod/i.test(String(sourceSel.value)) ? 'VOD'
                     : /^dvr/i.test(String(sourceSel.value)) ? 'DVR'
                     : String(sourceSel.value);
                 const hostValue = resolveExaminoHostSourceValue(canonical);
+                const prevMedia = inferExaminoSourceFromMedia() || examinoLastAppliedSource || 'VOD';
                 omtDebugSource('ui-change', {
                     value: sourceSel.value,
                     canonical,
                     hostValue,
+                    prevMedia,
                     map: { DVR: examinoHostSourceMap.DVR, VOD: examinoHostSourceMap.VOD }
                 });
-                // Manual DVR must stop Auto VOD retries (post-1.2.0 field need;
-                // does not change applyOpSetting itself).
+                // Stop Auto VOD retries without flipping liveMode (manual choice waits
+                // for media URL confirm — field 2.2.2: UI went live while stream stayed VOD).
                 if (canonical === 'DVR') {
-                    // Remember VOD playhead so switching back can restore it.
                     try {
                         const el = (typeof site.findVideo === 'function' && site.findVideo()) ||
                             document.querySelector('video');
-                        if (el && (inferExaminoSourceLabel() === 'VOD' || /vod/i.test(String(el.dataset && el.dataset.omtSource || '')))) {
+                        if (el && (inferExaminoSourceFromMedia() === 'VOD' ||
+                            /vod/i.test(String(el.dataset && el.dataset.omtSource || '')))) {
                             examinoVodResumeSec = Number(el.currentTime) || 0;
                         }
                     } catch (_) {}
-                    examinoManualSourceChoice = 'DVR';
                     examinoAutoVodClicked = true;
-                } else if (canonical === 'VOD') {
-                    examinoManualSourceChoice = 'VOD';
                 }
                 // Keep working v1.2.0 apply path — click host op-data-value, not the label.
-                const ok = await applyOpSetting('source', hostValue);
-                mostrarOSD(ok ? ('Source: ' + canonical) : 'Source change failed');
+                const okClick = await applyOpSetting('source', hostValue);
+                let mediaOk = false;
+                if (okClick && (canonical === 'VOD' || canonical === 'DVR')) {
+                    mediaOk = await waitExaminoMediaKind(canonical, 5500);
+                }
+                const ok = !!(okClick && mediaOk);
+                // Player shell / HUD may have been rebuilt during media wait — re-query select.
+                const selNow = q('omt-examino-source') || sourceSel;
                 if (ok) {
-                    examinoLastAppliedSource = canonical === 'VOD' || canonical === 'DVR'
-                        ? canonical
-                        : examinoLastAppliedSource;
-                    // Overlay select stays canonical DVR|VOD only.
-                    fillSelect(sourceSel, {
-                        current: canonical === 'VOD' || canonical === 'DVR' ? canonical : inferExaminoSourceLabel(),
+                    commitExaminoSourceSuccess(canonical);
+                    fillSelect(selNow, {
+                        current: canonical,
                         options: [
                             { value: 'DVR', label: 'DVR' },
                             { value: 'VOD', label: 'VOD' }
                         ]
                     });
+                    mostrarOSD('Source: ' + canonical);
+                } else {
+                    // Revert select + keep prior confirmed source (do not leave live UI stuck).
+                    fillSelect(selNow, {
+                        current: prevMedia === 'DVR' || prevMedia === 'VOD'
+                            ? prevMedia
+                            : (inferExaminoSourceLabel() || 'VOD'),
+                        options: [
+                            { value: 'DVR', label: 'DVR' },
+                            { value: 'VOD', label: 'VOD' }
+                        ]
+                    });
+                    mostrarOSD('Source change failed');
+                    if (typeof atualizarEstadoLive === 'function') {
+                        try { atualizarEstadoLive(); } catch (_) {}
+                    }
                 }
-                // v1.2.0: do not refresh/force select from path after apply.
                 omtDebugSource('ui-change:done', {
                     ok,
+                    okClick,
+                    mediaOk,
                     canonical,
                     hostValue,
+                    prevMedia,
                     mediaUrl: (typeof window.__omtMockMediaUrl === 'string') ? window.__omtMockMediaUrl : null,
                     duration: (document.querySelector('video') || {}).duration,
                     omtSource: (document.querySelector('video') || {}).dataset
                         ? document.querySelector('video').dataset.omtSource
                         : null,
-                    sel: sourceSel.value,
-                    disabled: sourceSel.disabled
+                    sel: selNow ? selNow.value : null,
+                    disabled: selNow ? selNow.disabled : null,
+                    lastApplied: examinoLastAppliedSource,
+                    manual: examinoManualSourceChoice
                 });
             });
         }
 
         // Populate async shortly after mount (OpenPlayer menus may lag) — v1.2.0.
         // Clear any prior timer so a mid-apply Source click is not raced by refresh.
-        if (examinoSettingsRefreshTimer) clearTimeout(examinoSettingsRefreshTimer);
+        cancelExaminoSettingsRefreshTimers();
+        const wireGen = examinoSettingsGen;
         examinoSettingsRefreshTimer = setTimeout(() => {
             examinoSettingsRefreshTimer = null;
+            if (wireGen !== examinoSettingsGen || examinoSettingsApplyBusy) return;
             refreshExaminoSettingsPanel().catch(() => {});
         }, 600);
     }
@@ -906,9 +1168,10 @@
                 scraped: source.options.map((o) => ({ value: o.value, label: o.label }))
             });
             // Keep working v1.2.0 apply path — click the preferred host op-data-value.
-            const ok = await applyOpSetting('source', vod.value);
-            if (ok) {
-                examinoLastAppliedSource = 'VOD';
+            const okClick = await applyOpSetting('source', vod.value);
+            const mediaOk = okClick ? await waitExaminoMediaKind('VOD', 5500) : false;
+            if (okClick && mediaOk) {
+                commitExaminoSourceSuccess('VOD');
                 mostrarOSD('Switched to VOD');
                 // Paint canonical VOD with DVR still available — never dump host duplicates.
                 fillSelect(q('omt-examino-source'), {
@@ -918,12 +1181,16 @@
                         { value: 'VOD', label: 'VOD' }
                     ]
                 });
+                // One delayed refresh after quiet window — do not stack settle scrapes.
                 examinoSourceNeedsSettleRescrape = true;
+                const autoGen = examinoSettingsGen;
                 setTimeout(() => {
+                    if (autoGen !== examinoSettingsGen || examinoSettingsApplyBusy) return;
                     refreshExaminoSettingsPanel().catch(() => {});
-                }, 1000);
+                }, 2000);
             } else {
-                omtDebugSource('auto-vod:apply-false-no-retry-click');
+                examinoAutoVodClicked = false;
+                omtDebugSource('auto-vod:apply-or-media-failed', { okClick, mediaOk });
             }
         } catch (err) {
             console.warn('[OMT] Auto-VOD failed:', err && err.message);
@@ -954,14 +1221,12 @@
 
     // Compatibility stubs for shared callers (pdt.js / wire.js). Not part of
     // the v1.2.0 Source path; do not drive Source UI from these.
+    // v2.2.3: prefer real media URL so liveMode cannot flip before the stream does.
     function detectCurrentSource() {
-        if (typeof window.__omtMockSource === 'string' && window.__omtMockSource) {
-            return String(window.__omtMockSource).toUpperCase() === 'VOD' ? 'VOD'
-                : String(window.__omtMockSource).toUpperCase() === 'DVR' ? 'DVR' : null;
-        }
-        if (vid && vid.dataset && vid.dataset.omtSource) {
-            const s = String(vid.dataset.omtSource).toUpperCase();
-            if (s === 'VOD' || s === 'DVR') return s;
+        const fromMedia = inferExaminoSourceFromMedia();
+        if (fromMedia) return fromMedia;
+        if (examinoLastAppliedSource === 'VOD' || examinoLastAppliedSource === 'DVR') {
+            return examinoLastAppliedSource;
         }
         return null;
     }

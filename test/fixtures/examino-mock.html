@@ -120,10 +120,11 @@
   <div id="status">Waiting to inject video…</div>
   <script>
     (function () {
-      const host = document.getElementById('media-host');
+      let host = document.getElementById('media-host');
       const status = document.getElementById('status');
-      const panel = document.getElementById('panel-mock');
-      const gear = document.getElementById('native-gear');
+      let panel = document.getElementById('panel-mock');
+      let gear = document.getElementById('native-gear');
+      window.__omtPlayerGeneration = 1;
 
       // Conflicting page handler (bubble) — extension capture must win.
       window.__omtHostileKeySeen = false;
@@ -142,7 +143,19 @@
         view: 'root' // root | source | audio | speed
       };
 
+      function bindGear() {
+        if (!gear) return;
+        gear.onclick = () => {
+          state.view = 'root';
+          renderPanel();
+          // OpenPlayer-like: gear opens settings (idempotent open for programmatic clicks).
+          panel.classList.add('open');
+        };
+      }
+      bindGear();
+
       function renderPanel() {
+        if (!panel) return;
         if (state.view === 'root') {
           panel.innerHTML = `
             <div class="op-setting-title-container"><div class="op-setting-title" tabindex="0"><span class="op-setting-title-title">Settings</span></div></div>
@@ -240,15 +253,43 @@
         }
       }
 
-      gear.addEventListener('click', () => {
-        state.view = 'root';
-        renderPanel();
-        // OpenPlayer-like: gear opens settings (idempotent open for programmatic clicks).
-        panel.classList.add('open');
-      });
-
       let durationForSource = { DVR: 330, VOD: 7200 }; // DVR ~5.5 min, VOD full match
       let currentLabel = 'EXAMINO-A';
+
+      /**
+       * Field: after Source swap Examino recreates the OpenPlayer shell (new gear +
+       * panel + media host). Stale gear clicks then no-op → ensure-panel:timeout.
+       */
+      function rebuildPlayerShell() {
+        const top = document.querySelector('.top.svelte-iq8mv8, .top');
+        if (!top) return;
+        const old = document.getElementById('op-player');
+        if (old) old.remove();
+        window.__omtPlayerGeneration = (window.__omtPlayerGeneration || 0) + 1;
+        const gen = window.__omtPlayerGeneration;
+        const player = document.createElement('div');
+        player.className = 'op-player';
+        player.id = 'op-player';
+        player.dataset.omtPlayerGen = String(gen);
+        player.innerHTML = `
+          <div class="op-media-element-container op-clear" id="media-host"></div>
+          <div class="op-ui op-clear">OpenPlayer UI</div>
+          <div class="op-controls">OpenPlayer Controls</div>
+          <div class="op-progressbar-container op-clear">Progress</div>
+          <div class="setting-holder op-navigators op-clear">
+            <button class="op-button op-setting-button" id="native-gear" type="button"><i class="op-con op-setting"></i> ⚙</button>
+          </div>
+          <div id="panel-mock" class="op-setting-panel animated fadeIn"></div>`;
+        top.appendChild(player);
+        host = document.getElementById('media-host');
+        panel = document.getElementById('panel-mock');
+        gear = document.getElementById('native-gear');
+        bindGear();
+        state.view = 'root';
+        renderPanel();
+        // Simulate concurrent host refresh pressure right after rebuild (field race).
+        window.__omtMockPostSwapRefresh = (window.__omtMockPostSwapRefresh || 0) + 1;
+      }
 
       function makeVideo(label, source) {
         const video = document.createElement('video');
@@ -318,14 +359,15 @@
         const prev = document.querySelector('video');
         const prevTime = prev ? prev.currentTime : 0;
         currentLabel = source === 'VOD' ? 'EXAMINO-VOD' : 'EXAMINO-DVR';
-        host.innerHTML = '';
+        // Recreate the whole player (gear/panel/video) — matches real Examino post-VOD DOM.
+        rebuildPlayerShell();
         const next = makeVideo(currentLabel, source);
         // Simulate player carrying VOD playhead into DVR (out-of-window) — extension must settle.
         if (source === 'DVR' && prevTime > durationForSource.DVR) {
           next.currentTime = prevTime;
         }
         host.appendChild(next);
-        status.textContent = 'Source=' + source + ' — video replaced';
+        status.textContent = 'Source=' + source + ' — player shell gen=' + window.__omtPlayerGeneration;
         window.__omtMockSource = source;
         window.__omtMockMediaUrl = next.dataset.omtMediaUrl || window.__omtMockMediaUrl;
         window.__omtDvrFrozen = !!window.__omtDvrFrozen;
@@ -340,6 +382,7 @@
 
       setTimeout(() => {
         // Preserve whatever Source the extension (auto-VOD) already selected.
+        // Init replacement is video-only (no shell rebuild) so first Auto VOD still finds gear.
         host.innerHTML = '';
         host.appendChild(makeVideo('EXAMINO-B', state.source));
         status.textContent = 'Video B replaced — source=' + state.source;
@@ -348,6 +391,7 @@
 
       window.__mockRequestFs = () => document.getElementById('op-player').requestFullscreen();
       window.__omtMockGetSource = () => state.source;
+      window.__omtMockRebuildPlayer = rebuildPlayerShell;
       renderPanel();
     })();
   </script>
