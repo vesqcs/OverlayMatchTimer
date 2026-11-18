@@ -293,13 +293,28 @@ html.omt-host-examino.omt-hud-on .setting-holder.omt-examino-native-hidden.omt-s
     color: #F5831F !important;
     filter: none !important;
 }
+/* Beat host `button` / `button:not(:active)` grey (InPlay css-leak mock). */
+#omt-root #omt-btn-play,
+#omt-root #omt-btn-play:not(:active),
+#omt-root .omt-transport-seg .ctrl-btn.btn-play,
+#omt-root .omt-transport-seg .ctrl-btn.btn-play:not(:active) {
+    color: #e8e8e8 !important;
+    filter: none !important;
+    background: transparent !important;
+    background-color: transparent !important;
+}
+#omt-root #omt-btn-play.playing,
+#omt-root #omt-btn-play.playing:not(:active),
+#omt-root #omt-btn-play.playing:hover,
 #omt-root .omt-transport-seg .ctrl-btn.btn-play.playing,
+#omt-root .omt-transport-seg .ctrl-btn.btn-play.playing:not(:active),
 #omt-root .omt-transport-seg .ctrl-btn.btn-play.playing:hover {
     color: #F5831F !important;
     filter: none !important;
     background: transparent !important;
     background-color: transparent !important;
 }
+#omt-root #omt-btn-play.playing:hover,
 #omt-root .omt-transport-seg .ctrl-btn.btn-play.playing:hover {
     background: rgba(245, 131, 31, 0.12) !important;
     background-color: rgba(245, 131, 31, 0.12) !important;
@@ -1107,6 +1122,37 @@ html.omt-host-examino.omt-hud-on .setting-holder.omt-examino-native-hidden.omt-s
     min-width: 0;
     flex: 1 1 auto;
 }
+#omt-root .omt-timeline-play-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: #f1f1f1;
+    cursor: pointer;
+    opacity: 0.92;
+    flex-shrink: 0;
+}
+#omt-root .omt-timeline-play-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    opacity: 1;
+}
+#omt-root .omt-timeline-play-btn:focus-visible {
+    outline: 2px solid var(--omt-orange);
+    outline-offset: 1px;
+}
+#omt-root .omt-timeline-play-btn.playing {
+    color: var(--omt-orange);
+}
+#omt-root .omt-timeline-play-btn .omt-icon {
+    width: 16px;
+    height: 16px;
+}
 .omt-timeline-times {
     display: inline-flex;
     align-items: center;
@@ -1114,6 +1160,18 @@ html.omt-host-examino.omt-hud-on .setting-holder.omt-examino-native-hidden.omt-s
     flex-shrink: 1;
     min-width: 0;
     font-variant-numeric: tabular-nums;
+}
+#omt-root .omt-timeline-edge-clock {
+    font-family: var(--omt-mono);
+    font-size: 11px !important;
+    font-variant-numeric: tabular-nums;
+    color: #9aa3ad;
+    line-height: 1;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+#omt-root .omt-timeline-edge-clock[hidden] {
+    display: none !important;
 }
 #omt-root .omt-timeline-post-times {
     display: inline-flex;

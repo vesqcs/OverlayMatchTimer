@@ -97,11 +97,19 @@
     }
 
     function atualizarBotaoPlay(playing) {
-        if (!btnMainPlay) return;
-        // Playing → orange pause icon; paused → grey/white play icon.
-        btnMainPlay.innerHTML = playing ? omtIcon('pause', 22) : omtIcon('play', 22);
-        btnMainPlay.classList.toggle('playing', !!playing);
-        btnMainPlay.setAttribute('aria-pressed', playing ? 'true' : 'false');
+        const on = !!playing;
+        if (btnMainPlay) {
+            // Playing → orange pause icon; paused → grey/white play icon.
+            btnMainPlay.innerHTML = on ? omtIcon('pause', 22) : omtIcon('play', 22);
+            btnMainPlay.classList.toggle('playing', on);
+            btnMainPlay.setAttribute('aria-pressed', on ? 'true' : 'false');
+        }
+        if (btnTimelinePlay) {
+            btnTimelinePlay.innerHTML = on ? omtIcon('pause', 16) : omtIcon('play', 16);
+            btnTimelinePlay.classList.toggle('playing', on);
+            btnTimelinePlay.setAttribute('aria-pressed', on ? 'true' : 'false');
+            btnTimelinePlay.setAttribute('aria-label', on ? 'Pause' : 'Play');
+        }
     }
 
     function syncPlayButtonFromVideo() {
@@ -112,19 +120,35 @@
     }
 
     function irParaLive() {
-        // Try to read the live sync position from hls.js directly
-        // (seek target / timing logic unchanged from v1.2.2 / v1.3.0)
-        if (hlsInstance && typeof hlsInstance.liveSyncPosition === 'number') {
-            seekTo(hlsInstance.liveSyncPosition);
-        } else if (vid.seekable && vid.seekable.length > 0) {
-            seekTo(vid.seekable.end(vid.seekable.length - 1) - 3);
-        } else if (vid.duration && isFinite(vid.duration)) {
-            seekTo(vid.duration - 3);
+        if (!ensureLiveVideo()) return;
+        // Adaptive safe point behind seekable end (never raw edge — stalls).
+        // Manual skips are not clamped to this margin.
+        let target = null;
+        if (typeof omtLiveSafePointSec === 'function') {
+            target = omtLiveSafePointSec();
+        }
+        if (!(target > 0)) {
+            try {
+                if (vid.seekable && vid.seekable.length > 0) {
+                    const edge = vid.seekable.end(vid.seekable.length - 1);
+                    const margin = (typeof OMT_LIVE_SAFE_MARGIN_S === 'number') ? OMT_LIVE_SAFE_MARGIN_S : 10;
+                    target = Math.max(0, edge - margin);
+                } else if (vid.duration && isFinite(vid.duration)) {
+                    const margin = (typeof OMT_LIVE_SAFE_MARGIN_S === 'number') ? OMT_LIVE_SAFE_MARGIN_S : 10;
+                    target = Math.max(0, vid.duration - margin);
+                }
+            } catch (_) {}
+        }
+        if (target != null && isFinite(target)) {
+            seekTo(target);
         }
         // After going live, clear seek lock so stream can advance normally
         setTimeout(() => { userIntendedTime = null; seekLockUntil = 0; }, 3000);
-        mostrarOSD('Going Live');
-        liveBtn.blur();
+        const marginUsed = (typeof omtAdaptiveLiveSafeMarginSec === 'function')
+            ? omtAdaptiveLiveSafeMarginSec()
+            : OMT_LIVE_SAFE_MARGIN_S;
+        mostrarOSD('Live −' + Math.round(marginUsed) + 's');
+        if (liveBtn) liveBtn.blur();
     }
 
     // Redesign scrubber chrome only: skip redundant omt-at-live / --omt-progress
@@ -153,8 +177,11 @@
         } else if (vid.duration && isFinite(vid.duration)) {
             liveEdge = vid.duration;
         }
+        if (typeof omtNoteLiveEdgeAdvance === 'function') omtNoteLiveEdgeAdvance(liveEdge);
         const dist = liveEdge - vid.currentTime;
-        const atLive = liveEdge > 0 && dist <= 8;
+        const liveThresh = (typeof OMT_LIVE_SAFE_MARGIN_S === 'number' && OMT_LIVE_SAFE_MARGIN_S > 0)
+            ? OMT_LIVE_SAFE_MARGIN_S : 10;
+        const atLive = liveEdge > 0 && dist <= liveThresh;
         liveBtn.classList.toggle('is-live', atLive);
         // Presentation only (redesign): drive scrubber colour (red at live / grey behind)
         if (_omtLiveUiAtLive !== atLive) {

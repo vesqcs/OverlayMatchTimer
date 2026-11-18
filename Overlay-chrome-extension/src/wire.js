@@ -63,6 +63,7 @@
         q('omt-p10').addEventListener('click', () => saltarVideo(omtPanelSkipSeconds('fwd', 1)));
         q('omt-p120').addEventListener('click', () => saltarVideo(omtPanelSkipSeconds('fwd', 2)));
         q('omt-btn-play').addEventListener('click', togglePlay);
+        if (btnTimelinePlay) btnTimelinePlay.addEventListener('click', togglePlay);
         q('omt-prev-frame').addEventListener('click', retrocederFrame);
         q('omt-next-frame').addEventListener('click', avancarFrame);
 
@@ -235,6 +236,12 @@
             if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
             syncPlayButtonFromVideo();
         }, vsig);
+        // Feed adaptive LIVE margin: recent stalls → never jump closer than base.
+        const noteStall = () => {
+            if (typeof omtNoteLiveStall === 'function') omtNoteLiveStall();
+        };
+        vid.addEventListener('waiting', noteStall, vsig);
+        vid.addEventListener('stalled', noteStall, vsig);
         // Initial icon/colour from the real media state (no centre-screen flash).
         syncPlayButtonFromVideo();
         if (typeof installAutoPauseOnBlur === 'function') installAutoPauseOnBlur();

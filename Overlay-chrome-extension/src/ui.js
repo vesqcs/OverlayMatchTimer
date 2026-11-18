@@ -148,13 +148,15 @@
     <div id="omt-timeline-hover-tip" class="omt-timeline-hover-tip" hidden></div>
     <div class="omt-timeline-chrome-row">
         <div class="omt-timeline-chrome-left">
+            <button type="button" class="omt-timeline-play-btn" id="omt-timeline-play-btn" aria-label="Play" aria-pressed="false">${omtIcon('play', 16)}</button>
             <button type="button" class="omt-timeline-vol-btn" id="omt-timeline-vol-btn" aria-label="Mute">${omtIcon('volume-2', 16)}</button>
             <input type="range" id="omt-timeline-vol-range" class="omt-timeline-vol-range" min="0" max="1" step="0.05" value="1" aria-label="Volume">
             <div class="omt-timeline-times" data-omt-time-mode="post">
                 <button type="button" id="omt-timeline-live-indicator" class="omt-timeline-live-indicator" hidden aria-label="Go to live">
-                    <span id="omt-timeline-live-delay" class="omt-timeline-live-delay">-0 s</span>
+                    <span id="omt-timeline-live-delay" class="omt-timeline-live-delay">-0:00</span>
                     <span id="omt-timeline-live-chip" class="omt-timeline-live-chip" hidden>LIVE</span>
                 </button>
+                <span id="omt-timeline-edge-clock" class="omt-timeline-edge-clock" hidden>edge 0:00</span>
                 <div id="omt-timeline-post-times" class="omt-timeline-post-times">
                     <span id="omt-v-time-current" class="omt-time-text">0:00</span>
                     <span class="omt-time-sep" aria-hidden="true">/</span>
@@ -193,7 +195,7 @@
         </div>
         <div class="drag-center-grip" aria-hidden="true">${omtIcon('grip-horizontal', 16)}</div>
         <div class="drag-side-right">
-            <button id="omt-live-btn" class="omt-tip" type="button"${tip('Go to live edge (L)')}>
+            <button id="omt-live-btn" class="omt-tip" type="button"${tip('Go to live safe point (L)')}>
                 <span class="live-dot"></span><span class="live-label">LIVE</span>
             </button>
             <span class="omt-live-spacer" aria-hidden="true"></span>
@@ -298,6 +300,7 @@
         // Live/post slots are looked up by id when painting (no extra cached refs required).
         liveBtn = q('omt-live-btn');
         btnMainPlay = q('omt-btn-play');
+        btnTimelinePlay = q('omt-timeline-play-btn');
         speedSelect = q('omt-speed-select');
         volumeRange = q('omt-volume-range');
         volumeIconBtn = q('omt-volume-icon-btn');
