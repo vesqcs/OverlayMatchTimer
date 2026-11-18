@@ -52,17 +52,16 @@ html.omt-host-inplayip.omt-hud-on .video-js .vjs-control-bar {
     pointer-events: none !important;
 }
 
-/* ---- HIDE XEATRE HOST CHROME (Xeatre only) ----
-   Hide the native VJS bar AND the 6-column DOC/FRAME/PLAY/LIVE/FULL panel
-   (docked + floating) + Auto hide. Never hide .video-js / media hosts. */
+/* ---- HIDE XEATRE HOST CHROME (Xeatre only, v2.2.5) ----
+   Chrome leaves only (control bar, ControlBar overlays, 6-col panel).
+   Never hide poster / tech / .video-js — field black screen when poster
+   was hidden while tech failed to paint after "hdmi-video already initialised". */
 html.omt-host-xeatre.omt-hud-on .vjs-control-bar,
 html.omt-host-xeatre.omt-hud-on .vjs-big-play-button,
-html.omt-host-xeatre.omt-hud-on .vjs-loading-spinner,
-html.omt-host-xeatre.omt-hud-on .vjs-poster,
 html.omt-host-xeatre.omt-hud-on .vjs-menu-button-popup .vjs-menu,
-html.omt-host-xeatre.omt-hud-on .vjs-text-track-display,
-html.omt-host-xeatre.omt-hud-on .vjs-error-display,
-html.omt-host-xeatre.omt-hud-on .vjs-modal-dialog,
+html.omt-host-xeatre.omt-hud-on #ControlBar.overlay-fullscreen,
+html.omt-host-xeatre.omt-hud-on #ControlBar.overlay-normal,
+html.omt-host-xeatre.omt-hud-on #ControlBar,
 html.omt-host-xeatre.omt-hud-on #jwplay,
 html.omt-host-xeatre.omt-hud-on #GoLive,
 html.omt-host-xeatre.omt-hud-on #GoStart,
@@ -84,12 +83,21 @@ html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden {
 }
 html.omt-host-xeatre.omt-hud-on .video-js.omt-xeatre-host-hidden,
 html.omt-host-xeatre.omt-hud-on .vjs-tech.omt-xeatre-host-hidden,
+html.omt-host-xeatre.omt-hud-on #hdmi-video.omt-xeatre-host-hidden,
 html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(video),
 html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(.vjs-tech) {
     display: block !important;
     visibility: visible !important;
     opacity: 1 !important;
     pointer-events: auto !important;
+}
+html.omt-host-xeatre.omt-hud-on #hdmi-video,
+html.omt-host-xeatre.omt-hud-on #hdmi-video video,
+html.omt-host-xeatre.omt-hud-on .video-js > video,
+html.omt-host-xeatre.omt-hud-on video.vjs-tech,
+html.omt-host-xeatre.omt-hud-on .vjs-tech {
+    visibility: visible !important;
+    opacity: 1 !important;
 }
 
 /* ---- HIDE OPENPLAYER / EXAMINO NATIVE CHROME (Examino only) ----
