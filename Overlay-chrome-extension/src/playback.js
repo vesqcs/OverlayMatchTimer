@@ -141,6 +141,17 @@
         }
         if (target != null && isFinite(target)) {
             seekTo(target);
+            // Keep scrubber playhead in sync for immediate LIVE paint.
+            if (timelineSlider && isFinite(target)) {
+                const min = parseFloat(timelineSlider.min) || 0;
+                const max = parseFloat(timelineSlider.max) || 0;
+                if (max > min) {
+                    timelineSlider.value = String(Math.max(min, Math.min(max, target)));
+                    if (typeof paintTimelineScrubberProgress === 'function') {
+                        paintTimelineScrubberProgress(true);
+                    }
+                }
+            }
         }
         // After going live, clear seek lock so stream can advance normally
         setTimeout(() => { userIntendedTime = null; seekLockUntil = 0; }, 3000);
@@ -148,6 +159,10 @@
             ? omtAdaptiveLiveSafeMarginSec()
             : OMT_LIVE_SAFE_MARGIN_S;
         mostrarOSD('Live −' + Math.round(marginUsed) + 's');
+        // Refresh panel + timeline from the same snapshot immediately (no timeupdate wait).
+        if (typeof atualizarEstadoLive === 'function') {
+            atualizarEstadoLive({ forceAtLive: true });
+        }
         if (liveBtn) liveBtn.blur();
     }
 
@@ -169,30 +184,52 @@
         timelineSlider.style.setProperty('--omt-progress', Math.max(0, Math.min(100, rounded)) + '%');
     }
 
-    function atualizarEstadoLive() {
-        if (!vid || !liveBtn) return; // null-guard: called from timeupdate, may fire after teardown
-        let liveEdge = 0;
-        if (vid.seekable && vid.seekable.length > 0) {
-            liveEdge = vid.seekable.end(vid.seekable.length - 1);
-        } else if (vid.duration && isFinite(vid.duration)) {
-            liveEdge = vid.duration;
-        }
+    /**
+     * Sync every live/time indicator from one omtResolveLivePresentation snapshot:
+     * panel LIVE red, scrubber omt-at-live, timeline delay/chip, video range / POST.
+     */
+    function atualizarEstadoLive(opts) {
+        if (!vid) return; // may fire after teardown
+        const liveEdge = (typeof omtTimelineLiveEdgeSec === 'function')
+            ? omtTimelineLiveEdgeSec()
+            : (vid.seekable && vid.seekable.length > 0
+                ? vid.seekable.end(vid.seekable.length - 1)
+                : (vid.duration && isFinite(vid.duration) ? vid.duration : 0));
         if (typeof omtNoteLiveEdgeAdvance === 'function') omtNoteLiveEdgeAdvance(liveEdge);
-        const dist = liveEdge - vid.currentTime;
-        const liveThresh = (typeof OMT_LIVE_SAFE_MARGIN_S === 'number' && OMT_LIVE_SAFE_MARGIN_S > 0)
-            ? OMT_LIVE_SAFE_MARGIN_S : 10;
-        const atLive = liveEdge > 0 && dist <= liveThresh;
-        liveBtn.classList.toggle('is-live', atLive);
-        // Presentation only (redesign): drive scrubber colour (red at live / grey behind)
-        if (_omtLiveUiAtLive !== atLive) {
-            _omtLiveUiAtLive = atLive;
-            const timelineBar = omtRoot ? omtRoot.querySelector('#omt-timeline-bar') : null;
-            if (timelineBar) timelineBar.classList.toggle('omt-at-live', atLive);
-            if (controlsPanel) controlsPanel.classList.toggle('omt-at-live', atLive);
+        const playhead = (typeof omtTimelinePlayheadSec === 'function')
+            ? omtTimelinePlayheadSec()
+            : (vid.currentTime || 0);
+
+        let snap;
+        if (typeof omtResolveLivePresentation === 'function') {
+            snap = omtResolveLivePresentation({
+                playhead,
+                liveEdge,
+                forceAtLive: !!(opts && opts.forceAtLive)
+            });
+        } else {
+            const delay = liveEdge > 0 ? Math.max(0, liveEdge - playhead) : 0;
+            const thresh = (typeof OMT_LIVE_SAFE_MARGIN_S === 'number' && OMT_LIVE_SAFE_MARGIN_S > 0)
+                ? OMT_LIVE_SAFE_MARGIN_S : 10;
+            snap = {
+                liveMode: true,
+                playhead,
+                liveEdge,
+                delay,
+                atLive: liveEdge > 0 && delay <= thresh
+            };
         }
-        // Right-side LIVE delay / POST times (UI only; same liveEdge/playhead values).
-        if (typeof atualizarTempoTimelineDireito === 'function') atualizarTempoTimelineDireito();
-        // While the user is scrubbing, input handler owns the fill (avoid fighting the thumb).
+
+        if (liveBtn) liveBtn.classList.toggle('is-live', !!snap.atLive);
+        // Presentation only (redesign): drive scrubber colour (red at live / grey behind)
+        if (_omtLiveUiAtLive !== snap.atLive) {
+            _omtLiveUiAtLive = snap.atLive;
+            const timelineBar = omtRoot ? omtRoot.querySelector('#omt-timeline-bar') : null;
+            if (timelineBar) timelineBar.classList.toggle('omt-at-live', !!snap.atLive);
+            if (controlsPanel) controlsPanel.classList.toggle('omt-at-live', !!snap.atLive);
+        }
+        // Same snapshot → timeline delay/chip + video range (no second resolve / latch tick).
+        if (typeof atualizarTempoTimelineDireito === 'function') atualizarTempoTimelineDireito(snap);
         if (!isDraggingTimeline) paintTimelineScrubberProgress(false);
     }
 

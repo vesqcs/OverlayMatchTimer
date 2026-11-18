@@ -91,8 +91,10 @@
     const OMT_LIVE_SAFE_MARGIN_MIN_S = 4;   // closest LIVE jump on a healthy stream
     const OMT_LIVE_SAFE_MARGIN_MAX_S = 30;  // farthest LIVE jump on a bad stream
     const OMT_LIVE_STALL_MEMORY_MS = 45000; // "stalled recently" window
-    // Chip leave hysteresis sits a few seconds beyond the base so the LIVE
-    // chip does not flicker when delay hovers near the threshold.
+    // Extra slack so landing on the adaptive safe point still counts as LIVE
+    // (float + edge tick during seek). Panel button + timeline chip share this.
+    const OMT_LIVE_AT_LIVE_TOL_S = 1.5;
+    // Legacy fixed chip thresholds (kept as fallbacks; paint uses adaptive).
     const OMT_LIVE_CHIP_ENTER_S = OMT_LIVE_SAFE_MARGIN_S;
     const OMT_LIVE_CHIP_LEAVE_S = OMT_LIVE_SAFE_MARGIN_S + 5;
     // Edge-advance samples for adaptive LIVE jump (wall-clock ms of each advance).
@@ -2214,6 +2216,64 @@
         return Math.max(0, edge - margin);
     }
 
+    /**
+     * Max delay that still *enters* LIVE (adaptive safe margin + tol).
+     * Single threshold for panel red + timeline LIVE chip — never a fixed ~5s.
+     */
+    function omtLiveAtLiveMaxDelaySec() {
+        const margin = omtAdaptiveLiveSafeMarginSec();
+        const tol = (typeof OMT_LIVE_AT_LIVE_TOL_S === 'number') ? OMT_LIVE_AT_LIVE_TOL_S : 1.5;
+        return margin + Math.max(0, tol);
+    }
+
+    function omtLiveDelaySec(playhead, liveEdge) {
+        return liveEdge > 0 ? Math.max(0, liveEdge - (Number(playhead) || 0)) : 0;
+    }
+
+    /** Strict: playhead within adaptive safe point (+ tol). No hysteresis. */
+    function omtIsPlayheadAtLive(playhead, liveEdge) {
+        if (!(liveEdge > 0)) return false;
+        return omtLiveDelaySec(playhead, liveEdge) <= omtLiveAtLiveMaxDelaySec();
+    }
+
+    /**
+     * Shared at-live latch for panel button + timeline LIVE chip.
+     * Enter at adaptive safe point (+ tol); leave a few seconds further out so
+     * both indicators stay in lockstep (never red LIVE beside a big −delay).
+     */
+    function omtAdvanceAtLiveLatch(delay) {
+        const enter = omtLiveAtLiveMaxDelaySec();
+        const leave = enter + 5;
+        if (omtTimelineLiveChipOn) {
+            if (delay > leave) omtTimelineLiveChipOn = false;
+        } else if (delay <= enter) {
+            omtTimelineLiveChipOn = true;
+        }
+        return !!omtTimelineLiveChipOn;
+    }
+
+    /**
+     * ONE snapshot driving every live/time chrome piece.
+     * Callers must reuse this object in the same paint tick (do not resolve twice).
+     */
+    function omtResolveLivePresentation(opts) {
+        const o = opts || {};
+        const liveMode = omtIsTimelineLiveMode();
+        const kickoffOn = omtHasKickoffOffset();
+        const playhead = o.playhead != null ? o.playhead : omtTimelinePlayheadSec();
+        const liveEdge = o.liveEdge != null ? o.liveEdge : omtTimelineLiveEdgeSec();
+        const delay = omtLiveDelaySec(playhead, liveEdge);
+        let atLive = false;
+        if (liveMode) {
+            if (o.forceAtLive) omtTimelineLiveChipOn = true;
+            atLive = omtAdvanceAtLiveLatch(delay);
+        } else {
+            omtTimelineLiveChipOn = false;
+            atLive = false;
+        }
+        return { liveMode, kickoffOn, playhead, liveEdge, delay, atLive };
+    }
+
     /** Kick-off offset set → timeline chrome shows match clock (+ live delay when live). */
     function omtHasKickoffOffset() {
         return !!(timerAtivo && (
@@ -2221,19 +2281,13 @@
         ));
     }
 
-    /** Left: LIVE delay text or LIVE chip (hysteresis). No video-time duplication. */
-    function omtPaintLiveDelayChip(liveInd, liveDelayEl, liveChipEl, playhead, liveEdge) {
-        const delay = liveEdge > 0 ? Math.max(0, liveEdge - playhead) : 0;
-
-        // Hysteresis: enter LIVE when delay <= ENTER, leave only when delay > LEAVE.
-        if (omtTimelineLiveChipOn) {
-            if (delay > OMT_LIVE_CHIP_LEAVE_S) omtTimelineLiveChipOn = false;
-        } else if (delay <= OMT_LIVE_CHIP_ENTER_S) {
-            omtTimelineLiveChipOn = true;
-        }
-
+    /**
+     * Left LIVE control: either LIVE chip OR delay text — never both.
+     * `atLive` comes from omtResolveLivePresentation (shared with panel button).
+     */
+    function omtPaintLiveDelayChip(liveInd, liveDelayEl, liveChipEl, delay, atLive) {
         liveInd.hidden = false;
-        if (omtTimelineLiveChipOn) {
+        if (atLive) {
             liveDelayEl.hidden = true;
             liveChipEl.hidden = false;
             liveInd.classList.add('is-at-live');
@@ -2266,12 +2320,11 @@
     }
 
     /**
-     * Paint timeline chrome-row times:
-     *  - Left: match clock and/or LIVE delay/chip, or POST current/duration
-     *  - Right (live/DVR): playhead / furthest reachable — not the word "edge"
-     * Does not read PDT or change seek/hooks — reuses playhead + live-edge already used for LIVE.
+     * Paint timeline chrome-row from a live presentation snapshot (or resolve one).
+     * Left: match clock and/or LIVE delay/chip, or POST current/duration.
+     * Right (live/DVR): playhead / furthest — never duplicates left POST times.
      */
-    function atualizarTempoTimelineDireito() {
+    function atualizarTempoTimelineDireito(snapIn) {
         if (!omtRoot) return;
         const timesWrap = omtRoot.querySelector('.omt-timeline-times');
         const liveInd = omtRoot.querySelector('#omt-timeline-live-indicator');
@@ -2282,16 +2335,13 @@
         const videoRangeEl = omtRoot.querySelector('#omt-timeline-video-range');
         if (!timesWrap || !liveInd || !liveDelayEl || !liveChipEl || !postWrap || !matchClockEl) return;
 
-        const playhead = omtTimelinePlayheadSec();
-        const kickoffOn = omtHasKickoffOffset();
-        const liveMode = omtIsTimelineLiveMode();
-        const liveEdge = omtTimelineLiveEdgeSec();
+        const snap = snapIn || omtResolveLivePresentation();
+        const { liveMode, kickoffOn, playhead, liveEdge, delay, atLive } = snap;
 
         if (kickoffOn) {
             timesWrap.dataset.omtTimeMode = 'kickoff';
             postWrap.hidden = true;
             matchClockEl.hidden = false;
-            // Same value the on-video match clock shows (reuse mirror helper / live DOM text).
             let clockText = '';
             if (typeof matchClockAtVideoTime === 'function') {
                 const info = matchClockAtVideoTime(playhead);
@@ -2300,13 +2350,11 @@
             if (!clockText && timerUI && timerUI.innerText) clockText = timerUI.innerText;
             matchClockEl.textContent = clockText || '00:00';
 
-            // Live/DVR + kickoff: game clock + delay/LIVE on left; video range on right.
             if (liveMode) {
-                omtPaintLiveDelayChip(liveInd, liveDelayEl, liveChipEl, playhead, liveEdge);
+                omtPaintLiveDelayChip(liveInd, liveDelayEl, liveChipEl, delay, atLive);
                 omtPaintVideoRange(videoRangeEl, playhead, liveEdge, true);
             } else {
                 liveInd.hidden = true;
-                omtTimelineLiveChipOn = false;
                 omtPaintVideoRange(videoRangeEl, playhead, liveEdge, false);
             }
             return;
@@ -2318,7 +2366,6 @@
         postWrap.hidden = liveMode;
 
         if (!liveMode) {
-            omtTimelineLiveChipOn = false;
             omtPaintVideoRange(videoRangeEl, playhead, liveEdge, false);
             let dur = liveEdge;
             if (!(dur > 0) && site && typeof site.effectiveDuration === 'function') {
@@ -2330,8 +2377,7 @@
             return;
         }
 
-        // Live/DVR, no kickoff: delay/LIVE on left only; video times on the right (not twice).
-        omtPaintLiveDelayChip(liveInd, liveDelayEl, liveChipEl, playhead, liveEdge);
+        omtPaintLiveDelayChip(liveInd, liveDelayEl, liveChipEl, delay, atLive);
         omtPaintVideoRange(videoRangeEl, playhead, liveEdge, true);
     }
 
@@ -3361,6 +3407,17 @@
         }
         if (target != null && isFinite(target)) {
             seekTo(target);
+            // Keep scrubber playhead in sync for immediate LIVE paint.
+            if (timelineSlider && isFinite(target)) {
+                const min = parseFloat(timelineSlider.min) || 0;
+                const max = parseFloat(timelineSlider.max) || 0;
+                if (max > min) {
+                    timelineSlider.value = String(Math.max(min, Math.min(max, target)));
+                    if (typeof paintTimelineScrubberProgress === 'function') {
+                        paintTimelineScrubberProgress(true);
+                    }
+                }
+            }
         }
         // After going live, clear seek lock so stream can advance normally
         setTimeout(() => { userIntendedTime = null; seekLockUntil = 0; }, 3000);
@@ -3368,6 +3425,10 @@
             ? omtAdaptiveLiveSafeMarginSec()
             : OMT_LIVE_SAFE_MARGIN_S;
         mostrarOSD('Live −' + Math.round(marginUsed) + 's');
+        // Refresh panel + timeline from the same snapshot immediately (no timeupdate wait).
+        if (typeof atualizarEstadoLive === 'function') {
+            atualizarEstadoLive({ forceAtLive: true });
+        }
         if (liveBtn) liveBtn.blur();
     }
 
@@ -3389,30 +3450,52 @@
         timelineSlider.style.setProperty('--omt-progress', Math.max(0, Math.min(100, rounded)) + '%');
     }
 
-    function atualizarEstadoLive() {
-        if (!vid || !liveBtn) return; // null-guard: called from timeupdate, may fire after teardown
-        let liveEdge = 0;
-        if (vid.seekable && vid.seekable.length > 0) {
-            liveEdge = vid.seekable.end(vid.seekable.length - 1);
-        } else if (vid.duration && isFinite(vid.duration)) {
-            liveEdge = vid.duration;
-        }
+    /**
+     * Sync every live/time indicator from one omtResolveLivePresentation snapshot:
+     * panel LIVE red, scrubber omt-at-live, timeline delay/chip, video range / POST.
+     */
+    function atualizarEstadoLive(opts) {
+        if (!vid) return; // may fire after teardown
+        const liveEdge = (typeof omtTimelineLiveEdgeSec === 'function')
+            ? omtTimelineLiveEdgeSec()
+            : (vid.seekable && vid.seekable.length > 0
+                ? vid.seekable.end(vid.seekable.length - 1)
+                : (vid.duration && isFinite(vid.duration) ? vid.duration : 0));
         if (typeof omtNoteLiveEdgeAdvance === 'function') omtNoteLiveEdgeAdvance(liveEdge);
-        const dist = liveEdge - vid.currentTime;
-        const liveThresh = (typeof OMT_LIVE_SAFE_MARGIN_S === 'number' && OMT_LIVE_SAFE_MARGIN_S > 0)
-            ? OMT_LIVE_SAFE_MARGIN_S : 10;
-        const atLive = liveEdge > 0 && dist <= liveThresh;
-        liveBtn.classList.toggle('is-live', atLive);
-        // Presentation only (redesign): drive scrubber colour (red at live / grey behind)
-        if (_omtLiveUiAtLive !== atLive) {
-            _omtLiveUiAtLive = atLive;
-            const timelineBar = omtRoot ? omtRoot.querySelector('#omt-timeline-bar') : null;
-            if (timelineBar) timelineBar.classList.toggle('omt-at-live', atLive);
-            if (controlsPanel) controlsPanel.classList.toggle('omt-at-live', atLive);
+        const playhead = (typeof omtTimelinePlayheadSec === 'function')
+            ? omtTimelinePlayheadSec()
+            : (vid.currentTime || 0);
+
+        let snap;
+        if (typeof omtResolveLivePresentation === 'function') {
+            snap = omtResolveLivePresentation({
+                playhead,
+                liveEdge,
+                forceAtLive: !!(opts && opts.forceAtLive)
+            });
+        } else {
+            const delay = liveEdge > 0 ? Math.max(0, liveEdge - playhead) : 0;
+            const thresh = (typeof OMT_LIVE_SAFE_MARGIN_S === 'number' && OMT_LIVE_SAFE_MARGIN_S > 0)
+                ? OMT_LIVE_SAFE_MARGIN_S : 10;
+            snap = {
+                liveMode: true,
+                playhead,
+                liveEdge,
+                delay,
+                atLive: liveEdge > 0 && delay <= thresh
+            };
         }
-        // Right-side LIVE delay / POST times (UI only; same liveEdge/playhead values).
-        if (typeof atualizarTempoTimelineDireito === 'function') atualizarTempoTimelineDireito();
-        // While the user is scrubbing, input handler owns the fill (avoid fighting the thumb).
+
+        if (liveBtn) liveBtn.classList.toggle('is-live', !!snap.atLive);
+        // Presentation only (redesign): drive scrubber colour (red at live / grey behind)
+        if (_omtLiveUiAtLive !== snap.atLive) {
+            _omtLiveUiAtLive = snap.atLive;
+            const timelineBar = omtRoot ? omtRoot.querySelector('#omt-timeline-bar') : null;
+            if (timelineBar) timelineBar.classList.toggle('omt-at-live', !!snap.atLive);
+            if (controlsPanel) controlsPanel.classList.toggle('omt-at-live', !!snap.atLive);
+        }
+        // Same snapshot → timeline delay/chip + video range (no second resolve / latch tick).
+        if (typeof atualizarTempoTimelineDireito === 'function') atualizarTempoTimelineDireito(snap);
         if (!isDraggingTimeline) paintTimelineScrubberProgress(false);
     }
 
@@ -5649,16 +5732,9 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             if (!options.length && current) {
                 options.push({ value: current, label: current });
             }
-            // Guarantee DVR/VOD choices when scraping Source on Examino.
-            if (panelType === 'source') {
-                ['DVR', 'VOD'].forEach((v) => {
-                    if (!options.some((o) => String(o.value).toUpperCase() === v)) {
-                        options.push({ value: v, label: v });
-                    }
-                });
-            }
-
             // Return to root for the next scrape without closing.
+            // (Source DVR/VOD floor + host mapping happen in normalizeExaminoSourceScraped —
+            // do not inject synthetic options into the scrape itself.)
             if (!document.querySelector('.op-setting-panel .op-setting-item[op-panel-type]')) {
                 await clickOpSettingBack();
             }
@@ -5718,9 +5794,30 @@ var OMT_SYNC_FEATURE_ENABLED = false;
                 // Post-1.2.0 (kept): VOD→DVR must snap off a carried VOD playhead
                 // or the short DVR window freezes. Does not alter the click path.
                 if (panelType === 'source') {
-                    if (/vod/i.test(String(value))) examinoLastAppliedSource = 'VOD';
-                    else if (/dvr/i.test(String(value))) examinoLastAppliedSource = 'DVR';
-                    if (/^dvr$/i.test(String(value).trim())) {
+                    const kind = classifyExaminoHostSourceOption({ value, label: value }) ||
+                        (/vod/i.test(String(value)) ? 'VOD' : /dvr/i.test(String(value)) ? 'DVR' : null);
+                    if (kind === 'VOD') {
+                        examinoLastAppliedSource = 'VOD';
+                        examinoHostSourceMap.VOD = String(value);
+                        // Optional restore of previous VOD playhead after a DVR detour.
+                        if (typeof examinoVodResumeSec === 'number' && isFinite(examinoVodResumeSec)) {
+                            const resumeAt = examinoVodResumeSec;
+                            examinoVodResumeSec = null;
+                            setTimeout(() => {
+                                try {
+                                    const el = (typeof site.findVideo === 'function' && site.findVideo()) ||
+                                        document.querySelector('video');
+                                    if (!el) return;
+                                    const end = (el.seekable && el.seekable.length)
+                                        ? el.seekable.end(el.seekable.length - 1)
+                                        : (el.duration || resumeAt);
+                                    el.currentTime = Math.max(0, Math.min(resumeAt, end));
+                                } catch (_) {}
+                            }, 80);
+                        }
+                    } else if (kind === 'DVR') {
+                        examinoLastAppliedSource = 'DVR';
+                        examinoHostSourceMap.DVR = String(value);
                         examinoPendingDvrSettle = true;
                         try {
                             settleExaminoMediaAfterBind(
@@ -5729,6 +5826,11 @@ var OMT_SYNC_FEATURE_ENABLED = false;
                             );
                         } catch (_) {}
                     }
+                    omtDebugSource('apply:source-kind', {
+                        value,
+                        kind,
+                        map: { DVR: examinoHostSourceMap.DVR, VOD: examinoHostSourceMap.VOD }
+                    });
                 }
                 omtDebugSource('apply:success', {
                     value,
@@ -5745,11 +5847,16 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         }));
     }
 
-    // Last successful Source apply + last good option list — survive host
-    // panel scrape failures after Auto VOD replaces <video> (field: select
-    // showed "Unavailable" and was disabled so DVR could not be chosen).
+    // Last successful Source apply + host op-data-value map for canonical DVR/VOD.
+    // Field: host menu can list duplicates (DVR, DVR, VOD(1), VOD) — overlay shows
+    // exactly two choices; apply still clicks the mapped host op-data-value.
     let examinoLastAppliedSource = null;
-    let examinoLastGoodSourceOptions = [];
+    let examinoHostSourceMap = { DVR: null, VOD: null }; // host op-data-value strings
+    let examinoVodResumeSec = null; // optional restore when leaving DVR back to VOD
+    let examinoLastGoodSourceOptions = [
+        { value: 'DVR', label: 'DVR' },
+        { value: 'VOD', label: 'VOD' }
+    ];
     // One-shot settle re-scrape after Auto VOD / thin scrape — do not re-arm on
     // every refresh while VOD (that open/dismiss loop blocks native gear).
     let examinoSourceSettleTimer = null;
@@ -5767,8 +5874,8 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             const url = (typeof window.__omtMockMediaUrl === 'string' && window.__omtMockMediaUrl) ||
                 (vid && vid.dataset && vid.dataset.omtMediaUrl) ||
                 (vid && (vid.currentSrc || vid.src)) || '';
-            if (/chunklist_vod|\bvod\b|\/vod\//i.test(url)) return 'VOD';
-            if (/chunklist_dvr|\bdvr\b|\/live\//i.test(url)) return 'DVR';
+            if (/chunklist_vod|\/vod\//i.test(url)) return 'VOD';
+            if (/chunklist_dvr|\/live\//i.test(url)) return 'DVR';
         } catch (_) {}
         if (vid && vid.dataset && vid.dataset.omtSource) {
             const s = String(vid.dataset.omtSource).toUpperCase();
@@ -5781,75 +5888,139 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         return null;
     }
 
-    function rememberGoodSourceOptions(options) {
-        if (!options || options.length < 2) return;
-        const hasDvr = options.some((o) => /dvr/i.test(String(o.value)) || /dvr/i.test(String(o.label || '')));
-        const hasVod = options.some((o) => /vod/i.test(String(o.value)) || /vod/i.test(String(o.label || '')));
-        if (!hasDvr || !hasVod) return;
-        examinoLastGoodSourceOptions = options.map((o) => ({
-            value: String(o.value),
-            label: String(o.label || o.value)
-        }));
+    /** Classify a host Source row by op-data-value (primary) / label — not display duplicates. */
+    function classifyExaminoHostSourceOption(o) {
+        if (!o || o.value == null) return null;
+        const value = String(o.value).trim();
+        const label = String(o.label != null ? o.label : o.value).trim();
+        if (/^dvr$/i.test(value)) return 'DVR';
+        if (/^vod$/i.test(value)) return 'VOD';
+        if (/^dvr$/i.test(label) && !/vod/i.test(value)) return 'DVR';
+        if (/^vod$/i.test(label)) return 'VOD';
+        // Loose: value wins over label; ignore decoys that are neither.
+        if (/dvr/i.test(value) && !/vod/i.test(value)) return 'DVR';
+        if (/vod/i.test(value)) return 'VOD';
+        if (/dvr/i.test(label) && !/vod/i.test(label)) return 'DVR';
+        if (/vod/i.test(label)) return 'VOD';
+        return null;
     }
 
-    function normalizeExaminoSourceScraped(scraped) {
-        const options = [];
-        const seen = Object.create(null);
-        const push = (value, label) => {
-            const v = String(value || '');
-            if (!v || seen[v]) return;
-            seen[v] = true;
-            options.push({ value: v, label: label || v });
-        };
-        const scrapedOpts = scraped && scraped.options ? scraped.options : [];
-        scrapedOpts.forEach((o) => {
-            if (o && o.value != null) push(o.value, o.label);
-        });
-        // Scrape empty / thin after <video> replace → reuse last good host options
-        // so DVR stays selectable (never disable the control).
-        if (options.length < 2 && examinoLastGoodSourceOptions.length) {
-            examinoLastGoodSourceOptions.forEach((o) => push(o.value, o.label));
+    function examinoHostOptionExactness(o, kind) {
+        const value = String(o && o.value || '').trim();
+        const label = String(o && o.label || '').trim();
+        if (kind === 'DVR') {
+            if (/^dvr$/i.test(value)) return 3;
+            if (/^dvr$/i.test(label)) return 2;
+            if (/dvr/i.test(value)) return 1;
+            return 0;
         }
-        // Floor: always expose DVR + VOD.
-        ['DVR', 'VOD'].forEach((v) => push(v, v));
+        if (/^vod$/i.test(value)) return 3;
+        if (/^vod$/i.test(label)) return 2;
+        if (/vod/i.test(value) && !/\(/i.test(value)) return 1; // prefer VOD over VOD(1)
+        if (/vod/i.test(value) || /vod/i.test(label)) return 0;
+        return -1;
+    }
+
+    function pickPreferredHostSourceOption(options, kind) {
+        const list = (options || []).filter((o) => classifyExaminoHostSourceOption(o) === kind);
+        if (!list.length) return null;
+        list.sort((a, b) => examinoHostOptionExactness(b, kind) - examinoHostOptionExactness(a, kind));
+        return list[0];
+    }
+
+    /**
+     * Update canonical→host op-data-value map from a scrape.
+     * DVR = page-default / first exact DVR; VOD = Auto-VOD target (exact VOD preferred).
+     * Locked entries stick across scrapes so duplicates never reappear in the select.
+     */
+    function updateExaminoHostSourceMap(scraped) {
+        const scrapedOpts = (scraped && scraped.options) ? scraped.options : [];
+        omtDebugSource('source-map:scraped-host', scrapedOpts.map((o) => ({
+            value: o.value,
+            label: o.label,
+            kind: classifyExaminoHostSourceOption(o)
+        })));
+
+        const pickDvr = pickPreferredHostSourceOption(scrapedOpts, 'DVR');
+        const pickVod = pickPreferredHostSourceOption(scrapedOpts, 'VOD');
+        const current = scraped && scraped.current != null ? String(scraped.current) : '';
+        const currentKind = classifyExaminoHostSourceOption({ value: current, label: current });
+
+        // DVR: prefer page-open / current host value when it is DVR-like.
+        if (!examinoHostSourceMap.DVR) {
+            if (currentKind === 'DVR') examinoHostSourceMap.DVR = current;
+            else if (pickDvr) examinoHostSourceMap.DVR = String(pickDvr.value);
+        } else if (pickDvr && examinoHostOptionExactness(pickDvr, 'DVR') >= 3 &&
+            examinoHostSourceMap.DVR !== String(pickDvr.value)) {
+            // Upgrade to exact "DVR" if we only had a fuzzy host id.
+            const curExact = examinoHostOptionExactness(
+                { value: examinoHostSourceMap.DVR, label: examinoHostSourceMap.DVR }, 'DVR');
+            if (curExact < 3) examinoHostSourceMap.DVR = String(pickDvr.value);
+        }
+
+        // VOD: keep Auto-VOD / last successful VOD host value; else prefer exact "VOD".
+        if (!examinoHostSourceMap.VOD) {
+            if (pickVod) examinoHostSourceMap.VOD = String(pickVod.value);
+        } else if (pickVod && examinoHostOptionExactness(pickVod, 'VOD') >= 3) {
+            const curExact = examinoHostOptionExactness(
+                { value: examinoHostSourceMap.VOD, label: examinoHostSourceMap.VOD }, 'VOD');
+            if (curExact < 3) examinoHostSourceMap.VOD = String(pickVod.value);
+        }
+
+        // Floor host map so apply always has something to click.
+        if (!examinoHostSourceMap.DVR) examinoHostSourceMap.DVR = 'DVR';
+        if (!examinoHostSourceMap.VOD) examinoHostSourceMap.VOD = 'VOD';
+
+        omtDebugSource('source-map:chosen', {
+            map: { DVR: examinoHostSourceMap.DVR, VOD: examinoHostSourceMap.VOD },
+            scrapedCurrent: current,
+            inferred: inferExaminoSourceLabel()
+        });
+    }
+
+    function resolveExaminoHostSourceValue(canonical) {
+        const kind = /^vod/i.test(String(canonical)) ? 'VOD'
+            : /^dvr/i.test(String(canonical)) ? 'DVR' : null;
+        if (!kind) return canonical;
+        return examinoHostSourceMap[kind] || kind;
+    }
+
+    function rememberGoodSourceOptions() {
+        // Overlay always exposes exactly the canonical pair.
+        examinoLastGoodSourceOptions = [
+            { value: 'DVR', label: 'DVR' },
+            { value: 'VOD', label: 'VOD' }
+        ];
+    }
+
+    /** Overlay select: exactly DVR + VOD. Host duplicates mapped via examinoHostSourceMap. */
+    function normalizeExaminoSourceScraped(scraped) {
+        updateExaminoHostSourceMap(scraped || { current: null, options: [] });
+        rememberGoodSourceOptions();
 
         let current = scraped && scraped.current != null ? String(scraped.current) : '';
+        const currentKind = classifyExaminoHostSourceOption({ value: current, label: current });
         const inferred = inferExaminoSourceLabel();
-        // Prefer media / last-apply when scrape still says DVR after a VOD apply
-        // (host path often stays /play/dvr/ while chunklist is VOD).
-        if (inferred) {
-            const scrapeIsDvr = current && /dvr/i.test(current) && !/vod/i.test(current);
-            const scrapeMissing = !current || !options.some((o) => String(o.value) === current);
-            if (scrapeMissing || (inferred === 'VOD' && scrapeIsDvr)) {
-                current = inferred;
-            }
-        }
-        if (current && !options.some((o) => String(o.value) === current)) {
-            push(current, current);
-        }
-        rememberGoodSourceOptions(options);
-        return { current: current || inferred || null, options };
+        let canonical = inferred || currentKind || 'DVR';
+        if (inferred === 'VOD' || currentKind === 'VOD') canonical = 'VOD';
+        else if (inferred === 'DVR' || currentKind === 'DVR') canonical = 'DVR';
+        // Prefer last apply / media when scrape still reports DVR after VOD.
+        if (inferred === 'VOD') canonical = 'VOD';
+
+        return {
+            current: canonical,
+            options: [
+                { value: 'DVR', label: 'DVR' },
+                { value: 'VOD', label: 'VOD' }
+            ]
+        };
     }
 
     function fillSelect(selectEl, scraped) {
         if (!selectEl) return;
         const { current, options } = normalizeExaminoSourceScraped(scraped);
         selectEl.innerHTML = '';
-        // With DVR/VOD floor + last-good cache, options should never be empty.
-        // Keep the control enabled so the analyst can switch back to DVR.
         selectEl.disabled = false;
-        if (!options.length) {
-            ['DVR', 'VOD'].forEach((v) => {
-                const opt = document.createElement('option');
-                opt.value = v;
-                opt.textContent = v;
-                selectEl.appendChild(opt);
-            });
-            const inferred = inferExaminoSourceLabel() || 'VOD';
-            selectEl.value = inferred;
-            omtDebugSource('fill-select:floor-only', { value: selectEl.value });
-            return;
-        }
         options.forEach((o) => {
             const opt = document.createElement('option');
             opt.value = o.value;
@@ -5857,19 +6028,13 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             if (current && String(current) === String(o.value)) opt.selected = true;
             selectEl.appendChild(opt);
         });
-        if (current) {
-            selectEl.value = current;
-            if (selectEl.value !== current) {
-                const match = Array.from(selectEl.options).find((o) =>
-                    String(o.value).toUpperCase() === String(current).toUpperCase());
-                if (match) selectEl.value = match.value;
-            }
-        }
+        if (current) selectEl.value = current;
         omtDebugSource('fill-select', {
             current,
             value: selectEl.value,
             disabled: selectEl.disabled,
             options: options.map((o) => o.value),
+            hostMap: { DVR: examinoHostSourceMap.DVR, VOD: examinoHostSourceMap.VOD },
             inferred: inferExaminoSourceLabel()
         });
     }
@@ -5890,9 +6055,8 @@ var OMT_SYNC_FEATURE_ENABLED = false;
                 options: examinoLastGoodSourceOptions.slice()
             };
         }
-        if (source && source.options && source.options.length >= 2) {
-            rememberGoodSourceOptions(source.options);
-        }
+        rememberGoodSourceOptions();
+        // Thin scrape = host returned fewer than 2 real rows before mapping.
         const thin = !source || !source.options || source.options.length < 2;
         fillSelect(q('omt-examino-source'), source);
 
@@ -5910,9 +6074,7 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             examinoSourceSettleTimer = setTimeout(() => {
                 examinoSourceSettleTimer = null;
                 scrapeOpSettingOptions('source').then((again) => {
-                    if (again && again.options && again.options.length >= 2) {
-                        rememberGoodSourceOptions(again.options);
-                    }
+                    rememberGoodSourceOptions();
                     fillSelect(q('omt-examino-source'), again && again.options && again.options.length
                         ? again
                         : {
@@ -5947,32 +6109,53 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         const sourceSel = q('omt-examino-source');
         if (sourceSel) {
             sourceSel.addEventListener('change', async () => {
-                const value = sourceSel.value;
-                omtDebugSource('ui-change', { value });
+                const canonical = /^vod/i.test(String(sourceSel.value)) ? 'VOD'
+                    : /^dvr/i.test(String(sourceSel.value)) ? 'DVR'
+                    : String(sourceSel.value);
+                const hostValue = resolveExaminoHostSourceValue(canonical);
+                omtDebugSource('ui-change', {
+                    value: sourceSel.value,
+                    canonical,
+                    hostValue,
+                    map: { DVR: examinoHostSourceMap.DVR, VOD: examinoHostSourceMap.VOD }
+                });
                 // Manual DVR must stop Auto VOD retries (post-1.2.0 field need;
                 // does not change applyOpSetting itself).
-                if (/dvr/i.test(String(value))) {
+                if (canonical === 'DVR') {
+                    // Remember VOD playhead so switching back can restore it.
+                    try {
+                        const el = (typeof site.findVideo === 'function' && site.findVideo()) ||
+                            document.querySelector('video');
+                        if (el && (inferExaminoSourceLabel() === 'VOD' || /vod/i.test(String(el.dataset && el.dataset.omtSource || '')))) {
+                            examinoVodResumeSec = Number(el.currentTime) || 0;
+                        }
+                    } catch (_) {}
                     examinoManualSourceChoice = 'DVR';
                     examinoAutoVodClicked = true;
-                } else if (/vod/i.test(String(value))) {
+                } else if (canonical === 'VOD') {
                     examinoManualSourceChoice = 'VOD';
                 }
-                const ok = await applyOpSetting('source', value);
-                mostrarOSD(ok ? ('Source: ' + value) : 'Source change failed');
+                // Keep working v1.2.0 apply path — click host op-data-value, not the label.
+                const ok = await applyOpSetting('source', hostValue);
+                mostrarOSD(ok ? ('Source: ' + canonical) : 'Source change failed');
                 if (ok) {
-                    if (/vod/i.test(String(value))) examinoLastAppliedSource = 'VOD';
-                    else if (/dvr/i.test(String(value))) examinoLastAppliedSource = 'DVR';
-                    // Keep select enabled with DVR+VOD; do not path-refresh to Unavailable.
+                    examinoLastAppliedSource = canonical === 'VOD' || canonical === 'DVR'
+                        ? canonical
+                        : examinoLastAppliedSource;
+                    // Overlay select stays canonical DVR|VOD only.
                     fillSelect(sourceSel, {
-                        current: value,
-                        options: examinoLastGoodSourceOptions.length
-                            ? examinoLastGoodSourceOptions
-                            : [{ value: 'DVR', label: 'DVR' }, { value: 'VOD', label: 'VOD' }]
+                        current: canonical === 'VOD' || canonical === 'DVR' ? canonical : inferExaminoSourceLabel(),
+                        options: [
+                            { value: 'DVR', label: 'DVR' },
+                            { value: 'VOD', label: 'VOD' }
+                        ]
                     });
                 }
                 // v1.2.0: do not refresh/force select from path after apply.
                 omtDebugSource('ui-change:done', {
                     ok,
+                    canonical,
+                    hostValue,
                     mediaUrl: (typeof window.__omtMockMediaUrl === 'string') ? window.__omtMockMediaUrl : null,
                     duration: (document.querySelector('video') || {}).duration,
                     omtSource: (document.querySelector('video') || {}).dataset
@@ -6018,28 +6201,39 @@ var OMT_SYNC_FEATURE_ENABLED = false;
                 }
                 return;
             }
-            if (/vod/i.test(current)) {
+            // Build host map from this scrape (locks exact VOD over VOD(1)).
+            updateExaminoHostSourceMap(source);
+            const currentKind = classifyExaminoHostSourceOption({ value: current, label: current });
+            if (currentKind === 'VOD' || /vod/i.test(current)) {
                 dismissOpSettingsChrome();
                 fillSelect(q('omt-examino-source'), source);
                 omtDebugSource('auto-vod:already-vod', { current });
                 return;
             }
-            const vod = source.options.find((o) => /vod/i.test(o.value) || /vod/i.test(o.label));
+            const vod = pickPreferredHostSourceOption(source.options, 'VOD');
             if (!vod) return;
             console.log('[OMT] Auto-switching Examino source to VOD:', vod.value, '(attempt ' + attempt + ')');
             examinoAutoVodClicked = true;
-            rememberGoodSourceOptions(source.options);
+            examinoHostSourceMap.VOD = String(vod.value);
+            rememberGoodSourceOptions();
+            omtDebugSource('auto-vod:chosen', {
+                hostValue: vod.value,
+                label: vod.label,
+                map: { DVR: examinoHostSourceMap.DVR, VOD: examinoHostSourceMap.VOD },
+                scraped: source.options.map((o) => ({ value: o.value, label: o.label }))
+            });
+            // Keep working v1.2.0 apply path — click the preferred host op-data-value.
             const ok = await applyOpSetting('source', vod.value);
             if (ok) {
                 examinoLastAppliedSource = 'VOD';
                 mostrarOSD('Switched to VOD');
-                // Paint VOD immediately with DVR still available — do not wait on
-                // a scrape that can fail while the host rebuilds after replace.
+                // Paint canonical VOD with DVR still available — never dump host duplicates.
                 fillSelect(q('omt-examino-source'), {
-                    current: vod.value || 'VOD',
-                    options: (source.options && source.options.length)
-                        ? source.options
-                        : examinoLastGoodSourceOptions
+                    current: 'VOD',
+                    options: [
+                        { value: 'DVR', label: 'DVR' },
+                        { value: 'VOD', label: 'VOD' }
+                    ]
                 });
                 examinoSourceNeedsSettleRescrape = true;
                 setTimeout(() => {
@@ -6091,7 +6285,8 @@ var OMT_SYNC_FEATURE_ENABLED = false;
 
     function settleExaminoMediaAfterBind(mediaEl) {
         // Post-1.2.0 (1.2.2+) VOD→DVR settle — not part of 1.2.0 Source clicks,
-        // but required so a carried VOD playhead does not freeze the DVR window.
+        // but required so a carried VOD playhead does not freeze the short DVR window.
+        // Prefer adaptive live safe point (same as LIVE jump); fall back to end−2.
         if (site.id !== 'examino') return;
         const el = mediaEl || vid ||
             (typeof site.findVideo === 'function' && site.findVideo()) ||
@@ -6108,8 +6303,22 @@ var OMT_SYNC_FEATURE_ENABLED = false;
                 const start = el.seekable.start(0);
                 const end = el.seekable.end(el.seekable.length - 1);
                 if (!isFinite(start) || !isFinite(end)) return;
+                let target = (typeof omtLiveSafePointSec === 'function')
+                    ? omtLiveSafePointSec()
+                    : Math.max(start, end - 2);
+                if (!(target > 0) || target < start || target > end) {
+                    target = Math.max(start, end - 2);
+                }
+                // Clamp into the DVR window so a deep VOD playhead cannot stall.
+                target = Math.max(start, Math.min(end, target));
                 settled = true;
-                el.currentTime = Math.max(start, end - 2);
+                el.currentTime = target;
+                omtDebugSource('settle-dvr', {
+                    start,
+                    end,
+                    target,
+                    usedSafePoint: typeof omtLiveSafePointSec === 'function'
+                });
                 try { el.play && el.play().catch(() => {}); } catch (_) {}
             } catch (_) {}
         };
@@ -6119,6 +6328,7 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         } catch (_) {}
         setTimeout(goLiveEdgeIfNeeded, 50);
         setTimeout(goLiveEdgeIfNeeded, 300);
+        setTimeout(goLiveEdgeIfNeeded, 800);
     }
 
 /* Xeatre-only: hide ALL host chrome (6-column panel + native VJS bar).
