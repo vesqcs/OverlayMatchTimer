@@ -65,11 +65,23 @@
 
     // Cached UI element refs (populated after injection)
     let timerUI, osd, setupPanel, controlsPanel, timelineSlider,
-        vTimeCurrent, vTimeDuration, liveBtn, btnMainPlay, speedSelect,
+        vTimeCurrent, vTimeDuration, liveBtn, btnMainPlay, btnTimelinePlay, speedSelect,
         volumeRange, volumeIconBtn, timelineVolRange, timelineVolBtn,
         shuttleToggle, shuttleCheatsheet;
-    // Timeline right-side live delay / LIVE chip (hysteresis latch)
+    // Timeline live delay / LIVE chip (hysteresis latch)
     let omtTimelineLiveChipOn = false;
-    // Easy to tune: enter LIVE chip when delay <= enter; leave only when delay > leave.
-    const OMT_LIVE_CHIP_ENTER_S = 10;
-    const OMT_LIVE_CHIP_LEAVE_S = 15;
+    // Tunable base (v2.2.0): LIVE counts-as-live / chip-enter threshold, and
+    // the floor for LIVE jumps after a recent stall. Adaptive jump margin may
+    // go closer on stable streams or further when the edge is slow.
+    const OMT_LIVE_SAFE_MARGIN_S = 10;
+    const OMT_LIVE_SAFE_MARGIN_MIN_S = 4;   // closest LIVE jump on a healthy stream
+    const OMT_LIVE_SAFE_MARGIN_MAX_S = 30;  // farthest LIVE jump on a bad stream
+    const OMT_LIVE_STALL_MEMORY_MS = 45000; // "stalled recently" window
+    // Chip leave hysteresis sits a few seconds beyond the base so the LIVE
+    // chip does not flicker when delay hovers near the threshold.
+    const OMT_LIVE_CHIP_ENTER_S = OMT_LIVE_SAFE_MARGIN_S;
+    const OMT_LIVE_CHIP_LEAVE_S = OMT_LIVE_SAFE_MARGIN_S + 5;
+    // Edge-advance samples for adaptive LIVE jump (wall-clock ms of each advance).
+    let omtLiveEdgeLastSec = null;
+    let omtLiveEdgeAdvanceAtMs = [];
+    let omtLiveLastStallAtMs = 0;

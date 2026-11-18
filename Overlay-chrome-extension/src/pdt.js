@@ -86,10 +86,12 @@
         return m + ':' + String(s).padStart(2, '0');
     }
 
-    /** Live delay text: -12 s / -1:05 / -1:02:10 */
+    /**
+     * Live delay behind the edge: -0:12 / -1:05 / -1:02:10
+     * (compact mm:ss so the edge advance is easy to watch).
+     */
     function formatarAtrasoLive(delaySec) {
         const d = Math.max(0, Math.floor(Number(delaySec) || 0));
-        if (d < 60) return '-' + d + ' s';
         const h = Math.floor(d / 3600);
         const m = Math.floor((d % 3600) / 60);
         const s = d % 60;
@@ -138,66 +140,156 @@
         return (mediaDuration && isFinite(mediaDuration)) ? mediaDuration : 0;
     }
 
-    /** Kick-off offset set → timeline chrome shows match clock only. */
+    /** HLS/VHS target duration when known (seconds); null otherwise. */
+    function omtHlsTargetDurationSec() {
+        try {
+            if (hlsInstance && hlsInstance.levels && hlsInstance.currentLevel >= 0) {
+                const details = hlsInstance.levels[hlsInstance.currentLevel] &&
+                    hlsInstance.levels[hlsInstance.currentLevel].details;
+                const td = details && Number(details.targetduration);
+                if (td > 0 && isFinite(td)) return td;
+            }
+        } catch (_) {}
+        try {
+            if (hlsInstance && hlsInstance.playlists && typeof hlsInstance.playlists.media === 'function') {
+                const media = hlsInstance.playlists.media();
+                const td = media && Number(media.targetDuration || media.targetduration);
+                if (td > 0 && isFinite(td)) return td;
+            }
+        } catch (_) {}
+        return null;
+    }
+
+    /** Record seekable-end advances so LIVE can stay ~2 updates behind slow edges. */
+    function omtNoteLiveEdgeAdvance(edgeSec) {
+        if (!(edgeSec > 0) || !isFinite(edgeSec)) return;
+        const now = Date.now();
+        if (omtLiveEdgeLastSec == null) {
+            omtLiveEdgeLastSec = edgeSec;
+            return;
+        }
+        // Ignore tiny float noise; require a real window move (≥0.25s).
+        if (edgeSec <= omtLiveEdgeLastSec + 0.25) {
+            omtLiveEdgeLastSec = Math.max(omtLiveEdgeLastSec, edgeSec);
+            return;
+        }
+        omtLiveEdgeLastSec = edgeSec;
+        omtLiveEdgeAdvanceAtMs.push(now);
+        if (omtLiveEdgeAdvanceAtMs.length > 8) {
+            omtLiveEdgeAdvanceAtMs = omtLiveEdgeAdvanceAtMs.slice(-8);
+        }
+    }
+
+    function omtNoteLiveStall() {
+        omtLiveLastStallAtMs = Date.now();
+    }
+
+    /** Median wall-clock seconds between recent edge advances, or null. */
+    function omtEdgeUpdateIntervalSec() {
+        const stamps = omtLiveEdgeAdvanceAtMs;
+        if (!stamps || stamps.length < 2) return null;
+        const gaps = [];
+        for (let i = 1; i < stamps.length; i++) {
+            const g = (stamps[i] - stamps[i - 1]) / 1000;
+            if (g > 0.2 && g < 120) gaps.push(g);
+        }
+        if (!gaps.length) return null;
+        gaps.sort((a, b) => a - b);
+        return gaps[Math.floor(gaps.length / 2)];
+    }
+
+    function omtBufferedAheadSec() {
+        if (!vid || !vid.buffered || vid.buffered.length === 0) return 0;
+        try {
+            const ct = vid.currentTime || 0;
+            for (let i = 0; i < vid.buffered.length; i++) {
+                const start = vid.buffered.start(i);
+                const end = vid.buffered.end(i);
+                if (ct >= start - 0.25 && ct <= end + 0.25) {
+                    return Math.max(0, end - ct);
+                }
+            }
+            const end = vid.buffered.end(vid.buffered.length - 1);
+            return Math.max(0, end - ct);
+        } catch (_) {
+            return 0;
+        }
+    }
+
+    /**
+     * Adaptive margin behind seekable end for LIVE jumps.
+     * - Base OMT_LIVE_SAFE_MARGIN_S (10): floor after a recent stall; also the
+     *   "counts as LIVE" UI threshold.
+     * - Unstable / slow edge: max(base, ~2 edge updates).
+     * - Stable (no recent stall, healthy buffer, short/fast edge): may go closer
+     *   than base down to OMT_LIVE_SAFE_MARGIN_MIN_S.
+     * Manual skips are never clamped to this.
+     */
+    function omtAdaptiveLiveSafeMarginSec() {
+        const base = (typeof OMT_LIVE_SAFE_MARGIN_S === 'number' && OMT_LIVE_SAFE_MARGIN_S > 0)
+            ? OMT_LIVE_SAFE_MARGIN_S : 10;
+        const minM = (typeof OMT_LIVE_SAFE_MARGIN_MIN_S === 'number') ? OMT_LIVE_SAFE_MARGIN_MIN_S : 4;
+        const maxM = (typeof OMT_LIVE_SAFE_MARGIN_MAX_S === 'number') ? OMT_LIVE_SAFE_MARGIN_MAX_S : 30;
+        const stallWin = (typeof OMT_LIVE_STALL_MEMORY_MS === 'number') ? OMT_LIVE_STALL_MEMORY_MS : 45000;
+
+        const stalledRecently = omtLiveLastStallAtMs > 0 &&
+            (Date.now() - omtLiveLastStallAtMs) < stallWin;
+        const edgeIv = omtEdgeUpdateIntervalSec();
+        const targetDur = omtHlsTargetDurationSec();
+        const bufAhead = omtBufferedAheadSec();
+        const twoUpdates = (edgeIv != null) ? (edgeIv * 2) : null;
+        const twoSeg = (targetDur != null && targetDur > 0) ? (targetDur * 2) : null;
+
+        let margin = base;
+
+        if (stalledRecently) {
+            // Field: never closer than base after a stall; prefer ≥2 edge updates.
+            margin = base;
+            if (twoUpdates != null) margin = Math.max(margin, twoUpdates);
+            if (twoSeg != null) margin = Math.max(margin, twoSeg);
+        } else {
+            const slowEdge = twoUpdates != null && twoUpdates > base;
+            const longSeg = twoSeg != null && twoSeg > base;
+            const thinBuffer = bufAhead > 0 && bufAhead < base;
+            if (slowEdge || longSeg || thinBuffer) {
+                margin = base;
+                if (twoUpdates != null) margin = Math.max(margin, twoUpdates);
+                if (twoSeg != null) margin = Math.max(margin, twoSeg);
+            } else if (
+                bufAhead >= base + 4 &&
+                (edgeIv == null || edgeIv <= 3.5) &&
+                (targetDur == null || targetDur <= 4)
+            ) {
+                // Stable: may sit closer than base (still ≥ min / ~2 updates).
+                const close = twoUpdates != null ? Math.max(minM, twoUpdates) : minM;
+                margin = Math.min(base, close);
+            }
+        }
+
+        return Math.min(maxM, Math.max(minM, margin));
+    }
+
+    /** LIVE jump target = seekable end − adaptive margin. Not a seek clamp. */
+    function omtLiveSafePointSec() {
+        const edge = omtTimelineLiveEdgeSec();
+        if (!(edge > 0)) return 0;
+        let margin = omtAdaptiveLiveSafeMarginSec();
+        // Short local files: do not jump to 0 because margin > duration.
+        if (edge < 60) {
+            margin = Math.min(margin, Math.max(1, edge * 0.25));
+            margin = Math.min(margin, Math.max(1, edge - 1));
+        }
+        return Math.max(0, edge - margin);
+    }
+
+    /** Kick-off offset set → timeline chrome shows match clock (+ live delay when live). */
     function omtHasKickoffOffset() {
         return !!(timerAtivo && (
             kickoff1 !== null || kickoff2 !== null || kickoffC1 !== null || kickoffC2 !== null
         ));
     }
 
-    /**
-     * Paint timeline chrome-row time (left): match clock, LIVE delay/chip, or POST current/duration.
-     * Does not read PDT or change seek/hooks — reuses playhead + live-edge already used for LIVE.
-     */
-    function atualizarTempoTimelineDireito() {
-        if (!omtRoot) return;
-        const timesWrap = omtRoot.querySelector('.omt-timeline-times');
-        const liveInd = omtRoot.querySelector('#omt-timeline-live-indicator');
-        const liveDelayEl = omtRoot.querySelector('#omt-timeline-live-delay');
-        const liveChipEl = omtRoot.querySelector('#omt-timeline-live-chip');
-        const postWrap = omtRoot.querySelector('#omt-timeline-post-times');
-        const matchClockEl = omtRoot.querySelector('#omt-timeline-match-clock');
-        if (!timesWrap || !liveInd || !liveDelayEl || !liveChipEl || !postWrap || !matchClockEl) return;
-
-        const playhead = omtTimelinePlayheadSec();
-        const kickoffOn = omtHasKickoffOffset();
-
-        if (kickoffOn) {
-            timesWrap.dataset.omtTimeMode = 'kickoff';
-            liveInd.hidden = true;
-            postWrap.hidden = true;
-            matchClockEl.hidden = false;
-            omtTimelineLiveChipOn = false;
-            // Same value the on-video match clock shows (reuse mirror helper / live DOM text).
-            let clockText = '';
-            if (typeof matchClockAtVideoTime === 'function') {
-                const info = matchClockAtVideoTime(playhead);
-                clockText = (info && info.clock) ? info.clock : '';
-            }
-            if (!clockText && timerUI && timerUI.innerText) clockText = timerUI.innerText;
-            matchClockEl.textContent = clockText || '00:00';
-            return;
-        }
-
-        matchClockEl.hidden = true;
-        const liveMode = omtIsTimelineLiveMode();
-        timesWrap.dataset.omtTimeMode = liveMode ? 'live' : 'post';
-        liveInd.hidden = !liveMode;
-        postWrap.hidden = liveMode;
-
-        if (!liveMode) {
-            omtTimelineLiveChipOn = false;
-            let dur = omtTimelineLiveEdgeSec();
-            if (!(dur > 0) && site && typeof site.effectiveDuration === 'function') {
-                const ed = site.effectiveDuration(vid);
-                if (ed && isFinite(ed)) dur = ed;
-            }
-            if (vTimeCurrent) vTimeCurrent.innerText = formatarTempoCompacto(playhead);
-            if (vTimeDuration) vTimeDuration.innerText = formatarTempoCompacto(dur);
-            return;
-        }
-
-        const liveEdge = omtTimelineLiveEdgeSec();
+    function omtPaintLiveDelayAndEdge(liveInd, liveDelayEl, liveChipEl, edgeClockEl, playhead, liveEdge) {
         const delay = liveEdge > 0 ? Math.max(0, liveEdge - playhead) : 0;
 
         // Hysteresis: enter LIVE when delay <= ENTER, leave only when delay > LEAVE.
@@ -207,6 +299,7 @@
             omtTimelineLiveChipOn = true;
         }
 
+        liveInd.hidden = false;
         if (omtTimelineLiveChipOn) {
             liveDelayEl.hidden = true;
             liveChipEl.hidden = false;
@@ -217,8 +310,80 @@
             liveChipEl.hidden = true;
             liveDelayEl.textContent = formatarAtrasoLive(delay);
             liveInd.classList.remove('is-at-live');
-            liveInd.setAttribute('aria-label', 'Go to live');
+            liveInd.setAttribute('aria-label', 'Go to live safe point');
         }
+
+        if (edgeClockEl) {
+            edgeClockEl.hidden = false;
+            edgeClockEl.textContent = 'edge ' + formatarTempoCompacto(liveEdge);
+            edgeClockEl.title = 'Live edge ' + formatarTempoVideo(liveEdge) +
+                ' · you ' + formatarTempoCompacto(playhead);
+        }
+    }
+
+    /**
+     * Paint timeline chrome-row time (left): match clock, LIVE delay/chip + edge, or POST.
+     * Does not read PDT or change seek/hooks — reuses playhead + live-edge already used for LIVE.
+     */
+    function atualizarTempoTimelineDireito() {
+        if (!omtRoot) return;
+        const timesWrap = omtRoot.querySelector('.omt-timeline-times');
+        const liveInd = omtRoot.querySelector('#omt-timeline-live-indicator');
+        const liveDelayEl = omtRoot.querySelector('#omt-timeline-live-delay');
+        const liveChipEl = omtRoot.querySelector('#omt-timeline-live-chip');
+        const edgeClockEl = omtRoot.querySelector('#omt-timeline-edge-clock');
+        const postWrap = omtRoot.querySelector('#omt-timeline-post-times');
+        const matchClockEl = omtRoot.querySelector('#omt-timeline-match-clock');
+        if (!timesWrap || !liveInd || !liveDelayEl || !liveChipEl || !postWrap || !matchClockEl) return;
+
+        const playhead = omtTimelinePlayheadSec();
+        const kickoffOn = omtHasKickoffOffset();
+        const liveMode = omtIsTimelineLiveMode();
+        const liveEdge = omtTimelineLiveEdgeSec();
+
+        if (kickoffOn) {
+            timesWrap.dataset.omtTimeMode = 'kickoff';
+            postWrap.hidden = true;
+            matchClockEl.hidden = false;
+            // Same value the on-video match clock shows (reuse mirror helper / live DOM text).
+            let clockText = '';
+            if (typeof matchClockAtVideoTime === 'function') {
+                const info = matchClockAtVideoTime(playhead);
+                clockText = (info && info.clock) ? info.clock : '';
+            }
+            if (!clockText && timerUI && timerUI.innerText) clockText = timerUI.innerText;
+            matchClockEl.textContent = clockText || '00:00';
+
+            // Live/DVR with kickoff: keep game clock, still show edge distance + edge time.
+            if (liveMode) {
+                omtPaintLiveDelayAndEdge(liveInd, liveDelayEl, liveChipEl, edgeClockEl, playhead, liveEdge);
+            } else {
+                liveInd.hidden = true;
+                omtTimelineLiveChipOn = false;
+                if (edgeClockEl) edgeClockEl.hidden = true;
+            }
+            return;
+        }
+
+        matchClockEl.hidden = true;
+        timesWrap.dataset.omtTimeMode = liveMode ? 'live' : 'post';
+        liveInd.hidden = !liveMode;
+        postWrap.hidden = liveMode;
+
+        if (!liveMode) {
+            omtTimelineLiveChipOn = false;
+            if (edgeClockEl) edgeClockEl.hidden = true;
+            let dur = liveEdge;
+            if (!(dur > 0) && site && typeof site.effectiveDuration === 'function') {
+                const ed = site.effectiveDuration(vid);
+                if (ed && isFinite(ed)) dur = ed;
+            }
+            if (vTimeCurrent) vTimeCurrent.innerText = formatarTempoCompacto(playhead);
+            if (vTimeDuration) vTimeDuration.innerText = formatarTempoCompacto(dur);
+            return;
+        }
+
+        omtPaintLiveDelayAndEdge(liveInd, liveDelayEl, liveChipEl, edgeClockEl, playhead, liveEdge);
     }
 
     function inicializarMetadadosTimeline() {

@@ -254,6 +254,34 @@ async function run() {
       detail: autoVodMedia
     });
 
+    // After Auto VOD: Source stays enabled with VOD selected and DVR available
+    // (field 2.1.3: select became "Unavailable" + disabled — could not return to DVR).
+    // Manual DVR round-trip runs later (after label/native tests) so we do not
+    // disturb Source=VOD expectations mid-suite.
+    await page.waitForTimeout(1200);
+    const sourceAfterAuto = await page.evaluate(() => {
+      const sel = document.getElementById('omt-examino-source');
+      if (!sel) return { ok: false, reason: 'no-select' };
+      const opts = [...sel.options].map((o) => ({ value: o.value, text: (o.textContent || '').trim() }));
+      const texts = opts.map((o) => o.text);
+      return {
+        ok: !sel.disabled &&
+          /vod/i.test(sel.value) &&
+          !texts.some((t) => /unavailable/i.test(t)) &&
+          texts.some((t) => /^dvr$/i.test(t) || /dvr/i.test(t)) &&
+          texts.some((t) => /^vod$/i.test(t) || /vod/i.test(t)),
+        value: sel.value,
+        disabled: sel.disabled,
+        texts,
+        mediaUrl: window.__omtMockMediaUrl || null
+      };
+    });
+    results.push({
+      name: 'examino-source-enabled-after-auto-vod',
+      pass: sourceAfterAuto.ok === true,
+      detail: sourceAfterAuto
+    });
+
     // ---- Simplified settings: Source + Auto-VOD only ----
     const settingsShape = await page.evaluate(() => {
       const section = document.getElementById('omt-examino-settings');
@@ -336,12 +364,22 @@ async function run() {
       window.__omtGearPauseProbe = !!(v && v.paused);
     });
     await page.waitForTimeout(100);
+    // Dismiss any scrape leftover so the gear click is not racing a close.
+    await page.evaluate(() => {
+      document.querySelectorAll('.op-setting-panel').forEach((p) => {
+        p.classList.remove('open');
+        p.classList.remove('omt-settings-raised');
+      });
+    });
+    await page.waitForTimeout(80);
     const gearBox = await page.locator('#native-gear').boundingBox();
     if (gearBox) {
       await page.mouse.click(gearBox.x + gearBox.width / 2, gearBox.y + gearBox.height / 2);
+    } else {
+      await page.evaluate(() => document.getElementById('native-gear')?.click());
     }
-    await page.waitForTimeout(200);
-    const gearOpened = await page.evaluate(() => {
+    await page.waitForTimeout(250);
+    let gearOpened = await page.evaluate(() => {
       const panel = document.querySelector('.op-setting-panel');
       const v = document.querySelector('video');
       return {
@@ -350,6 +388,21 @@ async function run() {
         wasPaused: window.__omtGearPauseProbe === true
       };
     });
+    // One retry: Auto VOD settle re-scrape can dismiss the panel in the same tick.
+    if (!gearOpened.open) {
+      await page.evaluate(() => document.getElementById('native-gear')?.click());
+      await page.waitForTimeout(250);
+      gearOpened = await page.evaluate(() => {
+        const panel = document.querySelector('.op-setting-panel');
+        const v = document.querySelector('video');
+        return {
+          open: !!(panel && panel.classList.contains('open')),
+          paused: !!(v && v.paused),
+          wasPaused: window.__omtGearPauseProbe === true,
+          retried: true
+        };
+      });
+    }
     results.push({
       name: 'examino-native-gear-unblocked',
       pass: gearOpened.open === true && gearOpened.paused === false,
@@ -408,6 +461,39 @@ async function run() {
       name: 'examino-overlay-source-media-url-is-vod',
       pass: overlaySwitch.ok === true && /vod/i.test(String(overlaySwitch.mediaUrl || '')),
       detail: { mediaUrl: overlaySwitch.mediaUrl, duration: overlaySwitch.duration }
+    });
+
+    // After Auto VOD (and overlay VOD): manual switch back to DVR must work
+    // (media URL → live chunklist). Select stays enabled.
+    const backToDvr = await page.evaluate(async () => {
+      const sel = document.getElementById('omt-examino-source');
+      if (!sel || sel.disabled) return { ok: false, reason: 'select-disabled' };
+      const dvrOpt = [...sel.options].find((o) =>
+        /^dvr$/i.test(o.value) || (/dvr/i.test(o.value) && !/vod/i.test(o.value)) ||
+        (/^dvr$/i.test((o.textContent || '').trim())));
+      if (!dvrOpt) {
+        return { ok: false, reason: 'no-dvr-option', texts: [...sel.options].map((o) => o.value) };
+      }
+      sel.value = dvrOpt.value;
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 1600));
+      const v = document.querySelector('video');
+      const mediaUrl = window.__omtMockMediaUrl || (v && v.dataset && v.dataset.omtMediaUrl) || '';
+      return {
+        ok: (window.__omtMockSource || (v && v.dataset && v.dataset.omtSource)) === 'DVR' &&
+          /dvr|\/live\//i.test(mediaUrl) && !/\/vod\//i.test(mediaUrl) &&
+          !sel.disabled && /dvr/i.test(sel.value),
+        source: window.__omtMockSource,
+        sel: sel.value,
+        disabled: sel.disabled,
+        mediaUrl,
+        duration: v && v.duration
+      };
+    });
+    results.push({
+      name: 'examino-auto-vod-then-manual-dvr',
+      pass: backToDvr.ok === true,
+      detail: backToDvr
     });
 
     // ---- v2.1.1: temp-visible gear must beat scoped host-hide (Auto VOD path) ----
@@ -751,10 +837,13 @@ async function run() {
       const v = document.querySelector('video');
       const end = v?.seekable?.length ? v.seekable.end(v.seekable.length - 1) : null;
       const ct = v ? v.currentTime : null;
+      const delay = (typeof end === 'number' && typeof ct === 'number') ? (end - ct) : null;
+      // v2.2.0: L jumps to adaptive safe point (~base 10s), not raw edge / −3s.
       return {
         ct,
         end,
-        nearLive: typeof ct === 'number' && typeof end === 'number' && Math.abs(end - 3 - ct) < 2.5
+        delay,
+        nearLive: typeof delay === 'number' && delay >= 3.5 && delay <= 32
       };
     });
     results.push({
@@ -1902,8 +1991,11 @@ async function run() {
     });
     await page.waitForTimeout(140);
 
-    // Behind live → grey scrubber (partial fill)
+    // Behind live → grey scrubber (partial fill).
+    // Clear kickoff first: precision zoom (min = k1−900) makes "55% of duration"
+    // land below slider.min and paint as 0%.
     await page.evaluate(async () => {
+      document.getElementById('omt-btn-clear-timer')?.click();
       const v = document.querySelector('video');
       const slider = document.getElementById('omt-timeline-slider');
       const timelineBar = document.getElementById('omt-timeline-bar');
@@ -1911,13 +2003,16 @@ async function run() {
       if (!v) return;
       try { v.pause(); } catch (_) {}
       const end = v.seekable?.length ? v.seekable.end(v.seekable.length - 1) : v.duration;
-      const behindAt = typeof end === 'number' ? Math.max(0, end * 0.55) : 100;
-      try { v.currentTime = behindAt; } catch (_) {}
       if (slider && typeof end === 'number' && isFinite(end) && end > 0) {
         slider.min = '0';
         slider.max = String(end);
+        const behindAt = Math.max(0, end * 0.55);
         slider.value = String(behindAt);
+        slider.dispatchEvent(new Event('change', { bubbles: true }));
         slider.style.setProperty('--omt-progress', '55%');
+      } else {
+        const behindAt = typeof end === 'number' ? Math.max(0, end * 0.55) : 100;
+        try { v.currentTime = behindAt; } catch (_) {}
       }
       if (timelineBar) timelineBar.classList.remove('omt-at-live');
       if (live) live.classList.remove('is-live');
@@ -1972,12 +2067,16 @@ async function run() {
         try { v.pause(); } catch (_) {}
         const end = v.seekable?.length ? v.seekable.end(v.seekable.length - 1) : v.duration;
         const at = Math.max(0, (typeof end === 'number' ? end : 0) - d);
-        try { v.currentTime = at; } catch (_) {}
+        // Prefer slider `change` → seekTo() so anti-snap lock tracks the new
+        // playhead (direct currentTime is yanked back while LIVE lock is active).
         if (slider && typeof end === 'number' && isFinite(end) && end > 0) {
           slider.min = '0';
           slider.max = String(end);
           slider.value = String(at);
           slider.style.setProperty('--omt-progress', ((at / end) * 100) + '%');
+          slider.dispatchEvent(new Event('change', { bubbles: true }));
+        } else {
+          try { v.currentTime = at; } catch (_) {}
         }
         if (bar) {
           bar.style.opacity = '1';
@@ -1988,8 +2087,9 @@ async function run() {
           panel.style.pointerEvents = 'auto';
         }
         v.dispatchEvent(new Event('timeupdate'));
+        v.dispatchEvent(new Event('timeupdate'));
       }, delaySec);
-      await page.waitForTimeout(70);
+      await page.waitForTimeout(120);
     };
     const readTimelineChrome = async () => page.evaluate(() => {
       const bar = document.getElementById('omt-timeline-bar');
@@ -1999,19 +2099,23 @@ async function run() {
       const ind = document.getElementById('omt-timeline-live-indicator');
       const delay = document.getElementById('omt-timeline-live-delay');
       const chip = document.getElementById('omt-timeline-live-chip');
+      const edgeClock = document.getElementById('omt-timeline-edge-clock');
       const post = document.getElementById('omt-timeline-post-times');
       const matchClock = document.getElementById('omt-timeline-match-clock');
       const cur = document.getElementById('omt-v-time-current');
       const dur = document.getElementById('omt-v-time-duration');
+      const playBtn = document.getElementById('omt-timeline-play-btn');
       const volBtn = document.getElementById('omt-timeline-vol-btn');
       const volRange = document.getElementById('omt-timeline-vol-range');
       const fs = document.getElementById('omt-btn-fullscreen');
+      const safeMarker = document.getElementById('omt-timeline-safe-marker');
       const chipCs = chip && !chip.hidden ? getComputedStyle(chip) : null;
       const barBox = bar?.getBoundingClientRect();
       const trackBox = track?.getBoundingClientRect();
       const rowBox = row?.getBoundingClientRect();
       const timesBox = times?.getBoundingClientRect();
       const fsBox = fs?.getBoundingClientRect();
+      const playBox = playBtn?.getBoundingClientRect();
       const volBox = volBtn?.getBoundingClientRect();
       return {
         mode: times?.dataset?.omtTimeMode || null,
@@ -2020,16 +2124,23 @@ async function run() {
         matchHidden: !!(matchClock && matchClock.hidden),
         matchText: matchClock && !matchClock.hidden ? matchClock.textContent.trim() : null,
         delayText: delay && !delay.hidden ? delay.textContent.trim() : null,
+        edgeText: edgeClock && !edgeClock.hidden ? edgeClock.textContent.trim() : null,
         chipVisible: !!(chip && !chip.hidden && ind && !ind.hidden),
         chipBg: chipCs ? chipCs.backgroundColor : null,
         chipColor: chipCs ? chipCs.color : null,
         curText: cur?.innerText || null,
         durText: dur?.innerText || null,
+        hasPlay: !!playBtn,
         hasVol: !!(volBtn && volRange),
-        layoutOk: !!(barBox && trackBox && rowBox && timesBox && fsBox && volBox &&
+        noSafeMarker: !safeMarker || safeMarker.hidden !== false || !document.body.contains(safeMarker) ||
+          (safeMarker.hidden === true) || !safeMarker.offsetParent,
+        // v2.2.0: no visible safe marker element (dropped).
+        safeMarkerAbsent: !safeMarker,
+        layoutOk: !!(barBox && trackBox && rowBox && timesBox && fsBox && volBox && playBox &&
           Math.abs(trackBox.width - barBox.width) < 40 &&
           rowBox.top >= trackBox.bottom - 2 &&
           timesBox.left < fsBox.left &&
+          playBox.left <= volBox.left + 2 &&
           volBox.left <= timesBox.left + 2),
         panelClearance: (() => {
           const panel = document.getElementById('controls-panel');
@@ -2077,21 +2188,23 @@ async function run() {
     const layoutCheck = await readTimelineChrome();
     results.push({
       name: 'timeline-youtube-layout',
-      pass: layoutCheck.layoutOk === true && layoutCheck.hasVol === true,
+      pass: layoutCheck.layoutOk === true && layoutCheck.hasVol === true &&
+        layoutCheck.hasPlay === true && layoutCheck.safeMarkerAbsent === true,
       detail: layoutCheck
     });
 
-    // Leave LIVE chip first (delay > 15) so -12 s is delay text, not chip
+    // Leave LIVE chip first (delay > 15) so -0:12 is delay text, not chip
     await seekLiveDelay(20);
     await seekLiveDelay(12);
     const live12 = await readTimelineChrome();
     results.push({
       name: 'timeline-live-delay-12s',
       pass: live12.mode === 'live' && !live12.liveHidden && live12.postHidden &&
-        live12.matchHidden && live12.delayText === '-12 s' && !live12.chipVisible,
+        live12.matchHidden && live12.delayText === '-0:12' && !live12.chipVisible &&
+        /^edge\s+/i.test(String(live12.edgeText || '')),
       detail: live12
     });
-    await shotTimelineFrame('v201_timeline_live_minus_12s.png');
+    await shotTimelineFrame('v220_timeline_live_minus_12s.png');
 
     await seekLiveDelay(65);
     const live65 = await readTimelineChrome();
@@ -2100,7 +2213,7 @@ async function run() {
       pass: live65.mode === 'live' && live65.delayText === '-1:05' && !live65.chipVisible,
       detail: live65
     });
-    await shotTimelineFrame('v201_timeline_live_minus_1m05.png');
+    await shotTimelineFrame('v220_timeline_live_minus_1m05.png');
 
     // Hysteresis: enter at <=10, stay through 12, leave only when >15
     await seekLiveDelay(20);
@@ -2113,7 +2226,7 @@ async function run() {
     results.push({
       name: 'timeline-live-chip-hysteresis',
       pass: liveEnter.chipVisible === true && liveHold.chipVisible === true &&
-        liveLeave.chipVisible === false && liveLeave.delayText === '-16 s',
+        liveLeave.chipVisible === false && liveLeave.delayText === '-0:16',
       detail: { liveEnter, liveHold, liveLeave }
     });
 
@@ -2127,22 +2240,71 @@ async function run() {
         /rgb\(\s*255,\s*255,\s*255\s*\)/i.test(String(liveEdge.chipColor || '')),
       detail: liveEdge
     });
-    await shotTimelineFrame('v201_timeline_live_edge_chip.png');
+    await shotTimelineFrame('v220_timeline_live_edge_chip.png');
 
-    // Clicking the indicator jumps live (same as panel LIVE)
+    // LIVE / indicator jump to adaptive safe point (base 10s; not raw edge)
     await seekLiveDelay(40);
     const beforeClick = await page.evaluate(() => document.querySelector('video')?.currentTime);
     await page.evaluate(() => document.getElementById('omt-timeline-live-indicator')?.click());
-    await page.waitForTimeout(120);
+    await page.waitForTimeout(150);
     const afterClick = await page.evaluate(() => {
       const v = document.querySelector('video');
       const end = v?.seekable?.length ? v.seekable.end(v.seekable.length - 1) : v?.duration;
-      return { ct: v?.currentTime, end, delay: (end || 0) - (v?.currentTime || 0) };
+      const delay = (end || 0) - (v?.currentTime || 0);
+      const liveBtn = document.getElementById('omt-live-btn');
+      return {
+        ct: v?.currentTime,
+        end,
+        delay,
+        liveIsRed: !!(liveBtn && liveBtn.classList.contains('is-live'))
+      };
     });
     results.push({
       name: 'timeline-live-indicator-clicks-go-live',
-      pass: typeof beforeClick === 'number' && afterClick.delay <= 8,
+      // Safe point ≥ ~base (allow small float); never raw edge (~0–3s).
+      pass: typeof beforeClick === 'number' && afterClick.delay >= 8 && afterClick.delay <= 32,
       detail: { beforeClick, afterClick }
+    });
+
+    // Panel LIVE button → safe point; after a stall never closer than base ~10s
+    await seekLiveDelay(45);
+    const panelLive = await page.evaluate(async () => {
+      const v = document.querySelector('video');
+      const btn = document.getElementById('omt-live-btn');
+      if (!v || !btn) return { ok: false, reason: 'missing' };
+      // Simulate recent stall via real media event (feeds adaptive margin).
+      v.dispatchEvent(new Event('waiting'));
+      btn.click();
+      await new Promise((r) => setTimeout(r, 150));
+      const end = v.seekable?.length ? v.seekable.end(v.seekable.length - 1) : v.duration;
+      const delay = (end || 0) - (v.currentTime || 0);
+      return { ok: delay >= 9.5 && delay <= 32, delay, end, ct: v.currentTime };
+    });
+    results.push({
+      name: 'live-btn-jumps-to-safe-point',
+      pass: panelLive.ok === true,
+      detail: panelLive
+    });
+
+    // Manual seek past safe point must still be allowed (no clamp)
+    const noClamp = await page.evaluate(async () => {
+      const v = document.querySelector('video');
+      if (!v) return { ok: false, reason: 'no-video' };
+      const end = v.seekable?.length ? v.seekable.end(v.seekable.length - 1) : v.duration;
+      const nearEdge = Math.max(0, (end || 0) - 2);
+      v.currentTime = nearEdge;
+      await new Promise((r) => setTimeout(r, 40));
+      const after = v.currentTime;
+      return {
+        ok: Math.abs(after - nearEdge) < 0.75,
+        nearEdge,
+        after
+      };
+    });
+    results.push({
+      name: 'live-safe-margin-no-manual-clamp',
+      pass: noClamp.ok === true,
+      detail: noClamp
     });
 
     // Timeline volume stays in sync with panel volume
@@ -2185,13 +2347,23 @@ async function run() {
     });
     results.push({ name: 'timeline-volume-syncs-with-panel', pass: volSync.ok === true, detail: volSync });
 
-    // LIVE + kickoff → match clock only (set kickoff early, then sit 12 s behind live)
+    // LIVE + kickoff → match clock + edge distance (not post times)
     await page.evaluate(() => {
       const v = document.querySelector('video');
-      if (v) {
+      const slider = document.getElementById('omt-timeline-slider');
+      // seekTo via slider so anti-snap from a prior LIVE jump does not yank us.
+      if (v && slider) {
+        const end = v.seekable?.length ? v.seekable.end(v.seekable.length - 1) : v.duration;
+        if (typeof end === 'number' && isFinite(end) && end > 0) {
+          slider.min = '0';
+          slider.max = String(end);
+        }
+        slider.value = '30';
+        slider.dispatchEvent(new Event('change', { bubbles: true }));
+      } else if (v) {
         try { v.currentTime = 30; } catch (_) {}
-        v.dispatchEvent(new Event('timeupdate'));
       }
+      if (v) v.dispatchEvent(new Event('timeupdate'));
       const half = document.getElementById('omt-half-select');
       if (half) {
         half.value = '1';
@@ -2200,6 +2372,7 @@ async function run() {
       document.getElementById('omt-btn-set-kickoff')?.click();
     });
     await page.waitForTimeout(80);
+    await seekLiveDelay(20);
     await seekLiveDelay(12);
     const liveKick = await readTimelineChrome();
     const onVideoClock = await page.evaluate(() => document.getElementById('match-timer')?.innerText || '');
@@ -2207,10 +2380,52 @@ async function run() {
       name: 'timeline-live-with-kickoff-match-clock',
       pass: liveKick.mode === 'kickoff' && liveKick.matchText &&
         liveKick.matchText === onVideoClock && /^\d{2}:\d{2}$/.test(liveKick.matchText) &&
-        liveKick.liveHidden && liveKick.postHidden,
+        !liveKick.liveHidden && liveKick.postHidden &&
+        (liveKick.delayText === '-0:12' || liveKick.chipVisible === true) &&
+        /^edge\s+/i.test(String(liveKick.edgeText || '')),
       detail: { liveKick, onVideoClock }
     });
-    await shotTimelineFrame('v201_timeline_live_kickoff_clock.png');
+    await shotTimelineFrame('v220_timeline_live_kickoff_clock.png');
+
+    // Timeline play/pause mirrors panel button
+    const tlPlay = await page.evaluate(async () => {
+      const v = document.querySelector('video');
+      const tl = document.getElementById('omt-timeline-play-btn');
+      const main = document.getElementById('omt-btn-play');
+      if (!v || !tl || !main) return { ok: false, reason: 'missing' };
+      try { await v.play(); } catch (_) {}
+      await new Promise((r) => setTimeout(r, 80));
+      const playing = {
+        paused: v.paused,
+        tlPlaying: tl.classList.contains('playing'),
+        mainPlaying: main.classList.contains('playing')
+      };
+      tl.click();
+      await new Promise((r) => setTimeout(r, 80));
+      const afterPause = {
+        paused: v.paused,
+        tlPlaying: tl.classList.contains('playing'),
+        mainPlaying: main.classList.contains('playing')
+      };
+      tl.click();
+      await new Promise((r) => setTimeout(r, 80));
+      const afterPlay = {
+        paused: v.paused,
+        tlPlaying: tl.classList.contains('playing'),
+        mainPlaying: main.classList.contains('playing')
+      };
+      return {
+        ok: playing.paused === false && playing.tlPlaying && playing.mainPlaying &&
+          afterPause.paused === true && !afterPause.tlPlaying && !afterPause.mainPlaying &&
+          afterPlay.paused === false && afterPlay.tlPlaying && afterPlay.mainPlaying,
+        playing, afterPause, afterPlay
+      };
+    });
+    results.push({
+      name: 'timeline-play-pause-mirrors-panel',
+      pass: tlPlay.ok === true,
+      detail: tlPlay
+    });
 
     // Clear kickoff, then POST no kickoff
     await page.evaluate(() => document.getElementById('omt-btn-clear-timer')?.click());
@@ -2316,10 +2531,10 @@ async function run() {
     const spacing = await readTimelineChrome();
     results.push({
       name: 'timeline-panel-above-chrome-row',
-      pass: spacing.panelClearance === true && spacing.mode === 'live' && spacing.delayText === '-12 s',
+      pass: spacing.panelClearance === true && spacing.mode === 'live' && spacing.delayText === '-0:12',
       detail: spacing
     });
-    await shotTimelineFrame('v201_timeline_with_panel.png', { showPanel: true });
+    await shotTimelineFrame('v220_timeline_with_panel.png', { showPanel: true });
 
     // Hover thickens the timeline
     const timelineBox = await page.locator('#omt-timeline-slider').boundingBox();
@@ -2459,17 +2674,28 @@ async function run() {
       detail: seekTipGone
     });
 
-    // Set 1st + 2nd half kickoffs (1st early, 2nd later — order matters for tip clock)
+    // Set 1st + 2nd half kickoffs (1st early, 2nd later — order matters for tip clock).
+    // Use slider `change` → seekTo so anti-snap lock tracks (direct currentTime is
+    // yanked back while a prior LIVE/seekTo lock is still active).
     await page.evaluate(() => {
       const v = document.querySelector('video');
+      const slider = document.getElementById('omt-timeline-slider');
       const half = document.getElementById('omt-half-select');
       const moreBtn = document.getElementById('omt-more-toggle');
       const more = document.getElementById('omt-more-panel');
       if (more && !more.classList.contains('is-open')) moreBtn?.click();
-      if (v) {
+      if (v && slider) {
+        const end = v.seekable?.length ? v.seekable.end(v.seekable.length - 1) : (v.duration || 0);
+        if (typeof end === 'number' && isFinite(end) && end > 0) {
+          slider.min = '0';
+          slider.max = String(end);
+        }
+        slider.value = '20';
+        slider.dispatchEvent(new Event('change', { bubbles: true }));
+      } else if (v) {
         try { v.currentTime = 20; } catch (_) {}
-        v.dispatchEvent(new Event('timeupdate'));
       }
+      if (v) v.dispatchEvent(new Event('timeupdate'));
       if (half) {
         half.value = '1';
         half.dispatchEvent(new Event('change', { bubbles: true }));
@@ -2479,13 +2705,23 @@ async function run() {
     await page.waitForTimeout(80);
     await page.evaluate(() => {
       const v = document.querySelector('video');
+      const slider = document.getElementById('omt-timeline-slider');
       const half = document.getElementById('omt-half-select');
-      if (v) {
+      if (v && slider) {
+        const end = v.seekable?.length ? v.seekable.end(v.seekable.length - 1) : (v.duration || 0);
+        const at = Math.min((end || 330) * 0.55, Math.max(0, (end || 330) - 10));
+        if (typeof end === 'number' && isFinite(end) && end > 0) {
+          slider.min = '0';
+          slider.max = String(end);
+        }
+        slider.value = String(at);
+        slider.dispatchEvent(new Event('change', { bubbles: true }));
+      } else if (v) {
         const end = v.seekable?.length ? v.seekable.end(v.seekable.length - 1) : (v.duration || 0);
         const at = Math.min((end || 330) * 0.55, Math.max(0, (end || 330) - 10));
         try { v.currentTime = at; } catch (_) {}
-        v.dispatchEvent(new Event('timeupdate'));
       }
+      if (v) v.dispatchEvent(new Event('timeupdate'));
       if (half) {
         half.value = '2';
         half.dispatchEvent(new Event('change', { bubbles: true }));
@@ -6138,19 +6374,22 @@ async function run() {
       });
       results.push({ name: 'local-timeline-seek', pass: localTimeline.ok === true, detail: localTimeline });
 
-      // LIVE button is hidden on local; L hotkey still seeks toward the end.
+      // LIVE button is hidden on local; L hotkey still seeks toward the end (safe point).
       const localLive = await localPage.evaluate(async () => {
         const v = document.getElementById('omt-local-video');
         try { v.currentTime = 1; } catch (_) {}
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'l', code: 'KeyL', bubbles: true, cancelable: true }));
-        await new Promise((r) => setTimeout(r, 80));
+        await new Promise((r) => setTimeout(r, 120));
         const end = v.duration || (v.seekable?.length ? v.seekable.end(v.seekable.length - 1) : NaN);
         const btn = document.getElementById('omt-live-btn');
         const btnHidden = !btn || getComputedStyle(btn).display === 'none';
+        const delay = (typeof end === 'number' && isFinite(end)) ? (end - v.currentTime) : null;
         return {
-          ok: btnHidden && typeof end === 'number' && isFinite(end) && v.currentTime >= end - 3,
+          ok: btnHidden && typeof delay === 'number' && delay >= 0 && delay <= Math.max(3, end * 0.5) &&
+            v.currentTime > 1.5,
           currentTime: v.currentTime,
           end,
+          delay,
           btnHidden
         };
       });

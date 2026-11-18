@@ -78,7 +78,11 @@
         shuttleCheatsheet = null;
         liveBtn = null;
         omtTimelineLiveChipOn = false;
+        omtLiveEdgeLastSec = null;
+        omtLiveEdgeAdvanceAtMs = [];
+        omtLiveLastStallAtMs = 0;
         btnMainPlay = null;
+        btnTimelinePlay = null;
         timelineSlider = null;
         vTimeCurrent = null;
         vTimeDuration = null;

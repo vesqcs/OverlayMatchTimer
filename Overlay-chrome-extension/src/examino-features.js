@@ -483,14 +483,18 @@
                 document.querySelectorAll('.op-setting-panel').forEach((p) => p.classList.remove('omt-settings-raised'));
                 // Post-1.2.0 (kept): VOD→DVR must snap off a carried VOD playhead
                 // or the short DVR window freezes. Does not alter the click path.
-                if (panelType === 'source' && /^dvr$/i.test(String(value).trim())) {
-                    examinoPendingDvrSettle = true;
-                    try {
-                        settleExaminoMediaAfterBind(
-                            (typeof site.findVideo === 'function' && site.findVideo()) ||
-                            document.querySelector('video')
-                        );
-                    } catch (_) {}
+                if (panelType === 'source') {
+                    if (/vod/i.test(String(value))) examinoLastAppliedSource = 'VOD';
+                    else if (/dvr/i.test(String(value))) examinoLastAppliedSource = 'DVR';
+                    if (/^dvr$/i.test(String(value).trim())) {
+                        examinoPendingDvrSettle = true;
+                        try {
+                            settleExaminoMediaAfterBind(
+                                (typeof site.findVideo === 'function' && site.findVideo()) ||
+                                document.querySelector('video')
+                            );
+                        } catch (_) {}
+                    }
                 }
                 omtDebugSource('apply:success', {
                     value,
@@ -507,19 +511,111 @@
         }));
     }
 
+    // Last successful Source apply + last good option list — survive host
+    // panel scrape failures after Auto VOD replaces <video> (field: select
+    // showed "Unavailable" and was disabled so DVR could not be chosen).
+    let examinoLastAppliedSource = null;
+    let examinoLastGoodSourceOptions = [];
+    // One-shot settle re-scrape after Auto VOD / thin scrape — do not re-arm on
+    // every refresh while VOD (that open/dismiss loop blocks native gear).
+    let examinoSourceSettleTimer = null;
+    let examinoSourceNeedsSettleRescrape = false;
+
+    /** Infer DVR/VOD from last apply, media URL, or dataset — not from /play/dvr/ path. */
+    function inferExaminoSourceLabel() {
+        if (examinoLastAppliedSource === 'VOD' || examinoLastAppliedSource === 'DVR') {
+            return examinoLastAppliedSource;
+        }
+        if (examinoManualSourceChoice === 'VOD' || examinoManualSourceChoice === 'DVR') {
+            return examinoManualSourceChoice;
+        }
+        try {
+            const url = (typeof window.__omtMockMediaUrl === 'string' && window.__omtMockMediaUrl) ||
+                (vid && vid.dataset && vid.dataset.omtMediaUrl) ||
+                (vid && (vid.currentSrc || vid.src)) || '';
+            if (/chunklist_vod|\bvod\b|\/vod\//i.test(url)) return 'VOD';
+            if (/chunklist_dvr|\bdvr\b|\/live\//i.test(url)) return 'DVR';
+        } catch (_) {}
+        if (vid && vid.dataset && vid.dataset.omtSource) {
+            const s = String(vid.dataset.omtSource).toUpperCase();
+            if (s === 'VOD' || s === 'DVR') return s;
+        }
+        if (typeof window.__omtMockSource === 'string') {
+            const s = String(window.__omtMockSource).toUpperCase();
+            if (s === 'VOD' || s === 'DVR') return s;
+        }
+        return null;
+    }
+
+    function rememberGoodSourceOptions(options) {
+        if (!options || options.length < 2) return;
+        const hasDvr = options.some((o) => /dvr/i.test(String(o.value)) || /dvr/i.test(String(o.label || '')));
+        const hasVod = options.some((o) => /vod/i.test(String(o.value)) || /vod/i.test(String(o.label || '')));
+        if (!hasDvr || !hasVod) return;
+        examinoLastGoodSourceOptions = options.map((o) => ({
+            value: String(o.value),
+            label: String(o.label || o.value)
+        }));
+    }
+
+    function normalizeExaminoSourceScraped(scraped) {
+        const options = [];
+        const seen = Object.create(null);
+        const push = (value, label) => {
+            const v = String(value || '');
+            if (!v || seen[v]) return;
+            seen[v] = true;
+            options.push({ value: v, label: label || v });
+        };
+        const scrapedOpts = scraped && scraped.options ? scraped.options : [];
+        scrapedOpts.forEach((o) => {
+            if (o && o.value != null) push(o.value, o.label);
+        });
+        // Scrape empty / thin after <video> replace → reuse last good host options
+        // so DVR stays selectable (never disable the control).
+        if (options.length < 2 && examinoLastGoodSourceOptions.length) {
+            examinoLastGoodSourceOptions.forEach((o) => push(o.value, o.label));
+        }
+        // Floor: always expose DVR + VOD.
+        ['DVR', 'VOD'].forEach((v) => push(v, v));
+
+        let current = scraped && scraped.current != null ? String(scraped.current) : '';
+        const inferred = inferExaminoSourceLabel();
+        // Prefer media / last-apply when scrape still says DVR after a VOD apply
+        // (host path often stays /play/dvr/ while chunklist is VOD).
+        if (inferred) {
+            const scrapeIsDvr = current && /dvr/i.test(current) && !/vod/i.test(current);
+            const scrapeMissing = !current || !options.some((o) => String(o.value) === current);
+            if (scrapeMissing || (inferred === 'VOD' && scrapeIsDvr)) {
+                current = inferred;
+            }
+        }
+        if (current && !options.some((o) => String(o.value) === current)) {
+            push(current, current);
+        }
+        rememberGoodSourceOptions(options);
+        return { current: current || inferred || null, options };
+    }
+
     function fillSelect(selectEl, scraped) {
         if (!selectEl) return;
-        const { current, options } = scraped || { current: null, options: [] };
+        const { current, options } = normalizeExaminoSourceScraped(scraped);
         selectEl.innerHTML = '';
+        // With DVR/VOD floor + last-good cache, options should never be empty.
+        // Keep the control enabled so the analyst can switch back to DVR.
+        selectEl.disabled = false;
         if (!options.length) {
-            const opt = document.createElement('option');
-            opt.value = '';
-            opt.textContent = 'Unavailable';
-            selectEl.appendChild(opt);
-            selectEl.disabled = true;
+            ['DVR', 'VOD'].forEach((v) => {
+                const opt = document.createElement('option');
+                opt.value = v;
+                opt.textContent = v;
+                selectEl.appendChild(opt);
+            });
+            const inferred = inferExaminoSourceLabel() || 'VOD';
+            selectEl.value = inferred;
+            omtDebugSource('fill-select:floor-only', { value: selectEl.value });
             return;
         }
-        selectEl.disabled = false;
         options.forEach((o) => {
             const opt = document.createElement('option');
             opt.value = o.value;
@@ -527,11 +623,20 @@
             if (current && String(current) === String(o.value)) opt.selected = true;
             selectEl.appendChild(opt);
         });
-        if (current) selectEl.value = current;
+        if (current) {
+            selectEl.value = current;
+            if (selectEl.value !== current) {
+                const match = Array.from(selectEl.options).find((o) =>
+                    String(o.value).toUpperCase() === String(current).toUpperCase());
+                if (match) selectEl.value = match.value;
+            }
+        }
         omtDebugSource('fill-select', {
             current,
             value: selectEl.value,
-            options: options.map((o) => o.value)
+            disabled: selectEl.disabled,
+            options: options.map((o) => o.value),
+            inferred: inferExaminoSourceLabel()
         });
     }
 
@@ -541,14 +646,54 @@
         if (section) section.style.display = 'flex';
 
         omtDebugSource('refresh:start');
-        const source = await scrapeOpSettingOptions('source');
-        // Current UI is Source + Auto-VOD only (audio/speed removed post-1.2.0).
+        let source = { current: null, options: [] };
+        try {
+            source = await scrapeOpSettingOptions('source');
+        } catch (err) {
+            omtDebugSource('refresh:scrape-failed', String(err && err.message || err));
+            source = {
+                current: inferExaminoSourceLabel(),
+                options: examinoLastGoodSourceOptions.slice()
+            };
+        }
+        if (source && source.options && source.options.length >= 2) {
+            rememberGoodSourceOptions(source.options);
+        }
+        const thin = !source || !source.options || source.options.length < 2;
         fillSelect(q('omt-examino-source'), source);
 
         const autoBox = q('omt-examino-auto-vod');
         if (autoBox) autoBox.checked = storageGetAutoVod();
 
         dismissOpSettingsChrome();
+
+        // Re-scrape once after settle when Auto VOD asked for it, or scrape was thin.
+        const needsSettle = thin || examinoSourceNeedsSettleRescrape;
+        if (needsSettle) {
+            examinoSourceNeedsSettleRescrape = false;
+            omtDebugSource('refresh:reschedule-after-settle');
+            if (examinoSourceSettleTimer) clearTimeout(examinoSourceSettleTimer);
+            examinoSourceSettleTimer = setTimeout(() => {
+                examinoSourceSettleTimer = null;
+                scrapeOpSettingOptions('source').then((again) => {
+                    if (again && again.options && again.options.length >= 2) {
+                        rememberGoodSourceOptions(again.options);
+                    }
+                    fillSelect(q('omt-examino-source'), again && again.options && again.options.length
+                        ? again
+                        : {
+                            current: inferExaminoSourceLabel(),
+                            options: examinoLastGoodSourceOptions.slice()
+                        });
+                    dismissOpSettingsChrome();
+                }).catch(() => {
+                    fillSelect(q('omt-examino-source'), {
+                        current: inferExaminoSourceLabel(),
+                        options: examinoLastGoodSourceOptions.slice()
+                    });
+                });
+            }, 900);
+        }
     }
 
     function wireExaminoSettingsUI() {
@@ -580,6 +725,17 @@
                 }
                 const ok = await applyOpSetting('source', value);
                 mostrarOSD(ok ? ('Source: ' + value) : 'Source change failed');
+                if (ok) {
+                    if (/vod/i.test(String(value))) examinoLastAppliedSource = 'VOD';
+                    else if (/dvr/i.test(String(value))) examinoLastAppliedSource = 'DVR';
+                    // Keep select enabled with DVR+VOD; do not path-refresh to Unavailable.
+                    fillSelect(sourceSel, {
+                        current: value,
+                        options: examinoLastGoodSourceOptions.length
+                            ? examinoLastGoodSourceOptions
+                            : [{ value: 'DVR', label: 'DVR' }, { value: 'VOD', label: 'VOD' }]
+                    });
+                }
                 // v1.2.0: do not refresh/force select from path after apply.
                 omtDebugSource('ui-change:done', {
                     ok,
@@ -587,7 +743,9 @@
                     duration: (document.querySelector('video') || {}).duration,
                     omtSource: (document.querySelector('video') || {}).dataset
                         ? document.querySelector('video').dataset.omtSource
-                        : null
+                        : null,
+                    sel: sourceSel.value,
+                    disabled: sourceSel.disabled
                 });
             });
         }
@@ -636,12 +794,23 @@
             if (!vod) return;
             console.log('[OMT] Auto-switching Examino source to VOD:', vod.value, '(attempt ' + attempt + ')');
             examinoAutoVodClicked = true;
+            rememberGoodSourceOptions(source.options);
             const ok = await applyOpSetting('source', vod.value);
             if (ok) {
+                examinoLastAppliedSource = 'VOD';
                 mostrarOSD('Switched to VOD');
+                // Paint VOD immediately with DVR still available — do not wait on
+                // a scrape that can fail while the host rebuilds after replace.
+                fillSelect(q('omt-examino-source'), {
+                    current: vod.value || 'VOD',
+                    options: (source.options && source.options.length)
+                        ? source.options
+                        : examinoLastGoodSourceOptions
+                });
+                examinoSourceNeedsSettleRescrape = true;
                 setTimeout(() => {
                     refreshExaminoSettingsPanel().catch(() => {});
-                }, 800);
+                }, 1000);
             } else {
                 omtDebugSource('auto-vod:apply-false-no-retry-click');
             }
