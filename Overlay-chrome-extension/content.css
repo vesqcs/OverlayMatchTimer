@@ -356,6 +356,8 @@ html.omt-host-examino.omt-hud-on .setting-holder.omt-examino-native-hidden.omt-s
 #omt-root #omt-timeline-bar .omt-timeline-times,
 #omt-root #omt-timeline-bar .omt-timeline-vol-btn,
 #omt-root #omt-timeline-bar .omt-timeline-vol-range,
+#omt-root #omt-timeline-bar .omt-timeline-chrome-right,
+#omt-root #omt-timeline-bar .omt-timeline-video-range,
 #omt-root #omt-timeline-bar .omt-timeline-fs-btn {
     pointer-events: auto;
 }
@@ -1089,6 +1091,7 @@ html.omt-host-examino.omt-hud-on .setting-holder.omt-examino-native-hidden.omt-s
 .omt-timeline-bar.omt-chrome-hidden .omt-timeline-times,
 .omt-timeline-bar.omt-chrome-hidden .omt-timeline-vol-btn,
 .omt-timeline-bar.omt-chrome-hidden .omt-timeline-vol-range,
+.omt-timeline-bar.omt-chrome-hidden .omt-timeline-video-range,
 .omt-timeline-bar.omt-chrome-hidden .omt-timeline-fs-btn {
     pointer-events: none !important;
 }
@@ -1121,6 +1124,25 @@ html.omt-host-examino.omt-hud-on .setting-holder.omt-examino-native-hidden.omt-s
     gap: 8px;
     min-width: 0;
     flex: 1 1 auto;
+}
+.omt-timeline-chrome-right {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    flex: 0 0 auto;
+    margin-left: auto;
+}
+#omt-root .omt-timeline-video-range {
+    font-family: var(--omt-mono);
+    font-size: 11px !important;
+    font-variant-numeric: tabular-nums;
+    color: #c8c8c8;
+    line-height: 1;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+#omt-root .omt-timeline-video-range[hidden] {
+    display: none !important;
 }
 #omt-root .omt-timeline-play-btn {
     display: inline-flex;
@@ -1160,18 +1182,6 @@ html.omt-host-examino.omt-hud-on .setting-holder.omt-examino-native-hidden.omt-s
     flex-shrink: 1;
     min-width: 0;
     font-variant-numeric: tabular-nums;
-}
-#omt-root .omt-timeline-edge-clock {
-    font-family: var(--omt-mono);
-    font-size: 11px !important;
-    font-variant-numeric: tabular-nums;
-    color: #9aa3ad;
-    line-height: 1;
-    white-space: nowrap;
-    flex-shrink: 0;
-}
-#omt-root .omt-timeline-edge-clock[hidden] {
-    display: none !important;
 }
 #omt-root .omt-timeline-post-times {
     display: inline-flex;
