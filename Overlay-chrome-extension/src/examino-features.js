@@ -363,11 +363,27 @@
         return new Promise((resolve) => setTimeout(resolve, ms));
     }
 
+    // Field diagnostics for Source/VOD (2.1.2). Leave on so Vasco's next
+    // console paste shows exactly which step failed — Examino only.
+    function omtDebugSource(step, detail) {
+        try {
+            if (detail !== undefined) console.log('[OMT-DEBUG][examino-source]', step, detail);
+            else console.log('[OMT-DEBUG][examino-source]', step);
+        } catch (_) {}
+    }
+
     function revealNativeSettingsButton() {
         const holder = document.querySelector('.setting-holder');
         const btn = document.querySelector('.op-button.op-setting-button, .op-setting-button');
         if (holder) holder.classList.add('omt-settings-temp-visible');
         if (btn) btn.classList.add('omt-settings-temp-visible');
+        omtDebugSource('reveal-gear', {
+            holder: !!holder,
+            btn: !!btn,
+            holderDisplay: holder ? getComputedStyle(holder).display : null,
+            btnDisplay: btn ? getComputedStyle(btn).display : null,
+            btnPE: btn ? getComputedStyle(btn).pointerEvents : null
+        });
         return btn;
     }
 
@@ -440,12 +456,18 @@
         return null;
     }
 
+    // Last Source we picked in the host menu; survives SPA teardown/boot so the
+    // overlay select shows it even when the row/path can't confirm it.
+    let examinoLastAppliedSource = null;
+
     function detectCurrentSource(scrapedCurrent) {
         const fromMenu = normalizeSourceToken(scrapedCurrent);
         if (fromMenu) return fromMenu;
-        const path = location.pathname || '';
-        if (/\/play\/vod\b/i.test(path)) return 'VOD';
-        if (/\/play\/dvr\b/i.test(path)) return 'DVR';
+        // Prefer our last apply / manual choice over URL path. Real Examino keeps
+        // /play/dvr/ in the address bar after gear→VOD (2.1.1 field), so path
+        // must not snap the overlay (or Auto VOD) back to DVR.
+        if (examinoLastAppliedSource) return examinoLastAppliedSource;
+        if (examinoManualSourceChoice) return examinoManualSourceChoice;
         if (typeof window.__omtMockSource === 'string') {
             const mock = normalizeSourceToken(window.__omtMockSource);
             if (mock) return mock;
@@ -464,21 +486,31 @@
                 }
             } catch (_) {}
         }
+        const path = location.pathname || '';
+        if (/\/play\/vod\b/i.test(path)) return 'VOD';
+        if (/\/play\/dvr\b/i.test(path)) return 'DVR';
         return null;
     }
 
-    function closeOpSettingsUi() {
+    // Match v1.2.0: only drop our raise/temp-visible. Never strip the host's
+    // `.open` class — that can cancel a mid-flight Source switch.
+    function concealRaisedSettings() {
         concealNativeSettingsButton();
         document.querySelectorAll('.op-setting-panel').forEach((p) => {
             p.classList.remove('omt-settings-raised');
-            p.classList.remove('open');
         });
+    }
+
+    function closeOpSettingsUi() {
+        concealRaisedSettings();
     }
 
     async function scrapeOpSourceOptions() {
         return withClickToggleSuppressed(async () => {
+            omtDebugSource('scrape:start');
             let panel = await ensureOpSettingsOpen();
             if (!panel) {
+                omtDebugSource('scrape:no-panel');
                 return { current: detectCurrentSource(null), options: [], loading: true };
             }
 
@@ -494,9 +526,15 @@
                     mainItem.getAttribute('op-data-value') ||
                     ((mainItem.querySelector('.op-setting-item-value') || {}).textContent || '')
                 );
+                omtDebugSource('scrape:click-source-row', {
+                    current,
+                    opDataValue: mainItem.getAttribute('op-data-value'),
+                    opPanelType: mainItem.getAttribute('op-panel-type')
+                });
                 try { mainItem.click(); } catch (_) {}
             } else {
-                closeOpSettingsUi();
+                omtDebugSource('scrape:no-source-row');
+                concealRaisedSettings();
                 return { current: detectCurrentSource(null), options: [], loading: true };
             }
 
@@ -526,7 +564,8 @@
             }
 
             if (!submenuReady) {
-                closeOpSettingsUi();
+                omtDebugSource('scrape:submenu-not-ready', { options });
+                concealRaisedSettings();
                 return { current: detectCurrentSource(current), options: [], loading: true };
             }
 
@@ -542,22 +581,20 @@
             if (!findOpSourceItem()) {
                 await clickOpSettingBack();
             }
-            closeOpSettingsUi();
+            concealRaisedSettings();
+            omtDebugSource('scrape:done', { current, options: deduped });
             return {
-                current: detectCurrentSource(current),
+                current: current || detectCurrentSource(null),
                 options: deduped,
                 loading: false
             };
         });
     }
 
-    // Last Source we picked in the host menu; survives SPA teardown/boot so the
-    // overlay select shows it even when the row/path can't confirm it.
-    let examinoLastAppliedSource = null;
-
     async function applyOpSource(value, { manual = true } = {}) {
         if (!value) return false;
         const wanted = normalizeSourceToken(value) || String(value).toUpperCase();
+        omtDebugSource('apply:start', { value, wanted, manual, path: location.pathname });
         if (manual) {
             examinoManualSourceChoice = wanted;
             if (wanted === 'DVR') examinoAutoVodDone = true;
@@ -567,25 +604,54 @@
 
         return withClickToggleSuppressed(async () => {
             let panel = await ensureOpSettingsOpen();
+            omtDebugSource('apply:panel', {
+                open: !!panel,
+                hasOpenClass: !!(panel && panel.classList.contains('open')),
+                raised: !!(panel && panel.classList.contains('omt-settings-raised')),
+                itemCount: panel ? panel.querySelectorAll('.op-setting-item').length : 0
+            });
             if (!panel) return false;
             if (!findOpSourceItem()) {
                 await clickOpSettingBack();
                 panel = await ensureOpSettingsOpen();
             }
-            const mainItem = findOpSourceItem();
+            // Prefer host attribute like v1.2.0, then title fallback.
+            let mainItem = document.querySelector('.op-setting-panel .op-setting-item[op-panel-type="source"]') ||
+                findOpSourceItem();
             if (!mainItem) {
-                closeOpSettingsUi();
+                omtDebugSource('apply:no-source-row');
+                // Leave raised panel for manual pick (v1.2.0) — do not tear down host .open.
                 return false;
             }
-            try { mainItem.click(); } catch (_) {}
+            omtDebugSource('apply:click-source-row', {
+                opDataValue: mainItem.getAttribute('op-data-value'),
+                opPanelType: mainItem.getAttribute('op-panel-type'),
+                title: ((mainItem.querySelector('.op-setting-item-title') || {}).textContent || '').trim()
+            });
+            try { mainItem.click(); } catch (err) {
+                omtDebugSource('apply:source-row-click-error', String(err && err.message || err));
+            }
+            // v1.2.0 waited a fixed 200ms then matched op-data-value exactly.
+            await sleep(200);
 
             let option = null;
+            let rawItems = [];
             for (let i = 0; i < 16; i++) {
+                rawItems = Array.from(document.querySelectorAll('.op-setting-panel .op-setting-item')).map((el) => ({
+                    opDataValue: el.getAttribute('op-data-value'),
+                    opPanelType: el.getAttribute('op-panel-type'),
+                    title: ((el.querySelector('.op-setting-item-title') || {}).textContent || '').trim(),
+                    hasNext: !!el.querySelector('.op-setting-item-nexticon')
+                }));
                 option = Array.from(document.querySelectorAll('.op-setting-panel .op-setting-item'))
                     .find((el) => {
                         if (el.querySelector('.op-setting-item-nexticon')) return false;
                         if (el.getAttribute('op-panel-type')) return false;
-                        const v = normalizeSourceToken(el.getAttribute('op-data-value')) ||
+                        const raw = el.getAttribute('op-data-value');
+                        // v1.2.0: exact op-data-value match first.
+                        if (raw != null && String(raw) === String(value)) return true;
+                        if (raw != null && String(raw).toUpperCase() === wanted) return true;
+                        const v = normalizeSourceToken(raw) ||
                             normalizeSourceToken(((el.querySelector('.op-setting-item-title') || {}).textContent || ''));
                         return v === wanted;
                     });
@@ -594,41 +660,40 @@
             }
 
             if (!option) {
-                closeOpSettingsUi();
+                omtDebugSource('apply:option-not-found', { wanted, rawItems });
+                // v1.2.0 left the raised panel for a manual pick — never force DVR.
                 return false;
             }
 
-            try { option.click(); } catch (_) {}
-            examinoLastAppliedSource = wanted;
-            // Wait until the root Source row reflects the new value (or panel closes).
-            let confirmed = false;
-            for (let i = 0; i < 20; i++) {
-                await sleep(50);
-                const row = findOpSourceItem();
-                if (row) {
-                    const now = normalizeSourceToken(
-                        row.getAttribute('op-data-value') ||
-                        ((row.querySelector('.op-setting-item-value') || {}).textContent || '')
-                    );
-                    if (now === wanted) { confirmed = true; break; }
-                }
-                // Panel may close after a successful pick — treat as success if mock/path agrees soon.
-                if (!document.querySelector('.op-setting-panel.open, .op-setting-panel.omt-settings-raised')) {
-                    confirmed = true;
-                    break;
-                }
+            omtDebugSource('apply:click-option', {
+                wanted,
+                opDataValue: option.getAttribute('op-data-value'),
+                title: ((option.querySelector('.op-setting-item-title') || {}).textContent || '').trim()
+            });
+            try { option.click(); } catch (err) {
+                omtDebugSource('apply:option-click-error', String(err && err.message || err));
+                return false;
             }
-            closeOpSettingsUi();
 
-            if (confirmed && wanted === 'DVR') {
+            // v1.2.0: treat a successful option click as success after a short
+            // settle. Do NOT wait for the Source row to re-label (SPA / path
+            // often still say DVR) and do NOT strip host `.open`.
+            examinoLastAppliedSource = wanted;
+            await sleep(250);
+            concealRaisedSettings();
+
+            if (wanted === 'DVR') {
                 examinoPendingDvrSettle = true;
-                // Settle now — do not wait for the 1.5s SPA monitor to notice a
-                // replaced <video> (avoids a frozen out-of-window DVR playhead).
                 if (typeof settleExaminoMediaAfterBind === 'function') {
                     try { settleExaminoMediaAfterBind(); } catch (_) {}
                 }
             }
-            return confirmed;
+            omtDebugSource('apply:success', {
+                wanted,
+                lastApplied: examinoLastAppliedSource,
+                path: location.pathname
+            });
+            return true;
         });
     }
 
@@ -649,8 +714,10 @@
                 opt.textContent = o.label;
                 selectEl.appendChild(opt);
             });
-            const cur = detectCurrentSource(current) || examinoManualSourceChoice ||
-                examinoLastAppliedSource;
+            const cur = normalizeSourceToken(current) ||
+                examinoLastAppliedSource ||
+                examinoManualSourceChoice ||
+                detectCurrentSource(null);
             const match = cur && list.find((o) => o.value === cur);
             selectEl.value = match ? match.value : list[0].value;
             return;
@@ -665,16 +732,33 @@
             opt.textContent = o.label;
             selectEl.appendChild(opt);
         });
-        const cur = detectCurrentSource(current) || examinoManualSourceChoice;
+        const cur = normalizeSourceToken(current) ||
+            examinoLastAppliedSource ||
+            examinoManualSourceChoice ||
+            detectCurrentSource(null);
         const match = cur && list.find((o) => o.value === cur);
         selectEl.value = match ? match.value : list[0].value;
+        omtDebugSource('fill-select', {
+            requestedCurrent: current,
+            resolved: selectEl.value,
+            lastApplied: examinoLastAppliedSource,
+            manual: examinoManualSourceChoice,
+            path: location.pathname
+        });
     }
 
     async function refreshExaminoSourceSelect() {
         if (site.id !== 'examino' || !omtRoot) return;
         const section = q('omt-examino-settings');
         if (section) section.style.display = 'flex';
+        omtDebugSource('refresh:start');
         const source = await scrapeOpSourceOptions();
+        // Never let a path-inferred DVR overwrite a Source we just applied.
+        if (examinoLastAppliedSource) {
+            source.current = examinoLastAppliedSource;
+        } else if (examinoManualSourceChoice) {
+            source.current = examinoManualSourceChoice;
+        }
         fillSourceSelect(source);
         const autoBox = q('omt-examino-auto-vod');
         if (autoBox) {
@@ -716,18 +800,25 @@
             sourceSel.addEventListener('change', async () => {
                 const value = sourceSel.value;
                 if (!value) return;
+                omtDebugSource('ui-change', { value, beforePath: location.pathname });
                 const ok = await applyOpSource(value, { manual: true });
+                // Always keep the overlay on the user's choice. v2.1.1 refreshed
+                // from scrape/path on failure (and after "success") and snapped
+                // back to DVR because /play/dvr/ never changes on gear→VOD.
+                fillSourceSelect({
+                    current: normalizeSourceToken(value) || value,
+                    options: [{ value: 'DVR', label: 'DVR' }, { value: 'VOD', label: 'VOD' }],
+                    loading: false
+                });
                 if (ok) {
-                    fillSourceSelect({
-                        current: normalizeSourceToken(value),
-                        options: [{ value: 'DVR', label: 'DVR' }, { value: 'VOD', label: 'VOD' }],
-                        loading: false
-                    });
                     mostrarOSD('Source: ' + value);
-                    setTimeout(() => refreshExaminoSourceSelect().catch(() => {}), 900);
                 } else {
                     mostrarOSD('Source change failed');
-                    refreshExaminoSourceSelect().catch(() => {});
+                    omtDebugSource('ui-change:failed-keep-selection', {
+                        value,
+                        lastApplied: examinoLastAppliedSource,
+                        path: location.pathname
+                    });
                 }
             });
         }
@@ -788,12 +879,14 @@
         }
         examinoAutoVodAttempts += 1;
         const attempt = examinoAutoVodAttempts;
+        omtDebugSource('auto-vod:start', { attempt, path: location.pathname });
 
         examinoAutoVodInFlight = true;
         try {
             const already = detectCurrentSource(null);
             if (already === 'VOD') {
                 examinoAutoVodDone = true;
+                omtDebugSource('auto-vod:already-vod', { already });
                 fillSourceSelect({
                     current: 'VOD',
                     options: [{ value: 'DVR', label: 'DVR' }, { value: 'VOD', label: 'VOD' }],
@@ -804,17 +897,24 @@
 
             const source = await scrapeOpSourceOptions();
             if (source.loading) {
+                omtDebugSource('auto-vod:scrape-loading');
                 scheduleAutoVodRetry(700);
                 return;
             }
-            const current = detectCurrentSource(source.current);
+            const current = normalizeSourceToken(source.current) || detectCurrentSource(null);
             if (current === 'VOD') {
                 examinoAutoVodDone = true;
-                fillSourceSelect(source);
+                examinoLastAppliedSource = 'VOD';
+                fillSourceSelect({
+                    current: 'VOD',
+                    options: source.options,
+                    loading: false
+                });
                 return;
             }
             const vod = source.options.find((o) => o.value === 'VOD');
             if (!vod) {
+                omtDebugSource('auto-vod:no-vod-option', source);
                 scheduleAutoVodRetry(700);
                 return;
             }
@@ -824,18 +924,21 @@
             markAutoVodClicked();
             examinoAutoVodDone = true;
             const ok = await applyOpSource('VOD', { manual: false });
+            // Keep overlay on VOD after a click attempt — never force DVR from path.
             fillSourceSelect({
-                current: ok ? 'VOD' : (examinoLastAppliedSource || detectCurrentSource(null)),
+                current: 'VOD',
                 options: [{ value: 'DVR', label: 'DVR' }, { value: 'VOD', label: 'VOD' }],
                 loading: false
             });
             if (ok) mostrarOSD('Switched to VOD');
+            else omtDebugSource('auto-vod:apply-returned-false');
         } catch (err) {
             console.warn('[OMT] Auto-VOD failed:', err && err.message);
+            omtDebugSource('auto-vod:exception', String(err && err.message || err));
             if (!autoVodAlreadyClicked()) scheduleAutoVodRetry(700);
         } finally {
             examinoAutoVodInFlight = false;
-            closeOpSettingsUi();
+            concealRaisedSettings();
         }
     }
 

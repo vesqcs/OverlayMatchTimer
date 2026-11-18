@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en" data-omt-site="inplayip">
+<head>
+  <meta charset="UTF-8" />
+  <title>InPlay close-X field mock (schedule player + host close button)</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #212529; font-family: "Segoe UI", sans-serif; overflow: hidden; }
+    .players-container { height: 100vh; width: 100vw; display: flex !important; position: relative; }
+    .player-container { position: relative; overflow: hidden; width: 100vw; height: 100vh; }
+    .video-js { position: relative; width: 100%; height: 100%; background: #000; }
+    .video-js video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+    .vjs-control-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 30px; background: rgba(43, 51, 63, .7); }
+    /* Host close-X + curtain arrow — top centre of the video (field screenshot). */
+    #host-close-x, #curtain-arrow {
+      position: absolute; left: 50%; transform: translateX(-50%); z-index: 6;
+      width: 44px; height: 44px; border-radius: 50%; border: none; color: #fff;
+      background: #111; cursor: pointer; font-size: 18px; line-height: 44px; padding: 0;
+    }
+    #curtain-arrow { top: 8px; }
+    #host-close-x { top: 56px; }
+    #status { position: fixed; left: 8px; bottom: 8px; color: #9cf; font-size: 12px; z-index: 9; }
+  </style>
+</head>
+<body>
+  <div class="players-container" id="players">
+    <div class="player-container" id="player-wrap">
+      <div class="video-js vjs-default-skin" id="vjs">
+        <video class="vjs-tech" id="tech" muted playsinline></video>
+        <div class="vjs-control-bar"><div class="vjs-progress-control" id="progress"></div></div>
+        <!-- Extra chrome nodes so close-X removal mutates a large subtree (field-like). -->
+        <div id="vjs-chrome-bulk"></div>
+      </div>
+      <button type="button" id="curtain-arrow" title="Curtain">▼</button>
+      <button type="button" id="host-close-x" title="Close video">✕</button>
+    </div>
+  </div>
+  <div id="status">close-x mock ready</div>
+  <script>
+    (function () {
+      const bulk = document.getElementById('vjs-chrome-bulk');
+      for (let i = 0; i < 120; i++) {
+        const d = document.createElement('div');
+        d.className = 'vjs-bulk-node';
+        d.setAttribute('data-i', String(i));
+        d.textContent = 'chrome-' + i;
+        bulk.appendChild(d);
+      }
+
+      const video = document.getElementById('tech');
+      const canvas = document.createElement('canvas');
+      canvas.width = 1280; canvas.height = 720;
+      const ctx = canvas.getContext('2d');
+      const t0 = performance.now();
+      (function draw() {
+        if (!video.isConnected) return;
+        ctx.fillStyle = '#0d2236';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#66b3ff';
+        ctx.font = '40px sans-serif';
+        ctx.fillText('INPLAY CLOSE-X t=' + ((performance.now() - t0) / 1000).toFixed(1), 40, 90);
+        requestAnimationFrame(draw);
+      })();
+      video.srcObject = canvas.captureStream(30);
+      Object.defineProperty(video, 'duration', { configurable: true, get: () => 5400 });
+      Object.defineProperty(video, 'seekable', {
+        configurable: true,
+        get: () => ({ length: 1, start: () => 0, end: () => 5400 })
+      });
+      let ct = 300;
+      Object.defineProperty(video, 'currentTime', {
+        configurable: true,
+        get: () => ct,
+        set: (v) => { ct = Math.max(0, Math.min(5400, Number(v) || 0)); }
+      });
+      setInterval(() => { if (video.isConnected && !video.paused) ct = Math.min(5400, ct + 0.25); }, 250);
+      video.play().catch(() => {});
+
+      window.__inplayCloseState = { closed: 0, open: 1 };
+
+      // Field-shaped close-X: remove progress first, then many chrome nodes,
+      // then the video — same order that stressed the boot MutationObserver.
+      document.getElementById('host-close-x').addEventListener('click', () => {
+        const vjs = document.getElementById('vjs');
+        const progress = document.getElementById('progress');
+        if (progress && progress.parentNode) progress.parentNode.removeChild(progress);
+        const nodes = Array.from(document.querySelectorAll('.vjs-bulk-node'));
+        nodes.forEach((n) => { if (n.parentNode) n.parentNode.removeChild(n); });
+        const tech = document.getElementById('tech');
+        if (tech && tech.parentNode) tech.parentNode.removeChild(tech);
+        const bar = document.querySelector('.vjs-control-bar');
+        if (bar && bar.parentNode) bar.parentNode.removeChild(bar);
+        if (vjs && vjs.parentNode) vjs.parentNode.removeChild(vjs);
+        const wrap = document.getElementById('player-wrap');
+        if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
+        window.__inplayCloseState.closed += 1;
+        window.__inplayCloseState.open = 0;
+        document.getElementById('status').textContent = 'closed=' + window.__inplayCloseState.closed;
+      });
+
+      document.getElementById('curtain-arrow').addEventListener('click', () => {
+        document.getElementById('status').textContent = 'curtain click (no-op in this mock)';
+      });
+    })();
+  </script>
+</body>
+</html>
