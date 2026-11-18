@@ -289,7 +289,8 @@
         ));
     }
 
-    function omtPaintLiveDelayAndEdge(liveInd, liveDelayEl, liveChipEl, edgeClockEl, playhead, liveEdge) {
+    /** Left: LIVE delay text or LIVE chip (hysteresis). No video-time duplication. */
+    function omtPaintLiveDelayChip(liveInd, liveDelayEl, liveChipEl, playhead, liveEdge) {
         const delay = liveEdge > 0 ? Math.max(0, liveEdge - playhead) : 0;
 
         // Hysteresis: enter LIVE when delay <= ENTER, leave only when delay > LEAVE.
@@ -312,17 +313,30 @@
             liveInd.classList.remove('is-at-live');
             liveInd.setAttribute('aria-label', 'Go to live safe point');
         }
-
-        if (edgeClockEl) {
-            edgeClockEl.hidden = false;
-            edgeClockEl.textContent = 'edge ' + formatarTempoCompacto(liveEdge);
-            edgeClockEl.title = 'Live edge ' + formatarTempoVideo(liveEdge) +
-                ' · you ' + formatarTempoCompacto(playhead);
-        }
     }
 
     /**
-     * Paint timeline chrome-row time (left): match clock, LIVE delay/chip + edge, or POST.
+     * Right of chrome (left of FS): playhead / furthest reachable video time.
+     * Live/DVR only — hidden on VOD/local/post so left post-times are not duplicated.
+     */
+    function omtPaintVideoRange(videoRangeEl, playhead, liveEdge, show) {
+        if (!videoRangeEl) return;
+        if (!show) {
+            videoRangeEl.hidden = true;
+            return;
+        }
+        videoRangeEl.hidden = false;
+        videoRangeEl.textContent =
+            formatarTempoCompacto(playhead) + ' / ' + formatarTempoCompacto(liveEdge);
+        videoRangeEl.title =
+            'You ' + formatarTempoCompacto(playhead) +
+            ' · furthest ' + formatarTempoCompacto(liveEdge);
+    }
+
+    /**
+     * Paint timeline chrome-row times:
+     *  - Left: match clock and/or LIVE delay/chip, or POST current/duration
+     *  - Right (live/DVR): playhead / furthest reachable — not the word "edge"
      * Does not read PDT or change seek/hooks — reuses playhead + live-edge already used for LIVE.
      */
     function atualizarTempoTimelineDireito() {
@@ -331,9 +345,9 @@
         const liveInd = omtRoot.querySelector('#omt-timeline-live-indicator');
         const liveDelayEl = omtRoot.querySelector('#omt-timeline-live-delay');
         const liveChipEl = omtRoot.querySelector('#omt-timeline-live-chip');
-        const edgeClockEl = omtRoot.querySelector('#omt-timeline-edge-clock');
         const postWrap = omtRoot.querySelector('#omt-timeline-post-times');
         const matchClockEl = omtRoot.querySelector('#omt-timeline-match-clock');
+        const videoRangeEl = omtRoot.querySelector('#omt-timeline-video-range');
         if (!timesWrap || !liveInd || !liveDelayEl || !liveChipEl || !postWrap || !matchClockEl) return;
 
         const playhead = omtTimelinePlayheadSec();
@@ -354,13 +368,14 @@
             if (!clockText && timerUI && timerUI.innerText) clockText = timerUI.innerText;
             matchClockEl.textContent = clockText || '00:00';
 
-            // Live/DVR with kickoff: keep game clock, still show edge distance + edge time.
+            // Live/DVR + kickoff: game clock + delay/LIVE on left; video range on right.
             if (liveMode) {
-                omtPaintLiveDelayAndEdge(liveInd, liveDelayEl, liveChipEl, edgeClockEl, playhead, liveEdge);
+                omtPaintLiveDelayChip(liveInd, liveDelayEl, liveChipEl, playhead, liveEdge);
+                omtPaintVideoRange(videoRangeEl, playhead, liveEdge, true);
             } else {
                 liveInd.hidden = true;
                 omtTimelineLiveChipOn = false;
-                if (edgeClockEl) edgeClockEl.hidden = true;
+                omtPaintVideoRange(videoRangeEl, playhead, liveEdge, false);
             }
             return;
         }
@@ -372,7 +387,7 @@
 
         if (!liveMode) {
             omtTimelineLiveChipOn = false;
-            if (edgeClockEl) edgeClockEl.hidden = true;
+            omtPaintVideoRange(videoRangeEl, playhead, liveEdge, false);
             let dur = liveEdge;
             if (!(dur > 0) && site && typeof site.effectiveDuration === 'function') {
                 const ed = site.effectiveDuration(vid);
@@ -383,7 +398,9 @@
             return;
         }
 
-        omtPaintLiveDelayAndEdge(liveInd, liveDelayEl, liveChipEl, edgeClockEl, playhead, liveEdge);
+        // Live/DVR, no kickoff: delay/LIVE on left only; video times on the right (not twice).
+        omtPaintLiveDelayChip(liveInd, liveDelayEl, liveChipEl, playhead, liveEdge);
+        omtPaintVideoRange(videoRangeEl, playhead, liveEdge, true);
     }
 
     function inicializarMetadadosTimeline() {

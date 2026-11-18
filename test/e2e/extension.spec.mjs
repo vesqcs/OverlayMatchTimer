@@ -2100,6 +2100,7 @@ async function run() {
       const delay = document.getElementById('omt-timeline-live-delay');
       const chip = document.getElementById('omt-timeline-live-chip');
       const edgeClock = document.getElementById('omt-timeline-edge-clock');
+      const videoRange = document.getElementById('omt-timeline-video-range');
       const post = document.getElementById('omt-timeline-post-times');
       const matchClock = document.getElementById('omt-timeline-match-clock');
       const cur = document.getElementById('omt-v-time-current');
@@ -2117,6 +2118,8 @@ async function run() {
       const fsBox = fs?.getBoundingClientRect();
       const playBox = playBtn?.getBoundingClientRect();
       const volBox = volBtn?.getBoundingClientRect();
+      const rangeBox = videoRange && !videoRange.hidden ? videoRange.getBoundingClientRect() : null;
+      const rangeText = videoRange && !videoRange.hidden ? videoRange.textContent.trim() : null;
       return {
         mode: times?.dataset?.omtTimeMode || null,
         liveHidden: !!(ind && ind.hidden),
@@ -2124,7 +2127,11 @@ async function run() {
         matchHidden: !!(matchClock && matchClock.hidden),
         matchText: matchClock && !matchClock.hidden ? matchClock.textContent.trim() : null,
         delayText: delay && !delay.hidden ? delay.textContent.trim() : null,
-        edgeText: edgeClock && !edgeClock.hidden ? edgeClock.textContent.trim() : null,
+        // v2.2.1: no "edge …" wall-clock chip; right-side video range instead.
+        edgeClockGone: !edgeClock,
+        videoRangeText: rangeText,
+        videoRangeOk: !!(rangeText && /^\d+:\d{2}(?::\d{2})?\s*\/\s*\d+:\d{2}(?::\d{2})?$/.test(rangeText) &&
+          !/edge/i.test(rangeText)),
         chipVisible: !!(chip && !chip.hidden && ind && !ind.hidden),
         chipBg: chipCs ? chipCs.backgroundColor : null,
         chipColor: chipCs ? chipCs.color : null,
@@ -2141,7 +2148,8 @@ async function run() {
           rowBox.top >= trackBox.bottom - 2 &&
           timesBox.left < fsBox.left &&
           playBox.left <= volBox.left + 2 &&
-          volBox.left <= timesBox.left + 2),
+          volBox.left <= timesBox.left + 2 &&
+          (!rangeBox || (rangeBox.left >= timesBox.right - 2 && rangeBox.right <= fsBox.left + 2))),
         panelClearance: (() => {
           const panel = document.getElementById('controls-panel');
           if (!panel || !barBox) return null;
@@ -2201,10 +2209,10 @@ async function run() {
       name: 'timeline-live-delay-12s',
       pass: live12.mode === 'live' && !live12.liveHidden && live12.postHidden &&
         live12.matchHidden && live12.delayText === '-0:12' && !live12.chipVisible &&
-        /^edge\s+/i.test(String(live12.edgeText || '')),
+        live12.edgeClockGone === true && live12.videoRangeOk === true,
       detail: live12
     });
-    await shotTimelineFrame('v220_timeline_live_minus_12s.png');
+    await shotTimelineFrame('v221_timeline_live_minus_12s.png');
 
     await seekLiveDelay(65);
     const live65 = await readTimelineChrome();
@@ -2213,7 +2221,7 @@ async function run() {
       pass: live65.mode === 'live' && live65.delayText === '-1:05' && !live65.chipVisible,
       detail: live65
     });
-    await shotTimelineFrame('v220_timeline_live_minus_1m05.png');
+    await shotTimelineFrame('v221_timeline_live_minus_1m05.png');
 
     // Hysteresis: enter at <=10, stay through 12, leave only when >15
     await seekLiveDelay(20);
@@ -2382,10 +2390,10 @@ async function run() {
         liveKick.matchText === onVideoClock && /^\d{2}:\d{2}$/.test(liveKick.matchText) &&
         !liveKick.liveHidden && liveKick.postHidden &&
         (liveKick.delayText === '-0:12' || liveKick.chipVisible === true) &&
-        /^edge\s+/i.test(String(liveKick.edgeText || '')),
+        liveKick.edgeClockGone === true && liveKick.videoRangeOk === true,
       detail: { liveKick, onVideoClock }
     });
-    await shotTimelineFrame('v220_timeline_live_kickoff_clock.png');
+    await shotTimelineFrame('v221_timeline_live_kickoff_clock.png');
 
     // Timeline play/pause mirrors panel button
     const tlPlay = await page.evaluate(async () => {
@@ -2468,7 +2476,8 @@ async function run() {
     results.push({
       name: 'timeline-post-current-duration',
       pass: postState.mode === 'post' && postState.liveHidden && !postState.postHidden &&
-        postState.matchHidden && postState.curText === '34:12' && postState.durText === '1:52:40',
+        postState.matchHidden && postState.curText === '34:12' && postState.durText === '1:52:40' &&
+        postState.videoRangeText == null && postState.edgeClockGone === true,
       detail: postState
     });
     await shotTimelineFrame('v201_timeline_post.png');
@@ -2493,7 +2502,8 @@ async function run() {
     results.push({
       name: 'timeline-post-with-kickoff-match-clock',
       pass: postKick.mode === 'kickoff' && postKick.matchText === postKickClock &&
-        postKick.liveHidden && postKick.postHidden,
+        postKick.liveHidden && postKick.postHidden &&
+        postKick.videoRangeText == null && postKick.edgeClockGone === true,
       detail: { postKick, postKickClock }
     });
     await shotTimelineFrame('v201_timeline_post_kickoff_clock.png');

@@ -156,7 +156,6 @@
                     <span id="omt-timeline-live-delay" class="omt-timeline-live-delay">-0:00</span>
                     <span id="omt-timeline-live-chip" class="omt-timeline-live-chip" hidden>LIVE</span>
                 </button>
-                <span id="omt-timeline-edge-clock" class="omt-timeline-edge-clock" hidden>edge 0:00</span>
                 <div id="omt-timeline-post-times" class="omt-timeline-post-times">
                     <span id="omt-v-time-current" class="omt-time-text">0:00</span>
                     <span class="omt-time-sep" aria-hidden="true">/</span>
@@ -165,7 +164,11 @@
                 <span id="omt-timeline-match-clock" class="omt-timeline-match-clock" hidden>00:00</span>
             </div>
         </div>
-        <button type="button" class="omt-timeline-fs-btn" id="omt-btn-fullscreen" aria-label="Enter fullscreen" aria-pressed="false">${omtIcon('maximize', 16)}</button>
+        <div class="omt-timeline-chrome-right">
+            <!-- Live/DVR only: playhead / furthest reachable (seekable edge). -->
+            <span id="omt-timeline-video-range" class="omt-timeline-video-range" hidden aria-label="Video position / live edge">0:00 / 0:00</span>
+            <button type="button" class="omt-timeline-fs-btn" id="omt-btn-fullscreen" aria-label="Enter fullscreen" aria-pressed="false">${omtIcon('maximize', 16)}</button>
+        </div>
     </div>
 </div>
 
