@@ -77,8 +77,10 @@
     const OMT_LIVE_SAFE_MARGIN_MIN_S = 4;   // closest LIVE jump on a healthy stream
     const OMT_LIVE_SAFE_MARGIN_MAX_S = 30;  // farthest LIVE jump on a bad stream
     const OMT_LIVE_STALL_MEMORY_MS = 45000; // "stalled recently" window
-    // Chip leave hysteresis sits a few seconds beyond the base so the LIVE
-    // chip does not flicker when delay hovers near the threshold.
+    // Extra slack so landing on the adaptive safe point still counts as LIVE
+    // (float + edge tick during seek). Panel button + timeline chip share this.
+    const OMT_LIVE_AT_LIVE_TOL_S = 1.5;
+    // Legacy fixed chip thresholds (kept as fallbacks; paint uses adaptive).
     const OMT_LIVE_CHIP_ENTER_S = OMT_LIVE_SAFE_MARGIN_S;
     const OMT_LIVE_CHIP_LEAVE_S = OMT_LIVE_SAFE_MARGIN_S + 5;
     // Edge-advance samples for adaptive LIVE jump (wall-clock ms of each advance).

@@ -152,13 +152,15 @@
               <div class="op-setting-item" op-panel-type="audioTrack" op-data-value="${state.audio}"><span class="op-setting-item-title">Audio</span><span class="op-setting-item-nexticon">&gt;</span><span class="op-setting-item-value">${state.audio}</span></div>
             </div>`;
         } else if (state.view === 'source') {
-          // Exact DVR/VOD only. Deliberate decoys must NOT appear in the overlay select.
+          // Field-shaped duplicates: two DVR rows + VOD(1) decoy + real VOD.
+          // Overlay must expose exactly DVR + VOD (dedupe by op-data-value).
+          // First DVR = page-open default; last VOD = Auto VOD target.
           panel.innerHTML = `
             <div class="op-setting-title-container"><div class="op-setting-title" tabindex="0"><span class="op-setting-title-title">Source</span></div></div>
             <div class="op-setting-item" op-data-value="DVR"><span class="op-setting-item-title">DVR</span></div>
-            <div class="op-setting-item" op-data-value="VOD"><span class="op-setting-item-title">VOD</span></div>
-            <div class="op-setting-item" op-data-value="vod1_backup"><span class="op-setting-item-title">vod1_backup</span></div>
-            <div class="op-setting-item" op-data-value="dvr_alt"><span class="op-setting-item-title">dvr_alt</span></div>`;
+            <div class="op-setting-item" op-data-value="DVR"><span class="op-setting-item-title">DVR</span></div>
+            <div class="op-setting-item" op-data-value="VOD(1)"><span class="op-setting-item-title">VOD(1)</span></div>
+            <div class="op-setting-item" op-data-value="VOD"><span class="op-setting-item-title">VOD</span></div>`;
         } else if (state.view === 'audio') {
           panel.innerHTML = `
             <div class="op-setting-title-container"><div class="op-setting-title" tabindex="0"><span class="op-setting-title-title">Audio</span></div></div>
@@ -194,11 +196,31 @@
         if (type === 'speed') { state.view = 'speed'; renderPanel(); panel.classList.add('open'); return; }
 
         if (state.view === 'source') {
-          state.source = value;
+          // Map host op-data-value → canonical media kind (ignore decoys like VOD(1)).
+          const kind = /^vod$/i.test(String(value).trim()) ? 'VOD'
+            : /^dvr$/i.test(String(value).trim()) ? 'DVR'
+            : /vod/i.test(String(value)) ? 'VOD_DECOY'
+            : /dvr/i.test(String(value)) ? 'DVR'
+            : null;
+          if (kind === 'VOD_DECOY') {
+            // Selecting VOD(1) must NOT switch media — mirrors bad host entries.
+            state.view = 'root';
+            renderPanel();
+            panel.classList.remove('open');
+            status.textContent = 'Ignored decoy source ' + value;
+            return;
+          }
+          if (kind !== 'VOD' && kind !== 'DVR') {
+            state.view = 'root';
+            renderPanel();
+            panel.classList.remove('open');
+            return;
+          }
+          state.source = kind;
           state.view = 'root';
           renderPanel();
           panel.classList.remove('open');
-          replaceVideoForSource(value);
+          replaceVideoForSource(kind);
           return;
         }
         if (state.view === 'audio') {

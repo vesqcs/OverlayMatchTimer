@@ -313,9 +313,11 @@ async function run() {
     });
     results.push({
       name: 'examino-source-options-clean',
-      // v1.2.0 scrape keeps host op-data-values (may include decoys); must include DVR+VOD.
-      pass: settingsShape.sourceOptions.includes('DVR') &&
-        settingsShape.sourceOptions.includes('VOD'),
+      // Host menu has DVR/DVR/VOD(1)/VOD; overlay must show exactly DVR + VOD.
+      pass: Array.isArray(settingsShape.sourceOptions) &&
+        settingsShape.sourceOptions.length === 2 &&
+        settingsShape.sourceOptions[0] === 'DVR' &&
+        settingsShape.sourceOptions[1] === 'VOD',
       detail: { sourceOptions: settingsShape.sourceOptions }
     });
     results.push({
@@ -957,6 +959,66 @@ async function run() {
       };
     });
     results.push({ name: 'examino-vod-to-dvr-no-freeze', pass: vodToDvr.ok === true, detail: vodToDvr });
+    results.push({
+      name: 'examino-source-dvr-clamp-to-safe-point',
+      // Deep VOD playhead must land inside the short DVR window (live safe point).
+      pass: vodToDvr.ok === true &&
+        typeof vodToDvr.ct === 'number' &&
+        vodToDvr.ct >= 0 &&
+        vodToDvr.ct <= 330 &&
+        vodToDvr.ct > 200, // near live edge, not stuck at 0 / mid-window from VOD carry
+      detail: vodToDvr
+    });
+
+    // Duplicate-host menu: overlay still only DVR/VOD; media URL round-trips both ways.
+    const dupRoundTrip = await page.evaluate(async () => {
+      const sel = document.getElementById('omt-examino-source');
+      if (!sel) return { ok: false, reason: 'no-select' };
+      const opts = [...sel.options].map((o) => (o.textContent || '').trim());
+      const hostRows = (() => {
+        // Peek at host Source submenu without leaving overlay mapping broken.
+        return null;
+      })();
+      // Switch to VOD (exact) — media URL must become VOD chunklist.
+      sel.value = 'VOD';
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 1400));
+      const vodUrl = window.__omtMockMediaUrl || '';
+      const vodSrc = window.__omtMockSource || (document.querySelector('video') || {}).dataset?.omtSource;
+      const vodCt = (document.querySelector('video') || {}).currentTime;
+      // Deep seek then DVR — media URL live + clamp.
+      const v = document.querySelector('video');
+      if (v) v.currentTime = 3000;
+      await new Promise((r) => setTimeout(r, 80));
+      sel.value = 'DVR';
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 1400));
+      const dvrUrl = window.__omtMockMediaUrl || '';
+      const dvrSrc = window.__omtMockSource || (document.querySelector('video') || {}).dataset?.omtSource;
+      const dvrCt = (document.querySelector('video') || {}).currentTime;
+      const frozen = window.__omtDvrFrozen === true;
+      return {
+        ok: opts.length === 2 && opts[0] === 'DVR' && opts[1] === 'VOD' &&
+          vodSrc === 'VOD' && /vod/i.test(vodUrl) && !/\/live\//i.test(vodUrl) &&
+          dvrSrc === 'DVR' && /dvr|\/live\//i.test(dvrUrl) && !/\/vod\//i.test(dvrUrl) &&
+          !frozen && typeof dvrCt === 'number' && dvrCt <= 330 && dvrCt > 200,
+        opts,
+        hostRows,
+        vodUrl,
+        vodSrc,
+        vodCt,
+        dvrUrl,
+        dvrSrc,
+        dvrCt,
+        frozen,
+        sel: sel.value
+      };
+    });
+    results.push({
+      name: 'examino-source-duplicate-host-roundtrip',
+      pass: dupRoundTrip.ok === true,
+      detail: dupRoundTrip
+    });
 
     // Manual DVR must stop auto-VOD from flipping back
     await page.waitForTimeout(2500);
@@ -2223,18 +2285,19 @@ async function run() {
     });
     await shotTimelineFrame('v221_timeline_live_minus_1m05.png');
 
-    // Hysteresis: enter at <=10, stay through 12, leave only when >15
-    await seekLiveDelay(20);
+    // Hysteresis (adaptive): enter within safe+tol; hold a few seconds past enter;
+    // leave only when delay > enter+5 (shared latch with panel red).
+    await seekLiveDelay(40);
     await seekLiveDelay(8);
     const liveEnter = await readTimelineChrome();
     await seekLiveDelay(12);
     const liveHold = await readTimelineChrome();
-    await seekLiveDelay(16);
+    await seekLiveDelay(25);
     const liveLeave = await readTimelineChrome();
     results.push({
       name: 'timeline-live-chip-hysteresis',
       pass: liveEnter.chipVisible === true && liveHold.chipVisible === true &&
-        liveLeave.chipVisible === false && liveLeave.delayText === '-0:16',
+        liveLeave.chipVisible === false && liveLeave.delayText === '-0:25',
       detail: { liveEnter, liveHold, liveLeave }
     });
 
@@ -2270,15 +2333,20 @@ async function run() {
     results.push({
       name: 'timeline-live-indicator-clicks-go-live',
       // Safe point ≥ ~base (allow small float); never raw edge (~0–3s).
-      pass: typeof beforeClick === 'number' && afterClick.delay >= 8 && afterClick.delay <= 32,
+      // After jump, panel LIVE must go red (adaptive at-live threshold).
+      pass: typeof beforeClick === 'number' && afterClick.delay >= 8 && afterClick.delay <= 32 &&
+        afterClick.liveIsRed === true,
       detail: { beforeClick, afterClick }
     });
 
-    // Panel LIVE button → safe point; after a stall never closer than base ~10s
+    // Panel LIVE button → safe point; after a stall never closer than base ~10s;
+    // button must turn red immediately (v2.2.2: was stuck grey when margin ≥ base).
     await seekLiveDelay(45);
     const panelLive = await page.evaluate(async () => {
       const v = document.querySelector('video');
       const btn = document.getElementById('omt-live-btn');
+      const chip = document.getElementById('omt-timeline-live-chip');
+      const ind = document.getElementById('omt-timeline-live-indicator');
       if (!v || !btn) return { ok: false, reason: 'missing' };
       // Simulate recent stall via real media event (feeds adaptive margin).
       v.dispatchEvent(new Event('waiting'));
@@ -2286,13 +2354,238 @@ async function run() {
       await new Promise((r) => setTimeout(r, 150));
       const end = v.seekable?.length ? v.seekable.end(v.seekable.length - 1) : v.duration;
       const delay = (end || 0) - (v.currentTime || 0);
-      return { ok: delay >= 9.5 && delay <= 32, delay, end, ct: v.currentTime };
+      const liveIsRed = btn.classList.contains('is-live');
+      const chipVisible = !!(chip && !chip.hidden && ind && !ind.hidden);
+      const chipCs = chipVisible ? getComputedStyle(chip) : null;
+      const chipRed = !!(chipCs && /rgb\(\s*229,\s*56,\s*59\s*\)/i.test(chipCs.backgroundColor || ''));
+      return {
+        ok: delay >= 9.5 && delay <= 32 && liveIsRed === true,
+        delay,
+        end,
+        ct: v.currentTime,
+        liveIsRed,
+        chipVisible,
+        chipRed
+      };
     });
     results.push({
       name: 'live-btn-jumps-to-safe-point',
       pass: panelLive.ok === true,
       detail: panelLive
     });
+    results.push({
+      name: 'live-btn-turns-red-after-click',
+      pass: panelLive.liveIsRed === true && panelLive.chipVisible === true && panelLive.chipRed === true,
+      detail: {
+        liveIsRed: panelLive.liveIsRed,
+        chipVisible: panelLive.chipVisible,
+        chipRed: panelLive.chipRed,
+        delay: panelLive.delay
+      }
+    });
+
+    // ---- v2.2.2 live/time consistency matrix (one is-live source of truth) ----
+    const readLiveConsistency = async () => page.evaluate(() => {
+      const btn = document.getElementById('omt-live-btn');
+      const ind = document.getElementById('omt-timeline-live-indicator');
+      const delay = document.getElementById('omt-timeline-live-delay');
+      const chip = document.getElementById('omt-timeline-live-chip');
+      const post = document.getElementById('omt-timeline-post-times');
+      const match = document.getElementById('omt-timeline-match-clock');
+      const range = document.getElementById('omt-timeline-video-range');
+      const times = document.querySelector('#omt-root .omt-timeline-times');
+      const delayVisible = !!(delay && !delay.hidden && ind && !ind.hidden);
+      const chipVisible = !!(chip && !chip.hidden && ind && !ind.hidden);
+      const postVisible = !!(post && !post.hidden);
+      const matchVisible = !!(match && !match.hidden);
+      const rangeVisible = !!(range && !range.hidden);
+      const liveIsRed = !!(btn && btn.classList.contains('is-live'));
+      const delayText = delayVisible ? (delay.textContent || '').trim() : null;
+      const rangeText = rangeVisible ? (range.textContent || '').trim() : null;
+      const chipCs = chipVisible ? getComputedStyle(chip) : null;
+      const chipRed = !!(chipCs && /rgb\(\s*229,\s*56,\s*59\s*\)/i.test(chipCs.backgroundColor || ''));
+      // Invariants: never contradict
+      const noRedWithDelay = !(liveIsRed && delayVisible);
+      const noChipWithDelay = !(chipVisible && delayVisible);
+      const noRangeWithPost = !(rangeVisible && postVisible);
+      const redIffChip = liveIsRed === chipVisible;
+      return {
+        mode: times?.dataset?.omtTimeMode || null,
+        liveIsRed,
+        delayVisible,
+        delayText,
+        chipVisible,
+        chipRed,
+        postVisible,
+        matchVisible,
+        rangeVisible,
+        rangeText,
+        curText: document.getElementById('omt-v-time-current')?.innerText || null,
+        durText: document.getElementById('omt-v-time-duration')?.innerText || null,
+        noRedWithDelay,
+        noChipWithDelay,
+        noRangeWithPost,
+        redIffChip,
+        coherent: noRedWithDelay && noChipWithDelay && noRangeWithPost && redIffChip
+      };
+    });
+
+    // Live, no kickoff, behind edge → grey + delay + video range
+    await page.evaluate(() => document.getElementById('omt-btn-clear-timer')?.click());
+    await seekLiveDelay(40);
+    const liveBehind = await readLiveConsistency();
+    results.push({
+      name: 'live-consistency-behind-no-kickoff',
+      pass: liveBehind.mode === 'live' && liveBehind.coherent &&
+        liveBehind.liveIsRed === false && liveBehind.delayVisible === true &&
+        /^-/.test(String(liveBehind.delayText || '')) &&
+        liveBehind.chipVisible === false && liveBehind.matchVisible === false &&
+        liveBehind.postVisible === false && liveBehind.rangeVisible === true &&
+        /^\d+:\d{2}/.test(String(liveBehind.rangeText || '')),
+      detail: liveBehind
+    });
+
+    // Live at safe point → red panel + LIVE chip (no delay text) + video range
+    await page.evaluate(() => document.getElementById('omt-live-btn')?.click());
+    await page.waitForTimeout(150);
+    const liveAt = await readLiveConsistency();
+    results.push({
+      name: 'live-consistency-at-live-no-kickoff',
+      pass: liveAt.mode === 'live' && liveAt.coherent &&
+        liveAt.liveIsRed === true && liveAt.chipVisible === true && liveAt.chipRed === true &&
+        liveAt.delayVisible === false && liveAt.rangeVisible === true &&
+        liveAt.postVisible === false && liveAt.matchVisible === false,
+      detail: liveAt
+    });
+
+    // Live + kickoff + behind → match clock + delay + range; not red
+    await seekLiveDelay(40);
+    await page.evaluate(() => {
+      const half = document.getElementById('omt-half-select');
+      if (half) {
+        half.value = '1';
+        half.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      document.getElementById('omt-btn-set-kickoff')?.click();
+    });
+    await page.waitForTimeout(80);
+    await seekLiveDelay(40);
+    const liveKickBehind = await readLiveConsistency();
+    results.push({
+      name: 'live-consistency-behind-with-kickoff',
+      pass: liveKickBehind.mode === 'kickoff' && liveKickBehind.coherent &&
+        liveKickBehind.matchVisible === true && liveKickBehind.liveIsRed === false &&
+        liveKickBehind.delayVisible === true && liveKickBehind.chipVisible === false &&
+        liveKickBehind.postVisible === false && liveKickBehind.rangeVisible === true,
+      detail: liveKickBehind
+    });
+
+    // Live + kickoff + LIVE click → match + red chip + range; no delay text
+    await page.evaluate(() => document.getElementById('omt-live-btn')?.click());
+    await page.waitForTimeout(150);
+    const liveKickAt = await readLiveConsistency();
+    results.push({
+      name: 'live-consistency-at-live-with-kickoff',
+      pass: liveKickAt.mode === 'kickoff' && liveKickAt.coherent &&
+        liveKickAt.matchVisible === true && liveKickAt.liveIsRed === true &&
+        liveKickAt.chipVisible === true && liveKickAt.delayVisible === false &&
+        liveKickAt.rangeVisible === true && liveKickAt.postVisible === false,
+      detail: liveKickAt
+    });
+
+    // VOD / POST → post times on left; no live chrome; no right range; not red
+    await page.evaluate(() => {
+      document.getElementById('omt-btn-clear-timer')?.click();
+      const v = document.querySelector('video');
+      const slider = document.getElementById('omt-timeline-slider');
+      window.__omtMockSource = 'VOD';
+      if (v) {
+        v.dataset.omtSource = 'VOD';
+        const postDur = 1 * 3600 + 52 * 60 + 40;
+        const postAt = 34 * 60 + 12;
+        Object.defineProperty(v, 'duration', { configurable: true, get: () => postDur });
+        Object.defineProperty(v, 'seekable', {
+          configurable: true,
+          get: () => ({ length: 1, start: () => 0, end: () => postDur })
+        });
+        Object.defineProperty(v, 'currentTime', {
+          configurable: true,
+          get: () => postAt,
+          set: () => {}
+        });
+        if (slider) {
+          slider.min = '0';
+          slider.max = String(postDur);
+          slider.value = String(postAt);
+        }
+        v.dispatchEvent(new Event('durationchange'));
+        v.dispatchEvent(new Event('timeupdate'));
+      }
+    });
+    await page.waitForTimeout(100);
+    const postCons = await readLiveConsistency();
+    results.push({
+      name: 'live-consistency-vod-post',
+      pass: postCons.mode === 'post' && postCons.coherent &&
+        postCons.liveIsRed === false && postCons.delayVisible === false &&
+        postCons.chipVisible === false && postCons.rangeVisible === false &&
+        postCons.postVisible === true && postCons.matchVisible === false &&
+        postCons.curText === '34:12' && postCons.durText === '1:52:40',
+      detail: postCons
+    });
+
+    // POST + kickoff → match only
+    await page.evaluate(() => {
+      const half = document.getElementById('omt-half-select');
+      if (half) {
+        half.value = '1';
+        half.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      document.getElementById('omt-btn-set-kickoff')?.click();
+    });
+    await page.waitForTimeout(80);
+    await page.evaluate(() => document.querySelector('video')?.dispatchEvent(new Event('timeupdate')));
+    await page.waitForTimeout(60);
+    const postKickCons = await readLiveConsistency();
+    results.push({
+      name: 'live-consistency-post-with-kickoff',
+      pass: postKickCons.mode === 'kickoff' && postKickCons.coherent &&
+        postKickCons.matchVisible === true && postKickCons.liveIsRed === false &&
+        postKickCons.delayVisible === false && postKickCons.chipVisible === false &&
+        postKickCons.rangeVisible === false && postKickCons.postVisible === false,
+      detail: postKickCons
+    });
+
+    // Restore DVR live mode for later timeline tests
+    await page.evaluate(() => {
+      document.getElementById('omt-btn-clear-timer')?.click();
+      const v = document.querySelector('video');
+      const slider = document.getElementById('omt-timeline-slider');
+      window.__omtMockSource = 'DVR';
+      if (v) {
+        v.dataset.omtSource = 'DVR';
+        const dvrDur = 330;
+        let ct = 100;
+        Object.defineProperty(v, 'duration', { configurable: true, get: () => dvrDur });
+        Object.defineProperty(v, 'seekable', {
+          configurable: true,
+          get: () => ({ length: 1, start: () => 0, end: () => dvrDur })
+        });
+        Object.defineProperty(v, 'currentTime', {
+          configurable: true,
+          get: () => ct,
+          set: (n) => { ct = n; }
+        });
+        if (slider) {
+          slider.min = '0';
+          slider.max = String(dvrDur);
+          slider.value = String(ct);
+        }
+        v.dispatchEvent(new Event('durationchange'));
+        v.dispatchEvent(new Event('timeupdate'));
+      }
+    });
+    await page.waitForTimeout(80);
 
     // Manual seek past safe point must still be allowed (no clamp)
     const noClamp = await page.evaluate(async () => {
@@ -6383,6 +6676,44 @@ async function run() {
         };
       });
       results.push({ name: 'local-timeline-seek', pass: localTimeline.ok === true, detail: localTimeline });
+
+      // Local is never live mode: POST times on left, no video-range, no LIVE chip/delay.
+      // Clear any kickoff left by earlier local period tests.
+      await localPage.evaluate(() => {
+        document.getElementById('omt-btn-clear-timer')?.click();
+        const bar = document.getElementById('omt-timeline-bar');
+        const panel = document.getElementById('controls-panel');
+        if (bar) { bar.style.opacity = '1'; bar.classList.remove('omt-chrome-hidden'); }
+        if (panel) { panel.style.opacity = '1'; panel.style.pointerEvents = 'auto'; }
+        document.querySelector('video')?.dispatchEvent(new Event('timeupdate'));
+      });
+      await localPage.waitForTimeout(80);
+      const localCons = await localPage.evaluate(() => {
+        const times = document.querySelector('#omt-root .omt-timeline-times');
+        const ind = document.getElementById('omt-timeline-live-indicator');
+        const delay = document.getElementById('omt-timeline-live-delay');
+        const chip = document.getElementById('omt-timeline-live-chip');
+        const post = document.getElementById('omt-timeline-post-times');
+        const range = document.getElementById('omt-timeline-video-range');
+        const btn = document.getElementById('omt-live-btn');
+        return {
+          mode: times?.dataset?.omtTimeMode || null,
+          liveHidden: !!(ind && ind.hidden),
+          delayHidden: !delay || delay.hidden || !!(ind && ind.hidden),
+          chipHidden: !chip || chip.hidden || !!(ind && ind.hidden),
+          postVisible: !!(post && !post.hidden),
+          rangeHidden: !range || range.hidden,
+          btnNotRed: !btn || !btn.classList.contains('is-live'),
+          isLocal: !!document.getElementById('omt-root')?.classList.contains('omt-local')
+        };
+      });
+      results.push({
+        name: 'live-consistency-local-post',
+        pass: localCons.isLocal && localCons.mode === 'post' && localCons.liveHidden &&
+          localCons.delayHidden && localCons.chipHidden && localCons.postVisible &&
+          localCons.rangeHidden && localCons.btnNotRed,
+        detail: localCons
+      });
 
       // LIVE button is hidden on local; L hotkey still seeks toward the end (safe point).
       const localLive = await localPage.evaluate(async () => {
