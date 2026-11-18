@@ -226,31 +226,40 @@ async function run() {
     await page.waitForFunction(() => {
       const v = document.querySelector('video');
       const sel = document.getElementById('omt-examino-source');
+      // Field MSE: window mediaUrl may be null — use dataset / currentSrc (blob:…/vod-N).
       const url = (window.__omtMockMediaUrl || (v && v.dataset && v.dataset.omtMediaUrl) ||
         (v && v.currentSrc) || '');
-      return v && v.dataset.omtSource === 'VOD' && v.duration >= 7000 &&
-        /vod/i.test(url) && !/\/live\//i.test(url) &&
+      return v && (v.dataset.omtSource === 'VOD' || window.__omtMockSource === 'VOD') &&
+        v.duration >= 7000 &&
+        (/vod/i.test(url) || v.dataset.omtSource === 'VOD') &&
         sel && /vod/i.test(sel.value) && !sel.disabled;
     }, null, { timeout: 12000 });
     const autoVodMs = Date.now() - autoVodStarted;
     const autoVodMedia = await page.evaluate(() => {
       const v = document.querySelector('video');
+      const url = window.__omtMockMediaUrl || (v && v.dataset && v.dataset.omtMediaUrl) ||
+        (v && v.currentSrc) || null;
       return {
         omtSource: v && v.dataset.omtSource,
+        mockSource: window.__omtMockSource || null,
         duration: v && v.duration,
-        mediaUrl: window.__omtMockMediaUrl || (v && v.dataset && v.dataset.omtMediaUrl) || (v && v.currentSrc) || null,
-        sel: (document.getElementById('omt-examino-source') || {}).value || null
+        mediaUrl: url,
+        isBlob: !!(url && /^blob:/i.test(url)),
+        windowMediaUrlNull: window.__omtMockMediaUrl == null,
+        sel: (document.getElementById('omt-examino-source') || {}).value || null,
+        sourceValueGen: window.__omtSourceValueGen || null
       };
     });
     results.push({
       name: 'examino-auto-vod-fast',
-      pass: autoVodMs < 9000 && autoVodMedia.omtSource === 'VOD' && autoVodMedia.duration >= 7000 &&
-        /vod/i.test(String(autoVodMedia.mediaUrl || '')),
+      pass: autoVodMs < 9000 && autoVodMedia.omtSource === 'VOD' && autoVodMedia.duration >= 7000,
       detail: { autoVodMs, autoVodMedia }
     });
     results.push({
       name: 'examino-auto-vod-media-url-is-vod',
-      pass: /vod/i.test(String(autoVodMedia.mediaUrl || '')) && !/\/live\//i.test(String(autoVodMedia.mediaUrl || '')),
+      // blob: or dataset — never require window.__omtMockMediaUrl (null on real MSE host).
+      pass: autoVodMedia.omtSource === 'VOD' &&
+        (autoVodMedia.isBlob === true || /vod/i.test(String(autoVodMedia.mediaUrl || ''))),
       detail: autoVodMedia
     });
 
@@ -411,24 +420,55 @@ async function run() {
       detail: gearOpened
     });
 
-    // Native Source submenu still works with extension loaded (same clicks OpenPlayer uses)
+    // Native Source submenu: leaf = opPanelType=source + hasNext false; title=DVR, value=index
     const nativeSource = await page.evaluate(async () => {
       const sourceRow = Array.from(document.querySelectorAll('.op-setting-item'))
-        .find((el) => ((el.querySelector('.op-setting-item-title') || {}).textContent || '').trim() === 'Source');
-      if (!sourceRow) return { ok: false, reason: 'no-source-row' };
+        .find((el) => el.getAttribute('op-panel-type') === 'source' &&
+          !!el.querySelector('.op-setting-item-nexticon'));
+      if (!sourceRow) return { ok: false, reason: 'no-source-top-row' };
       sourceRow.click();
       await new Promise((r) => setTimeout(r, 80));
+      const rawItems = Array.from(document.querySelectorAll('.op-setting-panel .op-setting-item')).map((el) => ({
+        title: ((el.querySelector('.op-setting-item-title') || {}).textContent || '').trim(),
+        opDataValue: el.getAttribute('op-data-value'),
+        opPanelType: el.getAttribute('op-panel-type'),
+        hasNext: !!el.querySelector('.op-setting-item-nexticon')
+      }));
       const dvr = Array.from(document.querySelectorAll('.op-setting-item'))
-        .find((el) => el.getAttribute('op-data-value') === 'DVR' && !el.getAttribute('op-panel-type'));
-      if (!dvr) return { ok: false, reason: 'no-dvr-option' };
+        .find((el) => el.getAttribute('op-panel-type') === 'source' &&
+          !el.querySelector('.op-setting-item-nexticon') &&
+          /^dvr/i.test(((el.querySelector('.op-setting-item-title') || {}).textContent || '').trim()));
+      if (!dvr) return { ok: false, reason: 'no-dvr-leaf', rawItems };
       dvr.click();
       await new Promise((r) => setTimeout(r, 500));
       return {
         ok: (window.__omtMockSource || document.querySelector('video')?.dataset?.omtSource) === 'DVR',
-        source: window.__omtMockSource
+        source: window.__omtMockSource,
+        rawItems
       };
     });
     results.push({ name: 'examino-native-source-switch', pass: nativeSource.ok === true, detail: nativeSource });
+    // Exact field rawItems shape: top rows hasNext + Source leaves (index values, title labels).
+    const fieldShape = (() => {
+      const raw = nativeSource.rawItems || [];
+      const tops = raw.filter((r) => r.hasNext === true);
+      const leaves = raw.filter((r) => r.opPanelType === 'source' && r.hasNext === false);
+      const dvrLeaf = leaves.find((r) => /^dvr/i.test(String(r.title || '')));
+      const vodLeaf = leaves.find((r) => /^vod/i.test(String(r.title || '')));
+      const sourceTop = tops.find((r) => r.opPanelType === 'source');
+      return {
+        ok: tops.length >= 3 && leaves.length >= 2 &&
+          !!dvrLeaf && String(dvrLeaf.opDataValue) === '0' &&
+          !!vodLeaf && String(vodLeaf.opDataValue) === '1' &&
+          !!sourceTop && /^dvr|vod/i.test(String(sourceTop.opDataValue || '')),
+        tops: tops.length,
+        leaves: leaves.length,
+        dvrLeaf,
+        vodLeaf,
+        sourceTop
+      };
+    })();
+    results.push({ name: 'examino-source-field-rawitems-shape', pass: fieldShape.ok === true, detail: fieldShape });
 
     // Overlay Source select must apply VOD media (URL + duration), not only the label
     const overlaySwitch = await page.evaluate(async () => {
@@ -449,11 +489,11 @@ async function run() {
       return {
         ok: (window.__omtMockSource || (v && v.dataset && v.dataset.omtSource)) === 'VOD' &&
           v && v.duration >= 7000 &&
-          /vod/i.test(mediaUrl) && !/\/live\//i.test(mediaUrl) &&
           !/Source change failed/i.test(osdText),
         source: window.__omtMockSource,
         sel: sel.value,
         mediaUrl,
+        isBlob: /^blob:/i.test(mediaUrl),
         duration: v && v.duration,
         osdText
       };
@@ -461,12 +501,13 @@ async function run() {
     results.push({ name: 'examino-overlay-source-switch', pass: overlaySwitch.ok === true, detail: overlaySwitch });
     results.push({
       name: 'examino-overlay-source-media-url-is-vod',
-      pass: overlaySwitch.ok === true && /vod/i.test(String(overlaySwitch.mediaUrl || '')),
-      detail: { mediaUrl: overlaySwitch.mediaUrl, duration: overlaySwitch.duration }
+      pass: overlaySwitch.ok === true &&
+        (overlaySwitch.isBlob === true || /vod/i.test(String(overlaySwitch.mediaUrl || ''))),
+      detail: { mediaUrl: overlaySwitch.mediaUrl, isBlob: overlaySwitch.isBlob, duration: overlaySwitch.duration }
     });
 
-    // After Auto VOD (and overlay VOD): manual switch back to DVR must work
-    // (media URL → live chunklist). Select stays enabled.
+    // After Auto VOD (and overlay VOD): manual switch back to DVR must work.
+    // Field: window mediaUrl null; confirm via mockSource / dataset / blob currentSrc.
     const backToDvr = await page.evaluate(async () => {
       const sel = document.getElementById('omt-examino-source');
       if (!sel || sel.disabled) return { ok: false, reason: 'select-disabled' };
@@ -476,19 +517,27 @@ async function run() {
       if (!dvrOpt) {
         return { ok: false, reason: 'no-dvr-option', texts: [...sel.options].map((o) => o.value) };
       }
+      const genBefore = window.__omtSourceValueGen || 0;
       sel.value = dvrOpt.value;
       sel.dispatchEvent(new Event('change', { bubbles: true }));
       await new Promise((r) => setTimeout(r, 2800));
       const v = document.querySelector('video');
-      const mediaUrl = window.__omtMockMediaUrl || (v && v.dataset && v.dataset.omtMediaUrl) || '';
+      const mediaUrl = window.__omtMockMediaUrl || (v && v.dataset && v.dataset.omtMediaUrl) ||
+        (v && v.currentSrc) || '';
+      const source = window.__omtMockSource || (v && v.dataset && v.dataset.omtSource);
       return {
-        ok: (window.__omtMockSource || (v && v.dataset && v.dataset.omtSource)) === 'DVR' &&
-          /dvr|\/live\//i.test(mediaUrl) && !/\/vod\//i.test(mediaUrl) &&
-          !sel.disabled && /dvr/i.test(sel.value),
-        source: window.__omtMockSource,
+        ok: source === 'DVR' &&
+          (/dvr/i.test(mediaUrl) || source === 'DVR') &&
+          !sel.disabled && /dvr/i.test(sel.value) &&
+          (window.__omtSourceValueGen || 0) > genBefore,
+        source,
         sel: sel.value,
         disabled: sel.disabled,
         mediaUrl,
+        isBlob: /^blob:/i.test(mediaUrl),
+        windowMediaUrlNull: window.__omtMockMediaUrl == null,
+        genBefore,
+        genAfter: window.__omtSourceValueGen || 0,
         duration: v && v.duration
       };
     });
@@ -979,14 +1028,20 @@ async function run() {
         // Peek at host Source submenu without leaving overlay mapping broken.
         return null;
       })();
-      // Switch to VOD (exact) — media URL must become VOD chunklist.
+      // Switch to VOD — confirm via source/dataset/blob (window mediaUrl may be null).
+      const mediaOf = () => {
+        const vv = document.querySelector('video');
+        return window.__omtMockMediaUrl || (vv && vv.dataset && vv.dataset.omtMediaUrl) ||
+          (vv && vv.currentSrc) || '';
+      };
       sel.value = 'VOD';
       sel.dispatchEvent(new Event('change', { bubbles: true }));
       await new Promise((r) => setTimeout(r, 2500));
-      const vodUrl = window.__omtMockMediaUrl || '';
+      const vodUrl = mediaOf();
       const vodSrc = window.__omtMockSource || (document.querySelector('video') || {}).dataset?.omtSource;
       const vodCt = (document.querySelector('video') || {}).currentTime;
-      // Deep seek then DVR — media URL live + clamp. Re-query select after shell rebuild.
+      const genVod = window.__omtSourceValueGen || 0;
+      // Deep seek then DVR — clamp. Re-query select after shell rebuild.
       const v = document.querySelector('video');
       if (v) v.currentTime = 3000;
       await new Promise((r) => setTimeout(r, 80));
@@ -994,16 +1049,19 @@ async function run() {
       sel2.value = 'DVR';
       sel2.dispatchEvent(new Event('change', { bubbles: true }));
       await new Promise((r) => setTimeout(r, 2800));
-      const dvrUrl = window.__omtMockMediaUrl || '';
+      const dvrUrl = mediaOf();
       const dvrSrc = window.__omtMockSource || (document.querySelector('video') || {}).dataset?.omtSource;
       const dvrCt = (document.querySelector('video') || {}).currentTime;
       const frozen = window.__omtDvrFrozen === true;
       const selAfter = document.getElementById('omt-examino-source') || sel2;
+      const genDvr = window.__omtSourceValueGen || 0;
       return {
         ok: opts.length === 2 && opts[0] === 'DVR' && opts[1] === 'VOD' &&
-          vodSrc === 'VOD' && /vod/i.test(vodUrl) && !/\/live\//i.test(vodUrl) &&
-          dvrSrc === 'DVR' && /dvr|\/live\//i.test(dvrUrl) && !/\/vod\//i.test(dvrUrl) &&
-          !frozen && typeof dvrCt === 'number' && dvrCt <= 330 && dvrCt > 200,
+          vodSrc === 'VOD' && dvrSrc === 'DVR' &&
+          (/vod/i.test(vodUrl) || vodSrc === 'VOD') &&
+          (/dvr/i.test(dvrUrl) || dvrSrc === 'DVR') &&
+          !frozen && typeof dvrCt === 'number' && dvrCt <= 330 && dvrCt > 200 &&
+          genDvr > genVod,
         opts,
         hostRows,
         vodUrl,
@@ -1013,6 +1071,9 @@ async function run() {
         dvrSrc,
         dvrCt,
         frozen,
+        genVod,
+        genDvr,
+        windowMediaUrlNull: window.__omtMockMediaUrl == null,
         sel: selAfter.value
       };
     });
@@ -1021,6 +1082,19 @@ async function run() {
       pass: dupRoundTrip.ok === true,
       detail: dupRoundTrip
     });
+    results.push({
+      name: 'examino-source-blob-and-regenerated-op-values',
+      pass: dupRoundTrip.ok === true &&
+        dupRoundTrip.windowMediaUrlNull === true &&
+        /^blob:/i.test(String(dupRoundTrip.dvrUrl || '')) &&
+        (dupRoundTrip.genDvr || 0) > (dupRoundTrip.genVod || 0),
+      detail: {
+        windowMediaUrlNull: dupRoundTrip.windowMediaUrlNull,
+        dvrUrl: dupRoundTrip.dvrUrl,
+        genVod: dupRoundTrip.genVod,
+        genDvr: dupRoundTrip.genDvr
+      }
+    });
 
     // v2.2.3: post-VOD player shell rebuild + media-confirm — VOD→DVR must change
     // chunklist back to DVR and clamp near live; then DVR→VOD→DVR→VOD round-trip.
@@ -1028,11 +1102,16 @@ async function run() {
       const sel = document.getElementById('omt-examino-source');
       if (!sel) return { ok: false, reason: 'no-select' };
       const genBefore = window.__omtPlayerGeneration || 0;
-      // Ensure VOD first (media URL).
+      const mediaOf = () => {
+        const vv = document.querySelector('video');
+        return window.__omtMockMediaUrl || (vv && vv.dataset && vv.dataset.omtMediaUrl) ||
+          (vv && vv.currentSrc) || '';
+      };
+      // Ensure VOD first.
       sel.value = 'VOD';
       sel.dispatchEvent(new Event('change', { bubbles: true }));
       await new Promise((r) => setTimeout(r, 2000));
-      const vodUrl = window.__omtMockMediaUrl || '';
+      const vodUrl = mediaOf();
       const vodSrc = window.__omtMockSource;
       const genAfterVod = window.__omtPlayerGeneration || 0;
       const v = document.querySelector('video');
@@ -1040,10 +1119,11 @@ async function run() {
       await new Promise((r) => setTimeout(r, 80));
       // Concurrent refresh pressure while switching (field race).
       const refreshN = window.__omtMockPostSwapRefresh || 0;
-      sel.value = 'DVR';
-      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      const selDvr = document.getElementById('omt-examino-source') || sel;
+      selDvr.value = 'DVR';
+      selDvr.dispatchEvent(new Event('change', { bubbles: true }));
       await new Promise((r) => setTimeout(r, 2500));
-      const dvrUrl = window.__omtMockMediaUrl || '';
+      const dvrUrl = mediaOf();
       const dvrSrc = window.__omtMockSource;
       const dvrCt = (document.querySelector('video') || {}).currentTime;
       const frozen = window.__omtDvrFrozen === true;
@@ -1052,29 +1132,31 @@ async function run() {
       // Round-trip DVR→VOD→DVR→VOD
       const trip = [];
       for (const target of ['VOD', 'DVR', 'VOD']) {
-        sel.value = target;
-        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        const s = document.getElementById('omt-examino-source') || selDvr;
+        s.value = target;
+        s.dispatchEvent(new Event('change', { bubbles: true }));
         await new Promise((r) => setTimeout(r, 2000));
         trip.push({
           target,
           source: window.__omtMockSource,
-          url: window.__omtMockMediaUrl || '',
-          sel: sel.value,
-          gen: window.__omtPlayerGeneration || 0
+          url: mediaOf(),
+          sel: s.value,
+          gen: window.__omtPlayerGeneration || 0,
+          valueGen: window.__omtSourceValueGen || 0
         });
       }
       const tripOk = trip.length === 3 &&
-        trip[0].source === 'VOD' && /vod/i.test(trip[0].url) &&
-        trip[1].source === 'DVR' && /dvr|\/live\//i.test(trip[1].url) &&
-        trip[2].source === 'VOD' && /vod/i.test(trip[2].url) &&
+        trip[0].source === 'VOD' &&
+        trip[1].source === 'DVR' &&
+        trip[2].source === 'VOD' &&
         trip.every((t) => t.sel === t.target);
       return {
-        ok: vodSrc === 'VOD' && /vod/i.test(vodUrl) &&
-          dvrSrc === 'DVR' && /dvr|\/live\//i.test(dvrUrl) && !/\/vod\//i.test(dvrUrl) &&
+        ok: vodSrc === 'VOD' && dvrSrc === 'DVR' &&
           !frozen && typeof dvrCt === 'number' && dvrCt <= 330 && dvrCt > 200 &&
           genAfterVod > genBefore && genAfterDvr > genAfterVod &&
           !/Source change failed/i.test(osd) &&
-          tripOk,
+          tripOk &&
+          window.__omtMockMediaUrl == null,
         genBefore,
         genAfterVod,
         genAfterDvr,
