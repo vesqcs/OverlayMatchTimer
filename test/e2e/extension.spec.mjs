@@ -383,6 +383,60 @@ async function run() {
     });
     results.push({ name: 'examino-overlay-source-switch', pass: overlaySwitch.ok === true, detail: overlaySwitch });
 
+    // ---- v2.1.1: temp-visible gear must beat scoped host-hide (Auto VOD path) ----
+    // Field 2.1.0: html.omt-host-examino.omt-hud-on .setting-holder / .omt-examino-native-hidden
+    // outranked .setting-holder.omt-settings-temp-visible → gear stayed display:none →
+    // ensureOpSettingsOpen failed → Source "Loading…" / Auto VOD never applied.
+    const gearTempVisible = await page.evaluate(() => {
+      document.documentElement.classList.add('omt-hud-on', 'omt-host-examino');
+      const holder = document.querySelector('.setting-holder');
+      const btn = document.querySelector('.op-button.op-setting-button, .op-setting-button, #native-gear');
+      if (!holder || !btn) return { ok: false, reason: 'no-holder-or-btn' };
+      holder.classList.add('omt-examino-native-hidden', 'omt-settings-temp-visible');
+      btn.classList.add('omt-settings-temp-visible');
+      const hCs = getComputedStyle(holder);
+      const bCs = getComputedStyle(btn);
+      const holderOk = hCs.display !== 'none' && hCs.pointerEvents !== 'none' &&
+        hCs.maxHeight !== '0px' && hCs.overflow !== 'hidden';
+      const btnOk = bCs.display !== 'none' && bCs.pointerEvents !== 'none';
+      // Clean temp class so later tests are not stuck with an invisible 1px gear.
+      holder.classList.remove('omt-settings-temp-visible');
+      btn.classList.remove('omt-settings-temp-visible');
+      return {
+        ok: holderOk && btnOk,
+        holderDisplay: hCs.display,
+        holderPE: hCs.pointerEvents,
+        holderMaxH: hCs.maxHeight,
+        btnDisplay: bCs.display,
+        btnPE: bCs.pointerEvents
+      };
+    });
+    results.push({
+      name: 'examino-settings-temp-visible-beats-hide',
+      pass: gearTempVisible.ok === true,
+      detail: gearTempVisible
+    });
+
+    // Source select must never stick on Loading… after a failed/empty scrape fill
+    const sourceNotLoading = await page.evaluate(() => {
+      const sel = document.getElementById('omt-examino-source');
+      if (!sel) return { ok: false, reason: 'no-select' };
+      const texts = [...sel.options].map((o) => (o.textContent || '').trim());
+      const hasLoading = texts.some((t) => /loading/i.test(t));
+      return {
+        ok: !hasLoading && !sel.disabled &&
+          texts.includes('DVR') && texts.includes('VOD'),
+        texts,
+        disabled: sel.disabled,
+        value: sel.value
+      };
+    });
+    results.push({
+      name: 'examino-source-not-stuck-loading',
+      pass: sourceNotLoading.ok === true,
+      detail: sourceNotLoading
+    });
+
     // ---- Click to pause: only the video surface (not whole .op-player) ----
     await page.evaluate(async () => {
       const setup = document.getElementById('setup-panel');

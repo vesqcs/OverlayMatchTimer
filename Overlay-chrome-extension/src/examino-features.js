@@ -197,6 +197,7 @@
             '}',
             /* Raised settings panel while scraping Source — keep usable even */
             /* if HUD paint state flaps; scoped to the temporary classes. */
+            'html.omt-host-examino .op-setting-panel.omt-settings-raised,',
             '.op-setting-panel.omt-settings-raised {',
             '  display: block !important;',
             '  opacity: 1 !important;',
@@ -205,12 +206,24 @@
             '  position: fixed !important;',
             '  top: 48px !important;',
             '  right: 12px !important;',
+            '  max-height: none !important;',
+            '  overflow: visible !important;',
             '}',
-            '.setting-holder.omt-settings-temp-visible,',
-            '.setting-holder.omt-settings-temp-visible .op-setting-button {',
+            /* Must beat html.omt-host-examino.omt-hud-on .setting-holder and */
+            /* .omt-examino-native-hidden (v2.0.x scoped hide broke 1.2.0's */
+            /* weaker .setting-holder.omt-settings-temp-visible override). */
+            'html.omt-host-examino.omt-hud-on .setting-holder.omt-settings-temp-visible,',
+            'html.omt-host-examino.omt-hud-on .setting-holder.omt-settings-temp-visible .op-setting-button,',
+            'html.omt-host-examino.omt-hud-on .op-button.op-setting-button.omt-settings-temp-visible,',
+            'html.omt-host-examino.omt-hud-on .omt-examino-native-hidden.omt-settings-temp-visible,',
+            'html.omt-host-examino.omt-hud-on .setting-holder.omt-examino-native-hidden.omt-settings-temp-visible {',
             '  display: block !important;',
             '  opacity: 0 !important;',
             '  pointer-events: auto !important;',
+            '  max-height: none !important;',
+            '  overflow: visible !important;',
+            '  margin: 0 !important;',
+            '  padding: 0 !important;',
             '  position: fixed !important;',
             '  top: 0 !important;',
             '  left: 0 !important;',
@@ -624,12 +637,22 @@
         if (!selectEl) return;
         const { current, options, loading } = scraped || { current: null, options: [], loading: false };
         selectEl.innerHTML = '';
+        // Never leave Source stuck on "Loading…" when the host gear scrape
+        // fails (v2.1.0 field). DVR/VOD are always the real choices; keep them
+        // selectable so Auto VOD / manual change can still apply.
         if (loading && (!options || !options.length)) {
-            const opt = document.createElement('option');
-            opt.value = '';
-            opt.textContent = 'Loading…';
-            selectEl.appendChild(opt);
-            selectEl.disabled = true;
+            const list = [{ value: 'DVR', label: 'DVR' }, { value: 'VOD', label: 'VOD' }];
+            selectEl.disabled = false;
+            list.forEach((o) => {
+                const opt = document.createElement('option');
+                opt.value = o.value;
+                opt.textContent = o.label;
+                selectEl.appendChild(opt);
+            });
+            const cur = detectCurrentSource(current) || examinoManualSourceChoice ||
+                examinoLastAppliedSource;
+            const match = cur && list.find((o) => o.value === cur);
+            selectEl.value = match ? match.value : list[0].value;
             return;
         }
         const list = (options && options.length)
