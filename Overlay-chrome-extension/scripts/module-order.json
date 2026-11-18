@@ -24,6 +24,7 @@
   "src/setup-visibility.js",
   "src/shuttle.js",
   "src/restore.js",
+  "src/bus.js",
   "src/storage.js",
   "src/customize.js",
   "src/auto-pause.js",

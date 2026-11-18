@@ -85,7 +85,7 @@
         }
     }
 
-    function cleanupShuttle() {
+    function cleanupShuttle(opts) {
         if (shuttleInterval) {
             clearInterval(shuttleInterval);
             shuttleInterval = null;
@@ -108,10 +108,14 @@
         prevBytes4 = 0;
 
         updateToggleUI(false);
-        if (typeof storageSetShuttleEnabled === 'function') {
-            storageSetShuttleEnabled(false);
-        } else {
-            try { localStorage.setItem('shuttleXpressEnabled', 'false'); } catch (_) {}
+        // skipStorage: caller (bridge sync) already wrote the off flag — posting
+        // OMT_STORAGE_SET(false) again re-enters sync and storms the bus.
+        if (!(opts && opts.skipStorage)) {
+            if (typeof storageSetShuttleEnabled === 'function') {
+                storageSetShuttleEnabled(false);
+            } else {
+                try { localStorage.setItem('shuttleXpressEnabled', 'false'); } catch (_) {}
+            }
         }
         showShuttleCheatsheet(false);
     }

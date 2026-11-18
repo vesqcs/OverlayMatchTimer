@@ -4,7 +4,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { resolveFixture, runExaminoFieldScenario, runInplayScheduleScenario } from './host-scenarios.mjs';
+import {
+  resolveFixture,
+  runExaminoFieldScenario,
+  runInplayScheduleScenario,
+  EXAMINO_BUS_MOCK_PATH
+} from './host-scenarios.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '../..');
@@ -39,6 +44,7 @@ function contentType(filePath) {
   if (filePath.endsWith('.html')) return 'text/html; charset=utf-8';
   if (filePath.endsWith('.js')) return 'text/javascript; charset=utf-8';
   if (filePath.endsWith('.css')) return 'text/css; charset=utf-8';
+  if (filePath.endsWith('.mp4')) return 'video/mp4';
   return 'application/octet-stream';
 }
 
@@ -3289,6 +3295,96 @@ async function run() {
       detail: stickyRace
     });
     await page.screenshot({ path: path.join(ARTIFACTS, 'v204_sticky_hide_race.png'), fullPage: true });
+
+    // ---- v2.0.5: Examino Shuttle message handler must not see our storage bus ----
+    // Host chunk BIyTHCyh.js toggles play/pause on any same-origin window.message
+    // without isKeyPressed / known key. Our bridge used to postMessage → storm.
+    await page.goto(`${base}${EXAMINO_BUS_MOCK_PATH}`, { waitUntil: 'domcontentloaded' });
+    await waitForOmt(page, 15000);
+    await page.waitForFunction(() => {
+      const v = document.querySelector('.ovenplayer video');
+      return !!(v && v.readyState >= 2);
+    }, { timeout: 15000 }).catch(() => {});
+    // Settle after extension boot + bridge CustomEvent sync.
+    await page.waitForTimeout(800);
+    const busLoop = await page.evaluate(async () => {
+      const v = document.querySelector('.ovenplayer video');
+      const s0 = { ...(window.__busStats || {}) };
+      // Baseline: legacy postMessage still trips host D (documents the hazard).
+      let probeToggle = false;
+      if (typeof window.__omtHostProbePostMessage === 'function' && v) {
+        const before = window.__busStats.hostD;
+        const pausedBefore = v.paused;
+        window.__omtHostProbePostMessage();
+        await new Promise((r) => setTimeout(r, 50));
+        probeToggle = window.__busStats.hostD > before && v.paused !== pausedBefore;
+        // Leave playing for the idle window.
+        if (v.paused) {
+          try { await v.play(); } catch (_) {}
+        }
+      }
+      const atStart = {
+        play: window.__busStats.play,
+        pause: window.__busStats.pause,
+        waiting: window.__busStats.waiting,
+        hostD: window.__busStats.hostD,
+        messages: window.__busStats.messages,
+        busEvents: window.__busStats.busEvents
+      };
+      // Trigger storage writes the way the overlay does (CustomEvent bus).
+      if (typeof window.dispatchEvent === 'function') {
+        for (let i = 0; i < 8; i++) {
+          window.dispatchEvent(new CustomEvent('omt-bridge-bus', {
+            detail: {
+              source: 'omt-bridge',
+              type: 'OMT_STORAGE_SYNC',
+              values: { omtAutoHideChrome: true }
+            }
+          }));
+        }
+      }
+      await new Promise((r) => setTimeout(r, 3000));
+      const atEnd = {
+        play: window.__busStats.play,
+        pause: window.__busStats.pause,
+        waiting: window.__busStats.waiting,
+        hostD: window.__busStats.hostD,
+        messages: window.__busStats.messages,
+        busEvents: window.__busStats.busEvents
+      };
+      const dPlay = atEnd.play - atStart.play;
+      const dPause = atEnd.pause - atStart.pause;
+      const dHostD = atEnd.hostD - atStart.hostD;
+      const dWaiting = atEnd.waiting - atStart.waiting;
+      const dBus = atEnd.busEvents - atStart.busEvents;
+      // 8 intentional CustomEvent syncs above; allow a small slack, never a storm.
+      return {
+        ok: !!(probeToggle === true && dPlay <= 2 && dPause <= 2 && dHostD === 0 && dWaiting <= 5 &&
+          dBus <= 20 && v && v.paused === false && document.getElementById('omt-root')),
+        probeToggle,
+        dPlay,
+        dPause,
+        dHostD,
+        dWaiting,
+        dBus,
+        paused: v ? v.paused : null,
+        hasHud: !!document.getElementById('omt-root'),
+        usesBus: typeof window.CustomEvent === 'function',
+        s0,
+        atStart,
+        atEnd,
+        // Production must not emit window.postMessage for omt-bridge/page.
+        postMessageEmitGuard: !/window\.postMessage\(\s*\{\s*source:\s*'omt-(bridge|page)'/.test(
+          String(document.documentElement.innerHTML || '')
+        )
+      };
+    });
+    results.push({
+      name: 'examino-bus-no-host-play-pause-loop',
+      pass: busLoop.ok === true,
+      detail: busLoop
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v205_ovenplayer_bus.png'), fullPage: true });
 
     // ---------- InPlay collapsed player: HUD stays inside the player box ----------
     // No visibility guard (2.0.1–2.0.2 toggled HUD/host chrome on layout

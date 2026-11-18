@@ -28,13 +28,11 @@
         if (!omtSyncFeatureOn()) return;
         if (typeof omtSyncIsEnabled !== 'function' || !omtSyncIsEnabled()) return;
         if (typeof omtSyncHasCredentials === 'function' && !omtSyncHasCredentials()) return;
-        try {
-            window.postMessage({
-                source: 'omt-page',
-                type: type,
-                payload: payload || {}
-            }, '*');
-        } catch (_) {}
+        omtBusPost({
+            source: 'omt-page',
+            type: type,
+            payload: payload || {}
+        });
     }
 
     function omtSyncCollectRow() {
@@ -164,15 +162,14 @@
             return;
         }
         if (_omtSyncStarted) {
-            try {
-                window.postMessage({ source: 'omt-page', type: 'OMT_SYNC_STOP', payload: {} }, '*');
-            } catch (_) {}
+            omtBusPost({ source: 'omt-page', type: 'OMT_SYNC_STOP', payload: {} });
         }
         _omtSyncStarted = false;
     }
 
     // Listeners only when the internal feature flag is on.
     if (omtSyncFeatureOn()) {
+        // E2E harness still drives sync via window.postMessage({ source: 'omt-e2e' }).
         window.addEventListener('message', (event) => {
             if (event.source !== window) return;
             const data = event.data;
@@ -192,9 +189,7 @@
             }
         });
 
-        window.addEventListener('message', (event) => {
-            if (event.source !== window) return;
-            const data = event.data;
+        omtBusListen((data) => {
             if (!data || data.source !== 'omt-bridge') return;
 
             if (data.type === 'OMT_SYNC_REMOTE') {

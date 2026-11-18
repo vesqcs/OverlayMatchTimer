@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Examino OvenPlayer bus mock (/play/dvr/ shape)</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0b1220; color: #ddd; font-family: "Segoe UI", sans-serif; }
+    .page { width: 960px; height: 540px; margin: 16px auto; position: relative; background: #111; }
+    .video-container.svelte-iq8mv8 { position: absolute; inset: 0; }
+    .main-container { position: absolute; inset: 0; }
+    .op-player.ovenplayer.op-wrapper.large,
+    .op-core-ui-wrapper,
+    .op-media-element-container,
+    video { position: absolute; inset: 0; width: 100%; height: 100%; }
+    video { object-fit: contain; background: #000; }
+    .setting-holder { position: absolute; right: 8px; top: 40px; z-index: 7; }
+    .hamburger-menu { position: absolute; left: 8px; top: 8px; z-index: 7; }
+    .button-bar.svelte-1azck0y { position: absolute; left: 0; right: 0; bottom: 0; height: 48px; background: rgba(255,80,0,0.25); }
+    #status { text-align: center; margin-top: 8px; color: #9ad; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="video-container svelte-iq8mv8">
+      <div class="main-container">
+        <div id="video-player" class="op-player ovenplayer op-wrapper large">
+          <div class="op-core-ui-wrapper">
+            <div class="op-media-element-container op-clear">
+              <video id="v" playsinline muted></video>
+            </div>
+          </div>
+          <div class="setting-holder op-navigators op-clear">
+            <button class="op-button op-setting-button" type="button">⚙</button>
+          </div>
+          <div class="hamburger-menu">☰</div>
+          <div class="button-bar svelte-1azck0y" id="host-button-bar"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="status">Waiting…</div>
+  <script>
+    (function () {
+      // Field-faithful host handler from examino chunk BIyTHCyh.js (function D +
+      // window "message" listener). Missing/unknown `key` → title undefined →
+      // `s.paused !== undefined` is always true → always toggle play/pause.
+      const J = {
+        2: 'refresh', 5: 'x0.5', 6: 'x1.5', 7: 'nothing', 8: 'x0.1',
+        9: 'rightByFrame', 10: 'leftByFrame', 11: 'x0.25', 12: 'x1',
+        13: '-120', 14: '+120', 15: 'x2', 16: 'jumpToStart', 17: '-7',
+        18: 'jumpToEnd', 19: 'jumpToEnd', 20: '+7', 21: '-2',
+        22: 'playPause', 23: 'playPause', 24: '+2'
+      };
+      const stats = window.__busStats = {
+        play: 0, pause: 0, waiting: 0, hostD: 0, messages: 0, busEvents: 0
+      };
+
+      function D({ target: { title: e } }) {
+        const s = document.querySelector('.ovenplayer video');
+        if (!s) return;
+        stats.hostD += 1;
+        // Same condition as field minify: undefined title always toggles.
+        if (e?.includes('playPause') || s.paused !== e?.includes('Frame')) {
+          if (s.paused) s.play().catch(() => {});
+          else s.pause();
+        }
+      }
+
+      window.addEventListener('message', (ev) => {
+        stats.messages += 1;
+        const data = ev.data;
+        if (!data || typeof data !== 'object') return;
+        if (data.type === 'forcedFocus') return;
+        if (ev.origin === window.location.origin && (data.isKeyPressed || D({ target: { title: J[data.key] } }))) {
+          /* host short-circuit when isKeyPressed is truthy */
+        }
+      });
+
+      window.addEventListener('omt-bridge-bus', () => { stats.busEvents += 1; });
+
+      const v = document.getElementById('v');
+      ['play', 'pause', 'waiting'].forEach((type) => {
+        v.addEventListener(type, () => { stats[type] += 1; });
+      });
+
+      // Finite VOD-like media under a /play/dvr/-shaped page (path set by e2e server).
+      v.src = '/sample-match.mp4';
+      v.addEventListener('loadeddata', () => {
+        v.play().catch(() => {});
+        document.getElementById('status').textContent = 'Ready';
+      }, { once: true });
+
+      // Probe helper: prove legacy postMessage still toggles (bisect / docs).
+      window.__omtHostProbePostMessage = function () {
+        window.postMessage({ source: 'probe', type: 'OMT_STORAGE_SYNC', values: {} }, '*');
+      };
+    })();
+  </script>
+</body>
+</html>

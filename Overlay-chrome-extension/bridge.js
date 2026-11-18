@@ -1,14 +1,19 @@
 /* ============================================================
    Overlay MatchTimer — isolated-world storage bridge
    MAIN-world content.js cannot touch chrome.storage; this script
-   mirrors chrome.storage.local <-> localStorage + postMessage.
+   mirrors chrome.storage.local <-> localStorage + CustomEvent bus.
    Also used by the toolbar popup (writes) so in-page UI stays in sync.
    Kickoff-sync relay is active ONLY when OMT_SYNC_FEATURE_ENABLED.
+
+   IMPORTANT: Do NOT window.postMessage for this traffic. Examino's
+   Shuttle button-bar listens for all same-origin "message" events and
+   toggles play/pause when `key` is missing (host chunk BIyTHCyh.js).
    ============================================================ */
 (function () {
   'use strict';
 
   const SYNC_FEATURE = (typeof OMT_SYNC_FEATURE_ENABLED !== 'undefined') && !!OMT_SYNC_FEATURE_ENABLED;
+  const OMT_BUS_EVENT = 'omt-bridge-bus';
 
   const KEY_AUTO_VOD = 'omtAutoSwitchVod';
   const KEY_SHUTTLE = 'shuttleXpressEnabled';
@@ -45,6 +50,12 @@
     [KEY_SYNC_ANON]: '',
     [KEY_SYNC_ROOM]: ''
   };
+
+  function busPost(data) {
+    try {
+      window.dispatchEvent(new CustomEvent(OMT_BUS_EVENT, { detail: data }));
+    } catch (_) {}
+  }
 
   function writeLocal(key, value) {
     try {
@@ -84,9 +95,7 @@
         });
       }
     } catch (_) {}
-    try {
-      window.postMessage({ source: 'omt-bridge', type: 'OMT_STORAGE_SYNC', values }, '*');
-    } catch (_) {}
+    busPost({ source: 'omt-bridge', type: 'OMT_STORAGE_SYNC', values });
   }
 
   function loadAndSync() {
@@ -121,9 +130,7 @@
     } catch (_) {}
   }
 
-  window.addEventListener('message', (event) => {
-    if (event.source !== window) return;
-    const data = event.data;
+  function onPageMessage(data) {
     if (!data || data.source !== 'omt-page') return;
 
     if (data.type === 'OMT_STORAGE_SET') {
@@ -165,15 +172,23 @@
       sendToSw({ type: 'OMT_SYNC_STOP_POLL' });
       return;
     }
+  }
+
+  window.addEventListener(OMT_BUS_EVENT, (event) => {
+    onPageMessage(event && event.detail);
+  });
+
+  // E2E / legacy page posts (production page uses CustomEvent only).
+  window.addEventListener('message', (event) => {
+    if (event.source !== window) return;
+    onPageMessage(event.data);
   });
 
   if (SYNC_FEATURE) {
     try {
       chrome.runtime.onMessage.addListener((msg) => {
         if (!msg || msg.type !== 'OMT_SYNC_REMOTE') return;
-        try {
-          window.postMessage({ source: 'omt-bridge', type: 'OMT_SYNC_REMOTE', row: msg.row }, '*');
-        } catch (_) {}
+        busPost({ source: 'omt-bridge', type: 'OMT_SYNC_REMOTE', row: msg.row });
       });
     } catch (_) {}
   }
