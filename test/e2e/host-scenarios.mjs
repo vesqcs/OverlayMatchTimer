@@ -9,11 +9,13 @@ const ROUTES = [
   // More-specific bus mock before the generic field DVR route.
   { re: /^\/examino\/play\/dvr\/bus-mock/, file: 'examino-ovenplayer-bus-mock.html' },
   { re: /^\/examino\/play\/dvr\//, file: 'examino-field-mock.html' },
+  { re: /^\/xeatre\/dvrplayer\.html/, file: 'xeatre-dvr-mock.html' },
   { re: /^\/inplay\/schedule\/?$/, file: 'inplayip-schedule-mock.html' }
 ];
 
 export const EXAMINO_FIELD_PATH = '/examino/play/dvr/match-123';
 export const EXAMINO_BUS_MOCK_PATH = '/examino/play/dvr/bus-mock';
+export const XEATRE_DVR_PATH = '/xeatre/dvrplayer.html';
 export const INPLAY_SCHEDULE_PATH = '/inplay/schedule';
 
 function contentType(filePath) {

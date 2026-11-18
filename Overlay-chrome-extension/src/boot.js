@@ -38,6 +38,9 @@
             nativeChromeObserver.disconnect();
             nativeChromeObserver = null;
         }
+        if (typeof stopXeatreNativeChromeObserver === 'function') {
+            try { stopXeatreNativeChromeObserver(); } catch (_) {}
+        }
         if (examinoSettingsRefreshTimer) {
             clearTimeout(examinoSettingsRefreshTimer);
             examinoSettingsRefreshTimer = null;
@@ -244,6 +247,9 @@
         if (typeof omtKickoffSyncStart === 'function') omtKickoffSyncStart();
         if (site.id === 'examino') {
             initExaminoPlayerFeatures();
+        }
+        if (site.id === 'xeatre' && typeof initXeatrePlayerFeatures === 'function') {
+            initXeatrePlayerFeatures();
         }
         if (site.id === 'local') {
             installLocalPlayerFeatures();

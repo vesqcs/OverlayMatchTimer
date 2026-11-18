@@ -27,7 +27,7 @@ Concat order is `Overlay-chrome-extension/scripts/module-order.json`.
 | `src/adapters/inplayip.js` | InplayIP Video.js adapter |
 | `src/adapters/examino.js` | Examino OpenPlayer adapter |
 | `src/adapters/local.js` | Extension local player (`player.html`) |
-| `src/adapters/xeatre.js` | Xeatre **stub** (`stub: true` → script idles; waits for Vasco material) |
+| `src/adapters/xeatre.js` | Xeatre DVR popup (Video.js 7.7.4 + VHS / Wowza nDVR); host chrome hidden |
 | `src/adapters/detect.js` | Host/path/`data-omt-site` → adapter |
 | `src/boot.js` | `teardown` / `boot` / SPA monitor / `init` |
 | `src/hls.js` | hls.js / VHS discovery + DVR anti-snap patch |
@@ -73,12 +73,11 @@ Each adapter is a plain object:
 }
 ```
 
-### Adding Xeatre later
+### Xeatre (v2.1.0)
 
-1. Replace `src/adapters/xeatre.js` stub with a real adapter (same interface).
-2. Register host/path detection in `src/adapters/detect.js` (already has a placeholder).
-3. Add `src/xeatre-features.js` only if host-only behaviour is needed (mirror Examino).
-4. Append the new fragment in `module-order.json` **before** `src/entry.js`, rebuild, commit `content.js`.
+1. Adapter: `src/adapters/xeatre.js` (Video.js shell / `.vjs-tech`).
+2. Host-only hide: `src/xeatre-features.js` + `html.omt-host-xeatre.omt-hud-on` CSS — hides the 6-column panel and native VJS bar; never hides media hosts / `<video>` ancestors; never `window.postMessage`.
+3. Manifest matches `*://*.xeatre.cloud/*` (+ localhost `*xeatre*` fixtures).
 
 ## Worlds
 

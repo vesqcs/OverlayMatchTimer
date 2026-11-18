@@ -1,4 +1,4 @@
-/* Content-script entry: early Examino hooks, then boot. */
+/* Content-script entry: early Examino / Xeatre hooks, then boot. */
     /* =========================================================
        ENTRY POINT
        ========================================================= */
@@ -10,6 +10,15 @@
         if (document.documentElement) {
             startExaminoNativeChromeObserver();
             hideExaminoNativeChrome();
+        }
+    }
+
+    if (site.id === 'xeatre') {
+        try { document.documentElement.classList.add('omt-host-xeatre'); } catch (_) {}
+        if (typeof injectXeatreHideCSS === 'function') injectXeatreHideCSS();
+        if (document.documentElement) {
+            if (typeof startXeatreNativeChromeObserver === 'function') startXeatreNativeChromeObserver();
+            if (typeof hideXeatreNativeChrome === 'function') hideXeatreNativeChrome();
         }
     }
 

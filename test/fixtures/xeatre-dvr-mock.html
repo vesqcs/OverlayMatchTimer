@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Videoplayer</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0a0a0a; color: #eee; font-family: "Segoe UI", sans-serif; }
+    .page { width: 960px; margin: 12px auto; display: flex; flex-direction: column; gap: 0; }
+    .video-js {
+      position: relative; width: 960px; height: 540px; background: #000;
+      /* stacking context like a real VJS shell */
+      isolation: isolate;
+    }
+    .video-js video.vjs-tech {
+      position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000;
+    }
+    .vjs-control-bar {
+      position: absolute; left: 0; right: 0; bottom: 0; height: 36px;
+      display: flex; align-items: center; gap: 8px; padding: 0 10px;
+      background: rgba(20,20,20,0.85); z-index: 4;
+    }
+    .vjs-control-bar button, .vjs-live-control {
+      background: transparent; border: 0; color: #ddd; font-size: 12px; cursor: pointer;
+    }
+    .vjs-progress-control { flex: 1; height: 6px; background: #444; border-radius: 3px; position: relative; }
+    .vjs-play-progress { position: absolute; right: 0; top: 0; bottom: 0; width: 8px; background: #e0201b; border-radius: 50%; }
+    /* 6-column host panel (docked below video + floating duplicate) */
+    .xeatre-control-panel {
+      display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px;
+      background: #111; padding: 10px; border-top: 1px solid #333;
+    }
+    .xeatre-control-panel.floating {
+      position: absolute; left: 50%; bottom: 48px; transform: translateX(-50%);
+      width: 720px; border-radius: 10px; background: rgba(20,20,20,0.82);
+      z-index: 6; border: 1px solid rgba(255,255,255,0.08);
+    }
+    .xeatre-col { display: flex; flex-direction: column; gap: 4px; align-items: stretch; }
+    .xeatre-col button {
+      background: #222; color: #ddd; border: 1px solid #444; padding: 6px 4px;
+      font-size: 11px; cursor: pointer; border-radius: 4px;
+    }
+    .xeatre-col button.selected { background: #1a7a3c; border-color: #2a9a4c; color: #fff; }
+    #AutoHide {
+      position: absolute; right: 12px; bottom: 200px; z-index: 7;
+      background: #c01818; color: #fff; border: 0; border-radius: 4px;
+      padding: 4px 8px; font-size: 11px; cursor: pointer;
+    }
+    #status { text-align: center; margin-top: 8px; color: #9ad; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div id="video-player" class="video-js vjs-fluid">
+      <video id="v" class="vjs-tech" playsinline muted></video>
+      <div class="vjs-control-bar" role="group" aria-label="Video Controls">
+        <button type="button" class="vjs-play-control" id="vjs-pause">Pause</button>
+        <button type="button" class="vjs-mute-control">Vol</button>
+        <div class="vjs-progress-control"><div class="vjs-play-progress" title="LIVE edge"></div></div>
+        <div class="vjs-live-control">LIVE</div>
+        <button type="button" class="vjs-picture-in-picture-control">PiP</button>
+        <button type="button" class="vjs-fullscreen-control">FS</button>
+      </div>
+      <!-- Floating copy of the host panel (FULL mode) -->
+      <div class="xeatre-control-panel floating" id="xeatre-panel-float" hidden>
+        <!-- filled by script -->
+      </div>
+      <button type="button" id="AutoHide">Auto hide</button>
+    </div>
+    <!-- Docked host panel below the video -->
+    <div class="xeatre-control-panel" id="xeatre-panel-dock"></div>
+  </div>
+  <div id="status">Waiting…</div>
+  <script>
+    (function () {
+      document.documentElement.dataset.omtSite = 'xeatre';
+      const stats = window.__xeatreStats = {
+        play: 0, pause: 0, waiting: 0, hostClicks: 0, messages: 0
+      };
+      // Host-like Shuttle message handler (must not be fed by our bus).
+      window.addEventListener('message', (ev) => {
+        stats.messages += 1;
+        const data = ev.data;
+        if (!data || typeof data !== 'object') return;
+        if (data.type === 'forcedFocus') return;
+        if (ev.origin === window.location.origin && !data.isKeyPressed) {
+          const v = document.querySelector('video');
+          if (v) {
+            if (v.paused) v.play().catch(() => {});
+            else v.pause();
+          }
+        }
+      });
+
+      const COLS = [
+        [
+          { id: 'GoDoc', label: 'i DOC' },
+          { id: 'SkipM30', label: '-30 s' },
+          { id: 'Speed025', label: '0.25 Speed' }
+        ],
+        [
+          { id: 'GoStart', label: '|< FRAME' },
+          { id: 'SkipM7', label: '-7 s' },
+          { id: 'Speed05', label: '0.5 Speed' }
+        ],
+        [
+          { id: 'jwplay', label: 'PLAY / PAUSE' },
+          { id: 'SkipM2', label: '-2 s' },
+          { id: 'Speed1', label: '1 Speed', selected: true }
+        ],
+        [
+          { id: 'GoLive', label: 'LIVE' },
+          { id: 'SkipP2', label: '+2 s' },
+          { id: 'Speed15', label: '1.5 Speed' }
+        ],
+        [
+          { id: 'GoEnd', label: '>| FRAME' },
+          { id: 'SkipP7', label: '+7 s' },
+          { id: 'Speed2', label: '2 Speed' }
+        ],
+        [
+          { id: 'FullScreen', label: 'FULL' },
+          { id: 'SkipP30', label: '+30 s' },
+          { id: 'RtmpBtn', label: 'RTMP' }
+        ]
+      ];
+
+      function buildPanel(root, idPrefix) {
+        root.innerHTML = '';
+        COLS.forEach((col, ci) => {
+          const wrap = document.createElement('div');
+          wrap.className = 'xeatre-col';
+          col.forEach((btn) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            // Dock keeps canonical IDs from js/dvrplayer.js; float uses prefixed ids.
+            b.id = idPrefix ? (idPrefix + '-' + btn.id) : btn.id;
+            b.textContent = btn.label;
+            if (btn.selected) b.classList.add('selected');
+            b.addEventListener('click', () => { stats.hostClicks += 1; });
+            wrap.appendChild(b);
+          });
+          root.appendChild(wrap);
+        });
+      }
+
+      const dock = document.getElementById('xeatre-panel-dock');
+      const flt = document.getElementById('xeatre-panel-float');
+      buildPanel(dock, '');
+      buildPanel(flt, 'float');
+      // Show floating panel too (FULL-mode look) so hide rules cover both.
+      flt.hidden = false;
+
+      document.getElementById('AutoHide').addEventListener('click', () => {
+        stats.hostClicks += 1;
+      });
+      document.querySelectorAll('.vjs-control-bar button').forEach((b) => {
+        b.addEventListener('click', () => { stats.hostClicks += 1; });
+      });
+
+      const v = document.getElementById('v');
+      ['play', 'pause', 'waiting'].forEach((type) => {
+        v.addEventListener(type, () => { stats[type] += 1; });
+      });
+      // Finite media under a DVR-shaped page (Wowza window would be live-seekable).
+      v.src = '/sample-match.mp4';
+      v.addEventListener('loadeddata', () => {
+        v.play().catch(() => {});
+        document.getElementById('status').textContent = 'Ready';
+      }, { once: true });
+
+      // Minimal Video.js-like registry so getHlsInstance can no-op safely.
+      window.videojs = window.videojs || {
+        getPlayers() { return {}; }
+      };
+    })();
+  </script>
+</body>
+</html>

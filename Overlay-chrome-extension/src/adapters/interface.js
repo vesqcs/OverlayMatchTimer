@@ -20,4 +20,7 @@
 
    Optional:
      stub: true                        // detectSite idles the script
+
+   Xeatre (v2.1.0): Video.js + VHS Wowza DVR; host chrome fully hidden via
+   html.omt-host-xeatre scoped CSS — never hide media hosts / <video> ancestors.
    ========================================================= */
