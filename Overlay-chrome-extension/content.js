@@ -320,12 +320,21 @@
 /* Xeatre (Stats Perform Global Media Manager DVR popup) site adapter.
  * Player: Video.js 7.7.4 + videojs-http-streaming over Wowza nDVR HLS.
  * Host-only hide/CSS lives in xeatre-features.js — do not touch Examino/InPlay.
+ * v2.2.5: never call videojs(); never reparent <video>; HUD mounts outside the
+ * VJS player tree so host MutationObservers cannot re-init "hdmi-video".
  */
     const SITE_XEATRE = {
         id: 'xeatre',
         rootClass: 'omt-xeatre',
 
         findVideo() {
+            // Field player id is "hdmi-video" (VJS shell or the tech itself).
+            const byId = document.getElementById('hdmi-video');
+            if (byId) {
+                if (byId.tagName === 'VIDEO') return byId;
+                const inner = byId.querySelector('video.vjs-tech, video');
+                if (inner) return inner;
+            }
             const tech = document.querySelector('.video-js video.vjs-tech, .video-js video, video.vjs-tech');
             if (tech && tech.tagName === 'VIDEO') return tech;
             const any = document.querySelector('video');
@@ -333,17 +342,25 @@
         },
 
         findAnchor(videoEl) {
-            // Prefer the Video.js shell (same idea as InPlay). Never use a node
-            // we hide — .vjs-control-bar is a sibling of the tech, not the shell.
-            return videoEl.closest('.video-js') ||
+            // Prefer a parent WRAPPER of the Video.js shell so #omt-root is a
+            // sibling of the player — not a child. Appending into #hdmi-video /
+            // .video-js mutates the player tree and can make the host call
+            // videojs('hdmi-video') again ("already initialised" → black).
+            const shell = videoEl.closest('.video-js') ||
+                videoEl.closest('#hdmi-video') ||
                 videoEl.closest('.vjs-player') ||
-                videoEl.closest('#video-player') ||
-                videoEl.closest('.player-container') ||
-                videoEl.parentElement;
+                videoEl.closest('#video-player');
+            if (shell && shell.parentElement &&
+                shell.parentElement !== document.body &&
+                shell.parentElement !== document.documentElement) {
+                return shell.parentElement;
+            }
+            return shell || videoEl.parentElement;
         },
 
         findFullscreenTarget(videoEl) {
             return videoEl.closest('.video-js') ||
+                videoEl.closest('#hdmi-video') ||
                 videoEl.closest('#video-player') ||
                 videoEl.parentElement ||
                 videoEl;
@@ -357,13 +374,21 @@
             if (typeof injectXeatreHideCSS === 'function') injectXeatreHideCSS();
             if (typeof hideXeatreNativeChrome === 'function') hideXeatreNativeChrome();
             if (typeof startXeatreNativeChromeObserver === 'function') startXeatreNativeChromeObserver();
-            // Soften VJS keyboard capture so our capture-phase hotkeys win; CSS hides chrome.
+            // Soften VJS keyboard capture on the tech only — do not attribute-mutate
+            // the player shell (keeps host videojs() from re-running).
             try {
-                document.querySelectorAll('.video-js, .vjs-tech').forEach((el) => {
-                    if (el.id === 'omt-root' || (omtRoot && omtRoot.contains(el))) return;
-                    try { el.setAttribute('tabindex', '-1'); } catch (_) {}
-                });
+                const tech = videoEl && videoEl.tagName === 'VIDEO' ? videoEl :
+                    document.querySelector('#hdmi-video video, video.vjs-tech, .video-js video');
+                if (tech && tech !== omtRoot && !(omtRoot && omtRoot.contains(tech))) {
+                    try { tech.setAttribute('tabindex', '-1'); } catch (_) {}
+                }
             } catch (_) {}
+            if (typeof omtDebugXeatre === 'function') {
+                omtDebugXeatre('suppressHostControls', {
+                    videoId: videoEl && videoEl.id || null,
+                    paint: typeof describeXeatreVideoPaint === 'function' ? describeXeatreVideoPaint() : null
+                });
+            }
         },
 
         // Wowza DVR / VHS often reports Infinity duration; seekable end is enough.
@@ -7037,11 +7062,29 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         setTimeout(goLiveEdgeIfNeeded, 800);
     }
 
-/* Xeatre-only: hide ALL host chrome (6-column panel + native VJS bar).
- * Safe rules only — never remove nodes, never hide a media host / <video>
- * ancestor (Examino 2.0.4 lesson). No window.postMessage (Examino 2.0.5).
+/* Xeatre-only: hide host chrome (6-column panel + VJS control bar).
+ * v2.2.5: transplant the pre-2.1.0 safe hide — never blank the picture.
+ * - Hide only control-bar / chrome leaves (not poster / tech / player shell).
+ * - Never call videojs(); never reparent <video>.
+ * - Force-visible CSS on the tech so a sticky class cannot black the feed.
  */
     let xeatreChromeObserver = null;
+
+    function omtDebugXeatre(step, detail) {
+        try {
+            if (detail === undefined) {
+                console.log('[OMT-DEBUG][xeatre] ' + step);
+                return;
+            }
+            let payload;
+            try {
+                payload = typeof detail === 'string' ? detail : JSON.stringify(detail);
+            } catch (_) {
+                payload = String(detail);
+            }
+            console.log('[OMT-DEBUG][xeatre] ' + step + ' ' + payload);
+        } catch (_) {}
+    }
 
     function injectXeatreHideCSS() {
         let style = document.getElementById('omt-xeatre-hide-css');
@@ -7051,15 +7094,15 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             (document.head || document.documentElement).appendChild(style);
         }
         style.textContent = [
-            /* Native Video.js chrome — leaf controls only, never .video-js shell. */
+            /* Chrome only — never .video-js shell, never video/.vjs-tech, never poster
+             * (hiding poster while tech fails to paint = field black screen). */
             'html.omt-host-xeatre.omt-hud-on .vjs-control-bar,',
             'html.omt-host-xeatre.omt-hud-on .vjs-big-play-button,',
-            'html.omt-host-xeatre.omt-hud-on .vjs-loading-spinner,',
-            'html.omt-host-xeatre.omt-hud-on .vjs-poster,',
-            'html.omt-host-xeatre.omt-hud-on .vjs-text-track-display,',
             'html.omt-host-xeatre.omt-hud-on .vjs-menu-button-popup .vjs-menu,',
-            'html.omt-host-xeatre.omt-hud-on .vjs-error-display,',
-            'html.omt-host-xeatre.omt-hud-on .vjs-modal-dialog,',
+            /* Pre-2.1.0 known-good ControlBar overlays (a69dacb). */
+            'html.omt-host-xeatre.omt-hud-on #ControlBar.overlay-fullscreen,',
+            'html.omt-host-xeatre.omt-hud-on #ControlBar.overlay-normal,',
+            'html.omt-host-xeatre.omt-hud-on #ControlBar,',
             /* Known host panel controls from js/dvrplayer.js + screenshot layout. */
             'html.omt-host-xeatre.omt-hud-on #jwplay,',
             'html.omt-host-xeatre.omt-hud-on #GoLive,',
@@ -7083,12 +7126,22 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             /* Undo if a sticky class ever lands on a media host. */
             'html.omt-host-xeatre.omt-hud-on .video-js.omt-xeatre-host-hidden,',
             'html.omt-host-xeatre.omt-hud-on .vjs-tech.omt-xeatre-host-hidden,',
+            'html.omt-host-xeatre.omt-hud-on #hdmi-video.omt-xeatre-host-hidden,',
             'html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(video),',
             'html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(.vjs-tech) {',
             '  display: block !important;',
             '  visibility: visible !important;',
             '  opacity: 1 !important;',
             '  pointer-events: auto !important;',
+            '}',
+            /* Hard guarantee: the picture layer stays painted under our HUD. */
+            'html.omt-host-xeatre.omt-hud-on #hdmi-video,',
+            'html.omt-host-xeatre.omt-hud-on #hdmi-video video,',
+            'html.omt-host-xeatre.omt-hud-on .video-js > video,',
+            'html.omt-host-xeatre.omt-hud-on video.vjs-tech,',
+            'html.omt-host-xeatre.omt-hud-on .vjs-tech {',
+            '  visibility: visible !important;',
+            '  opacity: 1 !important;',
             '}'
         ].join('\n');
     }
@@ -7097,13 +7150,14 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         if (!el || el.nodeType !== 1) return true;
         try {
             if (el.tagName === 'VIDEO' || el.tagName === 'AUDIO') return true;
+            if (el.id === 'hdmi-video') return true;
             if (el.classList && (
                 el.classList.contains('video-js') ||
                 el.classList.contains('vjs-tech') ||
                 el.classList.contains('vjs-player')
             )) return true;
             if (el.id === 'omt-root' || (omtRoot && omtRoot.contains(el))) return true;
-            if (el.querySelector && el.querySelector('video, .vjs-tech, .video-js')) return true;
+            if (el.querySelector && el.querySelector('video, .vjs-tech, .video-js, #hdmi-video')) return true;
         } catch (_) {
             return true;
         }
@@ -7113,6 +7167,13 @@ var OMT_SYNC_FEATURE_ENABLED = false;
     function markXeatreHostHidden(el) {
         if (!el || el.id === 'omt-root' || (omtRoot && omtRoot.contains(el))) return;
         if (omtXeatreIsMediaHostNode(el)) return;
+        // Never stamp sticky hide inside the VJS player tree except the control bar.
+        try {
+            if (el.closest && el.closest('.video-js, #hdmi-video') &&
+                !(el.closest('.vjs-control-bar') || el.classList.contains('vjs-control-bar'))) {
+                return;
+            }
+        } catch (_) {}
         el.classList.add('omt-xeatre-host-hidden');
     }
 
@@ -7120,6 +7181,59 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         document.querySelectorAll('.omt-xeatre-host-hidden').forEach((el) => {
             if (omtXeatreIsMediaHostNode(el)) el.classList.remove('omt-xeatre-host-hidden');
         });
+    }
+
+    function omtXeatreCsSnap(el) {
+        if (!el) return null;
+        try {
+            const cs = getComputedStyle(el);
+            const r = el.getBoundingClientRect();
+            return {
+                tag: el.tagName,
+                id: el.id || null,
+                className: typeof el.className === 'string' ? el.className.slice(0, 120) : null,
+                display: cs.display,
+                visibility: cs.visibility,
+                opacity: cs.opacity,
+                w: Math.round(r.width),
+                h: Math.round(r.height)
+            };
+        } catch (_) {
+            return null;
+        }
+    }
+
+    /** Field diagnostics: video + ancestors up to the player shell. */
+    function describeXeatreVideoPaint() {
+        const video = (typeof site !== 'undefined' && site && typeof site.findVideo === 'function' && site.findVideo()) ||
+            document.querySelector('#hdmi-video video, #hdmi-video.vjs-tech, video.vjs-tech, .video-js video, video');
+        const chain = [];
+        let node = video;
+        let guard = 0;
+        while (node && node.nodeType === 1 && guard++ < 12) {
+            chain.push(omtXeatreCsSnap(node));
+            if (node.classList && (node.classList.contains('video-js') || node.id === 'hdmi-video' ||
+                node.id === 'video-player')) break;
+            node = node.parentElement;
+        }
+        let playerInitCount = null;
+        let playerIds = [];
+        try {
+            if (window.videojs && typeof window.videojs.getPlayers === 'function') {
+                const players = window.videojs.getPlayers() || {};
+                playerIds = Object.keys(players);
+                playerInitCount = playerIds.length;
+            }
+        } catch (_) {}
+        return {
+            videoFound: !!video,
+            videoId: video && video.id || null,
+            chain,
+            playerInitCount,
+            playerIds,
+            hostXeatre: document.documentElement.classList.contains('omt-host-xeatre'),
+            hudOn: document.documentElement.classList.contains('omt-hud-on')
+        };
     }
 
     /** Hide the 6-column host panel (below-video and floating) + Auto hide. */
@@ -7132,7 +7246,7 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         const controlIds = [
             'jwplay', 'GoLive', 'GoStart', 'FullScreen',
             'Speed025', 'Speed05', 'Speed1', 'Speed15', 'Speed2',
-            'AutoHide', 'autohide'
+            'AutoHide', 'autohide', 'ControlBar'
         ];
         const panels = new Set();
         controlIds.forEach((id) => {
@@ -7142,7 +7256,6 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             let node = btn.parentElement;
             for (let i = 0; i < 5 && node; i++) {
                 if (omtXeatreIsMediaHostNode(node)) break;
-                // Prefer a panel-sized container (multiple columns / many buttons).
                 const kids = node.querySelectorAll
                     ? node.querySelectorAll('button, [id], .selected').length
                     : 0;
@@ -7156,34 +7269,19 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         panels.forEach((p) => markXeatreHostHidden(p));
 
         document.querySelectorAll(
-            '.xeatre-control-panel, .xeatre-host-panel, [data-xeatre-panel], #xeatre-controls'
+            '.xeatre-control-panel, .xeatre-host-panel, [data-xeatre-panel], #xeatre-controls, #ControlBar'
         ).forEach(markXeatreHostHidden);
 
-        // Heuristic: docked/floating grids that look like the screenshot panel
-        // (PLAY/PAUSE + LIVE + Speed labels) but never inside .video-js media tree
-        // beyond the control bar (control bar already CSS-hidden).
-        document.querySelectorAll('div, section, aside, nav').forEach((el) => {
-            if (!el || el.closest('#omt-root')) return;
-            if (omtXeatreIsMediaHostNode(el)) return;
-            if (el.closest && el.closest('.vjs-control-bar')) {
-                markXeatreHostHidden(el);
-                return;
-            }
-            const text = (el.innerText || '').replace(/\s+/g, ' ').trim();
-            if (!text || text.length > 400) return;
-            const hasPlay = /\bPLAY\b/i.test(text) && /\bPAUSE\b/i.test(text);
-            const hasLive = /\bLIVE\b/i.test(text);
-            const hasSpeed = /\b0\.25\s*Speed\b/i.test(text) || /\bSpeed\b/i.test(text);
-            const hasSkip = /(-|−|\+)\s*30\s*s/i.test(text) && /(-|−|\+)\s*2\s*s/i.test(text);
-            const hasAutoHide = /\bAuto\s*hide\b/i.test(text);
-            if ((hasPlay && hasLive && (hasSpeed || hasSkip)) || (hasAutoHide && hasLive && hasPlay)) {
-                markXeatreHostHidden(el);
-            }
-        });
+        // Leaf VJS chrome only (already CSS-hidden) — no broad innerText heuristic
+        // (2.1.0 scan could stamp sticky classes near the media tree).
+        document.querySelectorAll('.vjs-control-bar').forEach(markXeatreHostHidden);
+
+        omtDebugXeatre('hide-chrome', describeXeatreVideoPaint());
     }
 
     const OMT_XEATRE_CHROME_MIN_GAP_MS = 1000;
     try { window.__omtHideXeatreNativeChrome = hideXeatreNativeChrome; } catch (_) {}
+    try { window.__omtDescribeXeatreVideoPaint = describeXeatreVideoPaint; } catch (_) {}
 
     function startXeatreNativeChromeObserver() {
         if (xeatreChromeObserver) return;
@@ -7205,6 +7303,7 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         });
         const root = document.documentElement || document.body;
         if (root) {
+            // childList only — attribute thrash on the tech must not re-run hide.
             xeatreChromeObserver.observe(root, { childList: true, subtree: true });
         }
     }
@@ -7220,6 +7319,7 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         injectXeatreHideCSS();
         hideXeatreNativeChrome();
         startXeatreNativeChromeObserver();
+        omtDebugXeatre('init', describeXeatreVideoPaint());
         console.log('[OMT] Xeatre host chrome hide installed.');
     }
 

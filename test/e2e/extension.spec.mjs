@@ -4347,6 +4347,94 @@ async function run() {
     });
     await page.screenshot({ path: path.join(ARTIFACTS, 'v210_xeatre_dvr.png'), fullPage: true });
 
+    // ---- v2.2.5: Xeatre hdmi-video — picture painted, no double videojs(), chrome only ----
+    const xeatrePaint = await page.evaluate(async () => {
+      const shell = document.getElementById('hdmi-video');
+      const v = document.querySelector('#hdmi-video video.vjs-tech, video.vjs-tech, video');
+      const root = document.getElementById('omt-root');
+      const bar = document.querySelector('.vjs-control-bar');
+      const dock = document.getElementById('xeatre-panel-dock');
+      const poster = document.querySelector('.vjs-poster');
+      const cs = (el) => (el ? getComputedStyle(el) : null);
+      const vCs = cs(v);
+      const shellCs = cs(shell);
+      const rect = v ? v.getBoundingClientRect() : { width: 0, height: 0 };
+      const opacity = vCs ? Number(vCs.opacity) : 0;
+      const displayOk = !!(vCs && vCs.display !== 'none' && vCs.visibility !== 'hidden');
+      const sizeOk = rect.width >= 100 && rect.height >= 24;
+      const opacityOk = opacity >= 0.99;
+      // Our HUD must be a sibling of the player (not inside #hdmi-video).
+      const hudOutsidePlayer = !!(root && shell && !shell.contains(root) &&
+        root.parentElement && shell.parentElement === root.parentElement);
+      const hostBarHidden = !!(bar && (cs(bar).display === 'none' || cs(bar).visibility === 'hidden' ||
+        Number(cs(bar).opacity) === 0));
+      const dockHidden = !!(dock && (cs(dock).display === 'none' || Number(cs(dock).opacity) === 0));
+      // Poster must NOT be force-hidden by our chrome rules (may still be host-hidden).
+      const posterNotForceHiddenByOmt = !poster || cs(poster).display !== 'none' ||
+        !document.getElementById('omt-xeatre-hide-css') ||
+        !(document.getElementById('omt-xeatre-hide-css').textContent || '').includes('.vjs-poster');
+      const warns = window.__xeatreVideojsWarns || [];
+      const stats = window.__xeatreStats || {};
+      // Sample a pixel from the canvas stream isn't available cross-origin; use
+      // paintedFrames + playing as proof the tech is live.
+      try { await v.play(); } catch (_) {}
+      await new Promise((r) => setTimeout(r, 400));
+      const chain = [];
+      let n = v;
+      let g = 0;
+      while (n && n.nodeType === 1 && g++ < 8) {
+        const c = cs(n);
+        chain.push({
+          tag: n.tagName, id: n.id || null,
+          display: c.display, visibility: c.visibility, opacity: c.opacity,
+          w: Math.round(n.getBoundingClientRect().width),
+          h: Math.round(n.getBoundingClientRect().height)
+        });
+        if (n.id === 'hdmi-video' || (n.classList && n.classList.contains('video-js'))) break;
+        n = n.parentElement;
+      }
+      return {
+        ok: displayOk && sizeOk && opacityOk && hostBarHidden && dockHidden &&
+          hudOutsidePlayer && !!root && warns.length === 0 &&
+          (stats.videojsWarns || 0) === 0 && (stats.videojsInits || 0) === 1 &&
+          (stats.paintedFrames || 0) > 5 && v && v.paused === false &&
+          posterNotForceHiddenByOmt,
+        displayOk,
+        sizeOk,
+        opacityOk,
+        hostBarHidden,
+        dockHidden,
+        hudOutsidePlayer,
+        omtParent: root && root.parentElement && root.parentElement.id,
+        shellParent: shell && shell.parentElement && shell.parentElement.id,
+        videojsInits: stats.videojsInits || 0,
+        videojsWarns: stats.videojsWarns || 0,
+        warns,
+        paintedFrames: stats.paintedFrames || 0,
+        paused: v ? v.paused : null,
+        chain,
+        posterDisplay: poster ? cs(poster).display : null,
+        hideCssHasPoster: !!(document.getElementById('omt-xeatre-hide-css') &&
+          (document.getElementById('omt-xeatre-hide-css').textContent || '').includes('.vjs-poster'))
+      };
+    });
+    results.push({
+      name: 'xeatre-hdmi-video-painted-no-reinit',
+      pass: xeatrePaint.ok === true,
+      detail: xeatrePaint
+    });
+    results.push({
+      name: 'xeatre-no-already-initialised-warning',
+      pass: (xeatrePaint.videojsWarns || 0) === 0 && (xeatrePaint.warns || []).length === 0 &&
+        (xeatrePaint.videojsInits || 0) === 1,
+      detail: {
+        videojsInits: xeatrePaint.videojsInits,
+        videojsWarns: xeatrePaint.videojsWarns,
+        warns: xeatrePaint.warns
+      }
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v225_xeatre_hdmi_painted.png'), fullPage: true });
+
     // ---------- InPlay collapsed player: HUD stays inside the player box ----------
     // No visibility guard (2.0.1–2.0.2 toggled HUD/host chrome on layout
     // changes). The HUD is mounted once; the anchor is a stacking context so
