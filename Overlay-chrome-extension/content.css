@@ -2141,17 +2141,18 @@ html.omt-host-xeatre.omt-hud-on .video-js.vjs-fluid {
     max-height: 100vh !important;
     z-index: 2147483646;
 }
-/* Tiny popup: keep panel/bar inside the window (scale + lower bottom offset). */
+/* Tiny popup: keep panel/bar inside the window (scale + lower bottom offset).
+   Scale uses the independent CSS `scale` property so it multiplies on top of
+   user panel size/compact prefs (width classes) and does not fight drag
+   `transform`. Do not hardcode width here. */
 #omt-root.omt-xeatre.omt-compact #controls-panel {
     bottom: 56px;
-    width: min(560px, calc(100% - 12px));
 }
 #omt-root.omt-xeatre.omt-xeatre-micro #controls-panel {
     /* Tiny popup: park panel at top so it cannot overflow above the bar. */
     top: 4px;
     bottom: auto;
-    width: min(480px, calc(100vw - 8px));
-    transform: translateX(-50%) scale(0.55);
+    scale: 0.55;
     transform-origin: top center;
     max-height: calc(100vh - 56px);
     overflow: hidden;
@@ -2160,7 +2161,7 @@ html.omt-host-xeatre.omt-hud-on .video-js.vjs-fluid {
     padding: 10px 4px 2px;
 }
 #omt-root.omt-xeatre.omt-xeatre-micro #match-timer-wrap {
-    transform: scale(0.8);
+    scale: 0.8;
     transform-origin: top left;
 }
 #omt-root.omt-xeatre.omt-xeatre-micro .controls-content {
