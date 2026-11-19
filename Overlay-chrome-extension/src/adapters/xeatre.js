@@ -3,6 +3,8 @@
  * Host-only hide/CSS lives in xeatre-features.js — do not touch Examino/InPlay.
  * v2.2.5: never call videojs(); never reparent <video>; HUD mounts outside the
  * VJS player tree so host MutationObservers cannot re-init "hdmi-video".
+ * v2.2.9: never mount HUD under #ControlBar (may wrap the player); never
+ * attribute-mutate the tech/shell (host re-calls videojs → already initialised).
  */
     const SITE_XEATRE = {
         id: 'xeatre',
@@ -31,10 +33,21 @@
                 videoEl.closest('#hdmi-video') ||
                 videoEl.closest('.vjs-player') ||
                 videoEl.closest('#video-player');
-            if (shell && shell.parentElement &&
-                shell.parentElement !== document.body &&
-                shell.parentElement !== document.documentElement) {
-                return shell.parentElement;
+            let anchor = shell && shell.parentElement;
+            // Field: #ControlBar may WRAP #hdmi-video. Never mount under a
+            // chrome wrapper we hide — HUD would go display:none with the video.
+            while (anchor && (
+                anchor.id === 'ControlBar' ||
+                (anchor.classList && (
+                    anchor.classList.contains('vjs-control-bar') ||
+                    (anchor.classList.contains('overlay-fullscreen') && anchor.id === 'ControlBar') ||
+                    (anchor.classList.contains('overlay-normal') && anchor.id === 'ControlBar')
+                ))
+            )) {
+                anchor = anchor.parentElement;
+            }
+            if (anchor && anchor !== document.body && anchor !== document.documentElement) {
+                return anchor;
             }
             return shell || videoEl.parentElement;
         },
@@ -55,15 +68,9 @@
             if (typeof injectXeatreHideCSS === 'function') injectXeatreHideCSS();
             if (typeof hideXeatreNativeChrome === 'function') hideXeatreNativeChrome();
             if (typeof startXeatreNativeChromeObserver === 'function') startXeatreNativeChromeObserver();
-            // Soften VJS keyboard capture on the tech only — do not attribute-mutate
-            // the player shell (keeps host videojs() from re-running).
-            try {
-                const tech = videoEl && videoEl.tagName === 'VIDEO' ? videoEl :
-                    document.querySelector('#hdmi-video video, video.vjs-tech, .video-js video');
-                if (tech && tech !== omtRoot && !(omtRoot && omtRoot.contains(tech))) {
-                    try { tech.setAttribute('tabindex', '-1'); } catch (_) {}
-                }
-            } catch (_) {}
+            // v2.2.9: do NOT set tabindex / attributes on tech or shell — host
+            // MutationObservers may re-call videojs('hdmi-video') ("already initialised").
+            // Never call videojs(); never reparent <video>.
             if (typeof omtDebugXeatre === 'function') {
                 omtDebugXeatre('suppressHostControls', {
                     videoId: videoEl && videoEl.id || null,

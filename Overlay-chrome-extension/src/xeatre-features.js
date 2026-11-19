@@ -1,8 +1,10 @@
 /* Xeatre-only: hide host chrome (6-column panel + VJS control bar).
  * v2.2.5: transplant the pre-2.1.0 safe hide — never blank the picture.
+ * v2.2.9: never display:none #hdmi-video / .video-js / any ancestor of <video>
+ *   (field: #ControlBar wrapped the player → bare #ControlBar hide = black).
  * - Hide only control-bar / chrome leaves (not poster / tech / player shell).
- * - Never call videojs(); never reparent <video>.
- * - Force-visible CSS on the tech so a sticky class cannot black the feed.
+ * - Never call videojs(); never reparent <video>; never attribute-mutate the shell.
+ * - Force-visible CSS on the tech + player root so a sticky class cannot black the feed.
  */
     let xeatreChromeObserver = null;
 
@@ -22,6 +24,10 @@
         } catch (_) {}
     }
 
+    /** CSS :not(:has(...)) so we never hide a node that contains the picture. */
+    const OMT_XEATRE_NOT_MEDIA =
+        ':not(:has(#hdmi-video)):not(:has(video)):not(:has(.vjs-tech)):not(:has(.video-js))';
+
     function injectXeatreHideCSS() {
         let style = document.getElementById('omt-xeatre-hide-css');
         if (!style) {
@@ -30,16 +36,14 @@
             (document.head || document.documentElement).appendChild(style);
         }
         style.textContent = [
-            /* Chrome only — never .video-js shell, never video/.vjs-tech, never poster
-             * (hiding poster while tech fails to paint = field black screen). */
+            /* Chrome leaves only — never player root, never video ancestors. */
             'html.omt-host-xeatre.omt-hud-on .vjs-control-bar,',
             'html.omt-host-xeatre.omt-hud-on .vjs-big-play-button,',
             'html.omt-host-xeatre.omt-hud-on .vjs-menu-button-popup .vjs-menu,',
-            /* Pre-2.1.0 known-good ControlBar overlays (a69dacb). */
-            'html.omt-host-xeatre.omt-hud-on #ControlBar.overlay-fullscreen,',
-            'html.omt-host-xeatre.omt-hud-on #ControlBar.overlay-normal,',
-            'html.omt-host-xeatre.omt-hud-on #ControlBar,',
-            /* Known host panel controls from js/dvrplayer.js + screenshot layout. */
+            /* ControlBar only when it does NOT wrap the player (field black). */
+            'html.omt-host-xeatre.omt-hud-on #ControlBar.overlay-fullscreen' + OMT_XEATRE_NOT_MEDIA + ',',
+            'html.omt-host-xeatre.omt-hud-on #ControlBar.overlay-normal' + OMT_XEATRE_NOT_MEDIA + ',',
+            'html.omt-host-xeatre.omt-hud-on #ControlBar' + OMT_XEATRE_NOT_MEDIA + ',',
             'html.omt-host-xeatre.omt-hud-on #jwplay,',
             'html.omt-host-xeatre.omt-hud-on #GoLive,',
             'html.omt-host-xeatre.omt-hud-on #GoStart,',
@@ -51,31 +55,36 @@
             'html.omt-host-xeatre.omt-hud-on #Speed2,',
             'html.omt-host-xeatre.omt-hud-on #AutoHide,',
             'html.omt-host-xeatre.omt-hud-on #autohide,',
-            'html.omt-host-xeatre.omt-hud-on .xeatre-control-panel,',
-            'html.omt-host-xeatre.omt-hud-on .xeatre-host-panel,',
-            'html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden {',
+            'html.omt-host-xeatre.omt-hud-on .xeatre-control-panel' + OMT_XEATRE_NOT_MEDIA + ',',
+            'html.omt-host-xeatre.omt-hud-on .xeatre-host-panel' + OMT_XEATRE_NOT_MEDIA + ',',
+            'html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden' + OMT_XEATRE_NOT_MEDIA + ' {',
             '  display: none !important;',
             '  visibility: hidden !important;',
             '  opacity: 0 !important;',
             '  pointer-events: none !important;',
             '}',
-            /* Undo if a sticky class ever lands on a media host. */
+            /* Undo sticky hide on media hosts / any node that contains the picture. */
             'html.omt-host-xeatre.omt-hud-on .video-js.omt-xeatre-host-hidden,',
             'html.omt-host-xeatre.omt-hud-on .vjs-tech.omt-xeatre-host-hidden,',
             'html.omt-host-xeatre.omt-hud-on #hdmi-video.omt-xeatre-host-hidden,',
             'html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(video),',
-            'html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(.vjs-tech) {',
+            'html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(.vjs-tech),',
+            'html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(#hdmi-video),',
+            'html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(.video-js) {',
             '  display: block !important;',
             '  visibility: visible !important;',
             '  opacity: 1 !important;',
             '  pointer-events: auto !important;',
             '}',
-            /* Hard guarantee: the picture layer stays painted under our HUD. */
+            /* Hard guarantee: player root + tech stay painted (incl. display). */
             'html.omt-host-xeatre.omt-hud-on #hdmi-video,',
+            'html.omt-host-xeatre.omt-hud-on #hdmi-video.video-js,',
+            'html.omt-host-xeatre.omt-hud-on .video-js,',
             'html.omt-host-xeatre.omt-hud-on #hdmi-video video,',
             'html.omt-host-xeatre.omt-hud-on .video-js > video,',
             'html.omt-host-xeatre.omt-hud-on video.vjs-tech,',
             'html.omt-host-xeatre.omt-hud-on .vjs-tech {',
+            '  display: block !important;',
             '  visibility: visible !important;',
             '  opacity: 1 !important;',
             '}'
@@ -93,6 +102,7 @@
                 el.classList.contains('vjs-player')
             )) return true;
             if (el.id === 'omt-root' || (omtRoot && omtRoot.contains(el))) return true;
+            // Any ancestor/container of the picture — never stamp hide on these.
             if (el.querySelector && el.querySelector('video, .vjs-tech, .video-js, #hdmi-video')) return true;
         } catch (_) {
             return true;
@@ -119,6 +129,27 @@
         });
     }
 
+    /** Drop sticky hide from the video → shell ancestor chain (belt + suspenders). */
+    function omtXeatreEnsurePlayerVisible() {
+        const video = (typeof site !== 'undefined' && site && typeof site.findVideo === 'function' && site.findVideo()) ||
+            document.querySelector('#hdmi-video video, #hdmi-video.vjs-tech, video.vjs-tech, .video-js video, video');
+        let node = video;
+        let guard = 0;
+        while (node && node.nodeType === 1 && guard++ < 16) {
+            try {
+                if (node.classList && node.classList.contains('omt-xeatre-host-hidden')) {
+                    node.classList.remove('omt-xeatre-host-hidden');
+                }
+            } catch (_) {}
+            if (node.id === 'hdmi-video' || (node.classList && node.classList.contains('video-js'))) {
+                // Continue one more level so a wrapping #ControlBar is scrubbed too.
+            }
+            if (node === document.body || node === document.documentElement) break;
+            node = node.parentElement;
+        }
+        scrubXeatreHiddenOnMedia();
+    }
+
     function omtXeatreCsSnap(el) {
         if (!el) return null;
         try {
@@ -132,14 +163,15 @@
                 visibility: cs.visibility,
                 opacity: cs.opacity,
                 w: Math.round(r.width),
-                h: Math.round(r.height)
+                h: Math.round(r.height),
+                hasHiddenClass: !!(el.classList && el.classList.contains('omt-xeatre-host-hidden'))
             };
         } catch (_) {
             return null;
         }
     }
 
-    /** Field diagnostics: video + ancestors up to the player shell. */
+    /** Field diagnostics: video + ancestors up past the player shell. */
     function describeXeatreVideoPaint() {
         const video = (typeof site !== 'undefined' && site && typeof site.findVideo === 'function' && site.findVideo()) ||
             document.querySelector('#hdmi-video video, #hdmi-video.vjs-tech, video.vjs-tech, .video-js video, video');
@@ -148,8 +180,7 @@
         let guard = 0;
         while (node && node.nodeType === 1 && guard++ < 12) {
             chain.push(omtXeatreCsSnap(node));
-            if (node.classList && (node.classList.contains('video-js') || node.id === 'hdmi-video' ||
-                node.id === 'video-player')) break;
+            if (node === document.body || node === document.documentElement) break;
             node = node.parentElement;
         }
         let playerInitCount = null;
@@ -182,7 +213,7 @@
         const controlIds = [
             'jwplay', 'GoLive', 'GoStart', 'FullScreen',
             'Speed025', 'Speed05', 'Speed1', 'Speed15', 'Speed2',
-            'AutoHide', 'autohide', 'ControlBar'
+            'AutoHide', 'autohide'
         ];
         const panels = new Set();
         controlIds.forEach((id) => {
@@ -205,13 +236,18 @@
         panels.forEach((p) => markXeatreHostHidden(p));
 
         document.querySelectorAll(
-            '.xeatre-control-panel, .xeatre-host-panel, [data-xeatre-panel], #xeatre-controls, #ControlBar'
+            '.xeatre-control-panel, .xeatre-host-panel, [data-xeatre-panel], #xeatre-controls'
         ).forEach(markXeatreHostHidden);
 
-        // Leaf VJS chrome only (already CSS-hidden) — no broad innerText heuristic
-        // (2.1.0 scan could stamp sticky classes near the media tree).
+        // ControlBar: only when it does not wrap the player.
+        document.querySelectorAll('#ControlBar').forEach((el) => {
+            if (!omtXeatreIsMediaHostNode(el)) markXeatreHostHidden(el);
+        });
+
+        // Leaf VJS chrome only — no broad heuristic near the media tree.
         document.querySelectorAll('.vjs-control-bar').forEach(markXeatreHostHidden);
 
+        omtXeatreEnsurePlayerVisible();
         omtDebugXeatre('hide-chrome', describeXeatreVideoPaint());
     }
 

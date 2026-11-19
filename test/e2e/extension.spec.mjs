@@ -4744,9 +4744,10 @@ async function run() {
       const displayOk = !!(vCs && vCs.display !== 'none' && vCs.visibility !== 'hidden');
       const sizeOk = rect.width >= 100 && rect.height >= 24;
       const opacityOk = opacity >= 0.99;
-      // Our HUD must be a sibling of the player (not inside #hdmi-video).
+      // HUD must not live inside #hdmi-video or a wrapping #ControlBar (v2.2.9).
+      const controlBar = document.getElementById('ControlBar');
       const hudOutsidePlayer = !!(root && shell && !shell.contains(root) &&
-        root.parentElement && shell.parentElement === root.parentElement);
+        !(controlBar && controlBar.contains(root)));
       const hostBarHidden = !!(bar && (cs(bar).display === 'none' || cs(bar).visibility === 'hidden' ||
         Number(cs(bar).opacity) === 0));
       const dockHidden = !!(dock && (cs(dock).display === 'none' || Number(cs(dock).opacity) === 0));
@@ -4815,6 +4816,73 @@ async function run() {
       }
     });
     await page.screenshot({ path: path.join(ARTIFACTS, 'v225_xeatre_hdmi_painted.png'), fullPage: true });
+
+    // v2.2.9: after HUD on, <video> and every ancestor must stay displayed with size
+    // (field: bare #ControlBar hide wrapped #hdmi-video → display:none / 0×0).
+    const xeatreAncestors = await page.evaluate(() => {
+      const v = document.querySelector('#hdmi-video video.vjs-tech, video.vjs-tech, video');
+      const shell = document.getElementById('hdmi-video');
+      const controlBar = document.getElementById('ControlBar');
+      const root = document.getElementById('omt-root');
+      const hideCss = document.getElementById('omt-xeatre-hide-css');
+      const hideText = (hideCss && hideCss.textContent) || '';
+      if (!v || !shell) return { ok: false, reason: 'missing-video' };
+      const cs = (el) => getComputedStyle(el);
+      const chain = [];
+      let n = v;
+      let g = 0;
+      let allOk = true;
+      while (n && n.nodeType === 1 && g++ < 14) {
+        const c = cs(n);
+        const r = n.getBoundingClientRect();
+        const displayOk = c.display !== 'none' && c.visibility !== 'hidden';
+        const sizeOk = r.width >= 8 && r.height >= 8;
+        const noSticky = !(n.classList && n.classList.contains('omt-xeatre-host-hidden'));
+        const row = {
+          tag: n.tagName, id: n.id || null,
+          display: c.display, visibility: c.visibility,
+          w: Math.round(r.width), h: Math.round(r.height),
+          displayOk, sizeOk, noSticky
+        };
+        chain.push(row);
+        if (!displayOk || !sizeOk || !noSticky) allOk = false;
+        if (n === document.body || n === document.documentElement) break;
+        n = n.parentElement;
+      }
+      const shellCs = cs(shell);
+      const barCs = controlBar ? cs(controlBar) : null;
+      // Wrapping ControlBar must NOT be display:none (contains the player).
+      const controlBarVisible = !controlBar || (
+        barCs.display !== 'none' && barCs.visibility !== 'hidden' &&
+        controlBar.getBoundingClientRect().width >= 8
+      );
+      const hudOutside = !!(root && !shell.contains(root) && !(controlBar && controlBar.contains(root)));
+      const stats = window.__xeatreStats || {};
+      // Injected hide CSS must guard #ControlBar with :not(:has(...)).
+      const cssGuardsControlBar = /#ControlBar[^,{]*:not\(:has\(/.test(hideText);
+      return {
+        ok: allOk && controlBarVisible && hudOutside && cssGuardsControlBar &&
+          shellCs.display !== 'none' &&
+          (stats.videojsWarns || 0) === 0 &&
+          (stats.videojsInits || 0) === 1 &&
+          document.documentElement.classList.contains('omt-hud-on'),
+        allOk,
+        controlBarVisible,
+        controlBarDisplay: barCs ? barCs.display : null,
+        shellDisplay: shellCs.display,
+        hudOutside,
+        hudParent: root && root.parentElement && root.parentElement.id,
+        cssGuardsControlBar,
+        videojsInits: stats.videojsInits || 0,
+        videojsWarns: stats.videojsWarns || 0,
+        chain
+      };
+    });
+    results.push({
+      name: 'xeatre-hdmi-video-ancestors-stay-visible-after-hud',
+      pass: xeatreAncestors.ok === true,
+      detail: xeatreAncestors
+    });
 
     // v2.2.6: Xeatre shares LIVE bar / button / OSD / tooltip UX (UI layer only).
     const xeatreLiveUx = await page.evaluate(async () => {

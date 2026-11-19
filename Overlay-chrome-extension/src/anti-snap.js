@@ -5,11 +5,24 @@
        back to the live edge after a user-initiated seek.
        ========================================================= */
 
+    // User-gesture latch so autoplay-policy play() is only attempted after
+    // pointer/key (avoids NotAllowedError noise on Xeatre dvrplayer).
+    let omtUserGestureSeen = false;
+    try {
+        const markGesture = () => { omtUserGestureSeen = true; };
+        document.addEventListener('pointerdown', markGesture, true);
+        document.addEventListener('keydown', markGesture, true);
+    } catch (_) {}
+
     /** Always catch play() rejection (AbortError / NotAllowedError) so the
-     *  console never shows an uncaught promise from our code. */
+     *  console never shows an uncaught promise from our code.
+     *  Xeatre: skip speculative play() until a user gesture (host also autoplays). */
     function safePlay(media) {
         if (!media) return Promise.resolve();
         try {
+            if (site && site.id === 'xeatre' && !omtUserGestureSeen && media.paused) {
+                return Promise.resolve();
+            }
             const p = media.play();
             if (p && typeof p.then === 'function') {
                 return p.catch(() => {});
