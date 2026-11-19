@@ -5007,6 +5007,182 @@ async function run() {
       detail: xeatreFsFit
     });
 
+    // v2.2.11: shrink → grow restores HUD scale without a click (default prefs).
+    await page.setViewportSize({ width: 960, height: 540 });
+    await page.waitForTimeout(80);
+    await page.evaluate(() => {
+      try {
+        localStorage.removeItem('omtPanelSize');
+        localStorage.removeItem('omtPanelCompact');
+      } catch (_) {}
+      const panel = document.getElementById('controls-panel');
+      if (panel) panel.classList.remove('omt-panel-size-small', 'omt-panel-compact');
+      if (typeof window.__omtXeatreFitViewport === 'function') window.__omtXeatreFitViewport();
+    });
+    await page.setViewportSize({ width: 200, height: 120 });
+    await page.waitForTimeout(150);
+    const xeatreScaleTiny = await page.evaluate(() => {
+      if (typeof window.__omtXeatreFitViewport === 'function') window.__omtXeatreFitViewport();
+      const root = document.getElementById('omt-root');
+      const panel = document.getElementById('controls-panel');
+      const cs = panel ? getComputedStyle(panel) : null;
+      const scale = cs ? (cs.scale || 'none') : 'missing';
+      const scaled = scale !== 'none' && scale !== '1' && scale !== '1 1' &&
+        scale !== '1 1 1' && !(parseFloat(scale) === 1);
+      return {
+        micro: !!(root && root.classList.contains('omt-xeatre-micro')),
+        scale,
+        scaled,
+        width: panel ? Math.round(panel.getBoundingClientRect().width) : 0
+      };
+    });
+    await page.setViewportSize({ width: 960, height: 540 });
+    await page.waitForTimeout(150);
+    // No click — only resize + fit.
+    const xeatreScaleRestored = await page.evaluate(() => {
+      if (typeof window.__omtXeatreFitViewport === 'function') window.__omtXeatreFitViewport();
+      const root = document.getElementById('omt-root');
+      const panel = document.getElementById('controls-panel');
+      if (!root || !panel) return { ok: false, reason: 'missing' };
+      const cs = getComputedStyle(panel);
+      const scale = cs.scale || 'none';
+      const inlineTransform = panel.style.getPropertyValue('transform') || '';
+      const micro = root.classList.contains('omt-xeatre-micro');
+      const scaleOk = !micro && (scale === 'none' || scale === '1' || scale === '1 1' ||
+        scale === '1 1 1' || parseFloat(scale) === 1);
+      const noStickyInlineScale = !/scale\s*\(/.test(inlineTransform);
+      return {
+        ok: scaleOk && noStickyInlineScale && !panel.classList.contains('omt-panel-size-small'),
+        micro, scale, inlineTransform,
+        width: Math.round(panel.getBoundingClientRect().width)
+      };
+    });
+    results.push({
+      name: 'xeatre-scale-restores-on-grow-default',
+      pass: xeatreScaleRestored.ok === true && xeatreScaleTiny.micro === true && xeatreScaleTiny.scaled === true,
+      detail: { tiny: xeatreScaleTiny, restored: xeatreScaleRestored }
+    });
+
+    // v2.2.11: custom small + compact prefs survive shrink → grow (scale is multiplier).
+    await page.evaluate(() => {
+      localStorage.setItem('omtPanelSize', 'small');
+      localStorage.setItem('omtPanelCompact', 'true');
+      const panel = document.getElementById('controls-panel');
+      if (panel) panel.classList.add('omt-panel-size-small', 'omt-panel-compact');
+      if (typeof window.__omtXeatreFitViewport === 'function') window.__omtXeatreFitViewport();
+    });
+    const xeatreScaleCustom = await page.evaluate(() => {
+      const panel = document.getElementById('controls-panel');
+      return {
+        small: !!(panel && panel.classList.contains('omt-panel-size-small')),
+        panelCompact: !!(panel && panel.classList.contains('omt-panel-compact')),
+        width: panel ? Math.round(panel.getBoundingClientRect().width) : 0
+      };
+    });
+    await page.setViewportSize({ width: 200, height: 120 });
+    await page.waitForTimeout(150);
+    const xeatreScaleCustomTiny = await page.evaluate(() => {
+      if (typeof window.__omtXeatreFitViewport === 'function') window.__omtXeatreFitViewport();
+      const root = document.getElementById('omt-root');
+      const panel = document.getElementById('controls-panel');
+      const cs = panel ? getComputedStyle(panel) : null;
+      return {
+        micro: !!(root && root.classList.contains('omt-xeatre-micro')),
+        small: !!(panel && panel.classList.contains('omt-panel-size-small')),
+        panelCompact: !!(panel && panel.classList.contains('omt-panel-compact')),
+        scale: cs ? (cs.scale || 'none') : 'missing',
+        width: panel ? Math.round(panel.getBoundingClientRect().width) : 0
+      };
+    });
+    await page.setViewportSize({ width: 960, height: 540 });
+    await page.waitForTimeout(150);
+    const xeatreScaleCustomRestored = await page.evaluate(() => {
+      // No click. Fit on resize clears micro inline leftovers and re-applies prefs.
+      if (typeof window.__omtXeatreFitViewport === 'function') window.__omtXeatreFitViewport();
+      const root = document.getElementById('omt-root');
+      const panel = document.getElementById('controls-panel');
+      if (!root || !panel) return { ok: false, reason: 'missing' };
+      const cs = getComputedStyle(panel);
+      const scale = cs.scale || 'none';
+      const micro = root.classList.contains('omt-xeatre-micro');
+      const scaleOk = !micro && (scale === 'none' || scale === '1' || scale === '1 1' ||
+        scale === '1 1 1' || parseFloat(scale) === 1);
+      const inlineTransform = panel.style.getPropertyValue('transform') || '';
+      const small = panel.classList.contains('omt-panel-size-small');
+      const panelCompact = panel.classList.contains('omt-panel-compact');
+      const width = Math.round(panel.getBoundingClientRect().width);
+      const widthOk = width > 40 && width <= 500;
+      return {
+        ok: scaleOk && !/scale\s*\(/.test(inlineTransform) && small && panelCompact && widthOk,
+        micro, scale, inlineTransform, small, panelCompact, width
+      };
+    });
+    results.push({
+      name: 'xeatre-scale-restores-on-grow-custom-compact',
+      pass: xeatreScaleCustomRestored.ok === true &&
+        xeatreScaleCustomTiny.micro === true &&
+        xeatreScaleCustomTiny.small === true &&
+        xeatreScaleCustom.small === true,
+      detail: { setup: xeatreScaleCustom, tiny: xeatreScaleCustomTiny, restored: xeatreScaleCustomRestored }
+    });
+
+    // v2.2.11: mousemove over video center reveals HUD; idle hides again.
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.waitForTimeout(100);
+    await page.evaluate(() => {
+      try {
+        localStorage.removeItem('omtPanelSize');
+        localStorage.removeItem('omtPanelCompact');
+      } catch (_) {}
+      const panel = document.getElementById('controls-panel');
+      if (panel) panel.classList.remove('omt-panel-size-small', 'omt-panel-compact');
+      if (typeof window.__omtXeatreFitViewport === 'function') window.__omtXeatreFitViewport();
+    });
+    const xeatreHoverReveal = await page.evaluate(async () => {
+      const panel = document.getElementById('controls-panel');
+      const bar = document.getElementById('omt-timeline-bar');
+      const v = document.querySelector('#hdmi-video video.vjs-tech, video.vjs-tech, video');
+      if (!panel || !bar || !v) return { ok: false, reason: 'missing' };
+      // Hide chrome (auto-hide path uses inline opacity).
+      panel.style.opacity = '0';
+      panel.style.pointerEvents = 'none';
+      bar.style.opacity = '0';
+      bar.classList.add('omt-chrome-hidden');
+      await new Promise((r) => setTimeout(r, 40));
+      const hiddenBefore = panel.style.opacity === '0';
+      // Pointer over video center (not HUD).
+      const r = v.getBoundingClientRect();
+      const x = Math.round(r.left + r.width / 2);
+      const y = Math.round(r.top + r.height / 2);
+      const target = document.elementFromPoint(x, y) || v;
+      document.dispatchEvent(new PointerEvent('pointermove', {
+        bubbles: true, cancelable: true, clientX: x, clientY: y, pointerType: 'mouse'
+      }));
+      document.dispatchEvent(new MouseEvent('mousemove', {
+        bubbles: true, cancelable: true, clientX: x, clientY: y
+      }));
+      target.dispatchEvent(new MouseEvent('mousemove', {
+        bubbles: true, cancelable: true, clientX: x, clientY: y
+      }));
+      await new Promise((r) => setTimeout(r, 80));
+      const shown = panel.style.opacity === '1';
+      const barShown = !bar.classList.contains('omt-chrome-hidden');
+      // Idle hide (autohide timer is 2500ms).
+      await new Promise((r) => setTimeout(r, 2700));
+      const hiddenAfter = panel.style.opacity === '0';
+      return {
+        ok: hiddenBefore && shown && barShown && hiddenAfter,
+        hiddenBefore, shown, barShown, hiddenAfter,
+        targetTag: target && target.tagName,
+        x, y
+      };
+    });
+    results.push({
+      name: 'xeatre-hover-video-reveals-hud',
+      pass: xeatreHoverReveal.ok === true,
+      detail: xeatreHoverReveal
+    });
+
     // Restore a comfortable viewport for later Xeatre live-UX checks.
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.waitForTimeout(100);
