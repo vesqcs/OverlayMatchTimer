@@ -101,18 +101,26 @@
         return '-' + m + ':' + String(s).padStart(2, '0');
     }
 
-    /** LIVE timeline mode (delay / LIVE chip) vs POST (current / duration). */
+    /**
+     * LIVE timeline mode (delay / LIVE chip) vs POST (current / duration).
+     * Examino: VOD on a still-live match (Auto VOD on /play/dvr) uses the same
+     * live chrome as DVR. Only true post-match VOD (/play/vod) and local stay post.
+     */
     function omtIsTimelineLiveMode() {
         if (!omtRoot || !site) return false;
         if (site.id === 'local' || omtRoot.classList.contains('omt-local')) return false;
         if (site.id === 'examino') {
             try {
+                const path = location.pathname || '';
+                // True post-match VOD pages only.
+                if (/\/play\/vod\b/i.test(path)) return false;
+                // Live match page: keep live chrome even when Source is VOD (Auto VOD).
+                if (/\/play\/dvr\b/i.test(path)) return true;
+                // Fixtures / unknown paths: VOD → post, DVR → live.
                 if (examinoManualSourceChoice === 'VOD') return false;
                 if (typeof detectCurrentSource === 'function') {
                     const src = detectCurrentSource();
                     if (src === 'VOD') return false;
-                } else if (/\/play\/vod\b/i.test(location.pathname || '')) {
-                    return false;
                 }
             } catch (_) {}
         }
@@ -423,8 +431,8 @@
     /**
      * Paint timeline chrome-row from a live presentation snapshot (or resolve one).
      * Left (live): LIVE chip OR delay only — never match clock, never playhead/furthest.
-     * Left (post/VOD): current / duration. Right (live only): playhead / furthest
-     * immediately left of fullscreen.
+     * Left (post-match VOD / local): current / duration.
+     * Right (live only, incl. VOD-while-live): playhead / furthest left of fullscreen.
      */
     function atualizarTempoTimelineDireito(snapIn) {
         if (!omtRoot) return;
