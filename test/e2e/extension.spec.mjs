@@ -2791,7 +2791,99 @@ async function run() {
       detail: liveKickAt
     });
 
-    // VOD / POST → post times on left; no live chrome; no right range; not red
+    // v2.2.7: VOD while match still live (Auto VOD on /play/dvr) → same live chrome as DVR
+    const vodWhileLive = await page.evaluate(async () => {
+      document.getElementById('omt-btn-clear-timer')?.click();
+      const origPath = location.pathname + location.search + location.hash;
+      // Field Auto VOD stays on the live DVR page URL.
+      history.replaceState(null, '', '/play/dvr/e2e-vod-while-live');
+      const v = document.querySelector('video');
+      const slider = document.getElementById('omt-timeline-slider');
+      const btn = document.getElementById('omt-live-btn');
+      const vodUrl = 'https://cdn.example.test/vod/dm-mock/chunklist_vod_live.m3u8';
+      window.__omtMockSource = 'VOD';
+      window.__omtMockMediaUrl = vodUrl;
+      if (!v || !btn) {
+        history.replaceState(null, '', origPath);
+        return { ok: false, reason: 'missing' };
+      }
+      v.dataset.omtSource = 'VOD';
+      v.dataset.omtMediaUrl = vodUrl;
+      const edge = 2 * 3600 + 15 * 60 + 10; // 2:15:10 growing VOD end
+      let ct = edge - 40;
+      Object.defineProperty(v, 'duration', { configurable: true, get: () => edge });
+      Object.defineProperty(v, 'seekable', {
+        configurable: true,
+        get: () => ({ length: 1, start: () => 0, end: () => edge })
+      });
+      Object.defineProperty(v, 'currentTime', {
+        configurable: true,
+        get: () => ct,
+        set: (n) => { ct = Number(n) || 0; }
+      });
+      if (slider) {
+        slider.min = '0';
+        slider.max = String(edge);
+        slider.value = String(ct);
+      }
+      v.dispatchEvent(new Event('durationchange'));
+      v.dispatchEvent(new Event('timeupdate'));
+      await new Promise((r) => setTimeout(r, 80));
+
+      const times = document.querySelector('.omt-timeline-times');
+      const ind = document.getElementById('omt-timeline-live-indicator');
+      const delay = document.getElementById('omt-timeline-live-delay');
+      const chip = document.getElementById('omt-timeline-live-chip');
+      const post = document.getElementById('omt-timeline-post-times');
+      const range = document.getElementById('omt-timeline-video-range');
+      const match = document.getElementById('omt-timeline-match-clock');
+      const behind = {
+        mode: times?.dataset?.omtTimeMode || null,
+        delayVisible: !!(delay && !delay.hidden && ind && !ind.hidden),
+        delayText: delay && !delay.hidden ? (delay.textContent || '') : null,
+        chipVisible: !!(chip && !chip.hidden && ind && !ind.hidden),
+        postVisible: !!(post && !post.hidden),
+        rangeVisible: !!(range && !range.hidden),
+        rangeText: range && !range.hidden ? (range.textContent || '') : null,
+        matchVisible: !!(match && !match.hidden),
+        liveIsRed: btn.classList.contains('is-live')
+      };
+
+      btn.click();
+      await new Promise((r) => setTimeout(r, 150));
+      const atLive = {
+        mode: times?.dataset?.omtTimeMode || null,
+        delayVisible: !!(delay && !delay.hidden && ind && !ind.hidden),
+        chipVisible: !!(chip && !chip.hidden && ind && !ind.hidden),
+        postVisible: !!(post && !post.hidden),
+        rangeVisible: !!(range && !range.hidden),
+        matchVisible: !!(match && !match.hidden),
+        liveIsRed: btn.classList.contains('is-live'),
+        tip: (btn.getAttribute('data-tip') || '').trim()
+      };
+
+      history.replaceState(null, '', origPath);
+      return {
+        ok: behind.mode === 'live' && behind.delayVisible && !behind.chipVisible &&
+          !behind.postVisible && !behind.matchVisible && behind.rangeVisible &&
+          /^-/.test(String(behind.delayText || '')) &&
+          /^\d+:\d{2}/.test(String(behind.rangeText || '')) &&
+          behind.liveIsRed === false &&
+          atLive.mode === 'live' && atLive.liveIsRed && atLive.chipVisible &&
+          !atLive.delayVisible && !atLive.postVisible && atLive.rangeVisible &&
+          atLive.tip === 'Go to live (L)',
+        behind,
+        atLive,
+        pathDuring: '/play/dvr/e2e-vod-while-live'
+      };
+    });
+    results.push({
+      name: 'live-consistency-vod-while-live',
+      pass: vodWhileLive.ok === true,
+      detail: vodWhileLive
+    });
+
+    // True post-match VOD (/play/vod) → post times on left; no live chrome; no right range
     await page.evaluate(() => {
       document.getElementById('omt-btn-clear-timer')?.click();
       const v = document.querySelector('video');
@@ -2799,6 +2891,8 @@ async function run() {
       const vodUrl = 'https://cdn.example.test/vod/dm-mock/chunklist_vod.m3u8';
       window.__omtMockSource = 'VOD';
       window.__omtMockMediaUrl = vodUrl;
+      window.__omtE2eOrigPath = location.pathname + location.search + location.hash;
+      history.replaceState(null, '', '/play/vod/e2e-post-match');
       if (v) {
         v.dataset.omtSource = 'VOD';
         v.dataset.omtMediaUrl = vodUrl;
@@ -2858,9 +2952,15 @@ async function run() {
       detail: postKickCons
     });
 
-    // Restore DVR live mode for later timeline tests
+    // Restore DVR live mode (+ fixture path) for later timeline tests
     await page.evaluate(() => {
       document.getElementById('omt-btn-clear-timer')?.click();
+      if (window.__omtE2eOrigPath) {
+        history.replaceState(null, '', window.__omtE2eOrigPath);
+        delete window.__omtE2eOrigPath;
+      } else if (/\/play\/(dvr|vod)\b/i.test(location.pathname || '')) {
+        history.replaceState(null, '', '/examino-mock.html');
+      }
       const v = document.querySelector('video');
       const slider = document.getElementById('omt-timeline-slider');
       const dvrUrl = 'https://10.217.82.32:8001/live/dm-mock/chunklist_dvr.m3u8';
