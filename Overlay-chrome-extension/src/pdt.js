@@ -168,12 +168,26 @@
         return null;
     }
 
+    /** Examino-only: stepped seekable-end smoothing + leave hysteresis. */
+    function omtIsExaminoEdgeSmoothSite() {
+        return !!(site && site.id === 'examino');
+    }
+
     /** Record seekable-end advances so LIVE can stay ~2 updates behind slow edges. */
     function omtNoteLiveEdgeAdvance(edgeSec) {
         if (!(edgeSec > 0) || !isFinite(edgeSec)) return;
         const now = Date.now();
         if (omtLiveEdgeLastSec == null) {
             omtLiveEdgeLastSec = edgeSec;
+            // Do not start extrapolation until a real jump is observed.
+            return;
+        }
+        // Source swap / window reset (VOD↔DVR or fixture redefine).
+        if (edgeSec < omtLiveEdgeLastSec - 1) {
+            omtLiveEdgeLastSec = edgeSec;
+            omtLiveEdgeLastAdvanceAtMs = 0;
+            omtLiveEdgeStepSizes = [];
+            omtLiveEdgeAdvanceAtMs = [];
             return;
         }
         // Ignore tiny float noise; require a real window move (≥0.25s).
@@ -181,7 +195,21 @@
             omtLiveEdgeLastSec = Math.max(omtLiveEdgeLastSec, edgeSec);
             return;
         }
+        const step = edgeSec - omtLiveEdgeLastSec;
+        // Huge jump = fixture/source redefine, not a playlist segment tick.
+        if (!(step > 0) || !isFinite(step) || step > 45) {
+            omtLiveEdgeLastSec = edgeSec;
+            omtLiveEdgeLastAdvanceAtMs = 0;
+            omtLiveEdgeStepSizes = [];
+            omtLiveEdgeAdvanceAtMs = [];
+            return;
+        }
+        omtLiveEdgeStepSizes.push(step);
+        if (omtLiveEdgeStepSizes.length > 8) {
+            omtLiveEdgeStepSizes = omtLiveEdgeStepSizes.slice(-8);
+        }
         omtLiveEdgeLastSec = edgeSec;
+        omtLiveEdgeLastAdvanceAtMs = now;
         omtLiveEdgeAdvanceAtMs.push(now);
         if (omtLiveEdgeAdvanceAtMs.length > 8) {
             omtLiveEdgeAdvanceAtMs = omtLiveEdgeAdvanceAtMs.slice(-8);
@@ -204,6 +232,62 @@
         if (!gaps.length) return null;
         gaps.sort((a, b) => a - b);
         return gaps[Math.floor(gaps.length / 2)];
+    }
+
+    /**
+     * Typical seekable-end jump size (seconds). Median of recent advances,
+     * else HLS target duration, else Examino default (~10s playlist step).
+     */
+    function omtObservedEdgeStepSec() {
+        const sizes = omtLiveEdgeStepSizes;
+        if (sizes && sizes.length) {
+            const sorted = sizes.slice().sort((a, b) => a - b);
+            const mid = sorted[Math.floor(sorted.length / 2)];
+            if (mid > 0 && isFinite(mid)) return mid;
+        }
+        const td = omtHlsTargetDurationSec();
+        if (td != null && td > 0 && isFinite(td)) return td;
+        if (omtIsExaminoEdgeSmoothSite()) {
+            return (typeof OMT_LIVE_EDGE_STEP_DEFAULT_S === 'number' && OMT_LIVE_EDGE_STEP_DEFAULT_S > 0)
+                ? OMT_LIVE_EDGE_STEP_DEFAULT_S : 10;
+        }
+        return 5;
+    }
+
+    /**
+     * Presentation edge for delay / furthest / at-live (Examino).
+     * Between playlist refreshes, extrapolate from the last raw jump so the
+     * displayed furthest and delay do not stair-step every ~10s. Clamped to the
+     * next expected step. Seek targets still use raw seekable end.
+     * Only active after real jump sizes are observed (fixed mock windows stay raw).
+     */
+    function omtPresentationLiveEdgeSec(rawEdgeIn) {
+        const raw = (rawEdgeIn != null && isFinite(rawEdgeIn)) ? Number(rawEdgeIn)
+            : omtTimelineLiveEdgeSec();
+        if (!(raw > 0)) return raw || 0;
+        if (!omtIsExaminoEdgeSmoothSite()) return raw;
+        if (!omtLiveEdgeStepSizes || !omtLiveEdgeStepSizes.length) return raw;
+        if (!(omtLiveEdgeLastAdvanceAtMs > 0)) return raw;
+
+        const base = (omtLiveEdgeLastSec != null && isFinite(omtLiveEdgeLastSec))
+            ? omtLiveEdgeLastSec : raw;
+        // Window reset / fixture redefine — never invent from a stale base.
+        if (raw < base - 1) return raw;
+
+        const step = omtObservedEdgeStepSec();
+        const iv = omtEdgeUpdateIntervalSec();
+        const expectIv = (iv != null && iv > 0.5) ? iv : Math.max(step, 1);
+        const elapsed = Math.max(0, (Date.now() - omtLiveEdgeLastAdvanceAtMs) / 1000);
+        // Playlist overdue with no jump — fall back to raw (avoid permanent +step).
+        if (elapsed > expectIv * 1.5) return raw;
+
+        const rate = (iv != null && iv > 0.5 && step > 0) ? (step / iv) : 1;
+        let smoothed = base + (elapsed * rate);
+        const cap = base + Math.max(step, 1);
+        if (smoothed > cap) smoothed = cap;
+        // Never show less than the real seekable end.
+        if (smoothed < raw) smoothed = raw;
+        return smoothed;
     }
 
     function omtBufferedAheadSec() {
@@ -305,6 +389,25 @@
         return margin + Math.max(0, tol);
     }
 
+    /**
+     * Max delay that still *stays* LIVE once latched.
+     * Examino: tolerate one observed seekable-end step (+ slack) so a ~10s
+     * playlist refresh does not grey the LIVE button. Other sites: enter + 5.
+     */
+    function omtLiveLeaveDelaySec() {
+        const enter = omtLiveAtLiveMaxDelaySec();
+        if (!omtIsExaminoEdgeSmoothSite()) return enter + 5;
+        const adaptive = omtAdaptiveLiveSafeMarginSec();
+        const pinned = (typeof omtLivePinnedMarginSec === 'number' && omtLivePinnedMarginSec > 0)
+            ? omtLivePinnedMarginSec : 0;
+        const margin = Math.max(adaptive, pinned);
+        const step = omtObservedEdgeStepSec();
+        const slack = (typeof OMT_LIVE_EDGE_STEP_SLACK_S === 'number') ? OMT_LIVE_EDGE_STEP_SLACK_S : 2;
+        // stay while delay <= safe margin + observed step + small slack
+        const byStep = margin + step + Math.max(0, slack);
+        return Math.max(enter + 5, byStep);
+    }
+
     function omtLiveDelaySec(playhead, liveEdge) {
         return liveEdge > 0 ? Math.max(0, liveEdge - (Number(playhead) || 0)) : 0;
     }
@@ -317,28 +420,47 @@
 
     /**
      * Shared at-live latch for panel button + timeline LIVE chip.
-     * Enter at safe-point margin (+ tol); leave a few seconds further out so
-     * both indicators stay in lockstep (never red LIVE beside a big −delay).
+     * Enter at safe-point margin (+ tol). Leave further out — on Examino, far
+     * enough to absorb one seekable-end step; require a sustained overrun (or a
+     * clear user seek-back) before dropping red so playlist refreshes do not flicker.
      */
     function omtAdvanceAtLiveLatch(delay) {
         const enter = omtLiveAtLiveMaxDelaySec();
-        const leave = enter + 5;
+        const leave = omtLiveLeaveDelaySec();
+        const step = omtObservedEdgeStepSec();
+        const sustainMs = (typeof OMT_LIVE_LEAVE_SUSTAIN_MS === 'number') ? OMT_LIVE_LEAVE_SUSTAIN_MS : 1200;
         // Brief force window after LIVE click (seek settling / edge tick noise).
         // Cancel immediately if the user seeks far behind the leave threshold.
         if (omtLiveForceAtLiveUntil && Date.now() < omtLiveForceAtLiveUntil) {
             if (delay <= leave) {
                 omtTimelineLiveChipOn = true;
+                omtLiveLeaveCandidateSinceMs = 0;
                 return true;
             }
             omtLiveForceAtLiveUntil = 0;
         }
         if (omtTimelineLiveChipOn) {
             if (delay > leave) {
-                omtTimelineLiveChipOn = false;
-                omtLivePinnedMarginSec = 0;
+                // Clear seek-back: far past leave+step → drop immediately.
+                const clearSeekBack = delay > (leave + Math.max(step, 5));
+                if (!omtIsExaminoEdgeSmoothSite() || clearSeekBack) {
+                    omtTimelineLiveChipOn = false;
+                    omtLivePinnedMarginSec = 0;
+                    omtLiveLeaveCandidateSinceMs = 0;
+                } else {
+                    if (!omtLiveLeaveCandidateSinceMs) omtLiveLeaveCandidateSinceMs = Date.now();
+                    if ((Date.now() - omtLiveLeaveCandidateSinceMs) >= sustainMs) {
+                        omtTimelineLiveChipOn = false;
+                        omtLivePinnedMarginSec = 0;
+                        omtLiveLeaveCandidateSinceMs = 0;
+                    }
+                }
+            } else {
+                omtLiveLeaveCandidateSinceMs = 0;
             }
         } else if (delay <= enter) {
             omtTimelineLiveChipOn = true;
+            omtLiveLeaveCandidateSinceMs = 0;
         }
         return !!omtTimelineLiveChipOn;
     }
@@ -346,18 +468,23 @@
     /**
      * ONE snapshot driving every live/time chrome piece.
      * Callers must reuse this object in the same paint tick (do not resolve twice).
+     * Examino: liveEdge/delay use the smoothed presentation edge so button, chip,
+     * delay text and furthest share one rule between playlist refreshes.
      */
     function omtResolveLivePresentation(opts) {
         const o = opts || {};
         const liveMode = omtIsTimelineLiveMode();
         const kickoffOn = omtHasKickoffOffset();
         const playhead = o.playhead != null ? o.playhead : omtTimelinePlayheadSec();
-        const liveEdge = o.liveEdge != null ? o.liveEdge : omtTimelineLiveEdgeSec();
+        const rawEdge = o.liveEdge != null ? o.liveEdge : omtTimelineLiveEdgeSec();
+        // Post / local: always raw duration. Live Examino: smooth between steps.
+        const liveEdge = liveMode ? omtPresentationLiveEdgeSec(rawEdge) : rawEdge;
         const delay = omtLiveDelaySec(playhead, liveEdge);
         let atLive = false;
         if (liveMode) {
             if (o.forceAtLive) {
                 omtTimelineLiveChipOn = true;
+                omtLiveLeaveCandidateSinceMs = 0;
                 if (!(omtLiveForceAtLiveUntil > Date.now())) {
                     omtLiveForceAtLiveUntil = Date.now() + 2500;
                 }
@@ -367,9 +494,10 @@
             omtTimelineLiveChipOn = false;
             omtLivePinnedMarginSec = 0;
             omtLiveForceAtLiveUntil = 0;
+            omtLiveLeaveCandidateSinceMs = 0;
             atLive = false;
         }
-        return { liveMode, kickoffOn, playhead, liveEdge, delay, atLive };
+        return { liveMode, kickoffOn, playhead, liveEdge, delay, atLive, rawEdge };
     }
 
     /** Kick-off offset set → timeline chrome shows match clock (+ live delay when live). */
@@ -384,9 +512,21 @@
         window.__omtLiveUiDebug = {
             pinMargin(sec) { omtLivePinnedMarginSec = Math.max(0, Number(sec) || 0); },
             getPin() { return omtLivePinnedMarginSec; },
-            clearStall() { omtLiveLastStallAtMs = 0; omtLiveEdgeAdvanceAtMs = []; },
+            clearStall() {
+                omtLiveLastStallAtMs = 0;
+                omtLiveEdgeAdvanceAtMs = [];
+                omtLiveEdgeStepSizes = [];
+                omtLiveLeaveCandidateSinceMs = 0;
+            },
             forceUntil(ms) { omtLiveForceAtLiveUntil = Date.now() + Math.max(0, Number(ms) || 0); },
-            atLiveMax() { return omtLiveAtLiveMaxDelaySec(); }
+            atLiveMax() { return omtLiveAtLiveMaxDelaySec(); },
+            leaveMax() { return omtLiveLeaveDelaySec(); },
+            edgeStep() { return omtObservedEdgeStepSec(); },
+            seedEdgeStep(sec) {
+                const s = Math.max(0.5, Number(sec) || 10);
+                omtLiveEdgeStepSizes = [s, s, s];
+            },
+            smoothedEdge() { return omtPresentationLiveEdgeSec(omtTimelineLiveEdgeSec()); }
         };
     } catch (_) {}
 

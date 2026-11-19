@@ -2468,18 +2468,29 @@ async function run() {
     await shotTimelineFrame('v221_timeline_live_minus_1m05.png');
 
     // Hysteresis (adaptive): enter within safe+tol; hold a few seconds past enter;
-    // leave only when delay > enter+5 (shared latch with panel red).
+    // leave when delay stays past the leave band (Examino: margin+step+slack,
+    // with a short sustain so a single playlist tick does not flicker).
     await seekLiveDelay(40);
     await seekLiveDelay(8);
     const liveEnter = await readTimelineChrome();
     await seekLiveDelay(12);
     const liveHold = await readTimelineChrome();
-    await seekLiveDelay(25);
+    await seekLiveDelay(45);
+    // Sustain past leave band (v2.2.8 Examino) before the latch drops.
+    await page.waitForTimeout(1300);
+    await page.evaluate(() => {
+      const v = document.querySelector('video');
+      if (v) {
+        v.dispatchEvent(new Event('timeupdate'));
+        v.dispatchEvent(new Event('timeupdate'));
+      }
+    });
+    await page.waitForTimeout(40);
     const liveLeave = await readTimelineChrome();
     results.push({
       name: 'timeline-live-chip-hysteresis',
       pass: liveEnter.chipVisible === true && liveHold.chipVisible === true &&
-        liveLeave.chipVisible === false && liveLeave.delayText === '-0:25',
+        liveLeave.chipVisible === false && liveLeave.delayText === '-0:45',
       detail: { liveEnter, liveHold, liveLeave }
     });
 
@@ -2680,6 +2691,160 @@ async function run() {
         chipVisible: pinnedLive.chipVisible,
         delayVisible: pinnedLive.delayVisible
       }
+    });
+
+    // v2.2.8 Examino: ~10s stepped seekable-end refreshes must not flicker LIVE grey/red.
+    const steppedEdge = await page.evaluate(async () => {
+      const v = document.querySelector('video');
+      const btn = document.getElementById('omt-live-btn');
+      const dbg = window.__omtLiveUiDebug;
+      if (!v || !btn || !dbg) return { ok: false, reason: 'missing' };
+
+      let edge = 1000;
+      let ct = 980; // 20s behind
+      Object.defineProperty(v, 'duration', { configurable: true, get: () => edge });
+      Object.defineProperty(v, 'seekable', {
+        configurable: true,
+        get: () => ({ length: 1, start: () => 0, end: () => edge })
+      });
+      Object.defineProperty(v, 'currentTime', {
+        configurable: true,
+        get: () => ct,
+        set: (n) => { ct = Number(n) || 0; }
+      });
+      const slider = document.getElementById('omt-timeline-slider');
+      if (slider) {
+        slider.min = '0';
+        slider.max = String(edge);
+        slider.value = String(ct);
+      }
+
+      // Seed observed ~10s playlist steps (field Examino cadence).
+      dbg.seedEdgeStep(10);
+      dbg.pinMargin(20);
+      dbg.clearStall();
+      // clearStall wipes step seed — re-seed
+      dbg.seedEdgeStep(10);
+      dbg.forceUntil(0);
+
+      // Prime edge tracker, then go LIVE at the pinned safe point.
+      v.dispatchEvent(new Event('durationchange'));
+      v.dispatchEvent(new Event('timeupdate'));
+      await new Promise((r) => setTimeout(r, 40));
+      // Record a few real advances so step median sticks.
+      for (let i = 0; i < 3; i++) {
+        edge += 10;
+        if (slider) slider.max = String(edge);
+        v.dispatchEvent(new Event('durationchange'));
+        v.dispatchEvent(new Event('timeupdate'));
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      ct = edge - 20;
+      if (slider) {
+        slider.max = String(edge);
+        slider.value = String(ct);
+      }
+      btn.click();
+      await new Promise((r) => setTimeout(r, 100));
+      dbg.pinMargin(20);
+      dbg.forceUntil(0);
+      ct = edge - 20;
+      if (slider) slider.value = String(ct);
+      v.dispatchEvent(new Event('timeupdate'));
+      await new Promise((r) => setTimeout(r, 60));
+
+      if (!btn.classList.contains('is-live')) {
+        return {
+          ok: false,
+          reason: 'not-red-before-steps',
+          leaveMax: dbg.leaveMax(),
+          edgeStep: dbg.edgeStep(),
+          delay: edge - ct
+        };
+      }
+
+      const samples = [];
+      // Four playlist refreshes: playhead advances ~1s/tick with edge flat,
+      // then edge jumps +10s (field). LIVE must stay red the whole time.
+      for (let step = 0; step < 4; step++) {
+        for (let tick = 0; tick < 8; tick++) {
+          ct = Math.min(ct + 1, edge - 1);
+          if (slider) slider.value = String(ct);
+          v.dispatchEvent(new Event('timeupdate'));
+          await new Promise((r) => setTimeout(r, 15));
+          samples.push({
+            red: btn.classList.contains('is-live'),
+            delay: edge - ct,
+            edge,
+            ct,
+            phase: 'play'
+          });
+        }
+        edge += 10;
+        if (slider) slider.max = String(edge);
+        v.dispatchEvent(new Event('durationchange'));
+        v.dispatchEvent(new Event('timeupdate'));
+        await new Promise((r) => setTimeout(r, 30));
+        samples.push({
+          red: btn.classList.contains('is-live'),
+          delay: edge - ct,
+          edge,
+          ct,
+          phase: 'jump'
+        });
+      }
+
+      const stayedRed = samples.every((s) => s.red === true);
+      const jumpSamples = samples.filter((s) => s.phase === 'jump');
+      const maxJumpDelay = jumpSamples.reduce((m, s) => Math.max(m, s.delay), 0);
+
+      // Real user seek-back must still leave live.
+      ct = edge - 80;
+      if (slider) slider.value = String(ct);
+      v.dispatchEvent(new Event('timeupdate'));
+      await new Promise((r) => setTimeout(r, 50));
+      const afterSeekBack = btn.classList.contains('is-live');
+      const edgeStepDuring = dbg.edgeStep();
+      const leaveDuring = dbg.leaveMax();
+
+      // Restore fixed DVR window so later timeline tests stay on raw edge.
+      edge = 330;
+      ct = 100;
+      Object.defineProperty(v, 'duration', { configurable: true, get: () => edge });
+      Object.defineProperty(v, 'seekable', {
+        configurable: true,
+        get: () => ({ length: 1, start: () => 0, end: () => edge })
+      });
+      Object.defineProperty(v, 'currentTime', {
+        configurable: true,
+        get: () => ct,
+        set: (n) => { ct = Number(n) || 0; }
+      });
+      if (slider) {
+        slider.min = '0';
+        slider.max = String(edge);
+        slider.value = String(ct);
+      }
+      dbg.clearStall();
+      v.dispatchEvent(new Event('durationchange'));
+      v.dispatchEvent(new Event('timeupdate'));
+
+      return {
+        ok: stayedRed && afterSeekBack === false && edgeStepDuring >= 8,
+        stayedRed,
+        afterSeekBack,
+        sampleCount: samples.length,
+        greyCount: samples.filter((s) => !s.red).length,
+        maxJumpDelay,
+        leaveMax: leaveDuring,
+        edgeStep: edgeStepDuring,
+        jumps: jumpSamples
+      };
+    });
+    results.push({
+      name: 'examino-live-no-flicker-on-10s-edge-steps',
+      pass: steppedEdge.ok === true,
+      detail: steppedEdge
     });
 
     // ---- v2.2.2 live/time consistency matrix (one is-live source of truth) ----

@@ -81,6 +81,11 @@
         omtLiveEdgeLastSec = null;
         omtLiveEdgeAdvanceAtMs = [];
         omtLiveLastStallAtMs = 0;
+        omtLiveEdgeStepSizes = [];
+        omtLiveEdgeLastAdvanceAtMs = 0;
+        omtLiveLeaveCandidateSinceMs = 0;
+        omtLivePinnedMarginSec = 0;
+        omtLiveForceAtLiveUntil = 0;
         btnMainPlay = null;
         btnTimelinePlay = null;
         timelineSlider = null;

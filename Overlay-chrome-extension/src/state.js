@@ -92,3 +92,12 @@
     let omtLiveEdgeLastSec = null;
     let omtLiveEdgeAdvanceAtMs = [];
     let omtLiveLastStallAtMs = 0;
+    // v2.2.8 (Examino): seekable end often jumps in ~10s playlist steps. Track
+    // step sizes + last advance time so at-live leave / displayed furthest can
+    // tolerate and smooth those refreshes (no LIVE flicker).
+    let omtLiveEdgeStepSizes = [];
+    let omtLiveEdgeLastAdvanceAtMs = 0;
+    let omtLiveLeaveCandidateSinceMs = 0;
+    const OMT_LIVE_EDGE_STEP_DEFAULT_S = 10;
+    const OMT_LIVE_EDGE_STEP_SLACK_S = 2;
+    const OMT_LIVE_LEAVE_SUSTAIN_MS = 1200;
