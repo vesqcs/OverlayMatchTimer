@@ -283,11 +283,16 @@
     }
 
     /**
-     * Max delay that still *enters* LIVE (adaptive safe margin + tol).
-     * Single threshold for panel red + timeline LIVE chip — never a fixed ~5s.
+     * Max delay that still *enters* LIVE.
+     * ONE rule for panel red + bar LIVE chip + delay: max(adaptive, pinned-jump)
+     * margin + tol. Pin keeps the post-LIVE landing (~20s after a stall) red
+     * even if adaptive margin later shrinks.
      */
     function omtLiveAtLiveMaxDelaySec() {
-        const margin = omtAdaptiveLiveSafeMarginSec();
+        const adaptive = omtAdaptiveLiveSafeMarginSec();
+        const pinned = (typeof omtLivePinnedMarginSec === 'number' && omtLivePinnedMarginSec > 0)
+            ? omtLivePinnedMarginSec : 0;
+        const margin = Math.max(adaptive, pinned);
         const tol = (typeof OMT_LIVE_AT_LIVE_TOL_S === 'number') ? OMT_LIVE_AT_LIVE_TOL_S : 1.5;
         return margin + Math.max(0, tol);
     }
@@ -304,14 +309,26 @@
 
     /**
      * Shared at-live latch for panel button + timeline LIVE chip.
-     * Enter at adaptive safe point (+ tol); leave a few seconds further out so
+     * Enter at safe-point margin (+ tol); leave a few seconds further out so
      * both indicators stay in lockstep (never red LIVE beside a big −delay).
      */
     function omtAdvanceAtLiveLatch(delay) {
         const enter = omtLiveAtLiveMaxDelaySec();
         const leave = enter + 5;
+        // Brief force window after LIVE click (seek settling / edge tick noise).
+        // Cancel immediately if the user seeks far behind the leave threshold.
+        if (omtLiveForceAtLiveUntil && Date.now() < omtLiveForceAtLiveUntil) {
+            if (delay <= leave) {
+                omtTimelineLiveChipOn = true;
+                return true;
+            }
+            omtLiveForceAtLiveUntil = 0;
+        }
         if (omtTimelineLiveChipOn) {
-            if (delay > leave) omtTimelineLiveChipOn = false;
+            if (delay > leave) {
+                omtTimelineLiveChipOn = false;
+                omtLivePinnedMarginSec = 0;
+            }
         } else if (delay <= enter) {
             omtTimelineLiveChipOn = true;
         }
@@ -331,10 +348,17 @@
         const delay = omtLiveDelaySec(playhead, liveEdge);
         let atLive = false;
         if (liveMode) {
-            if (o.forceAtLive) omtTimelineLiveChipOn = true;
+            if (o.forceAtLive) {
+                omtTimelineLiveChipOn = true;
+                if (!(omtLiveForceAtLiveUntil > Date.now())) {
+                    omtLiveForceAtLiveUntil = Date.now() + 2500;
+                }
+            }
             atLive = omtAdvanceAtLiveLatch(delay);
         } else {
             omtTimelineLiveChipOn = false;
+            omtLivePinnedMarginSec = 0;
+            omtLiveForceAtLiveUntil = 0;
             atLive = false;
         }
         return { liveMode, kickoffOn, playhead, liveEdge, delay, atLive };
@@ -346,6 +370,17 @@
             kickoff1 !== null || kickoff2 !== null || kickoffC1 !== null || kickoffC2 !== null
         ));
     }
+
+    // E2E / field diagnostics for the shared at-live rule (read/write pin + stall).
+    try {
+        window.__omtLiveUiDebug = {
+            pinMargin(sec) { omtLivePinnedMarginSec = Math.max(0, Number(sec) || 0); },
+            getPin() { return omtLivePinnedMarginSec; },
+            clearStall() { omtLiveLastStallAtMs = 0; omtLiveEdgeAdvanceAtMs = []; },
+            forceUntil(ms) { omtLiveForceAtLiveUntil = Date.now() + Math.max(0, Number(ms) || 0); },
+            atLiveMax() { return omtLiveAtLiveMaxDelaySec(); }
+        };
+    } catch (_) {}
 
     /**
      * Left LIVE control: either LIVE chip OR delay text — never both.
@@ -363,7 +398,7 @@
             liveChipEl.hidden = true;
             liveDelayEl.textContent = formatarAtrasoLive(delay);
             liveInd.classList.remove('is-at-live');
-            liveInd.setAttribute('aria-label', 'Go to live safe point');
+            liveInd.setAttribute('aria-label', 'Go to live');
         }
     }
 
@@ -387,10 +422,9 @@
 
     /**
      * Paint timeline chrome-row from a live presentation snapshot (or resolve one).
-     * Left: LIVE delay/chip (live/DVR) or POST current/duration (VOD/post/local).
-     * Match clock is NOT shown on this bar when kickoff is set — it already lives
-     * on the clock panel and scrubber hover (v2.2.3). Right (live/DVR): playhead /
-     * furthest — never duplicates left POST times.
+     * Left (live): LIVE chip OR delay only — never match clock, never playhead/furthest.
+     * Left (post/VOD): current / duration. Right (live only): playhead / furthest
+     * immediately left of fullscreen.
      */
     function atualizarTempoTimelineDireito(snapIn) {
         if (!omtRoot) return;
@@ -406,13 +440,16 @@
         const snap = snapIn || omtResolveLivePresentation();
         const { liveMode, playhead, liveEdge, delay, atLive } = snap;
 
-        // Always hide the bar match clock (kickoff or not). Panel + scrubber tip keep it.
+        // Match clock never belongs on the bottom bar (panel + scrubber tip only).
         matchClockEl.hidden = true;
         timesWrap.dataset.omtTimeMode = liveMode ? 'live' : 'post';
-        liveInd.hidden = !liveMode;
-        postWrap.hidden = liveMode;
 
         if (!liveMode) {
+            liveInd.hidden = true;
+            liveDelayEl.hidden = true;
+            liveChipEl.hidden = true;
+            liveInd.classList.remove('is-at-live');
+            postWrap.hidden = false;
             omtPaintVideoRange(videoRangeEl, playhead, liveEdge, false);
             let dur = liveEdge;
             if (!(dur > 0) && site && typeof site.effectiveDuration === 'function') {
@@ -424,6 +461,9 @@
             return;
         }
 
+        // Live/DVR: left = delay/LIVE only; right = playhead / furthest.
+        postWrap.hidden = true;
+        liveInd.hidden = false;
         omtPaintLiveDelayChip(liveInd, liveDelayEl, liveChipEl, delay, atLive);
         omtPaintVideoRange(videoRangeEl, playhead, liveEdge, true);
     }

@@ -123,6 +123,22 @@
         if (!ensureLiveVideo()) return;
         // Adaptive safe point behind seekable end (never raw edge — stalls).
         // Manual skips are not clamped to this margin.
+        const marginUsed = (typeof omtAdaptiveLiveSafeMarginSec === 'function')
+            ? omtAdaptiveLiveSafeMarginSec()
+            : OMT_LIVE_SAFE_MARGIN_S;
+        // Pin the jump margin so at-live / red button / bar chip use the same
+        // rule as the safe point we land on (v2.2.6 field: ~20s after stall).
+        omtLivePinnedMarginSec = Math.max(omtLivePinnedMarginSec || 0, marginUsed);
+        omtLiveForceAtLiveUntil = Date.now() + 2500;
+        omtTimelineLiveChipOn = true;
+        // Red immediately on click — do not wait for seek / timeupdate.
+        if (liveBtn) liveBtn.classList.add('is-live');
+        const timelineBar = omtRoot ? omtRoot.querySelector('#omt-timeline-bar') : null;
+        if (timelineBar) timelineBar.classList.add('omt-at-live');
+        if (controlsPanel) controlsPanel.classList.add('omt-at-live');
+        // Top-centre OSD: LIVE / GOING LIVE only — never a delay number.
+        mostrarOSD('GOING LIVE');
+
         let target = null;
         if (typeof omtLiveSafePointSec === 'function') {
             target = omtLiveSafePointSec();
@@ -131,11 +147,9 @@
             try {
                 if (vid.seekable && vid.seekable.length > 0) {
                     const edge = vid.seekable.end(vid.seekable.length - 1);
-                    const margin = (typeof OMT_LIVE_SAFE_MARGIN_S === 'number') ? OMT_LIVE_SAFE_MARGIN_S : 10;
-                    target = Math.max(0, edge - margin);
+                    target = Math.max(0, edge - marginUsed);
                 } else if (vid.duration && isFinite(vid.duration)) {
-                    const margin = (typeof OMT_LIVE_SAFE_MARGIN_S === 'number') ? OMT_LIVE_SAFE_MARGIN_S : 10;
-                    target = Math.max(0, vid.duration - margin);
+                    target = Math.max(0, vid.duration - marginUsed);
                 }
             } catch (_) {}
         }
@@ -155,14 +169,16 @@
         }
         // After going live, clear seek lock so stream can advance normally
         setTimeout(() => { userIntendedTime = null; seekLockUntil = 0; }, 3000);
-        const marginUsed = (typeof omtAdaptiveLiveSafeMarginSec === 'function')
-            ? omtAdaptiveLiveSafeMarginSec()
-            : OMT_LIVE_SAFE_MARGIN_S;
-        mostrarOSD('Live −' + Math.round(marginUsed) + 's');
         // Refresh panel + timeline from the same snapshot immediately (no timeupdate wait).
         if (typeof atualizarEstadoLive === 'function') {
             atualizarEstadoLive({ forceAtLive: true });
         }
+        // After seek settles, flash LIVE (still no number) if we stayed at live.
+        setTimeout(() => {
+            if (liveBtn && liveBtn.classList.contains('is-live')) {
+                mostrarOSD('LIVE');
+            }
+        }, 450);
         if (liveBtn) liveBtn.blur();
     }
 
