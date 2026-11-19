@@ -198,7 +198,7 @@
         </div>
         <div class="drag-center-grip" aria-hidden="true">${omtIcon('grip-horizontal', 16)}</div>
         <div class="drag-side-right">
-            <button id="omt-live-btn" class="omt-tip" type="button"${tip('Go to live safe point (L)')}>
+            <button id="omt-live-btn" class="omt-tip" type="button"${tip('Go to live (L)')}>
                 <span class="live-dot"></span><span class="live-label">LIVE</span>
             </button>
             <span class="omt-live-spacer" aria-hidden="true"></span>

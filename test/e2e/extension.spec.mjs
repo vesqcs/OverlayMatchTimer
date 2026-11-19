@@ -2566,6 +2566,122 @@ async function run() {
       }
     });
 
+    // v2.2.6: top OSD is LIVE / GOING LIVE only (no −Ns); tooltip "Go to live".
+    const liveOsdTip = await page.evaluate(async () => {
+      const v = document.querySelector('video');
+      const btn = document.getElementById('omt-live-btn');
+      const osd = document.getElementById('osd-message');
+      if (!v || !btn) return { ok: false, reason: 'missing' };
+      await new Promise((r) => {
+        const end = v.seekable?.length ? v.seekable.end(v.seekable.length - 1) : v.duration;
+        v.currentTime = Math.max(0, (end || 0) - 40);
+        v.dispatchEvent(new Event('timeupdate'));
+        setTimeout(r, 40);
+      });
+      const texts = [];
+      const note = () => {
+        const t = (osd && osd.classList.contains('visible') ? (osd.textContent || '') : '').trim();
+        if (t) texts.push(t);
+      };
+      btn.click();
+      note();
+      await new Promise((r) => setTimeout(r, 50));
+      note();
+      await new Promise((r) => setTimeout(r, 500));
+      note();
+      const tip = (btn.getAttribute('data-tip') || '').trim();
+      const aria = (document.getElementById('omt-timeline-live-indicator')?.getAttribute('aria-label') || '');
+      const noNumber = texts.every((t) => !/\d/.test(t) && /^(GOING LIVE|LIVE)$/i.test(t));
+      const sawGoing = texts.some((t) => /^GOING LIVE$/i.test(t));
+      const sawLive = texts.some((t) => /^LIVE$/i.test(t));
+      return {
+        ok: noNumber && sawGoing && tip === 'Go to live (L)',
+        texts,
+        tip,
+        aria,
+        sawGoing,
+        sawLive,
+        liveIsRed: btn.classList.contains('is-live')
+      };
+    });
+    results.push({
+      name: 'live-osd-going-live-or-live-no-number',
+      pass: liveOsdTip.ok === true,
+      detail: liveOsdTip
+    });
+    results.push({
+      name: 'live-btn-tooltip-go-to-live',
+      pass: liveOsdTip.tip === 'Go to live (L)',
+      detail: { tip: liveOsdTip.tip }
+    });
+
+    // v2.2.6: pinned jump margin keeps red when adaptive would shrink under a ~20s landing.
+    const pinnedLive = await page.evaluate(async () => {
+      const v = document.querySelector('video');
+      const btn = document.getElementById('omt-live-btn');
+      const chip = document.getElementById('omt-timeline-live-chip');
+      const ind = document.getElementById('omt-timeline-live-indicator');
+      const delayEl = document.getElementById('omt-timeline-live-delay');
+      const range = document.getElementById('omt-timeline-video-range');
+      const post = document.getElementById('omt-timeline-post-times');
+      const match = document.getElementById('omt-timeline-match-clock');
+      if (!v || !btn || !window.__omtLiveUiDebug) return { ok: false, reason: 'missing-debug' };
+      const end0 = v.seekable?.length ? v.seekable.end(v.seekable.length - 1) : v.duration;
+      v.currentTime = Math.max(0, (end0 || 0) - 45);
+      v.dispatchEvent(new Event('timeupdate'));
+      await new Promise((r) => setTimeout(r, 40));
+      btn.click();
+      await new Promise((r) => setTimeout(r, 120));
+      // After the jump, raise the pin to 20s (field stall/slow-edge landing) and
+      // drop stall memory so adaptive alone would be ~10s — pin must keep at-live.
+      window.__omtLiveUiDebug.pinMargin(20);
+      window.__omtLiveUiDebug.clearStall();
+      window.__omtLiveUiDebug.forceUntil(0);
+      const end = v.seekable?.length ? v.seekable.end(v.seekable.length - 1) : v.duration;
+      // Land exactly on the pinned safe point.
+      v.currentTime = Math.max(0, (end || 0) - 20);
+      v.dispatchEvent(new Event('timeupdate'));
+      await new Promise((r) => setTimeout(r, 80));
+      const delay = (end || 0) - (v.currentTime || 0);
+      const liveIsRed = btn.classList.contains('is-live');
+      const chipVisible = !!(chip && !chip.hidden && ind && !ind.hidden);
+      const delayVisible = !!(delayEl && !delayEl.hidden && ind && !ind.hidden);
+      const leftIsLiveChrome = chipVisible || delayVisible;
+      const leftNotRange = !(post && !post.hidden);
+      const matchHidden = !match || match.hidden;
+      const rangeVisible = !!(range && !range.hidden);
+      return {
+        ok: liveIsRed && chipVisible && !delayVisible && leftIsLiveChrome &&
+          leftNotRange && matchHidden && rangeVisible && delay >= 18 && delay <= 22,
+        delay,
+        liveIsRed,
+        chipVisible,
+        delayVisible,
+        matchHidden,
+        rangeVisible,
+        rangeText: range ? (range.textContent || '').trim() : null,
+        pin: window.__omtLiveUiDebug.getPin(),
+        atLiveMax: window.__omtLiveUiDebug.atLiveMax()
+      };
+    });
+    results.push({
+      name: 'live-pinned-margin-keeps-red-at-20s',
+      pass: pinnedLive.ok === true,
+      detail: pinnedLive
+    });
+    results.push({
+      name: 'live-bar-left-chip-or-delay-not-range',
+      pass: pinnedLive.ok === true && pinnedLive.matchHidden === true &&
+        pinnedLive.rangeVisible === true,
+      detail: {
+        matchHidden: pinnedLive.matchHidden,
+        rangeVisible: pinnedLive.rangeVisible,
+        rangeText: pinnedLive.rangeText,
+        chipVisible: pinnedLive.chipVisible,
+        delayVisible: pinnedLive.delayVisible
+      }
+    });
+
     // ---- v2.2.2 live/time consistency matrix (one is-live source of truth) ----
     const readLiveConsistency = async () => page.evaluate(() => {
       const btn = document.getElementById('omt-live-btn');
@@ -4435,6 +4551,49 @@ async function run() {
     });
     await page.screenshot({ path: path.join(ARTIFACTS, 'v225_xeatre_hdmi_painted.png'), fullPage: true });
 
+    // v2.2.6: Xeatre shares LIVE bar / button / OSD / tooltip UX (UI layer only).
+    const xeatreLiveUx = await page.evaluate(async () => {
+      const v = document.querySelector('video');
+      const btn = document.getElementById('omt-live-btn');
+      const osd = document.getElementById('osd-message');
+      const ind = document.getElementById('omt-timeline-live-indicator');
+      const chip = document.getElementById('omt-timeline-live-chip');
+      const delay = document.getElementById('omt-timeline-live-delay');
+      const range = document.getElementById('omt-timeline-video-range');
+      const post = document.getElementById('omt-timeline-post-times');
+      const match = document.getElementById('omt-timeline-match-clock');
+      if (!v || !btn) return { ok: false, reason: 'missing' };
+      const end = v.seekable?.length ? v.seekable.end(v.seekable.length - 1) : (v.duration || 0);
+      try { v.currentTime = Math.max(0, end - 40); } catch (_) {}
+      v.dispatchEvent(new Event('timeupdate'));
+      await new Promise((r) => setTimeout(r, 60));
+      const texts = [];
+      btn.click();
+      await new Promise((r) => setTimeout(r, 40));
+      if (osd && osd.classList.contains('visible')) texts.push((osd.textContent || '').trim());
+      await new Promise((r) => setTimeout(r, 500));
+      if (osd && osd.classList.contains('visible')) texts.push((osd.textContent || '').trim());
+      const tip = (btn.getAttribute('data-tip') || '').trim();
+      const liveIsRed = btn.classList.contains('is-live');
+      const chipVisible = !!(chip && !chip.hidden && ind && !ind.hidden);
+      const delayVisible = !!(delay && !delay.hidden && ind && !ind.hidden);
+      const postVisible = !!(post && !post.hidden);
+      const matchVisible = !!(match && !match.hidden);
+      const rangeVisible = !!(range && !range.hidden);
+      const osdOk = texts.every((t) => !t || (/^(GOING LIVE|LIVE)$/i.test(t) && !/\d/.test(t)));
+      const hudOutside = !document.getElementById('hdmi-video')?.contains(document.getElementById('omt-root'));
+      return {
+        ok: tip === 'Go to live (L)' && liveIsRed && chipVisible && !delayVisible &&
+          !postVisible && !matchVisible && rangeVisible && osdOk && hudOutside,
+        tip, liveIsRed, chipVisible, delayVisible, postVisible, matchVisible, rangeVisible, texts, hudOutside
+      };
+    });
+    results.push({
+      name: 'xeatre-live-ux-bar-chip-tooltip',
+      pass: xeatreLiveUx.ok === true,
+      detail: xeatreLiveUx
+    });
+
     // ---------- InPlay collapsed player: HUD stays inside the player box ----------
     // No visibility guard (2.0.1–2.0.2 toggled HUD/host chrome on layout
     // changes). The HUD is mounted once; the anchor is a stacking context so
@@ -4640,6 +4799,66 @@ async function run() {
     await page.goto(`${base}/inplayip-mock.html`, { waitUntil: 'domcontentloaded' });
     await waitForOmt(page, 15000);
     await page.waitForTimeout(400);
+
+    // v2.2.6: InPlay UI-layer LIVE chrome (bar / chip / button / tooltip) — no host/player changes.
+    const inplayLiveUx = await page.evaluate(async () => {
+      const v = document.querySelector('video');
+      const btn = document.getElementById('omt-live-btn');
+      const osd = document.getElementById('osd-message');
+      const ind = document.getElementById('omt-timeline-live-indicator');
+      const chip = document.getElementById('omt-timeline-live-chip');
+      const delay = document.getElementById('omt-timeline-live-delay');
+      const range = document.getElementById('omt-timeline-video-range');
+      const post = document.getElementById('omt-timeline-post-times');
+      const match = document.getElementById('omt-timeline-match-clock');
+      if (!v || !btn) return { ok: false, reason: 'missing' };
+      const end = v.seekable?.length ? v.seekable.end(v.seekable.length - 1) : (v.duration || 0);
+      try { v.currentTime = Math.max(0, end - 40); } catch (_) {}
+      v.dispatchEvent(new Event('timeupdate'));
+      await new Promise((r) => setTimeout(r, 80));
+      const behind = {
+        delayVisible: !!(delay && !delay.hidden && ind && !ind.hidden),
+        chipVisible: !!(chip && !chip.hidden && ind && !ind.hidden),
+        postVisible: !!(post && !post.hidden),
+        matchVisible: !!(match && !match.hidden),
+        rangeVisible: !!(range && !range.hidden),
+        liveIsRed: btn.classList.contains('is-live'),
+        delayText: delay ? (delay.textContent || '').trim() : null
+      };
+      const texts = [];
+      btn.click();
+      await new Promise((r) => setTimeout(r, 40));
+      if (osd && osd.classList.contains('visible')) texts.push((osd.textContent || '').trim());
+      await new Promise((r) => setTimeout(r, 500));
+      if (osd && osd.classList.contains('visible')) texts.push((osd.textContent || '').trim());
+      const tip = (btn.getAttribute('data-tip') || '').trim();
+      const after = {
+        tip,
+        liveIsRed: btn.classList.contains('is-live'),
+        chipVisible: !!(chip && !chip.hidden && ind && !ind.hidden),
+        delayVisible: !!(delay && !delay.hidden && ind && !ind.hidden),
+        postVisible: !!(post && !post.hidden),
+        matchVisible: !!(match && !match.hidden),
+        rangeVisible: !!(range && !range.hidden),
+        texts,
+        osdOk: texts.every((t) => !t || (/^(GOING LIVE|LIVE)$/i.test(t) && !/\d/.test(t)))
+      };
+      return {
+        ok: behind.delayVisible && !behind.chipVisible && !behind.postVisible && !behind.matchVisible &&
+          behind.rangeVisible && !behind.liveIsRed &&
+          after.tip === 'Go to live (L)' && after.liveIsRed && after.chipVisible &&
+          !after.delayVisible && !after.postVisible && !after.matchVisible &&
+          after.rangeVisible && after.osdOk,
+        behind,
+        after
+      };
+    });
+    results.push({
+      name: 'inplayip-live-ux-bar-chip-tooltip',
+      pass: inplayLiveUx.ok === true,
+      detail: inplayLiveUx
+    });
+
     const inplayLoopGuard = await page.evaluate(async () => {
       const v = document.querySelector('video');
       if (!v) return { ok: false, reason: 'no-video' };

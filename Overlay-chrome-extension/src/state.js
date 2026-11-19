@@ -80,6 +80,11 @@
     // Extra slack so landing on the adaptive safe point still counts as LIVE
     // (float + edge tick during seek). Panel button + timeline chip share this.
     const OMT_LIVE_AT_LIVE_TOL_S = 1.5;
+    // v2.2.6: pin the margin used by the last LIVE jump so at-live / red button /
+    // bar chip stay in lockstep with the safe point we actually landed on
+    // (adaptive margin must not shrink under our feet after the click).
+    let omtLivePinnedMarginSec = 0;
+    let omtLiveForceAtLiveUntil = 0;
     // Legacy fixed chip thresholds (kept as fallbacks; paint uses adaptive).
     const OMT_LIVE_CHIP_ENTER_S = OMT_LIVE_SAFE_MARGIN_S;
     const OMT_LIVE_CHIP_LEAVE_S = OMT_LIVE_SAFE_MARGIN_S + 5;
