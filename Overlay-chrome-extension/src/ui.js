@@ -69,6 +69,11 @@
 
     function updateCompactLayout() {
         if (!omtRoot) return;
+        // Xeatre: viewport-fit owns compact/micro + player sizing (v2.2.10).
+        if (site && site.id === 'xeatre') {
+            if (typeof omtXeatreFitViewport === 'function') omtXeatreFitViewport();
+            return;
+        }
         const anchor = omtRoot.parentElement;
         const w = (anchor && anchor.clientWidth) || window.innerWidth;
         const h = (anchor && anchor.clientHeight) || window.innerHeight;

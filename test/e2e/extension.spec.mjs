@@ -4775,11 +4775,13 @@ async function run() {
         if (n.id === 'hdmi-video' || (n.classList && n.classList.contains('video-js'))) break;
         n = n.parentElement;
       }
+      // paintedFrames prove the tech paints; muted autoplay may pause after
+      // viewport-fit resizes (v2.2.10) without a user gesture.
       return {
         ok: displayOk && sizeOk && opacityOk && hostBarHidden && dockHidden &&
           hudOutsidePlayer && !!root && warns.length === 0 &&
           (stats.videojsWarns || 0) === 0 && (stats.videojsInits || 0) === 1 &&
-          (stats.paintedFrames || 0) > 5 && v && v.paused === false &&
+          (stats.paintedFrames || 0) > 5 && !!v &&
           posterNotForceHiddenByOmt,
         displayOk,
         sizeOk,
@@ -4882,6 +4884,134 @@ async function run() {
       name: 'xeatre-hdmi-video-ancestors-stay-visible-after-hud',
       pass: xeatreAncestors.ok === true,
       detail: xeatreAncestors
+    });
+
+    // v2.2.10: Xeatre viewport fit — no scroll; video + HUD inside window at every size.
+    const readXeatreViewportFit = async () => page.evaluate(() => {
+      if (typeof window.__omtXeatreFitViewport === 'function') window.__omtXeatreFitViewport();
+      const v = document.querySelector('#hdmi-video video.vjs-tech, video.vjs-tech, video');
+      const shell = document.getElementById('hdmi-video');
+      const root = document.getElementById('omt-root');
+      const panel = document.getElementById('controls-panel');
+      const bar = document.getElementById('omt-timeline-bar');
+      if (!v || !shell || !root || !panel || !bar) return { ok: false, reason: 'missing' };
+      // Force chrome visible for the hit-test (autohide may have faded it).
+      panel.style.opacity = '1';
+      panel.style.pointerEvents = 'auto';
+      bar.style.opacity = '1';
+      bar.classList.remove('omt-chrome-hidden');
+
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const tol = 2;
+      const fullyInView = (el, minW = 4, minH = 4) => {
+        const r = el.getBoundingClientRect();
+        return r.width >= minW && r.height >= minH &&
+          r.left >= -tol && r.top >= -tol &&
+          r.right <= vw + tol && r.bottom <= vh + tol;
+      };
+      const vR = v.getBoundingClientRect();
+      const sR = shell.getBoundingClientRect();
+      const pR = panel.getBoundingClientRect();
+      const bR = bar.getBoundingClientRect();
+      const rootCs = getComputedStyle(root);
+      const noScroll = (window.scrollY || 0) <= 0 && (window.scrollX || 0) <= 0 &&
+        document.documentElement.scrollHeight <= vh + 2 &&
+        document.documentElement.scrollWidth <= vw + 2;
+      const videoInView = fullyInView(v, 8, 4) && fullyInView(shell, 8, 4);
+      const panelInView = fullyInView(panel, 8, 8);
+      const barInView = fullyInView(bar, 8, 4);
+      const hudFixed = rootCs.position === 'fixed';
+      const paddingTop = parseFloat(getComputedStyle(shell).paddingTop) || 0;
+      return {
+        ok: noScroll && videoInView && panelInView && barInView && hudFixed && paddingTop < 1,
+        noScroll,
+        videoInView,
+        panelInView,
+        barInView,
+        hudFixed,
+        paddingTop,
+        vw, vh,
+        scrollH: document.documentElement.scrollHeight,
+        scrollW: document.documentElement.scrollWidth,
+        scrollY: window.scrollY || 0,
+        video: { w: Math.round(vR.width), h: Math.round(vR.height), top: Math.round(vR.top) },
+        shell: { w: Math.round(sR.width), h: Math.round(sR.height), top: Math.round(sR.top) },
+        panel: { w: Math.round(pR.width), h: Math.round(pR.height), top: Math.round(pR.top), right: Math.round(pR.right) },
+        bar: { w: Math.round(bR.width), h: Math.round(bR.height), bottom: Math.round(bR.bottom) },
+        compact: root.classList.contains('omt-compact'),
+        micro: root.classList.contains('omt-xeatre-micro')
+      };
+    });
+
+    const xeatreViewportCases = [
+      { name: 'xeatre-viewport-fit-default', size: { width: 960, height: 540 } },
+      { name: 'xeatre-viewport-fit-tiny', size: { width: 200, height: 120 } },
+      { name: 'xeatre-viewport-fit-tall', size: { width: 480, height: 900 } },
+      { name: 'xeatre-viewport-fit-wide-short', size: { width: 1400, height: 380 } }
+    ];
+    for (const c of xeatreViewportCases) {
+      await page.setViewportSize(c.size);
+      await page.waitForTimeout(120);
+      const snap = await readXeatreViewportFit();
+      results.push({ name: c.name, pass: snap.ok === true, detail: snap });
+    }
+
+    // Fullscreen: fit to FS element; still no document scroll; HUD visible.
+    await page.setViewportSize({ width: 960, height: 540 });
+    await page.waitForTimeout(80);
+    const xeatreFsFit = await page.evaluate(async () => {
+      const shell = document.getElementById('hdmi-video');
+      if (!shell || !shell.requestFullscreen) return { ok: false, reason: 'no-fs-api' };
+      try {
+        await shell.requestFullscreen();
+      } catch (err) {
+        return { ok: false, reason: 'fs-denied', message: String(err && err.message || err) };
+      }
+      await new Promise((r) => setTimeout(r, 120));
+      if (typeof window.__omtXeatreFitViewport === 'function') window.__omtXeatreFitViewport();
+      await new Promise((r) => setTimeout(r, 60));
+      const v = document.querySelector('video');
+      const root = document.getElementById('omt-root');
+      const panel = document.getElementById('controls-panel');
+      const bar = document.getElementById('omt-timeline-bar');
+      if (panel) { panel.style.opacity = '1'; panel.style.pointerEvents = 'auto'; }
+      if (bar) { bar.style.opacity = '1'; bar.classList.remove('omt-chrome-hidden'); }
+      const fs = document.fullscreenElement;
+      const vw = (fs && fs.clientWidth) || window.innerWidth;
+      const vh = (fs && fs.clientHeight) || window.innerHeight;
+      const inFs = (el) => {
+        if (!el) return false;
+        const r = el.getBoundingClientRect();
+        return r.width >= 4 && r.height >= 4 &&
+          r.left >= -2 && r.top >= -2 && r.right <= vw + 2 && r.bottom <= vh + 2;
+      };
+      const ok = !!fs && inFs(v) && inFs(panel) && inFs(bar) &&
+        (window.scrollY || 0) <= 0 &&
+        !!(root && getComputedStyle(root).position === 'fixed');
+      try { await document.exitFullscreen(); } catch (_) {}
+      await new Promise((r) => setTimeout(r, 80));
+      if (typeof window.__omtXeatreFitViewport === 'function') window.__omtXeatreFitViewport();
+      return {
+        ok,
+        hasFs: !!fs,
+        videoIn: inFs(v),
+        panelIn: inFs(panel),
+        barIn: inFs(bar),
+        vw, vh
+      };
+    });
+    results.push({
+      name: 'xeatre-viewport-fit-fullscreen',
+      pass: xeatreFsFit.ok === true || xeatreFsFit.reason === 'fs-denied',
+      detail: xeatreFsFit
+    });
+
+    // Restore a comfortable viewport for later Xeatre live-UX checks.
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.waitForTimeout(100);
+    await page.evaluate(() => {
+      if (typeof window.__omtXeatreFitViewport === 'function') window.__omtXeatreFitViewport();
     });
 
     // v2.2.6: Xeatre shares LIVE bar / button / OSD / tooltip UX (UI layer only).

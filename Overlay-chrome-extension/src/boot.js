@@ -44,6 +44,9 @@
         if (typeof stopXeatreNativeChromeObserver === 'function') {
             try { stopXeatreNativeChromeObserver(); } catch (_) {}
         }
+        if (typeof stopXeatreViewportFit === 'function') {
+            try { stopXeatreViewportFit(); } catch (_) {}
+        }
         if (examinoSettingsRefreshTimer) {
             clearTimeout(examinoSettingsRefreshTimer);
             examinoSettingsRefreshTimer = null;

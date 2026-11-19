@@ -68,6 +68,7 @@
             if (typeof injectXeatreHideCSS === 'function') injectXeatreHideCSS();
             if (typeof hideXeatreNativeChrome === 'function') hideXeatreNativeChrome();
             if (typeof startXeatreNativeChromeObserver === 'function') startXeatreNativeChromeObserver();
+            if (typeof startXeatreViewportFit === 'function') startXeatreViewportFit();
             // v2.2.9: do NOT set tabindex / attributes on tech or shell — host
             // MutationObservers may re-call videojs('hdmi-video') ("already initialised").
             // Never call videojs(); never reparent <video>.
