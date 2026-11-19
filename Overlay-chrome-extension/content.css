@@ -52,16 +52,16 @@ html.omt-host-inplayip.omt-hud-on .video-js .vjs-control-bar {
     pointer-events: none !important;
 }
 
-/* ---- HIDE XEATRE HOST CHROME (Xeatre only, v2.2.5) ----
-   Chrome leaves only (control bar, ControlBar overlays, 6-col panel).
-   Never hide poster / tech / .video-js — field black screen when poster
-   was hidden while tech failed to paint after "hdmi-video already initialised". */
+/* ---- HIDE XEATRE HOST CHROME (Xeatre only, v2.2.5 / v2.2.9) ----
+   Chrome leaves only (control bar, 6-col panel, ControlBar when chrome-only).
+   Never hide #hdmi-video / .video-js / any ancestor of <video> — field 2.2.8:
+   bare #ControlBar {display:none} wrapped the player → 0×0 black (audio ok). */
 html.omt-host-xeatre.omt-hud-on .vjs-control-bar,
 html.omt-host-xeatre.omt-hud-on .vjs-big-play-button,
 html.omt-host-xeatre.omt-hud-on .vjs-menu-button-popup .vjs-menu,
-html.omt-host-xeatre.omt-hud-on #ControlBar.overlay-fullscreen,
-html.omt-host-xeatre.omt-hud-on #ControlBar.overlay-normal,
-html.omt-host-xeatre.omt-hud-on #ControlBar,
+html.omt-host-xeatre.omt-hud-on #ControlBar.overlay-fullscreen:not(:has(#hdmi-video)):not(:has(video)):not(:has(.vjs-tech)):not(:has(.video-js)),
+html.omt-host-xeatre.omt-hud-on #ControlBar.overlay-normal:not(:has(#hdmi-video)):not(:has(video)):not(:has(.vjs-tech)):not(:has(.video-js)),
+html.omt-host-xeatre.omt-hud-on #ControlBar:not(:has(#hdmi-video)):not(:has(video)):not(:has(.vjs-tech)):not(:has(.video-js)),
 html.omt-host-xeatre.omt-hud-on #jwplay,
 html.omt-host-xeatre.omt-hud-on #GoLive,
 html.omt-host-xeatre.omt-hud-on #GoStart,
@@ -73,9 +73,9 @@ html.omt-host-xeatre.omt-hud-on #Speed15,
 html.omt-host-xeatre.omt-hud-on #Speed2,
 html.omt-host-xeatre.omt-hud-on #AutoHide,
 html.omt-host-xeatre.omt-hud-on #autohide,
-html.omt-host-xeatre.omt-hud-on .xeatre-control-panel,
-html.omt-host-xeatre.omt-hud-on .xeatre-host-panel,
-html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden {
+html.omt-host-xeatre.omt-hud-on .xeatre-control-panel:not(:has(#hdmi-video)):not(:has(video)):not(:has(.vjs-tech)):not(:has(.video-js)),
+html.omt-host-xeatre.omt-hud-on .xeatre-host-panel:not(:has(#hdmi-video)):not(:has(video)):not(:has(.vjs-tech)):not(:has(.video-js)),
+html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:not(:has(#hdmi-video)):not(:has(video)):not(:has(.vjs-tech)):not(:has(.video-js)) {
     display: none !important;
     visibility: hidden !important;
     opacity: 0 !important;
@@ -85,17 +85,22 @@ html.omt-host-xeatre.omt-hud-on .video-js.omt-xeatre-host-hidden,
 html.omt-host-xeatre.omt-hud-on .vjs-tech.omt-xeatre-host-hidden,
 html.omt-host-xeatre.omt-hud-on #hdmi-video.omt-xeatre-host-hidden,
 html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(video),
-html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(.vjs-tech) {
+html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(.vjs-tech),
+html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(#hdmi-video),
+html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(.video-js) {
     display: block !important;
     visibility: visible !important;
     opacity: 1 !important;
     pointer-events: auto !important;
 }
 html.omt-host-xeatre.omt-hud-on #hdmi-video,
+html.omt-host-xeatre.omt-hud-on #hdmi-video.video-js,
+html.omt-host-xeatre.omt-hud-on .video-js,
 html.omt-host-xeatre.omt-hud-on #hdmi-video video,
 html.omt-host-xeatre.omt-hud-on .video-js > video,
 html.omt-host-xeatre.omt-hud-on video.vjs-tech,
 html.omt-host-xeatre.omt-hud-on .vjs-tech {
+    display: block !important;
     visibility: visible !important;
     opacity: 1 !important;
 }

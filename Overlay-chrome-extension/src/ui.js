@@ -61,7 +61,7 @@
         try {
             const root = document.documentElement;
             root.classList.toggle('omt-hud-on', !!on);
-            ['examino', 'inplayip', 'local'].forEach((id) => {
+            ['examino', 'inplayip', 'local', 'xeatre'].forEach((id) => {
                 root.classList.toggle('omt-host-' + id, !!(on && site && site.id === id));
             });
         } catch (_) {}

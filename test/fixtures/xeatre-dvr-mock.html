@@ -46,28 +46,35 @@
       background: #c01818; color: #fff; border: 0; border-radius: 4px;
       padding: 4px 8px; font-size: 11px; cursor: pointer;
     }
+    /* Field 2.2.8: #ControlBar often WRAPS #hdmi-video — hiding it blanks the picture. */
     #ControlBar.overlay-normal {
+      position: relative; width: 960px; z-index: 1;
+    }
+    #ControlBar .omt-xeatre-chrome-badge {
       position: absolute; left: 8px; top: 8px; z-index: 5;
       background: #333; color: #fff; padding: 4px 8px; font-size: 11px;
+      pointer-events: none;
     }
     #status { text-align: center; margin-top: 8px; color: #9ad; font-size: 13px; }
   </style>
 </head>
 <body>
   <div class="page" id="player-wrap">
-    <!-- Field: Video.js player id is "hdmi-video" (shell). Tech is the inner <video>. -->
-    <div id="hdmi-video" class="video-js vjs-fluid">
-      <video class="vjs-tech" playsinline muted></video>
-      <div class="vjs-poster" aria-hidden="true"></div>
-      <div class="vjs-control-bar" role="group" aria-label="Video Controls">
-        <button type="button" class="vjs-play-control" id="vjs-pause">Pause</button>
-        <button type="button" class="vjs-mute-control">Vol</button>
-        <div class="vjs-progress-control"><div class="vjs-play-progress" title="LIVE edge"></div></div>
-        <div class="vjs-live-control">LIVE</div>
-        <button type="button" class="vjs-picture-in-picture-control">PiP</button>
-        <button type="button" class="vjs-fullscreen-control">FS</button>
+    <!-- Field: #ControlBar wraps the Video.js shell (#hdmi-video). -->
+    <div id="ControlBar" class="overlay-normal">
+      <span class="omt-xeatre-chrome-badge">Host ControlBar</span>
+      <div id="hdmi-video" class="video-js vjs-fluid">
+        <video class="vjs-tech" playsinline muted></video>
+        <div class="vjs-poster" aria-hidden="true"></div>
+        <div class="vjs-control-bar" role="group" aria-label="Video Controls">
+          <button type="button" class="vjs-play-control" id="vjs-pause">Pause</button>
+          <button type="button" class="vjs-mute-control">Vol</button>
+          <div class="vjs-progress-control"><div class="vjs-play-progress" title="LIVE edge"></div></div>
+          <div class="vjs-live-control">LIVE</div>
+          <button type="button" class="vjs-picture-in-picture-control">PiP</button>
+          <button type="button" class="vjs-fullscreen-control">FS</button>
+        </div>
       </div>
-      <div id="ControlBar" class="overlay-normal">Host ControlBar</div>
       <div class="xeatre-control-panel floating" id="xeatre-panel-float" hidden></div>
       <button type="button" id="AutoHide">Auto hide</button>
     </div>
