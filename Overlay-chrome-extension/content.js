@@ -401,6 +401,7 @@
             if (typeof injectXeatreHideCSS === 'function') injectXeatreHideCSS();
             if (typeof hideXeatreNativeChrome === 'function') hideXeatreNativeChrome();
             if (typeof startXeatreNativeChromeObserver === 'function') startXeatreNativeChromeObserver();
+            if (typeof startXeatreViewportFit === 'function') startXeatreViewportFit();
             // v2.2.9: do NOT set tabindex / attributes on tech or shell — host
             // MutationObservers may re-call videojs('hdmi-video') ("already initialised").
             // Never call videojs(); never reparent <video>.
@@ -532,6 +533,9 @@
         }
         if (typeof stopXeatreNativeChromeObserver === 'function') {
             try { stopXeatreNativeChromeObserver(); } catch (_) {}
+        }
+        if (typeof stopXeatreViewportFit === 'function') {
+            try { stopXeatreViewportFit(); } catch (_) {}
         }
         if (examinoSettingsRefreshTimer) {
             clearTimeout(examinoSettingsRefreshTimer);
@@ -1100,6 +1104,11 @@
 
     function updateCompactLayout() {
         if (!omtRoot) return;
+        // Xeatre: viewport-fit owns compact/micro + player sizing (v2.2.10).
+        if (site && site.id === 'xeatre') {
+            if (typeof omtXeatreFitViewport === 'function') omtXeatreFitViewport();
+            return;
+        }
         const anchor = omtRoot.parentElement;
         const w = (anchor && anchor.clientWidth) || window.innerWidth;
         const h = (anchor && anchor.clientHeight) || window.innerHeight;
@@ -7594,12 +7603,299 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         }
     }
 
+    /* ---- v2.2.10 viewport fit (Xeatre only, our layer) ----
+     * Host .vjs-fluid sizes height from width (padding-top 56.25%) and ignores
+     * window height → overflow/scroll; absolute #omt-root then scrolls away.
+     * Fit the player to the viewport (contain/letterbox) and pin the HUD. */
+    let xeatreViewportFitInstalled = false;
+    let xeatreFitRaf = 0;
+    const xeatreFitStyled = new Set();
+
+    function omtXeatreFitStyle(el, props) {
+        if (!el || !el.style) return;
+        try {
+            Object.keys(props).forEach((k) => {
+                const v = props[k];
+                if (v == null || v === '') el.style.removeProperty(k);
+                else el.style.setProperty(k, v, 'important');
+            });
+            xeatreFitStyled.add(el);
+        } catch (_) {}
+    }
+
+    function omtXeatreClearFitStyles() {
+        xeatreFitStyled.forEach((el) => {
+            try {
+                if (!el || !el.style) return;
+                [
+                    'width', 'height', 'max-width', 'max-height', 'min-width', 'min-height',
+                    'padding-top', 'padding-bottom', 'margin', 'margin-top', 'margin-left',
+                    'margin-right', 'margin-bottom', 'position', 'left', 'top', 'right', 'bottom',
+                    'transform', 'box-sizing', 'overflow'
+                ].forEach((k) => {
+                    try { el.style.removeProperty(k); } catch (_) {}
+                });
+            } catch (_) {}
+        });
+        xeatreFitStyled.clear();
+    }
+
+    /**
+     * Contain 16:9 player in the viewport; kill fluid padding overflow; no scroll.
+     * Letterbox with black margins. HUD stays viewport-fixed via CSS.
+     */
+    function omtXeatreFitViewport() {
+        if (!(site && site.id === 'xeatre')) return;
+        if (!document.documentElement.classList.contains('omt-hud-on')) return;
+
+        const fs = document.fullscreenElement;
+        const vw = Math.max(1, (fs && fs.clientWidth) || window.innerWidth || 1);
+        const vh = Math.max(1, (fs && fs.clientHeight) || window.innerHeight || 1);
+
+        // Contain 16:9 in the viewport.
+        let w = vw;
+        let h = w * 9 / 16;
+        if (h > vh) {
+            h = vh;
+            w = h * 16 / 9;
+        }
+        w = Math.max(1, Math.floor(w));
+        h = Math.max(1, Math.floor(h));
+        const left = Math.max(0, Math.floor((vw - w) / 2));
+        const top = Math.max(0, Math.floor((vh - h) / 2));
+
+        const shell = document.getElementById('hdmi-video') ||
+            document.querySelector('.video-js');
+        if (!shell) return;
+
+        // Prefer sizing the chrome wrapper when it contains the shell (field ControlBar).
+        let box = shell;
+        try {
+            const wrap = shell.closest('#ControlBar') || shell.parentElement;
+            if (wrap && wrap !== document.body && wrap !== document.documentElement &&
+                wrap.contains(shell)) {
+                box = wrap;
+            }
+        } catch (_) {}
+
+        // Page chrome that used to sit below the player must not extend document height.
+        document.querySelectorAll(
+            '.xeatre-control-panel:not(.floating), #xeatre-panel-dock, #status'
+        ).forEach((el) => {
+            omtXeatreFitStyle(el, {
+                display: 'none',
+                height: '0px',
+                margin: '0px',
+                padding: '0px',
+                overflow: 'hidden'
+            });
+        });
+
+        // html/body: no scroll, fill viewport (CSS also sets this; reinforce).
+        omtXeatreFitStyle(document.documentElement, {
+            overflow: 'hidden',
+            height: '100%',
+            'max-height': '100vh',
+            width: '100%',
+            margin: '0px'
+        });
+        omtXeatreFitStyle(document.body, {
+            overflow: 'hidden',
+            height: '100%',
+            'max-height': '100vh',
+            width: '100%',
+            margin: '0px',
+            position: 'relative',
+            background: '#000'
+        });
+
+        // Outer page wrapper: fill viewport, no overflow.
+        const page = document.getElementById('player-wrap') ||
+            (box.parentElement && box.parentElement.id === 'player-wrap' ? box.parentElement : null) ||
+            box.parentElement;
+        if (page && page !== document.body && page !== document.documentElement) {
+            omtXeatreFitStyle(page, {
+                position: 'fixed',
+                left: '0px',
+                top: '0px',
+                width: vw + 'px',
+                height: vh + 'px',
+                margin: '0px',
+                padding: '0px',
+                overflow: 'hidden',
+                'max-width': '100vw',
+                'max-height': '100vh',
+                'box-sizing': 'border-box'
+            });
+        }
+
+        // Player box: explicit size, centered, no fluid padding-top.
+        omtXeatreFitStyle(box, {
+            position: 'absolute',
+            left: left + 'px',
+            top: top + 'px',
+            width: w + 'px',
+            height: h + 'px',
+            'max-width': '100vw',
+            'max-height': '100vh',
+            'padding-top': '0px',
+            'padding-bottom': '0px',
+            margin: '0px',
+            overflow: 'hidden',
+            'box-sizing': 'border-box'
+        });
+
+        if (shell !== box) {
+            omtXeatreFitStyle(shell, {
+                position: 'relative',
+                left: '0px',
+                top: '0px',
+                width: '100%',
+                height: '100%',
+                'max-width': '100%',
+                'max-height': '100%',
+                'padding-top': '0px',
+                'padding-bottom': '0px',
+                margin: '0px',
+                overflow: 'hidden',
+                'box-sizing': 'border-box'
+            });
+        }
+
+        // Tech fills the shell.
+        const tech = shell.querySelector('video.vjs-tech, video');
+        if (tech) {
+            omtXeatreFitStyle(tech, {
+                position: 'absolute',
+                left: '0px',
+                top: '0px',
+                width: '100%',
+                height: '100%',
+                'max-width': '100%',
+                'max-height': '100%',
+                'object-fit': 'contain'
+            });
+        }
+
+        // HUD compact / micro when the popup is small.
+        if (omtRoot) {
+            try {
+                omtRoot.classList.toggle('omt-compact', vw < 720 || vh < 420);
+                omtRoot.classList.toggle('omt-xeatre-micro', vw < 480 || vh < 280);
+            } catch (_) {}
+        }
+
+        // Keep the floating panel inside the viewport (drag/CSS bottom offsets
+        // can push it off-screen in a tiny popup).
+        const panel = document.getElementById('controls-panel');
+        if (panel && omtRoot) {
+            try {
+                const micro = omtRoot.classList.contains('omt-xeatre-micro');
+                if (micro) {
+                    omtXeatreFitStyle(panel, {
+                        top: '4px',
+                        bottom: 'auto',
+                        left: '50%',
+                        right: 'auto',
+                        transform: 'translateX(-50%) scale(0.55)',
+                        'transform-origin': 'top center',
+                        width: Math.min(480, Math.max(80, vw - 8)) + 'px',
+                        'max-height': Math.max(40, vh - 56) + 'px',
+                        overflow: 'hidden'
+                    });
+                } else if (omtRoot.classList.contains('omt-compact')) {
+                    omtXeatreFitStyle(panel, {
+                        bottom: '56px',
+                        top: 'auto'
+                    });
+                }
+                // Final clamp if anything still sticks out.
+                const pr = panel.getBoundingClientRect();
+                if (pr.top < 0 || pr.bottom > vh || pr.left < 0 || pr.right > vw) {
+                    const scale = micro ? 0.5 : 1;
+                    omtXeatreFitStyle(panel, {
+                        top: '4px',
+                        bottom: 'auto',
+                        left: '50%',
+                        right: 'auto',
+                        transform: 'translateX(-50%) scale(' + scale + ')',
+                        'transform-origin': 'top center',
+                        'max-height': Math.max(36, vh - 52) + 'px',
+                        overflow: 'hidden'
+                    });
+                }
+            } catch (_) {}
+        }
+
+        try {
+            if (window.scrollY || window.scrollX) window.scrollTo(0, 0);
+        } catch (_) {}
+
+        omtDebugXeatre('viewport-fit', {
+            vw, vh, w, h, left, top,
+            scrollW: document.documentElement.scrollWidth,
+            scrollH: document.documentElement.scrollHeight,
+            scrollY: window.scrollY || 0
+        });
+    }
+
+    function omtXeatreScheduleViewportFit() {
+        if (xeatreFitRaf) return;
+        xeatreFitRaf = requestAnimationFrame(() => {
+            xeatreFitRaf = 0;
+            omtXeatreFitViewport();
+        });
+    }
+
+    function onXeatreViewportResize() {
+        omtXeatreScheduleViewportFit();
+    }
+
+    function onXeatreFullscreenChange() {
+        omtXeatreScheduleViewportFit();
+    }
+
+    function startXeatreViewportFit() {
+        if (xeatreViewportFitInstalled) {
+            omtXeatreScheduleViewportFit();
+            return;
+        }
+        xeatreViewportFitInstalled = true;
+        window.addEventListener('resize', onXeatreViewportResize);
+        document.addEventListener('fullscreenchange', onXeatreFullscreenChange);
+        omtXeatreFitViewport();
+        // Second pass after layout/HUD settle.
+        setTimeout(() => omtXeatreFitViewport(), 50);
+        setTimeout(() => omtXeatreFitViewport(), 250);
+    }
+
+    function stopXeatreViewportFit() {
+        if (xeatreFitRaf) {
+            try { cancelAnimationFrame(xeatreFitRaf); } catch (_) {}
+            xeatreFitRaf = 0;
+        }
+        if (xeatreViewportFitInstalled) {
+            window.removeEventListener('resize', onXeatreViewportResize);
+            document.removeEventListener('fullscreenchange', onXeatreFullscreenChange);
+            xeatreViewportFitInstalled = false;
+        }
+        omtXeatreClearFitStyles();
+        if (omtRoot) {
+            try {
+                omtRoot.classList.remove('omt-xeatre-micro');
+            } catch (_) {}
+        }
+    }
+
+    try { window.__omtXeatreFitViewport = omtXeatreFitViewport; } catch (_) {}
+
     function initXeatrePlayerFeatures() {
         injectXeatreHideCSS();
         hideXeatreNativeChrome();
         startXeatreNativeChromeObserver();
+        startXeatreViewportFit();
         omtDebugXeatre('init', describeXeatreVideoPaint());
-        console.log('[OMT] Xeatre host chrome hide installed.');
+        console.log('[OMT] Xeatre host chrome hide + viewport fit installed.');
     }
 
 /* Local player: file picker, drag-and-drop, per-window open-file control. */
