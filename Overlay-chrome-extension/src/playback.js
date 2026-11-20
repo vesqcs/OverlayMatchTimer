@@ -251,12 +251,51 @@
         if (!isDraggingTimeline) paintTimelineScrubberProgress(false);
     }
 
+    /** True when the browser still has a transient user activation for FS. */
+    function omtFullscreenGestureActive() {
+        try {
+            if (navigator.userActivation && typeof navigator.userActivation.isActive === 'boolean') {
+                return !!navigator.userActivation.isActive;
+            }
+        } catch (_) {}
+        // Older engines: allow the attempt; rejection is swallowed below.
+        return true;
+    }
+
+    /**
+     * Single shared fullscreen toggle (icon + dblclick, all hosts).
+     * - Exit: always document.exitFullscreen() when fullscreenElement is set.
+     * - Enter: one synchronous requestFullscreen on the site target; never from
+     *   a .catch()/await/timer (InPlay 2.2.15: fallback request after rejection
+     *   threw "API can only be initiated by a user gesture").
+     * - Never auto-enter without a gesture. Rejected promises are always caught.
+     */
     function toggleFullScreen() {
-        const container = site.findFullscreenTarget(vid);
-        if (!document.fullscreenElement) {
-            (container || vid).requestFullscreen().catch(() => vid.requestFullscreen().catch(() => { }));
-        } else {
-            document.exitFullscreen();
+        if (document.fullscreenElement) {
+            try {
+                const p = document.exitFullscreen();
+                if (p && typeof p.catch === 'function') p.catch(() => {});
+            } catch (_) {}
+            return;
+        }
+        if (!omtFullscreenGestureActive()) return;
+        if (typeof ensureLiveVideo === 'function') ensureLiveVideo();
+        let container = (site && typeof site.findFullscreenTarget === 'function')
+            ? site.findFullscreenTarget(vid)
+            : null;
+        // Examino: same .op-player target as the working native dblclick path.
+        if (site && site.id === 'examino') {
+            const op = (vid && vid.closest && vid.closest('.op-player')) ||
+                document.querySelector('.op-player.op-clear, .op-player');
+            if (op) container = op;
+        }
+        const target = container || vid;
+        if (!target || typeof target.requestFullscreen !== 'function') return;
+        try {
+            const p = target.requestFullscreen();
+            if (p && typeof p.catch === 'function') p.catch(() => {});
+        } catch (_) {
+            // Sync throw (some engines) — never retry requestFullscreen here.
         }
     }
 

@@ -22,10 +22,13 @@
         },
 
         findFullscreenTarget(videoEl) {
-            return videoEl.closest('.op-player') ||
-                videoEl.closest('.video-container') ||
-                videoEl.closest('.op-media-element-container') ||
-                videoEl.parentElement ||
+            // v2.2.16: always the same .op-player OvenPlayer uses for dblclick FS
+            // (field black screen when icon/dblclick targeted different nodes).
+            return (videoEl && videoEl.closest && videoEl.closest('.op-player')) ||
+                document.querySelector('.op-player.op-clear, .op-player') ||
+                (videoEl && videoEl.closest && videoEl.closest('.video-container')) ||
+                (videoEl && videoEl.closest && videoEl.closest('.op-media-element-container')) ||
+                (videoEl && videoEl.parentElement) ||
                 videoEl;
         },
 
@@ -37,6 +40,7 @@
             injectExaminoHideCSS();
             hideExaminoNativeChrome();
             startExaminoNativeChromeObserver();
+            if (typeof startExaminoHoverReveal === 'function') startExaminoHoverReveal();
             // Soften OpenPlayer keyboard/focus capture so our capture-phase
             // hotkeys win; CSS hides the chrome.
             const root = this.findAnchor(videoEl) || document;

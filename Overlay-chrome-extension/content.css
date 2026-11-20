@@ -2141,8 +2141,21 @@ html.omt-host-examino.omt-hud-on .setting-holder.omt-examino-native-hidden.omt-s
     display: none !important;
 }
 
-/* Keep overlay above OpenPlayer layers */
+/* ---- EXAMINO VIEWPORT HUD (v2.2.16) ----
+   Field: player is a top strip; black tab below. Pin HUD to the tab so the
+   timeline sits in that black area and the panel can drag over the whole tab.
+   Do NOT resize OpenPlayer (unlike Xeatre viewport-fit). Root stays
+   pointer-events:none (base rule) so gear/Source/clicks under empty root work;
+   interactive children restore pointer-events:auto.
+   FS: no transform ancestors → fixed still covers the FS viewport; existing
+   reparent hook keeps #omt-root inside fullscreenElement. */
 #omt-root.omt-examino {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: 100vw !important;
+    max-height: 100vh !important;
     z-index: 2147483646;
 }
 

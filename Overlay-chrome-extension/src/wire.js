@@ -266,6 +266,7 @@
         if (site.id === 'examino') {
             installExaminoHotkeys();
             installExaminoClickToToggle();
+            if (typeof installExaminoFullscreenToggle === 'function') installExaminoFullscreenToggle();
             wireExaminoSettingsUI();
             if (examinoPendingDvrSettle) {
                 examinoPendingDvrSettle = false;
@@ -275,23 +276,22 @@
             document.addEventListener('keydown', handleKeydown, true);
             // Xeatre: window capture click-to-toggle (viewport-fit / VJS hit targets).
             if (typeof installXeatreClickToToggle === 'function') installXeatreClickToToggle();
+            // v2.2.16: capture + stop so host VJS cannot also toggle FS
+            // (async host path → "requestFullscreen requires user gesture").
             vid.addEventListener('dblclick', function (e) {
                 if (!e.target || (e.target !== vid && !(e.target.closest && e.target.closest('video') === vid))) {
                     return;
                 }
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
                 toggleFullScreen();
-            }, vsig);
-            vid.addEventListener('dblclick', function (e) {
-                if (!e.target || (e.target !== vid && !(e.target.closest && e.target.closest('video') === vid))) {
-                    return;
-                }
+                // Click fires before dblclick — reverse play/pause so transport
+                // is unchanged after going fullscreen.
                 if (!vid.src && !vid.currentSrc && !vid.srcObject) return;
-                if (vid.paused) {
-                    safePlay(vid);
-                } else {
-                    vid.pause();
-                }
-            }, vsig);
+                if (vid.paused) safePlay(vid);
+                else vid.pause();
+            }, { capture: true, signal: vidAbortController.signal });
         } else {
             document.addEventListener('keydown', handleKeydown, true);
             // Click-to-play/pause on the <video> surface — same mechanism as
@@ -310,21 +310,23 @@
                 e.stopImmediatePropagation();
                 togglePlay();
             }, { capture: true, signal: vidAbortController.signal });
+            // v2.2.16: same unified sync toggle as Examino — capture stops VJS
+            // native FS so icon + dblclick never desync / async-requestFullscreen.
             vid.addEventListener('dblclick', function (e) {
-                if (e.target !== vid) return;
-                toggleFullScreen();
-            }, vsig);
-            // Click fires once before dblclick — reverse that toggle so
-            // play/pause is unchanged after going fullscreen (original HTML).
-            vid.addEventListener('dblclick', function (e) {
-                if (e.target !== vid) return;
-                if (!vid.src && !vid.currentSrc && !vid.srcObject) return;
-                if (vid.paused) {
-                    safePlay(vid);
-                } else {
-                    vid.pause();
+                if (e.target !== vid &&
+                    !(e.target && e.target.closest && e.target.closest('video') === vid)) {
+                    return;
                 }
-            }, vsig);
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                toggleFullScreen();
+                // Click fires once before dblclick — reverse that toggle so
+                // play/pause is unchanged after going fullscreen (original HTML).
+                if (!vid.src && !vid.currentSrc && !vid.srcObject) return;
+                if (vid.paused) safePlay(vid);
+                else vid.pause();
+            }, { capture: true, signal: vidAbortController.signal });
         }
 
         // v2.2.12 / v2.2.14: swallow click/dblclick on interactive HUD so host
