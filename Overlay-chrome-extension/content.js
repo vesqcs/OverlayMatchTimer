@@ -1889,7 +1889,7 @@
         vid.addEventListener('pause', () => {
             // Do not clear auto-pause flag here — auto-pause itself fires pause.
             // Manual pause clears via togglePlay / click / Shuttle handlers.
-            // v2.2.14: undo host pause-on-hidden when "Não pausar no alt tab" is ON.
+            // v2.2.15: undo host pause-on-hidden when "Keep playing on alt tab" is ON.
             if (typeof onMaybeKeepPlaying === 'function') onMaybeKeepPlaying();
             syncPlayButtonFromVideo();
         }, vsig);
@@ -4775,9 +4775,10 @@
     }
 
     /**
-     * v2.2.14: "Não pausar no alt tab" — default OFF = pause on hide, resume on
-     * return. Old omtAutoPauseOnBlur is dropped (not inverted) so everyone lands
-     * on the new default without a silent behaviour flip of the same checkbox.
+     * v2.2.15: "Keep playing on alt tab" — default OFF = pause on document
+     * hidden only (not blur), resume on visible. Old omtAutoPauseOnBlur is
+     * dropped (not inverted) so everyone lands on the new default without a
+     * silent behaviour flip of the same checkbox.
      */
     function storageGetKeepPlayingOnAltTab() {
         const v = localStorage.getItem(OMT_STORAGE_KEYS.keepPlayingOnAltTab);
@@ -5385,26 +5386,32 @@
         omtInstallClockClickEdit();
     }
 
-/* Alt+Tab / tab-hidden playback (all sites: Examino, InPlay, Xeatre, local).
+/* Tab-hidden playback (all sites: Examino, InPlay, Xeatre, local).
  *
- * v2.2.14 setting "Não pausar no alt tab" (omtKeepPlayingOnAltTab, default OFF):
- *   OFF (default): pause on blur/hidden if playing; resume on return only if we
- *                  paused (autoPausedByBlur). User pause is never auto-resumed.
- *   ON: keep playing while hidden — if the host pauses on away, play() once on
- *       the next microtask. Armed only between away and return / user pause.
+ * v2.2.15 setting "Keep playing on alt tab" (omtKeepPlayingOnAltTab, default OFF):
+ *   OFF (default): pause only on document.visibilityState === 'hidden'
+ *                  (tab switch / minimize / fully covered). Never on blur/focus —
+ *                  a visible but unfocused window (beside the collection app,
+ *                  or Shuttle "top" video) must keep playing.
+ *                  On visible, resume only if we paused (autoPausedByHide).
+ *   ON: never pause on hide. If the host pauses while hidden (Examino),
+ *       play() once on the next microtask. Armed only between hide and show.
  *
- * Cost: one-time visibilitychange/blur/focus listeners. No intervals, no
- * timeouts, no observers. One-shot pause()/play() only on those events.
+ * Cost: one-time visibilitychange listeners only. No blur/focus handlers.
+ * No intervals, no timeouts, no observers. One-shot pause()/play() on events.
  */
     let autoPauseInstalled = false;
-    let autoPausedByBlur = false;
+    let autoPausedByHide = false;
     let autoPauseInProgress = false;
     let autoResumeInProgress = false;
     let lastShuttleActivityAt = 0;
-    // Keep-playing arm (setting ON): set on away while playing; cleared on
-    // return or user intent. No wall-clock window / timers.
+    // Keep-playing arm (setting ON): set on hide while playing; cleared on
+    // show or user intent. No wall-clock window / timers.
     let keepPlayingArmed = false;
     let keepPlayingInFlight = false;
+
+    // Legacy alias — older call sites / tests may still read this name.
+    let autoPausedByBlur = false;
 
     function noteShuttleActivity() {
         lastShuttleActivityAt = Date.now();
@@ -5414,13 +5421,14 @@
         keepPlayingArmed = false;
     }
 
-    /** Used by togglePlay — user intent cancels keep-playing and blur-resume. */
+    /** Used by togglePlay — user intent cancels keep-playing and hide-resume. */
     function clearExaminoHostResumeIntent() {
         clearKeepPlayingArm();
     }
 
     function clearAutoPauseFlag() {
         if (autoPauseInProgress || autoResumeInProgress) return;
+        autoPausedByHide = false;
         autoPausedByBlur = false;
         if (!keepPlayingInFlight) clearKeepPlayingArm();
     }
@@ -5429,14 +5437,13 @@
         if (typeof storageGetKeepPlayingOnAltTab === 'function') {
             return !!storageGetKeepPlayingOnAltTab();
         }
-        // Legacy fallback during partial loads: old key meant "pause on blur".
         if (typeof storageGetAutoPauseOnBlur === 'function') {
             return !storageGetAutoPauseOnBlur();
         }
         return false;
     }
 
-    function shouldSkipAwayPause() {
+    function shouldSkipHidePause() {
         if (storageKeepPlayingOnAltTab()) return true;
         if (typeof storageGetShuttleEnabled === 'function' && storageGetShuttleEnabled()) {
             return true;
@@ -5445,8 +5452,8 @@
         return false;
     }
 
-    /** Capture on away: arm keep-playing if setting ON and media is playing. */
-    function onAwayCapture() {
+    /** Capture on hide: arm keep-playing if setting ON and media is playing. */
+    function onHideCapture() {
         if (!storageKeepPlayingOnAltTab()) {
             clearKeepPlayingArm();
             return;
@@ -5499,20 +5506,20 @@
         try {
             queueMicrotask(resume);
         } catch (_) {
-            // queueMicrotask unavailable — same-tick fallback (still not a timer).
             resume();
         }
     }
 
-    function maybeAutoPauseOnAway() {
-        if (shouldSkipAwayPause()) return;
+    function maybeAutoPauseOnHide() {
+        if (shouldSkipHidePause()) return;
         if (!ensureLiveVideo()) return;
         if (vid.paused || vid.ended) return;
         autoPauseInProgress = true;
         try {
             vid.pause();
             if (vid.paused) {
-                autoPausedByBlur = true;
+                autoPausedByHide = true;
+                autoPausedByBlur = true; // legacy alias
                 if (typeof mostrarOSD === 'function') mostrarOSD('Auto paused');
             }
         } finally {
@@ -5521,19 +5528,22 @@
         if (typeof syncPlayButtonFromVideo === 'function') syncPlayButtonFromVideo();
     }
 
-    function maybeAutoResumeOnReturn() {
+    function maybeAutoResumeOnShow() {
         clearKeepPlayingArm();
-        if (!autoPausedByBlur) return;
+        if (!autoPausedByHide) return;
         if (typeof storageGetShuttleEnabled === 'function' && storageGetShuttleEnabled()) {
+            autoPausedByHide = false;
             autoPausedByBlur = false;
             return;
         }
         if (!ensureLiveVideo()) return;
         if (!vid.paused) {
+            autoPausedByHide = false;
             autoPausedByBlur = false;
             return;
         }
         autoResumeInProgress = true;
+        autoPausedByHide = false;
         autoPausedByBlur = false;
         safePlay(vid)
             .finally(() => {
@@ -5543,39 +5553,23 @@
     }
 
     function onDocumentVisibilityChangeCapture() {
-        if (document.visibilityState === 'hidden') onAwayCapture();
-    }
-
-    function onWindowBlurCapture() {
-        onAwayCapture();
+        if (document.visibilityState === 'hidden') onHideCapture();
     }
 
     function onDocumentVisibilityChange() {
-        if (document.visibilityState === 'hidden') maybeAutoPauseOnAway();
+        if (document.visibilityState === 'hidden') maybeAutoPauseOnHide();
         else if (document.visibilityState === 'visible') {
-            maybeAutoResumeOnReturn();
+            maybeAutoResumeOnShow();
             if (typeof wakeFullscreenDecode === 'function') wakeFullscreenDecode();
         }
-    }
-
-    function onWindowBlur() {
-        if (document.visibilityState === 'hidden') return;
-        maybeAutoPauseOnAway();
-    }
-
-    function onWindowFocus() {
-        maybeAutoResumeOnReturn();
-        if (typeof wakeFullscreenDecode === 'function') wakeFullscreenDecode();
     }
 
     function installAutoPauseOnBlur() {
         if (autoPauseInstalled) return;
         autoPauseInstalled = true;
+        // Visibility only — never blur/focus (visible-but-unfocused must play).
         document.addEventListener('visibilitychange', onDocumentVisibilityChangeCapture, true);
-        window.addEventListener('blur', onWindowBlurCapture, true);
         document.addEventListener('visibilitychange', onDocumentVisibilityChange);
-        window.addEventListener('blur', onWindowBlur);
-        window.addEventListener('focus', onWindowFocus);
     }
 
 /* ============================================================
@@ -7648,7 +7642,19 @@ var OMT_SYNC_FEATURE_ENABLED = false;
  */
     let xeatreChromeObserver = null;
 
+    /** Debug-only. Enable with localStorage.omtDebugXeatre='true' or window.__OMT_DEBUG_XEATRE=true.
+     * hide-chrome used to log on every MutationObserver pass (VJS user-active thrash) — never do that. */
+    function omtXeatreDebugEnabled() {
+        try {
+            if (window.__OMT_DEBUG_XEATRE === true) return true;
+            return localStorage.getItem('omtDebugXeatre') === 'true';
+        } catch (_) {
+            return false;
+        }
+    }
+
     function omtDebugXeatre(step, detail) {
+        if (!omtXeatreDebugEnabled()) return;
         try {
             if (detail === undefined) {
                 console.log('[OMT-DEBUG][xeatre] ' + step);
@@ -7716,7 +7722,12 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             '  opacity: 1 !important;',
             '  pointer-events: auto !important;',
             '}',
-            /* Hard guarantee: player root + tech stay painted (incl. display). */
+            /* Hard guarantee: player root + tech stay painted (incl. display).
+             * pointer-events:auto — field VJS often leaves .video-js/tech as
+             * pointer-events:none so clicks land on #videowrapper; we still
+             * hit-test by rect, but restoring PE does not hurt chrome hide
+             * (control bar stays display:none). Our hide rules never set PE
+             * none on .video-js itself — only on chrome leaves. */
             'html.omt-host-xeatre.omt-hud-on #hdmi-video,',
             'html.omt-host-xeatre.omt-hud-on #hdmi-video.video-js,',
             'html.omt-host-xeatre.omt-hud-on .video-js,',
@@ -7727,6 +7738,7 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             '  display: block !important;',
             '  visibility: visible !important;',
             '  opacity: 1 !important;',
+            '  pointer-events: auto !important;',
             '}'
         ].join('\n');
     }
@@ -7888,7 +7900,8 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         document.querySelectorAll('.vjs-control-bar').forEach(markXeatreHostHidden);
 
         omtXeatreEnsurePlayerVisible();
-        omtDebugXeatre('hide-chrome', describeXeatreVideoPaint());
+        // Debug-only (gated). Never stringify paint chains on every chrome pass.
+        if (omtXeatreDebugEnabled()) omtDebugXeatre('hide-chrome', describeXeatreVideoPaint());
     }
 
     const OMT_XEATRE_CHROME_MIN_GAP_MS = 1000;
@@ -8039,10 +8052,13 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             document.querySelector('.video-js');
         if (!shell) return;
 
-        // Prefer sizing the chrome wrapper when it contains the shell (field ControlBar).
+        // Outer box: prefer #videowrapper (field click target), else #ControlBar.
+        // Intermediates between shell and box get height:100% so the tech is not 0×N.
         let box = shell;
         try {
-            const wrap = shell.closest('#ControlBar') || shell.parentElement;
+            const videoWrapper = shell.closest('#videowrapper');
+            const controlBar = shell.closest('#ControlBar');
+            const wrap = videoWrapper || controlBar || shell.parentElement;
             if (wrap && wrap !== document.body && wrap !== document.documentElement &&
                 wrap.contains(shell)) {
                 box = wrap;
@@ -8116,21 +8132,28 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             'box-sizing': 'border-box'
         });
 
+        // Fill every node from shell up to (but not including) box — e.g.
+        // #hdmi-video and #ControlBar inside #videowrapper.
         if (shell !== box) {
-            omtXeatreFitStyle(shell, {
-                position: 'relative',
-                left: '0px',
-                top: '0px',
-                width: '100%',
-                height: '100%',
-                'max-width': '100%',
-                'max-height': '100%',
-                'padding-top': '0px',
-                'padding-bottom': '0px',
-                margin: '0px',
-                overflow: 'hidden',
-                'box-sizing': 'border-box'
-            });
+            let fill = shell;
+            let guard = 0;
+            while (fill && fill !== box && guard++ < 8) {
+                omtXeatreFitStyle(fill, {
+                    position: 'relative',
+                    left: '0px',
+                    top: '0px',
+                    width: '100%',
+                    height: '100%',
+                    'max-width': '100%',
+                    'max-height': '100%',
+                    'padding-top': '0px',
+                    'padding-bottom': '0px',
+                    margin: '0px',
+                    overflow: 'hidden',
+                    'box-sizing': 'border-box'
+                });
+                fill = fill.parentElement;
+            }
         }
 
         // Tech fills the shell.
@@ -8255,64 +8278,131 @@ var OMT_SYNC_FEATURE_ENABLED = false;
 
     try { window.__omtXeatreFitViewport = omtXeatreFitViewport; } catch (_) {}
 
-    /* ---- v2.2.12 / v2.2.14 click-to-play/pause on the video picture ----
-     * Field: VJS often suppresses the click after pointerdown, so toggle on
-     * pointerup (armed) and ignore a following click to avoid double toggle.
-     * Also treat #ControlBar / #player-wrap that wrap the tech as media. */
+    /* ---- v2.2.15 click-to-play/pause on the video picture ----
+     * Field probe (Vasco): click target is DIV#videowrapper; composedPath /
+     * elementsFromPoint = videowrapper|BODY|HTML — VIDEO#hdmi-video_html5_api
+     * and DIV#hdmi-video.video-js are absent (pointer-events:none on them from
+     * VJS/host, not from our chrome-hide rules). Fix: primary-button pointerup
+     * with small movement whose point lies in video.getBoundingClientRect(),
+     * regardless of event.target; exclude OMT panel/bar/timer + visible Xeatre
+     * controls; toggle once (stopImmediatePropagation). */
     let xeatreToggleConsumedGesture = false;
+    let xeatrePointerDownX = 0;
+    let xeatrePointerDownY = 0;
 
     function isXeatreHostChromeTarget(el) {
         if (!el || !el.closest) return false;
+        // Visible host controls only — never the whole #videowrapper / #ControlBar
+        // wrapper that contains the picture.
         if (el.closest('.vjs-control-bar, .xeatre-control-panel, .xeatre-host-panel')) return true;
         if (el.closest('#jwplay, #GoLive, #GoStart, #FullScreen, #AutoHide, #autohide')) return true;
         if (el.closest('#Speed025, #Speed05, #Speed1, #Speed15, #Speed2')) return true;
+        if (el.closest('#SkipM30, #SkipM7, #SkipM2, #SkipP2, #SkipP7, #SkipP30')) return true;
+        if (el.closest('#GoDoc, #GoEnd, #RtmpBtn')) return true;
+        if (el.closest('button, a, input, select, textarea, [role="button"]')) {
+            if (el.closest('#ControlBar, .xeatre-control-panel, .vjs-control-bar, #videowrapper')) {
+                // Buttons inside the player chrome — not the empty wrapper itself.
+                return true;
+            }
+        }
         return false;
     }
 
-    function isXeatrePlayerMediaTarget(target) {
-        if (!target) return false;
-        const el = target.nodeType === 1 ? target : target.parentElement;
-        if (!el || !el.closest) return false;
-        if (typeof isOmtInteractiveTarget === 'function' && isOmtInteractiveTarget(el)) return false;
-        if (omtRoot && omtRoot.contains(el)) return false;
-        if (isXeatreHostChromeTarget(el)) return false;
-        if (el.tagName === 'VIDEO') return true;
-        if (el.classList && el.classList.contains('vjs-tech')) return true;
-        // Picture / letterboxed shell / field ControlBar wrapper around the tech.
-        if (el.closest('#hdmi-video, .video-js, #ControlBar, #player-wrap, #video-player')) {
+    function isXeatreOmtUiTarget(el) {
+        if (!el) return false;
+        if (el.closest && el.closest('#controls-panel, #omt-timeline-bar, #match-timer-wrap, #omt-more-panel')) {
             return true;
         }
+        if (typeof isOmtInteractiveTarget === 'function' && isOmtInteractiveTarget(el)) return true;
+        if (omtRoot && omtRoot.contains(el)) {
+            const pe = (el.nodeType === 1) ? getComputedStyle(el).pointerEvents : 'none';
+            if (pe && pe !== 'none') return true;
+            if (el.closest && el.closest('button, select, input, a')) return true;
+        }
         return false;
     }
 
-    function resolveXeatreMedia(fromTarget) {
-        if (fromTarget && fromTarget.tagName === 'VIDEO') return fromTarget;
-        if (fromTarget && fromTarget.closest) {
-            const nested = fromTarget.closest('video');
-            if (nested) return nested;
+    function resolveLiveXeatreMedia() {
+        const found = (site && typeof site.findVideo === 'function')
+            ? site.findVideo()
+            : null;
+        if (found && found.isConnected) return found;
+        if (vid && vid.isConnected) return vid;
+        return document.querySelector(
+            '#hdmi-video video, video#hdmi-video_html5_api, video.vjs-tech, #hdmi-video.vjs-tech, video'
+        );
+    }
+
+    function pointInRect(x, y, rect) {
+        return !!rect && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+    }
+
+    /** True if stack/target is OMT HUD or a visible Xeatre control at (x,y). */
+    function xeatrePointHitsExcludedUi(x, y, eventTarget) {
+        const check = (el) => {
+            if (!el || el === document.documentElement || el === document.body) return false;
+            if (isXeatreOmtUiTarget(el)) return true;
+            if (isXeatreHostChromeTarget(el)) return true;
+            return false;
+        };
+        if (check(eventTarget)) return true;
+        let stack = [];
+        try {
+            stack = document.elementsFromPoint(x, y) || [];
+        } catch (_) {
+            stack = [];
         }
-        return vid || (site && site.findVideo && site.findVideo()) || null;
+        for (let i = 0; i < stack.length; i++) {
+            if (check(stack[i])) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Field rule: point inside the live video's box → media click, regardless
+     * of event.target / hit stack (videowrapper absorbs clicks when tech has
+     * pointer-events:none).
+     */
+    function hitTestXeatreMediaAt(x, y, eventTarget) {
+        if (!isFinite(x) || !isFinite(y)) return null;
+        if (xeatrePointHitsExcludedUi(x, y, eventTarget)) return null;
+        const media = resolveLiveXeatreMedia();
+        if (!media) return null;
+        try {
+            if (pointInRect(x, y, media.getBoundingClientRect())) return media;
+            const shell = media.closest && (
+                media.closest('#hdmi-video') ||
+                media.closest('.video-js') ||
+                media.closest('#videowrapper')
+            );
+            if (shell && pointInRect(x, y, shell.getBoundingClientRect())) return media;
+        } catch (_) {}
+        return null;
     }
 
     function xeatreMediaCanToggle(media) {
-        if (!media) return false;
+        if (!media || !media.isConnected) return false;
         if (media.src || media.currentSrc || media.srcObject) return true;
-        // MSE / VHS may expose neither src nor srcObject until later — allow if live.
         try {
             if (media.readyState > 0) return true;
             if (media.seekable && media.seekable.length > 0) return true;
         } catch (_) {}
-        return false;
+        // Field MSE often has empty src until chunks land — still allow toggle.
+        return true;
+    }
+
+    function stopXeatreGesture(e) {
+        try { e.preventDefault(); } catch (_) {}
+        try { e.stopPropagation(); } catch (_) {}
+        try { e.stopImmediatePropagation(); } catch (_) {}
     }
 
     function performXeatreClickToggle(e, media) {
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation();
+        stopXeatreGesture(e);
         try { omtUserGestureSeen = true; } catch (_) {}
         if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
+        if (typeof clearExaminoHostResumeIntent === 'function') clearExaminoHostResumeIntent();
         if (media.paused || media.ended) {
-            // Prefer direct play() on this gesture; safePlay may no-op pre-gesture.
             try {
                 const p = media.play();
                 if (p && typeof p.catch === 'function') p.catch(() => {});
@@ -8321,26 +8411,42 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             }
             if (typeof mostrarOSD === 'function') mostrarOSD('Play');
         } else {
-            media.pause();
+            try { media.pause(); } catch (_) {}
             if (typeof mostrarOSD === 'function') mostrarOSD('Pause');
         }
         if (typeof noteOmtUiActivity === 'function') noteOmtUiActivity(false);
         else if (typeof resetControlsTimeout === 'function') resetControlsTimeout(false);
     }
 
-    function handleXeatreClickArm(e) {
+    function handleXeatrePointerDownArm(e) {
         if (!(site && site.id === 'xeatre')) return;
+        if (e.button != null && e.button !== 0) return;
         xeatreToggleConsumedGesture = false;
-        xeatreClickArmed = isXeatrePlayerMediaTarget(e.target);
+        xeatreClickArmed = false;
+        const x = e.clientX;
+        const y = e.clientY;
+        const media = hitTestXeatreMediaAt(x, y, e.target);
+        if (!media || !xeatreMediaCanToggle(media)) return;
+        xeatreClickArmed = true;
+        xeatrePointerDownX = x;
+        xeatrePointerDownY = y;
+        // Block VJS / host from also toggling on this gesture.
+        stopXeatreGesture(e);
     }
 
     function handleXeatrePointerUpToggle(e) {
         if (!(site && site.id === 'xeatre')) return;
         if (!xeatreClickArmed) return;
         xeatreClickArmed = false;
-        if (!isXeatrePlayerMediaTarget(e.target)) return;
-        const media = resolveXeatreMedia(e.target);
-        if (!xeatreMediaCanToggle(media)) return;
+        if (e.button != null && e.button !== 0) return;
+        const x = e.clientX;
+        const y = e.clientY;
+        // Ignore drag-away (treat as scrub / pan, not click).
+        if (Math.abs(x - xeatrePointerDownX) > 12 || Math.abs(y - xeatrePointerDownY) > 12) {
+            return;
+        }
+        const media = hitTestXeatreMediaAt(x, y, e.target);
+        if (!media || !xeatreMediaCanToggle(media)) return;
         xeatreToggleConsumedGesture = true;
         performXeatreClickToggle(e, media);
     }
@@ -8350,27 +8456,26 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         // pointerup already toggled — swallow click so VJS cannot double-toggle.
         if (xeatreToggleConsumedGesture) {
             xeatreToggleConsumedGesture = false;
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
+            stopXeatreGesture(e);
             return;
         }
-        if (!xeatreClickArmed) return;
-        xeatreClickArmed = false;
-        if (!isXeatrePlayerMediaTarget(e.target)) return;
-        const media = resolveXeatreMedia(e.target);
-        if (!xeatreMediaCanToggle(media)) return;
+        // Mouse-only paths that skipped pointer events.
+        if (e.button != null && e.button !== 0) return;
+        const media = hitTestXeatreMediaAt(e.clientX, e.clientY, e.target);
+        if (!media || !xeatreMediaCanToggle(media)) return;
+        xeatreToggleConsumedGesture = true;
         performXeatreClickToggle(e, media);
     }
 
     function installXeatreClickToToggle() {
         if (xeatreClickToggleInstalled) return;
         xeatreClickToggleInstalled = true;
-        window.addEventListener('pointerdown', handleXeatreClickArm, true);
-        window.addEventListener('mousedown', handleXeatreClickArm, true);
+        window.addEventListener('pointerdown', handleXeatrePointerDownArm, true);
+        window.addEventListener('mousedown', handleXeatrePointerDownArm, true);
         window.addEventListener('pointerup', handleXeatrePointerUpToggle, true);
+        window.addEventListener('mouseup', handleXeatrePointerUpToggle, true);
         window.addEventListener('click', handleXeatreClickToggle, true);
-        console.log('[OMT] Xeatre click-to-toggle installed (pointerup + click, video surface only).');
+        console.log('[OMT] Xeatre click-to-toggle installed (capture hit-test + pointerup).');
     }
 
     function initXeatrePlayerFeatures() {

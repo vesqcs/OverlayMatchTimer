@@ -2145,9 +2145,34 @@ async function run() {
       document.querySelector('.omt-speed-chip[data-speed="1.0"]')?.click();
     });
 
-    // v2.2.14: "Não pausar no alt tab" (omtKeepPlayingOnAltTab).
-    // Default OFF = pause on hide + resume on return if we paused.
+    // v2.2.15: "Keep playing on alt tab" (omtKeepPlayingOnAltTab).
+    // Default OFF = pause only on visibility hidden (never blur/focus).
     // ON = keep playing; undo host pause via one microtask play().
+    const examinoBlurDoesNotPause = await page.evaluate(async () => {
+      try { localStorage.removeItem('omtAutoPauseOnBlur'); } catch (_) {}
+      localStorage.setItem('omtKeepPlayingOnAltTab', 'false');
+      localStorage.setItem('shuttleXpressEnabled', 'false');
+      const v = document.querySelector('video');
+      if (!v) return { ok: false, reason: 'no-video' };
+      v.muted = true;
+      try { await v.play(); } catch (e) { return { ok: false, reason: 'play-failed', err: String(e) }; }
+      await new Promise((r) => setTimeout(r, 40));
+      // Visible but unfocused (analyst clicks collection app beside video).
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+      window.dispatchEvent(new Event('blur'));
+      await new Promise((r) => setTimeout(r, 40));
+      const afterBlur = v.paused;
+      window.dispatchEvent(new Event('focus'));
+      await new Promise((r) => setTimeout(r, 40));
+      return { ok: afterBlur === false && v.paused === false, afterBlur, afterFocus: v.paused };
+    });
+    results.push({
+      name: 'examino-blur-does-not-pause',
+      pass: examinoBlurDoesNotPause.ok === true,
+      detail: examinoBlurDoesNotPause
+    });
+
     const examinoAltTabDefaultPause = await page.evaluate(async () => {
       try { localStorage.removeItem('omtAutoPauseOnBlur'); } catch (_) {}
       localStorage.setItem('omtKeepPlayingOnAltTab', 'false');
@@ -2167,7 +2192,6 @@ async function run() {
       Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
       Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
       document.dispatchEvent(new Event('visibilitychange'));
-      window.dispatchEvent(new Event('focus'));
       await new Promise((r) => setTimeout(r, 120));
       return {
         ok: afterAway === true && v.paused === false && /Auto paused/i.test(osd),
@@ -4628,7 +4652,26 @@ async function run() {
       detail: inplayPanelDrag
     });
 
-    // v2.2.14 alt-tab (same as Examino/Xeatre/local; no InPlay seek/player changes).
+    // v2.2.15 alt-tab (visibility only; no InPlay seek/player changes).
+    const inplayBlurDoesNotPause = await page.evaluate(async () => {
+      localStorage.setItem('omtKeepPlayingOnAltTab', 'false');
+      localStorage.setItem('shuttleXpressEnabled', 'false');
+      const v = document.querySelector('video');
+      if (!v) return { ok: false };
+      v.muted = true;
+      try { await v.play(); } catch (_) {}
+      await new Promise((r) => setTimeout(r, 40));
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+      window.dispatchEvent(new Event('blur'));
+      await new Promise((r) => setTimeout(r, 40));
+      return { ok: v.paused === false, paused: v.paused };
+    });
+    results.push({
+      name: 'inplayip-blur-does-not-pause',
+      pass: inplayBlurDoesNotPause.ok === true,
+      detail: inplayBlurDoesNotPause
+    });
+
     const inplayAltTabDefault = await page.evaluate(async () => {
       try { localStorage.removeItem('omtAutoPauseOnBlur'); } catch (_) {}
       localStorage.setItem('omtKeepPlayingOnAltTab', 'false');
@@ -5555,11 +5598,16 @@ async function run() {
       detail: xeatreHoverReveal
     });
 
-    // v2.2.12 #1: click on Xeatre video picture toggles play/pause (not HUD).
+    // v2.2.15: field-like click — target is #videowrapper (tech has PE none).
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.waitForTimeout(100);
     await page.evaluate(() => {
       if (typeof window.__omtXeatreFitViewport === 'function') window.__omtXeatreFitViewport();
+      // Re-assert field PE none after our CSS may force auto (hit-test is rect-based).
+      const shell = document.getElementById('hdmi-video');
+      const tech = document.querySelector('#hdmi-video video, video.vjs-tech, video');
+      if (shell) shell.style.setProperty('pointer-events', 'none', 'important');
+      if (tech) tech.style.setProperty('pointer-events', 'none', 'important');
     });
     await page.evaluate(async () => {
       const v = document.querySelector('#hdmi-video video, video.vjs-tech, video');
@@ -5570,11 +5618,18 @@ async function run() {
       try { await v?.play(); } catch (_) {}
     });
     await page.waitForTimeout(60);
-    const xeatreVidBox = await page.locator('#hdmi-video video, video.vjs-tech, video').first().boundingBox();
+    const xeatreVidBox = await page.locator('#videowrapper, #hdmi-video video, video.vjs-tech, video').first().boundingBox();
     let xeatreClickToggle = { ok: false, reason: 'no-box' };
     if (xeatreVidBox) {
       const cx = xeatreVidBox.x + xeatreVidBox.width / 2;
       const cy = xeatreVidBox.y + xeatreVidBox.height / 2;
+      const probe = await page.evaluate(({ x, y }) => {
+        const stack = (document.elementsFromPoint(x, y) || []).map((el) =>
+          (el.tagName || '') + (el.id ? '#' + el.id : '') +
+          (el.className && typeof el.className === 'string' ? '.' + el.className.split(/\s+/).slice(0, 2).join('.') : '')
+        );
+        return { stack, targetHint: stack[0] || null };
+      }, { x: cx, y: cy });
       const before = await page.evaluate(() => !!document.querySelector('video')?.paused);
       await page.mouse.click(cx, cy);
       await page.waitForTimeout(120);
@@ -5584,13 +5639,58 @@ async function run() {
       const afterSecond = await page.evaluate(() => !!document.querySelector('video')?.paused);
       xeatreClickToggle = {
         ok: before === false && afterClick === true && afterSecond === false,
-        before, afterClick, afterSecond, cx, cy
+        before, afterClick, afterSecond, cx, cy, probe
       };
     }
     results.push({
       name: 'xeatre-video-click-toggles-play',
       pass: xeatreClickToggle.ok === true,
       detail: xeatreClickToggle
+    });
+    // Explicit rect hit through #videowrapper (matches Vasco field probe).
+    const xeatreWrapperClick = await page.evaluate(async () => {
+      const wrap = document.getElementById('videowrapper');
+      const v = document.querySelector('#hdmi-video_html5_api, #hdmi-video video, video.vjs-tech, video');
+      if (!wrap || !v) return { ok: false, reason: 'missing' };
+      const panel = document.getElementById('controls-panel');
+      const bar = document.getElementById('omt-timeline-bar');
+      if (panel) { panel.style.opacity = '0'; panel.style.pointerEvents = 'none'; }
+      if (bar) { bar.style.opacity = '0'; bar.classList.add('omt-chrome-hidden'); }
+      // Field: shell/tech PE none; clicks land on #videowrapper.
+      document.getElementById('hdmi-video')?.style.setProperty('pointer-events', 'none', 'important');
+      document.getElementById('ControlBar')?.style.setProperty('pointer-events', 'none', 'important');
+      v.style.setProperty('pointer-events', 'none', 'important');
+      wrap.style.setProperty('pointer-events', 'auto', 'important');
+      try { await v.play(); } catch (_) {}
+      await new Promise((r) => setTimeout(r, 40));
+      if (v.paused) return { ok: false, reason: 'not-playing' };
+      const r = wrap.getBoundingClientRect();
+      if (r.width < 8 || r.height < 8) {
+        return { ok: false, reason: 'wrapper-collapsed', w: r.width, h: r.height };
+      }
+      const x = r.left + r.width / 2;
+      const y = r.top + r.height / 2;
+      const stack = (document.elementsFromPoint(x, y) || []).map((el) => el.id || el.tagName);
+      const before = !!v.paused;
+      for (const type of ['pointerdown', 'pointerup', 'click']) {
+        wrap.dispatchEvent(new PointerEvent(type, {
+          bubbles: true, cancelable: true, composed: true,
+          clientX: x, clientY: y, button: 0, buttons: type === 'pointerup' ? 0 : 1,
+          pointerId: 1, pointerType: 'mouse', view: window
+        }));
+      }
+      await new Promise((r) => setTimeout(r, 80));
+      const topIsWrapper = stack[0] === 'videowrapper';
+      const videoNotInStack = !stack.includes('hdmi-video_html5_api') && !stack.includes('hdmi-video');
+      return {
+        ok: before === false && v.paused === true && topIsWrapper && videoNotInStack,
+        before, after: v.paused, stack, wrapH: Math.round(r.height), wrapW: Math.round(r.width)
+      };
+    });
+    results.push({
+      name: 'xeatre-videowrapper-rect-click-toggles',
+      pass: xeatreWrapperClick.ok === true,
+      detail: xeatreWrapperClick
     });
 
     // HUD click must NOT toggle.
@@ -5653,7 +5753,26 @@ async function run() {
       detail: xeatrePanelDrag
     });
 
-    // v2.2.14 alt-tab both modes (identical semantics to Examino/InPlay/local).
+    // v2.2.15 alt-tab both modes (visibility only; identical across sites).
+    const xeatreBlurDoesNotPause = await page.evaluate(async () => {
+      localStorage.setItem('omtKeepPlayingOnAltTab', 'false');
+      localStorage.setItem('shuttleXpressEnabled', 'false');
+      const v = document.querySelector('video');
+      if (!v) return { ok: false };
+      v.muted = true;
+      try { await v.play(); } catch (_) {}
+      await new Promise((r) => setTimeout(r, 40));
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+      window.dispatchEvent(new Event('blur'));
+      await new Promise((r) => setTimeout(r, 40));
+      return { ok: v.paused === false, paused: v.paused };
+    });
+    results.push({
+      name: 'xeatre-blur-does-not-pause',
+      pass: xeatreBlurDoesNotPause.ok === true,
+      detail: xeatreBlurDoesNotPause
+    });
+
     const xeatreAltTabDefault = await page.evaluate(async () => {
       try { localStorage.removeItem('omtAutoPauseOnBlur'); } catch (_) {}
       localStorage.setItem('omtKeepPlayingOnAltTab', 'false');
@@ -6455,7 +6574,7 @@ async function run() {
           popupOk.footOk && popupOk.keyCaps && popupOk.logoUncropped &&
           popupOk.logoNoTitle === true &&
           popupOk.hasKeepPlayingAltTab && popupOk.keepPlayingDefaultOff &&
-          popupOk.noLegacyAutoPause && /Não pausar no alt tab/i.test(popupOk.keepPlayingLabel || '') &&
+          popupOk.noLegacyAutoPause && /Keep playing on alt tab/i.test(popupOk.keepPlayingLabel || '') &&
           popupOk.hasOpenLocal && popupOk.openLocalLabel === 'Open local player' &&
           /stats-perform-logo-dark\.png/i.test(popupOk.logoSrc || '') &&
           popupOk.hasShuttleSummary &&
@@ -7983,6 +8102,25 @@ async function run() {
         detail: localPanelDrag
       });
 
+      const localBlurDoesNotPause = await localPage.evaluate(async () => {
+        localStorage.setItem('omtKeepPlayingOnAltTab', 'false');
+        try { sessionStorage.setItem('omtLocalShuttleEnabled', 'false'); } catch (_) {}
+        const v = document.getElementById('omt-local-video');
+        if (!v) return { ok: false };
+        v.muted = true;
+        try { await v.play(); } catch (_) {}
+        await new Promise((r) => setTimeout(r, 40));
+        Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+        window.dispatchEvent(new Event('blur'));
+        await new Promise((r) => setTimeout(r, 40));
+        return { ok: v.paused === false, paused: v.paused };
+      });
+      results.push({
+        name: 'local-blur-does-not-pause',
+        pass: localBlurDoesNotPause.ok === true,
+        detail: localBlurDoesNotPause
+      });
+
       const localAltTabDefault = await localPage.evaluate(async () => {
         try { localStorage.removeItem('omtAutoPauseOnBlur'); } catch (_) {}
         localStorage.setItem('omtKeepPlayingOnAltTab', 'false');
@@ -8000,7 +8138,6 @@ async function run() {
         Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
         Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
         document.dispatchEvent(new Event('visibilitychange'));
-        window.dispatchEvent(new Event('focus'));
         await new Promise((r) => setTimeout(r, 100));
         return { ok: afterAway === true && v.paused === false, afterAway, afterReturn: v.paused };
       });
