@@ -236,6 +236,10 @@
             if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
             syncPlayButtonFromVideo();
         }, vsig);
+        // Picture inset for InPlay/Xeatre clocks — metadata may arrive after mount.
+        vid.addEventListener('loadedmetadata', () => {
+            if (typeof omtUpdateClockPictureInset === 'function') omtUpdateClockPictureInset();
+        }, vsig);
         // Feed adaptive LIVE margin: recent stalls → never jump closer than base.
         const noteStall = () => {
             if (typeof omtNoteLiveStall === 'function') omtNoteLiveStall();
@@ -265,15 +269,33 @@
                 examinoPendingDvrSettle = false;
                 settleExaminoMediaAfterBind();
             }
+        } else if (site.id === 'xeatre') {
+            document.addEventListener('keydown', handleKeydown, true);
+            // Xeatre: window capture click-to-toggle (viewport-fit / VJS hit targets).
+            if (typeof installXeatreClickToToggle === 'function') installXeatreClickToToggle();
+            vid.addEventListener('dblclick', function (e) {
+                if (!e.target || (e.target !== vid && !(e.target.closest && e.target.closest('video') === vid))) {
+                    return;
+                }
+                toggleFullScreen();
+            }, vsig);
+            vid.addEventListener('dblclick', function (e) {
+                if (!e.target || (e.target !== vid && !(e.target.closest && e.target.closest('video') === vid))) {
+                    return;
+                }
+                if (!vid.src && !vid.currentSrc && !vid.srcObject) return;
+                if (vid.paused) {
+                    safePlay(vid);
+                } else {
+                    vid.pause();
+                }
+            }, vsig);
         } else {
             document.addEventListener('keydown', handleKeydown, true);
             // Click-to-play/pause on the <video> surface — same mechanism as
-            // OverlayMatchTimer.html (local dashboard). Examino uses its own
-            // capture-phase installer above. #omt-root is pointer-events:none so
-            // clicks reach <video>; our panels restore pointer-events:auto and
-            // never hit this handler (e.target !== vid).
-            // Regression: local player (v1.5.0+) never got this ported from the
-            // HTML dashboard, so video clicks did nothing.
+            // OverlayMatchTimer.html (local dashboard). Examino / Xeatre use
+            // their own capture-phase installers. #omt-root is pointer-events:none
+            // so clicks reach <video>; our panels restore pointer-events:auto.
             // Capture + stop so host players (e.g. Video.js) cannot also toggle
             // (would net to a no-op) — same exclusivity idea as Examino.
             vid.addEventListener('click', function (e) {
@@ -303,11 +325,24 @@
             }, vsig);
         }
 
-        omtRoot.addEventListener('click', function (e) {
-            noteOmtUiActivity(true);
-            const el = e.target.closest('button');
-            if (el) setTimeout(() => el.blur(), 50);
-        });
+        // v2.2.12: swallow interactive HUD events so dblclick / repeated clicks
+        // on panel, bar or timer never reach the host player (all sites).
+        // Bubble phase — our button handlers still run on the target first.
+        if (omtRoot) {
+            const swallowHostLeak = (e) => {
+                if (typeof isOmtInteractiveTarget === 'function' && isOmtInteractiveTarget(e.target)) {
+                    e.stopPropagation();
+                }
+            };
+            ['click', 'dblclick', 'mousedown', 'mouseup', 'pointerdown', 'pointerup'].forEach((type) => {
+                omtRoot.addEventListener(type, swallowHostLeak, false);
+            });
+            omtRoot.addEventListener('click', function (e) {
+                noteOmtUiActivity(true);
+                const el = e.target.closest('button');
+                if (el) setTimeout(() => el.blur(), 50);
+            });
+        }
 
         liveBtn.style.display = 'flex';
 

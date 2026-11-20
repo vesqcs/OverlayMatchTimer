@@ -34,6 +34,11 @@
     let examinoClickToggleInstalled = false;
     let examinoClickArmed = false;
     let examinoSuppressClickToggle = 0; // >0 while we drive OpenPlayer menus via .click()
+    let xeatreClickToggleInstalled = false;
+    let xeatreClickArmed = false;
+    // Clock-edit commit/cancel (Enter/Escape) — set while the inline editor is open.
+    let omtClockEditCommit = null;
+    let omtClockEditCancel = null;
     let examinoAutoVodWatcher = null;
     let examinoAutoVodInFlight = false;
     let examinoAutoVodDone = false;
@@ -1107,6 +1112,7 @@
         // Xeatre: viewport-fit owns compact/micro + player sizing (v2.2.10).
         if (site && site.id === 'xeatre') {
             if (typeof omtXeatreFitViewport === 'function') omtXeatreFitViewport();
+            // Fit path also refreshes clock picture inset.
             return;
         }
         const anchor = omtRoot.parentElement;
@@ -1114,7 +1120,75 @@
         const h = (anchor && anchor.clientHeight) || window.innerHeight;
         const compact = site.id === 'examino' && (w < 720 || h < 420);
         omtRoot.classList.toggle('omt-compact', compact);
+        if (typeof omtUpdateClockPictureInset === 'function') omtUpdateClockPictureInset();
     }
+
+    /**
+     * v2.2.12: Anchor #match-timer-wrap to the letterboxed video *picture*
+     * (InPlay + Xeatre). Examino already sits on the picture — leave it alone.
+     * Sets CSS vars on #omt-root; no polling — called from resize / FS / fit.
+     */
+    function omtVideoContentRect(videoEl) {
+        if (!videoEl || !videoEl.getBoundingClientRect) return null;
+        const r = videoEl.getBoundingClientRect();
+        if (r.width < 2 || r.height < 2) return null;
+        const vw = videoEl.videoWidth || 0;
+        const vh = videoEl.videoHeight || 0;
+        if (vw > 0 && vh > 0) {
+            const scale = Math.min(r.width / vw, r.height / vh);
+            const w = vw * scale;
+            const h = vh * scale;
+            return {
+                left: r.left + (r.width - w) / 2,
+                top: r.top + (r.height - h) / 2,
+                width: w,
+                height: h,
+                right: r.left + (r.width - w) / 2 + w,
+                bottom: r.top + (r.height - h) / 2 + h
+            };
+        }
+        // Metadata not ready — treat the element box as the picture.
+        return {
+            left: r.left, top: r.top, width: r.width, height: r.height,
+            right: r.right, bottom: r.bottom
+        };
+    }
+
+    function omtUpdateClockPictureInset() {
+        if (!omtRoot) return;
+        const id = site && site.id;
+        if (id !== 'inplayip' && id !== 'xeatre') {
+            try {
+                omtRoot.classList.remove('omt-clock-in-picture');
+                ['--omt-pic-top', '--omt-pic-left', '--omt-pic-right', '--omt-pic-bottom',
+                    '--omt-pic-width', '--omt-pic-height'].forEach((k) => {
+                    try { omtRoot.style.removeProperty(k); } catch (_) {}
+                });
+            } catch (_) {}
+            return;
+        }
+        const videoEl = vid || (site && typeof site.findVideo === 'function' && site.findVideo());
+        const rootRect = omtRoot.getBoundingClientRect();
+        const pic = omtVideoContentRect(videoEl);
+        if (!pic || rootRect.width < 2 || rootRect.height < 2) {
+            try { omtRoot.classList.remove('omt-clock-in-picture'); } catch (_) {}
+            return;
+        }
+        const top = Math.max(0, pic.top - rootRect.top);
+        const left = Math.max(0, pic.left - rootRect.left);
+        const right = Math.max(0, rootRect.right - pic.right);
+        const bottom = Math.max(0, rootRect.bottom - pic.bottom);
+        try {
+            omtRoot.style.setProperty('--omt-pic-top', top + 'px');
+            omtRoot.style.setProperty('--omt-pic-left', left + 'px');
+            omtRoot.style.setProperty('--omt-pic-right', right + 'px');
+            omtRoot.style.setProperty('--omt-pic-bottom', bottom + 'px');
+            omtRoot.style.setProperty('--omt-pic-width', pic.width + 'px');
+            omtRoot.style.setProperty('--omt-pic-height', pic.height + 'px');
+            omtRoot.classList.add('omt-clock-in-picture');
+        } catch (_) {}
+    }
+    try { window.__omtUpdateClockPictureInset = omtUpdateClockPictureInset; } catch (_) {}
 
     function updateFullscreenButton() {
         const btn = q('omt-btn-fullscreen');
@@ -1144,6 +1218,7 @@
                     anchor.appendChild(omtRoot);
                 }
             }
+            if (typeof omtUpdateClockPictureInset === 'function') omtUpdateClockPictureInset();
         });
         window.addEventListener('resize', () => updateCompactLayout());
     }
@@ -1815,6 +1890,10 @@
             if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
             syncPlayButtonFromVideo();
         }, vsig);
+        // Picture inset for InPlay/Xeatre clocks — metadata may arrive after mount.
+        vid.addEventListener('loadedmetadata', () => {
+            if (typeof omtUpdateClockPictureInset === 'function') omtUpdateClockPictureInset();
+        }, vsig);
         // Feed adaptive LIVE margin: recent stalls → never jump closer than base.
         const noteStall = () => {
             if (typeof omtNoteLiveStall === 'function') omtNoteLiveStall();
@@ -1844,15 +1923,33 @@
                 examinoPendingDvrSettle = false;
                 settleExaminoMediaAfterBind();
             }
+        } else if (site.id === 'xeatre') {
+            document.addEventListener('keydown', handleKeydown, true);
+            // Xeatre: window capture click-to-toggle (viewport-fit / VJS hit targets).
+            if (typeof installXeatreClickToToggle === 'function') installXeatreClickToToggle();
+            vid.addEventListener('dblclick', function (e) {
+                if (!e.target || (e.target !== vid && !(e.target.closest && e.target.closest('video') === vid))) {
+                    return;
+                }
+                toggleFullScreen();
+            }, vsig);
+            vid.addEventListener('dblclick', function (e) {
+                if (!e.target || (e.target !== vid && !(e.target.closest && e.target.closest('video') === vid))) {
+                    return;
+                }
+                if (!vid.src && !vid.currentSrc && !vid.srcObject) return;
+                if (vid.paused) {
+                    safePlay(vid);
+                } else {
+                    vid.pause();
+                }
+            }, vsig);
         } else {
             document.addEventListener('keydown', handleKeydown, true);
             // Click-to-play/pause on the <video> surface — same mechanism as
-            // OverlayMatchTimer.html (local dashboard). Examino uses its own
-            // capture-phase installer above. #omt-root is pointer-events:none so
-            // clicks reach <video>; our panels restore pointer-events:auto and
-            // never hit this handler (e.target !== vid).
-            // Regression: local player (v1.5.0+) never got this ported from the
-            // HTML dashboard, so video clicks did nothing.
+            // OverlayMatchTimer.html (local dashboard). Examino / Xeatre use
+            // their own capture-phase installers. #omt-root is pointer-events:none
+            // so clicks reach <video>; our panels restore pointer-events:auto.
             // Capture + stop so host players (e.g. Video.js) cannot also toggle
             // (would net to a no-op) — same exclusivity idea as Examino.
             vid.addEventListener('click', function (e) {
@@ -1882,11 +1979,24 @@
             }, vsig);
         }
 
-        omtRoot.addEventListener('click', function (e) {
-            noteOmtUiActivity(true);
-            const el = e.target.closest('button');
-            if (el) setTimeout(() => el.blur(), 50);
-        });
+        // v2.2.12: swallow interactive HUD events so dblclick / repeated clicks
+        // on panel, bar or timer never reach the host player (all sites).
+        // Bubble phase — our button handlers still run on the target first.
+        if (omtRoot) {
+            const swallowHostLeak = (e) => {
+                if (typeof isOmtInteractiveTarget === 'function' && isOmtInteractiveTarget(e.target)) {
+                    e.stopPropagation();
+                }
+            };
+            ['click', 'dblclick', 'mousedown', 'mouseup', 'pointerdown', 'pointerup'].forEach((type) => {
+                omtRoot.addEventListener(type, swallowHostLeak, false);
+            });
+            omtRoot.addEventListener('click', function (e) {
+                noteOmtUiActivity(true);
+                const el = e.target.closest('button');
+                if (el) setTimeout(() => el.blur(), 50);
+            });
+        }
 
         liveBtn.style.display = 'flex';
 
@@ -3138,6 +3248,8 @@
 
         function finishEdit() {
             isEditingTimer = false;
+            omtClockEditCommit = null;
+            omtClockEditCancel = null;
             timerUI.classList.remove('is-editing', 'is-invalid');
             omtClockEditHint(false);
             atualizarRelogio();
@@ -3152,6 +3264,7 @@
             }
             isCommitted = true;
             if (!parsed.empty) {
+                // Existing seek path only (seekTo via navegarParaMinutoDeJogo).
                 navegarParaMinutoDeJogo(parsed.minuteFloat);
                 mostrarOSD('Clock set ' + parsed.label);
             }
@@ -3164,22 +3277,28 @@
             finishEdit();
         }
 
+        omtClockEditCommit = salvarEdicao;
+        omtClockEditCancel = cancelarEdicao;
+
         input.addEventListener('input', function () {
             timerUI.classList.remove('is-invalid');
             omtClockEditHint(false);
         });
 
+        // Capture so host window/document key handlers cannot eat Enter first.
         input.addEventListener('keydown', function (e) {
             if (e.key === 'Enter') {
                 e.preventDefault();
                 e.stopPropagation();
+                e.stopImmediatePropagation();
                 salvarEdicao();
             } else if (e.key === 'Escape') {
                 e.preventDefault();
                 e.stopPropagation();
+                e.stopImmediatePropagation();
                 cancelarEdicao();
             }
-        });
+        }, true);
 
         // Production: blur commits. Defer binding so the opening click cannot
         // immediately dismiss the field before the analyst types.
@@ -4011,6 +4130,29 @@
     }
 
     function handleKeydown(e) {
+        // Timer edit: Enter commits + seeks immediately; Escape cancels.
+        // Capture-phase so host players cannot swallow Enter before our input.
+        const editEl = e.target && e.target.nodeType === 1
+            ? e.target
+            : (e.target && e.target.parentElement);
+        if (editEl && editEl.id === 'timer-edit-input') {
+            if (e.key === 'Enter' && typeof omtClockEditCommit === 'function' && omtClockEditCommit) {
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                try { omtClockEditCommit(); } catch (_) {}
+                return;
+            }
+            if (e.key === 'Escape' && typeof omtClockEditCancel === 'function' && omtClockEditCancel) {
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                try { omtClockEditCancel(); } catch (_) {}
+                return;
+            }
+            return;
+        }
+
         // Don't intercept when user is typing in inputs / contenteditable
         if (isEditableKeyTarget(e.target)) return;
 
@@ -5081,6 +5223,7 @@
         wrap.style.bottom = '';
         wrap.style.transform = '';
         wrap.style.cursor = 'pointer';
+        if (typeof omtUpdateClockPictureInset === 'function') omtUpdateClockPictureInset();
     }
 
     function omtInstallClockClickEdit() {
@@ -7853,6 +7996,8 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             if (window.scrollY || window.scrollX) window.scrollTo(0, 0);
         } catch (_) {}
 
+        if (typeof omtUpdateClockPictureInset === 'function') omtUpdateClockPictureInset();
+
         omtDebugXeatre('viewport-fit', {
             vw, vh, w, h, left, top,
             scrollW: document.documentElement.scrollWidth,
@@ -7929,11 +8074,72 @@ var OMT_SYNC_FEATURE_ENABLED = false;
 
     try { window.__omtXeatreFitViewport = omtXeatreFitViewport; } catch (_) {}
 
+    /* ---- v2.2.12 click-to-play/pause on the video picture ----
+     * wire.js vid click uses e.target === vid; after viewport-fit / VJS layers
+     * the hit target is often the tech wrapper. Window capture (Examino-style)
+     * toggles only on the media surface, never on our HUD. */
+    function isXeatrePlayerMediaTarget(target) {
+        if (!target) return false;
+        const el = target.nodeType === 1 ? target : target.parentElement;
+        if (!el || !el.closest) return false;
+        if (typeof isOmtInteractiveTarget === 'function' && isOmtInteractiveTarget(el)) return false;
+        if (omtRoot && omtRoot.contains(el)) return false;
+        if (el.tagName === 'VIDEO') return true;
+        const shell = el.closest('#hdmi-video, .video-js');
+        if (!shell) return false;
+        // Host chrome (if any) stays excluded; picture/shell clicks toggle.
+        if (el.closest('.vjs-control-bar')) return false;
+        return true;
+    }
+
+    function handleXeatreClickArm(e) {
+        if (!(site && site.id === 'xeatre')) return;
+        xeatreClickArmed = isXeatrePlayerMediaTarget(e.target);
+    }
+
+    function handleXeatreClickToggle(e) {
+        if (!(site && site.id === 'xeatre')) return;
+        if (!xeatreClickArmed) return;
+        xeatreClickArmed = false;
+        if (!isXeatrePlayerMediaTarget(e.target)) return;
+        const media = (e.target && e.target.tagName === 'VIDEO')
+            ? e.target
+            : ((e.target && e.target.closest && e.target.closest('video')) || vid ||
+                (site && site.findVideo && site.findVideo()));
+        if (!media) return;
+        if (!media.src && !media.currentSrc && !media.srcObject) return;
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
+        if (media.paused) {
+            if (typeof safePlay === 'function') safePlay(media);
+            else try { media.play(); } catch (_) {}
+            if (typeof mostrarOSD === 'function') mostrarOSD('Play');
+        } else {
+            media.pause();
+            if (typeof mostrarOSD === 'function') mostrarOSD('Pause');
+        }
+        if (typeof noteOmtUiActivity === 'function') noteOmtUiActivity(false);
+        else if (typeof resetControlsTimeout === 'function') resetControlsTimeout(false);
+    }
+
+    function installXeatreClickToToggle() {
+        if (xeatreClickToggleInstalled) return;
+        xeatreClickToggleInstalled = true;
+        window.addEventListener('pointerdown', handleXeatreClickArm, true);
+        window.addEventListener('mousedown', handleXeatreClickArm, true);
+        window.addEventListener('click', handleXeatreClickToggle, true);
+        console.log('[OMT] Xeatre click-to-toggle installed (video surface only).');
+    }
+
     function initXeatrePlayerFeatures() {
         injectXeatreHideCSS();
         hideXeatreNativeChrome();
         startXeatreNativeChromeObserver();
         startXeatreViewportFit();
+        installXeatreClickToToggle();
+        if (typeof omtUpdateClockPictureInset === 'function') omtUpdateClockPictureInset();
         omtDebugXeatre('init', describeXeatreVideoPaint());
         console.log('[OMT] Xeatre host chrome hide + viewport fit installed.');
     }

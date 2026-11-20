@@ -58,6 +58,29 @@
     }
 
     function handleKeydown(e) {
+        // Timer edit: Enter commits + seeks immediately; Escape cancels.
+        // Capture-phase so host players cannot swallow Enter before our input.
+        const editEl = e.target && e.target.nodeType === 1
+            ? e.target
+            : (e.target && e.target.parentElement);
+        if (editEl && editEl.id === 'timer-edit-input') {
+            if (e.key === 'Enter' && typeof omtClockEditCommit === 'function' && omtClockEditCommit) {
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                try { omtClockEditCommit(); } catch (_) {}
+                return;
+            }
+            if (e.key === 'Escape' && typeof omtClockEditCancel === 'function' && omtClockEditCancel) {
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                try { omtClockEditCancel(); } catch (_) {}
+                return;
+            }
+            return;
+        }
+
         // Don't intercept when user is typing in inputs / contenteditable
         if (isEditableKeyTarget(e.target)) return;
 

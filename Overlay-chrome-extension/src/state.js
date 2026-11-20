@@ -20,6 +20,11 @@
     let examinoClickToggleInstalled = false;
     let examinoClickArmed = false;
     let examinoSuppressClickToggle = 0; // >0 while we drive OpenPlayer menus via .click()
+    let xeatreClickToggleInstalled = false;
+    let xeatreClickArmed = false;
+    // Clock-edit commit/cancel (Enter/Escape) — set while the inline editor is open.
+    let omtClockEditCommit = null;
+    let omtClockEditCancel = null;
     let examinoAutoVodWatcher = null;
     let examinoAutoVodInFlight = false;
     let examinoAutoVodDone = false;
