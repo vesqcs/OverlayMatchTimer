@@ -1,23 +1,29 @@
-/* Alt+Tab / tab-hidden playback (all sites: Examino, InPlay, Xeatre, local).
+/* Tab-hidden playback (all sites: Examino, InPlay, Xeatre, local).
  *
- * v2.2.14 setting "Não pausar no alt tab" (omtKeepPlayingOnAltTab, default OFF):
- *   OFF (default): pause on blur/hidden if playing; resume on return only if we
- *                  paused (autoPausedByBlur). User pause is never auto-resumed.
- *   ON: keep playing while hidden — if the host pauses on away, play() once on
- *       the next microtask. Armed only between away and return / user pause.
+ * v2.2.15 setting "Keep playing on alt tab" (omtKeepPlayingOnAltTab, default OFF):
+ *   OFF (default): pause only on document.visibilityState === 'hidden'
+ *                  (tab switch / minimize / fully covered). Never on blur/focus —
+ *                  a visible but unfocused window (beside the collection app,
+ *                  or Shuttle "top" video) must keep playing.
+ *                  On visible, resume only if we paused (autoPausedByHide).
+ *   ON: never pause on hide. If the host pauses while hidden (Examino),
+ *       play() once on the next microtask. Armed only between hide and show.
  *
- * Cost: one-time visibilitychange/blur/focus listeners. No intervals, no
- * timeouts, no observers. One-shot pause()/play() only on those events.
+ * Cost: one-time visibilitychange listeners only. No blur/focus handlers.
+ * No intervals, no timeouts, no observers. One-shot pause()/play() on events.
  */
     let autoPauseInstalled = false;
-    let autoPausedByBlur = false;
+    let autoPausedByHide = false;
     let autoPauseInProgress = false;
     let autoResumeInProgress = false;
     let lastShuttleActivityAt = 0;
-    // Keep-playing arm (setting ON): set on away while playing; cleared on
-    // return or user intent. No wall-clock window / timers.
+    // Keep-playing arm (setting ON): set on hide while playing; cleared on
+    // show or user intent. No wall-clock window / timers.
     let keepPlayingArmed = false;
     let keepPlayingInFlight = false;
+
+    // Legacy alias — older call sites / tests may still read this name.
+    let autoPausedByBlur = false;
 
     function noteShuttleActivity() {
         lastShuttleActivityAt = Date.now();
@@ -27,13 +33,14 @@
         keepPlayingArmed = false;
     }
 
-    /** Used by togglePlay — user intent cancels keep-playing and blur-resume. */
+    /** Used by togglePlay — user intent cancels keep-playing and hide-resume. */
     function clearExaminoHostResumeIntent() {
         clearKeepPlayingArm();
     }
 
     function clearAutoPauseFlag() {
         if (autoPauseInProgress || autoResumeInProgress) return;
+        autoPausedByHide = false;
         autoPausedByBlur = false;
         if (!keepPlayingInFlight) clearKeepPlayingArm();
     }
@@ -42,14 +49,13 @@
         if (typeof storageGetKeepPlayingOnAltTab === 'function') {
             return !!storageGetKeepPlayingOnAltTab();
         }
-        // Legacy fallback during partial loads: old key meant "pause on blur".
         if (typeof storageGetAutoPauseOnBlur === 'function') {
             return !storageGetAutoPauseOnBlur();
         }
         return false;
     }
 
-    function shouldSkipAwayPause() {
+    function shouldSkipHidePause() {
         if (storageKeepPlayingOnAltTab()) return true;
         if (typeof storageGetShuttleEnabled === 'function' && storageGetShuttleEnabled()) {
             return true;
@@ -58,8 +64,8 @@
         return false;
     }
 
-    /** Capture on away: arm keep-playing if setting ON and media is playing. */
-    function onAwayCapture() {
+    /** Capture on hide: arm keep-playing if setting ON and media is playing. */
+    function onHideCapture() {
         if (!storageKeepPlayingOnAltTab()) {
             clearKeepPlayingArm();
             return;
@@ -112,20 +118,20 @@
         try {
             queueMicrotask(resume);
         } catch (_) {
-            // queueMicrotask unavailable — same-tick fallback (still not a timer).
             resume();
         }
     }
 
-    function maybeAutoPauseOnAway() {
-        if (shouldSkipAwayPause()) return;
+    function maybeAutoPauseOnHide() {
+        if (shouldSkipHidePause()) return;
         if (!ensureLiveVideo()) return;
         if (vid.paused || vid.ended) return;
         autoPauseInProgress = true;
         try {
             vid.pause();
             if (vid.paused) {
-                autoPausedByBlur = true;
+                autoPausedByHide = true;
+                autoPausedByBlur = true; // legacy alias
                 if (typeof mostrarOSD === 'function') mostrarOSD('Auto paused');
             }
         } finally {
@@ -134,19 +140,22 @@
         if (typeof syncPlayButtonFromVideo === 'function') syncPlayButtonFromVideo();
     }
 
-    function maybeAutoResumeOnReturn() {
+    function maybeAutoResumeOnShow() {
         clearKeepPlayingArm();
-        if (!autoPausedByBlur) return;
+        if (!autoPausedByHide) return;
         if (typeof storageGetShuttleEnabled === 'function' && storageGetShuttleEnabled()) {
+            autoPausedByHide = false;
             autoPausedByBlur = false;
             return;
         }
         if (!ensureLiveVideo()) return;
         if (!vid.paused) {
+            autoPausedByHide = false;
             autoPausedByBlur = false;
             return;
         }
         autoResumeInProgress = true;
+        autoPausedByHide = false;
         autoPausedByBlur = false;
         safePlay(vid)
             .finally(() => {
@@ -156,37 +165,21 @@
     }
 
     function onDocumentVisibilityChangeCapture() {
-        if (document.visibilityState === 'hidden') onAwayCapture();
-    }
-
-    function onWindowBlurCapture() {
-        onAwayCapture();
+        if (document.visibilityState === 'hidden') onHideCapture();
     }
 
     function onDocumentVisibilityChange() {
-        if (document.visibilityState === 'hidden') maybeAutoPauseOnAway();
+        if (document.visibilityState === 'hidden') maybeAutoPauseOnHide();
         else if (document.visibilityState === 'visible') {
-            maybeAutoResumeOnReturn();
+            maybeAutoResumeOnShow();
             if (typeof wakeFullscreenDecode === 'function') wakeFullscreenDecode();
         }
-    }
-
-    function onWindowBlur() {
-        if (document.visibilityState === 'hidden') return;
-        maybeAutoPauseOnAway();
-    }
-
-    function onWindowFocus() {
-        maybeAutoResumeOnReturn();
-        if (typeof wakeFullscreenDecode === 'function') wakeFullscreenDecode();
     }
 
     function installAutoPauseOnBlur() {
         if (autoPauseInstalled) return;
         autoPauseInstalled = true;
+        // Visibility only — never blur/focus (visible-but-unfocused must play).
         document.addEventListener('visibilitychange', onDocumentVisibilityChangeCapture, true);
-        window.addEventListener('blur', onWindowBlurCapture, true);
         document.addEventListener('visibilitychange', onDocumentVisibilityChange);
-        window.addEventListener('blur', onWindowBlur);
-        window.addEventListener('focus', onWindowFocus);
     }

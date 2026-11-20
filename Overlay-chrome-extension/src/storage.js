@@ -43,9 +43,10 @@
     }
 
     /**
-     * v2.2.14: "Não pausar no alt tab" — default OFF = pause on hide, resume on
-     * return. Old omtAutoPauseOnBlur is dropped (not inverted) so everyone lands
-     * on the new default without a silent behaviour flip of the same checkbox.
+     * v2.2.15: "Keep playing on alt tab" — default OFF = pause on document
+     * hidden only (not blur), resume on visible. Old omtAutoPauseOnBlur is
+     * dropped (not inverted) so everyone lands on the new default without a
+     * silent behaviour flip of the same checkbox.
      */
     function storageGetKeepPlayingOnAltTab() {
         const v = localStorage.getItem(OMT_STORAGE_KEYS.keepPlayingOnAltTab);

@@ -223,7 +223,7 @@
         vid.addEventListener('pause', () => {
             // Do not clear auto-pause flag here — auto-pause itself fires pause.
             // Manual pause clears via togglePlay / click / Shuttle handlers.
-            // v2.2.14: undo host pause-on-hidden when "Não pausar no alt tab" is ON.
+            // v2.2.15: undo host pause-on-hidden when "Keep playing on alt tab" is ON.
             if (typeof onMaybeKeepPlaying === 'function') onMaybeKeepPlaying();
             syncPlayButtonFromVideo();
         }, vsig);

@@ -104,6 +104,9 @@ html.omt-host-xeatre.omt-hud-on .vjs-tech {
     display: block !important;
     visibility: visible !important;
     opacity: 1 !important;
+    /* Host/VJS often leave tech PE none so clicks land on #videowrapper.
+       Chrome-hide never sets PE none on .video-js — only on chrome leaves. */
+    pointer-events: auto !important;
 }
 
 /* ---- HIDE OPENPLAYER / EXAMINO NATIVE CHROME (Examino only) ----
