@@ -6177,118 +6177,76 @@ async function run() {
       detail: xeatreAltTabKeep
     });
 
-    // ---- v2.2.17: Xeatre live ULL nanoplayer (H5Live) — host #controls-panel hidden ----
-    // Field: VIDEO#h5live-playerDiv > DIV#playerDiv; native DIV#controls-panel.glass-panel
-    // clashes with pre-2.2.17 OMT id. Our HUD is #omt-controls-panel.
+    // ---- v2.2.18: Xeatre nanoplayer.html is video-only — OMT must inject nothing ----
     await page.goto(`${base}${XEATRE_NANOPLAYER_PATH}`, { waitUntil: 'domcontentloaded' });
-    await waitForOmt(page, 15000);
-    await page.waitForFunction(() => {
-      const v = document.getElementById('h5live-playerDiv');
-      return !!(v && document.getElementById('omt-root') &&
-        document.documentElement.classList.contains('omt-host-xeatre'));
-    }, { timeout: 15000 }).catch(() => {});
-    await page.waitForTimeout(400);
+    await page.waitForFunction(() => !!document.getElementById('h5live-playerDiv'), {
+      timeout: 10000
+    }).catch(() => {});
+    await page.waitForTimeout(600);
 
-    const nanoChrome = await page.evaluate(() => {
-      const hostPanel = document.getElementById('controls-panel');
-      const omtPanel = document.getElementById('omt-controls-panel');
-      const root = document.getElementById('omt-root');
-      const timer = document.getElementById('match-timer-wrap') || document.getElementById('match-timer');
-      const v = document.getElementById('h5live-playerDiv');
-      // Reveal OMT chrome for the visibility check (autohide may have faded it).
-      if (omtPanel) {
-        omtPanel.style.opacity = '1';
-        omtPanel.style.pointerEvents = 'auto';
-      }
-      const cs = (el) => (el ? getComputedStyle(el) : null);
-      const chromeHidden = (el) => {
-        const c = cs(el);
-        if (!c) return true;
-        return c.display === 'none' || c.visibility === 'hidden' || Number(c.opacity) === 0 ||
-          c.pointerEvents === 'none';
-      };
-      const hostOutsideHud = !!(hostPanel && root && !root.contains(hostPanel));
-      const omtInsideHud = !!(omtPanel && root && root.contains(omtPanel));
-      const hostHasOmtClass = !!(hostPanel && (
-        hostPanel.classList.contains('omt-panel-size-small') ||
-        hostPanel.classList.contains('omt-at-live') ||
-        hostPanel.classList.contains('playing-state')
-      ));
-      const videoOk = !!(v && v.getBoundingClientRect().height >= 24 &&
-        cs(v).display !== 'none' && cs(v).visibility !== 'hidden');
-      return {
-        ok: hostOutsideHud && chromeHidden(hostPanel) && omtInsideHud &&
-          !!omtPanel && !!timer && videoOk && !hostHasOmtClass,
-        hostOutsideHud,
-        hostHidden: chromeHidden(hostPanel),
-        omtInsideHud,
-        timer: !!timer,
-        videoOk,
-        hostHasOmtClass,
-        hostId: hostPanel && hostPanel.id,
-        omtId: omtPanel && omtPanel.id
-      };
-    });
-    results.push({
-      name: 'xeatre-nanoplayer-host-controls-hidden',
-      pass: nanoChrome.ok === true,
-      detail: nanoChrome
-    });
-
-    const nanoClick = await page.evaluate(async () => {
-      const v = document.getElementById('h5live-playerDiv');
-      const playerDiv = document.getElementById('playerDiv');
-      const omtPanel = document.getElementById('omt-controls-panel');
-      const bar = document.getElementById('omt-timeline-bar');
-      if (!v || !playerDiv) return { ok: false, reason: 'missing' };
-      if (omtPanel) { omtPanel.style.opacity = '0'; omtPanel.style.pointerEvents = 'none'; }
-      if (bar) { bar.style.opacity = '0'; bar.classList.add('omt-chrome-hidden'); }
-      try { await v.play(); } catch (_) {}
-      await new Promise((r) => setTimeout(r, 40));
-      if (v.paused) return { ok: false, reason: 'not-playing' };
-      const r = v.getBoundingClientRect();
-      const x = r.left + r.width / 2;
-      const y = r.top + r.height / 2;
-      const before = !!v.paused;
-      for (const type of ['pointerdown', 'pointerup', 'click']) {
-        v.dispatchEvent(new PointerEvent(type, {
-          bubbles: true, cancelable: true, composed: true,
-          clientX: x, clientY: y, button: 0, buttons: type === 'pointerup' ? 0 : 1,
-          pointerId: 1, pointerType: 'mouse', view: window
-        }));
-      }
-      await new Promise((r) => setTimeout(r, 80));
-      return { ok: before === false && v.paused === true, before, after: v.paused };
-    });
-    results.push({
-      name: 'xeatre-nanoplayer-click-toggles-play',
-      pass: nanoClick.ok === true,
-      detail: nanoClick
-    });
-
-    const nanoHud = await page.evaluate(() => {
+    const nanoIdle = await page.evaluate(() => {
       const root = document.getElementById('omt-root');
       const panel = document.getElementById('omt-controls-panel');
+      const bar = document.getElementById('omt-timeline-bar');
       const timer = document.getElementById('match-timer-wrap') || document.getElementById('match-timer');
-      const hostPanel = document.getElementById('controls-panel');
+      const setup = document.getElementById('setup-panel');
+      const hideCss = document.getElementById('omt-xeatre-hide-css');
+      const row = document.getElementById('ControlButtons');
+      const reset = document.getElementById('ResetPlayer');
+      const html = document.documentElement;
+      const cs = (el) => (el ? getComputedStyle(el) : null);
+      const rowVisible = !!(row && cs(row).display !== 'none' && cs(row).visibility !== 'hidden' &&
+        Number(cs(row).opacity) !== 0);
+      const omtDom = document.querySelectorAll('[id^="omt-"], .omt-xeatre, .omt-hud-chip').length;
       return {
-        ok: !!(root && panel && timer && hostPanel &&
-          root.contains(panel) && !root.contains(hostPanel) &&
-          panel.id === 'omt-controls-panel' && hostPanel.id === 'controls-panel'),
+        ok: !root && !panel && !bar && !timer && !setup && !hideCss &&
+          !html.classList.contains('omt-host-xeatre') &&
+          !html.classList.contains('omt-hud-on') &&
+          typeof window.__omtHideXeatreNativeChrome !== 'function' &&
+          typeof window.__omtXeatreFitViewport !== 'function' &&
+          rowVisible && !!reset && omtDom === 0,
         hasRoot: !!root,
         hasPanel: !!panel,
+        hasBar: !!bar,
         hasTimer: !!timer,
-        idsClash: !!(panel && hostPanel && panel.id === hostPanel.id)
+        hasSetup: !!setup,
+        hasHideCss: !!hideCss,
+        hostXeatre: html.classList.contains('omt-host-xeatre'),
+        hudOn: html.classList.contains('omt-hud-on'),
+        hideFn: typeof window.__omtHideXeatreNativeChrome,
+        fitFn: typeof window.__omtXeatreFitViewport,
+        rowVisible,
+        omtDom
       };
     });
     results.push({
-      name: 'xeatre-nanoplayer-omt-hud-and-timer',
-      pass: nanoHud.ok === true,
-      detail: nanoHud
+      name: 'xeatre-nanoplayer-no-omt-injection',
+      pass: nanoIdle.ok === true,
+      detail: nanoIdle
     });
-    await page.screenshot({ path: path.join(ARTIFACTS, 'v217_xeatre_nanoplayer.png'), fullPage: true });
 
-    // Resume DVR mock for remaining Xeatre clock/inset checks.
+    // Native ControlButtons stay fully usable (not hidden / not overlapped by HUD).
+    const nanoHostRow = await page.evaluate(() => {
+      const row = document.getElementById('ControlButtons');
+      const btn = document.getElementById('OpenDvrPlayer');
+      if (!row || !btn) return { ok: false, reason: 'missing-row' };
+      const before = (window.__xeatreNanoStats && window.__xeatreNanoStats.hostClicks) || 0;
+      btn.click();
+      const after = (window.__xeatreNanoStats && window.__xeatreNanoStats.hostClicks) || 0;
+      const r = row.getBoundingClientRect();
+      return {
+        ok: after === before + 1 && r.width > 8 && r.height > 8,
+        before, after, w: Math.round(r.width), h: Math.round(r.height)
+      };
+    });
+    results.push({
+      name: 'xeatre-nanoplayer-host-controlbuttons-intact',
+      pass: nanoHostRow.ok === true,
+      detail: nanoHostRow
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v218_xeatre_nanoplayer_idle.png'), fullPage: true });
+
+    // Resume DVR mock for remaining Xeatre clock/inset checks (OMT still active there).
     await page.goto(`${base}${XEATRE_DVR_PATH}`, { waitUntil: 'domcontentloaded' });
     await waitForOmt(page, 15000);
     await page.waitForFunction(() => {
