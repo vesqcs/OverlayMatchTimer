@@ -9,6 +9,7 @@ import {
   runExaminoFieldScenario,
   runInplayScheduleScenario,
   EXAMINO_BUS_MOCK_PATH,
+  EXAMINO_CENTER_PROBE_PATH,
   XEATRE_DVR_PATH,
   XEATRE_NANOPLAYER_PATH
 } from './host-scenarios.mjs';
@@ -873,19 +874,29 @@ async function run() {
       detail: examinoPanelDrag
     });
 
-    // v2.2.16: viewport-fixed HUD — bar in black area below player (narrow tab).
+    // v2.2.16 / v2.2.22: viewport-fixed HUD — player block centred, bar at tab bottom.
     await page.setViewportSize({ width: 874, height: 886 });
     await page.evaluate(() => {
-      // Field-like geometry: player strip on top, empty tab below (no OpenPlayer resize by OMT).
       document.documentElement.style.height = '100%';
       document.body.style.cssText = 'margin:0;height:100%;overflow:hidden;background:#000;';
       const pageEl = document.querySelector('.page');
+      // Let OMT host-centre CSS own vertical placement — keep a fixed player height.
       if (pageEl) {
         pageEl.style.cssText =
-          'position:fixed;left:0;top:0;width:100%;height:492px;margin:0;display:block;background:#000;';
+          'width:100%;height:492px;margin:0;display:block;background:#000;flex:0 0 auto;';
       }
       const main = document.getElementById('main-container') || document.querySelector('.main-container');
-      if (main) main.style.cssText = 'position:absolute;inset:0;height:100%;';
+      if (main) {
+        // Clear any absolute fill so flex-centre on main can place the player block.
+        main.style.removeProperty('position');
+        main.style.removeProperty('inset');
+        main.style.removeProperty('top');
+        main.style.removeProperty('left');
+        main.style.removeProperty('right');
+        main.style.removeProperty('bottom');
+      }
+      const top = document.querySelector('.top');
+      if (top) top.style.cssText = 'position:relative;width:100%;height:492px;flex:0 0 auto;';
       const player = document.getElementById('op-player') || document.querySelector('.op-player');
       if (player) player.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;';
       const bottom = document.getElementById('bottom-controls');
@@ -912,9 +923,14 @@ async function run() {
       const barAtTabBottom = Math.abs(br.bottom - vh) < 6;
       const barBelowVideo = br.top >= vr.bottom - 2;
       const peNone = cs.pointerEvents === 'none';
+      const topGap = vr.top;
+      const bottomGap = vh - vr.bottom;
+      const vertCentered = Math.abs(topGap - bottomGap) <= 12;
       return {
-        ok: fixed && coversTab && barAtTabBottom && barBelowVideo && peNone,
-        fixed, coversTab, barAtTabBottom, barBelowVideo, peNone,
+        ok: fixed && coversTab && barAtTabBottom && barBelowVideo && peNone && vertCentered,
+        fixed, coversTab, barAtTabBottom, barBelowVideo, peNone, vertCentered,
+        topGap: Math.round(topGap),
+        bottomGap: Math.round(bottomGap),
         root: { w: Math.round(rr.width), h: Math.round(rr.height), pos: cs.position },
         bar: { top: Math.round(br.top), bottom: Math.round(br.bottom) },
         video: { bottom: Math.round(vr.bottom), h: Math.round(vr.height) },
@@ -1035,38 +1051,40 @@ async function run() {
       const picLeft = er.left + (er.width - picW) / 2;
       const picTop = er.top + (er.height - picH) / 2;
 
-      const cr = wrap.getBoundingClientRect();
-      const expectedTop = picTop + 14;
-      const expectedLeft = picLeft + 14;
-      const clockFollows =
-        Math.abs(cr.top - expectedTop) <= 3 &&
-        Math.abs(cr.left - expectedLeft) <= 3;
-      const insidePicture =
-        cr.left >= picLeft - 1 && cr.right <= picLeft + picW + 1 &&
-        cr.top >= picTop - 1 && cr.bottom <= picTop + picH + 1;
-      const inPicture = root.classList.contains('omt-clock-in-picture');
-      // Centered page: video must not be parked at the tab origin.
-      const videoCenteredAwayFromTabOrigin =
-        after.rect.left > 40 && after.rect.top > 20;
+        const cr = wrap.getBoundingClientRect();
+        const pad = root.classList.contains('omt-compact') ? 8 : 14;
+        const expectedTop = picTop + pad;
+        const expectedLeft = picLeft + pad;
+        const clockFollows =
+          Math.abs(cr.top - expectedTop) <= 3 &&
+          Math.abs(cr.left - expectedLeft) <= 3;
+        const insidePicture =
+          cr.left >= picLeft - 1 && cr.right <= picLeft + picW + 1 &&
+          cr.top >= picTop - 1 && cr.bottom <= picTop + picH + 1;
+        const inPicture = root.classList.contains('omt-clock-in-picture');
+        // Centered page: video must not be parked at the tab origin.
+        const videoCenteredAwayFromTabOrigin =
+          after.rect.left > 40 && after.rect.top > 20;
 
-      return {
-        ok: videoUntouched && clockFollows && insidePicture && inPicture &&
+        return {
+          ok: videoUntouched && clockFollows && insidePicture && inPicture &&
+            videoCenteredAwayFromTabOrigin,
+          videoUntouched,
+          clockFollows,
+          insidePicture,
+          inPicture,
           videoCenteredAwayFromTabOrigin,
-        videoUntouched,
-        clockFollows,
-        insidePicture,
-        inPicture,
-        videoCenteredAwayFromTabOrigin,
-        before,
-        after,
-        clock: { left: Math.round(cr.left), top: Math.round(cr.top) },
-        expected: { left: Math.round(expectedLeft), top: Math.round(expectedTop) },
-        pic: {
-          left: Math.round(picLeft), top: Math.round(picTop),
-          w: Math.round(picW), h: Math.round(picH)
-        }
-      };
-    });
+          pad,
+          before,
+          after,
+          clock: { left: Math.round(cr.left), top: Math.round(cr.top) },
+          expected: { left: Math.round(expectedLeft), top: Math.round(expectedTop) },
+          pic: {
+            left: Math.round(picLeft), top: Math.round(picTop),
+            w: Math.round(picW), h: Math.round(picH)
+          }
+        };
+      });
     results.push({
       name: 'examino-clock-follows-centered-video-no-video-move',
       pass: examinoClockFollowsVideo.ok === true,
@@ -1143,7 +1161,174 @@ async function run() {
     });
     await page.screenshot({ path: path.join(ARTIFACTS, 'v221_examino_clock_follows_video.png'), fullPage: true });
 
-    // Re-apply top-strip geometry for the panel-in-black drag check (2.2.16).
+    // v2.2.22: field-chain centre probe (Vasco: VIDEO→.grow all at y=0).
+    await page.goto(`${base}${EXAMINO_CENTER_PROBE_PATH}`, { waitUntil: 'domcontentloaded' });
+    await waitForOmt(page, 15000);
+    await page.waitForFunction(() => {
+      return !!(document.querySelector('video') &&
+        document.documentElement.classList.contains('omt-host-examino') &&
+        document.documentElement.classList.contains('omt-hud-on'));
+    }, { timeout: 15000 }).catch(() => {});
+
+    async function assertExaminoPlayerCentered(label) {
+      return page.evaluate((label) => {
+        const root = document.getElementById('omt-root');
+        const wrap = document.getElementById('match-timer-wrap');
+        const v = document.querySelector('video');
+        const box = document.querySelector('.video-container') || v;
+        if (!root || !wrap || !v || !box) return { ok: false, reason: 'missing', label };
+        try {
+          Object.defineProperty(v, 'videoWidth', { configurable: true, get: () => 1920 });
+          Object.defineProperty(v, 'videoHeight', { configurable: true, get: () => 1084 });
+        } catch (_) {}
+        window.dispatchEvent(new Event('resize'));
+        if (typeof window.__omtUpdateClockPictureInset === 'function') {
+          window.__omtUpdateClockPictureInset();
+        }
+        wrap.classList.add('omt-clock-pos-top-left', 'is-visible');
+        root.classList.add('omt-timer-on');
+        wrap.style.display = 'block';
+        wrap.style.opacity = '1';
+
+        const vr = v.getBoundingClientRect();
+        const br = box.getBoundingClientRect();
+        const vh = window.innerHeight;
+        const vw = window.innerWidth;
+        const topGap = br.top;
+        const bottomGap = vh - br.bottom;
+        const leftGap = br.left;
+        const rightGap = vw - br.right;
+        const vertCentered = Math.abs(topGap - bottomGap) <= 8;
+        const horizCentered = Math.abs(leftGap - rightGap) <= 8;
+        // Player block keeps its own height (fixture 387) — not stretched to 100vh.
+        const notStretched = br.height <= 420;
+
+        const metaW = v.videoWidth || 1920;
+        const metaH = v.videoHeight || 1084;
+        const scale = Math.min(vr.width / metaW, vr.height / metaH);
+        const picW = metaW * scale;
+        const picH = metaH * scale;
+        const picLeft = vr.left + (vr.width - picW) / 2;
+        const picTop = vr.top + (vr.height - picH) / 2;
+        const cr = wrap.getBoundingClientRect();
+        const pad = root.classList.contains('omt-compact') ? 8 : 14;
+        const clockInPicture =
+          cr.width > 4 && cr.height > 4 &&
+          cr.left >= picLeft - 2 && cr.right <= picLeft + picW + 2 &&
+          cr.top >= picTop - 2 && cr.bottom <= picTop + picH + 2;
+        const clockFollows =
+          Math.abs(cr.top - (picTop + pad)) <= 4 &&
+          Math.abs(cr.left - (picLeft + pad)) <= 4;
+
+        return {
+          ok: vertCentered && horizCentered && notStretched && clockInPicture && clockFollows,
+          label,
+          vertCentered,
+          horizCentered,
+          notStretched,
+          clockInPicture,
+          clockFollows,
+          pad,
+          topGap: Math.round(topGap),
+          bottomGap: Math.round(bottomGap),
+          leftGap: Math.round(leftGap),
+          rightGap: Math.round(rightGap),
+          player: { w: Math.round(br.width), h: Math.round(br.height), top: Math.round(br.top) },
+          clock: { left: Math.round(cr.left), top: Math.round(cr.top) },
+          pic: { left: Math.round(picLeft), top: Math.round(picTop), w: Math.round(picW), h: Math.round(picH) },
+          viewport: { w: vw, h: vh }
+        };
+      }, label);
+    }
+
+    await page.setViewportSize({ width: 688, height: 795 });
+    await page.waitForTimeout(150);
+    const centerNarrow = await assertExaminoPlayerCentered('688x795');
+    results.push({
+      name: 'examino-player-centered-688x795',
+      pass: centerNarrow.ok === true,
+      detail: centerNarrow
+    });
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.waitForTimeout(150);
+    const centerWide = await assertExaminoPlayerCentered('1280x900');
+    results.push({
+      name: 'examino-player-centered-1280x900',
+      pass: centerWide.ok === true,
+      detail: centerWide
+    });
+
+    const centerFs = await page.evaluate(async () => {
+      const root = document.getElementById('omt-root');
+      const wrap = document.getElementById('match-timer-wrap');
+      const v = document.querySelector('video');
+      const fsTarget = document.getElementById('op-player') ||
+        document.getElementById('video-player') || v;
+      if (!root || !wrap || !v || !fsTarget) return { ok: false, reason: 'missing' };
+      try {
+        if (fsTarget.requestFullscreen) await fsTarget.requestFullscreen();
+      } catch (e) {
+        return { ok: false, reason: 'fs-denied', err: String(e && e.message || e) };
+      }
+      await new Promise((r) => setTimeout(r, 140));
+      window.dispatchEvent(new Event('resize'));
+      if (typeof window.__omtUpdateClockPictureInset === 'function') {
+        window.__omtUpdateClockPictureInset();
+      }
+      wrap.classList.add('omt-clock-pos-top-left', 'is-visible');
+      root.classList.add('omt-timer-on');
+      wrap.style.display = 'block';
+      const vr = v.getBoundingClientRect();
+      const vh = window.innerHeight;
+      const vw = window.innerWidth;
+      const topGap = vr.top;
+      const bottomGap = vh - vr.bottom;
+      const leftGap = vr.left;
+      const rightGap = vw - vr.right;
+      // In FS the media fills the FS element — gaps ~0 on both sides.
+      const vertCentered = Math.abs(topGap - bottomGap) <= 8;
+      const horizCentered = Math.abs(leftGap - rightGap) <= 8;
+      const metaW = v.videoWidth || 1920;
+      const metaH = v.videoHeight || 1084;
+      const scale = Math.min(vr.width / metaW, vr.height / metaH);
+      const picW = metaW * scale;
+      const picH = metaH * scale;
+      const picLeft = vr.left + (vr.width - picW) / 2;
+      const picTop = vr.top + (vr.height - picH) / 2;
+      const cr = wrap.getBoundingClientRect();
+      const clockInPicture =
+        cr.left >= picLeft - 2 && cr.right <= picLeft + picW + 2 &&
+        cr.top >= picTop - 2 && cr.bottom <= picTop + picH + 2;
+      const out = {
+        ok: !!document.fullscreenElement && vertCentered && horizCentered && clockInPicture,
+        vertCentered,
+        horizCentered,
+        clockInPicture,
+        hasFs: !!document.fullscreenElement,
+        topGap: Math.round(topGap),
+        bottomGap: Math.round(bottomGap),
+        clock: { left: Math.round(cr.left), top: Math.round(cr.top) },
+        pic: { left: Math.round(picLeft), top: Math.round(picTop) }
+      };
+      try { await document.exitFullscreen(); } catch (_) {}
+      await new Promise((r) => setTimeout(r, 80));
+      window.dispatchEvent(new Event('resize'));
+      if (typeof window.__omtUpdateClockPictureInset === 'function') {
+        window.__omtUpdateClockPictureInset();
+      }
+      return out;
+    });
+    results.push({
+      name: 'examino-player-centered-fullscreen',
+      pass: centerFs.ok === true || centerFs.reason === 'fs-denied',
+      detail: centerFs
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v222_examino_player_centered.png'), fullPage: true });
+
+    // Resume examino-mock for the panel-in-black drag check (2.2.16 / 2.2.22).
+    await page.goto(`${base}/examino-mock.html`, { waitUntil: 'domcontentloaded' });
+    await waitForOmt(page, 15000);
     await page.setViewportSize({ width: 874, height: 886 });
     await page.evaluate(() => {
       document.documentElement.style.height = '100%';
@@ -1151,10 +1336,19 @@ async function run() {
       const pageEl = document.querySelector('.page');
       if (pageEl) {
         pageEl.style.cssText =
-          'position:fixed;left:0;top:0;width:100%;height:492px;margin:0;display:block;background:#000;';
+          'width:100%;height:492px;margin:0;display:block;background:#000;flex:0 0 auto;';
       }
       const main = document.getElementById('main-container') || document.querySelector('.main-container');
-      if (main) main.style.cssText = 'position:absolute;inset:0;height:100%;';
+      if (main) {
+        main.style.removeProperty('position');
+        main.style.removeProperty('inset');
+        main.style.removeProperty('top');
+        main.style.removeProperty('left');
+        main.style.removeProperty('right');
+        main.style.removeProperty('bottom');
+      }
+      const top = document.querySelector('.top');
+      if (top) top.style.cssText = 'position:relative;width:100%;height:492px;flex:0 0 auto;';
       const player = document.getElementById('op-player') || document.querySelector('.op-player');
       if (player) player.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;';
       window.dispatchEvent(new Event('resize'));

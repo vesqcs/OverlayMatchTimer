@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Examino field centre probe (Vasco chain)</title>
+  <style>
+    /* Host layout matching the 2.2.21 field probe before OMT centre CSS:
+       VIDEO → … → .video-container → .main-container → .grow all share one
+       top-of-tab box (~100% × 387px). OMT content.css must flex-centre it. */
+    html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+    .grow.overflow-y-auto {
+      position: static;
+      width: 100%;
+      /* shrink-wrap to the player block until OMT forces 100vh + flex */
+    }
+    .main-container.svelte-iq8mv8 {
+      position: static;
+      width: 100%;
+    }
+    .video-container.svelte-iq8mv8.hide-fullscreen {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 387px;
+      background: #111;
+    }
+    #video-player.ovenplayer.op-wrapper.small {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+    .op-player {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+    .op-core-ui-wrapper {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+    .op-media-element-container {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+    video {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: #000;
+    }
+  </style>
+</head>
+<body>
+  <div class="grow overflow-y-auto">
+    <div class="main-container svelte-iq8mv8">
+      <div class="video-container svelte-iq8mv8 hide-fullscreen">
+        <div id="video-player" class="ovenplayer op-wrapper small">
+          <div class="op-player" id="op-player">
+            <div class="op-core-ui-wrapper">
+              <div class="op-media-element-container" id="media-host"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+    (function () {
+      const host = document.getElementById('media-host');
+      const v = document.createElement('video');
+      v.setAttribute('playsinline', '');
+      v.muted = true;
+      // Tiny valid-ish poster-less media; tests stub videoWidth/Height.
+      v.src = '/sample-match.mp4';
+      host.appendChild(v);
+      try {
+        Object.defineProperty(v, 'videoWidth', { configurable: true, get: () => 1920 });
+        Object.defineProperty(v, 'videoHeight', { configurable: true, get: () => 1084 });
+      } catch (_) {}
+      v.play && v.play().catch(function () {});
+    })();
+  </script>
+</body>
+</html>
