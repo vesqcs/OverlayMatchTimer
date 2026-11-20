@@ -397,21 +397,26 @@
         shuttleCheatsheet = q('omt-shuttle-cheatsheet');
     }
 
-    /** Keep card bottom-anchored so height changes grow UP; clamp so top stays on-screen. */
+    /** Keep card bottom-anchored so height changes grow UP; clamp fully inside root. */
     function anchorControlsPanelBottom(preserveBottomPx) {
         if (!controlsPanel || !omtRoot) return;
         const rootRect = omtRoot.getBoundingClientRect();
         const before = controlsPanel.getBoundingClientRect();
-        const bottomPx = (preserveBottomPx != null)
+        let bottomPx = (preserveBottomPx != null)
             ? preserveBottomPx
             : Math.max(0, rootRect.bottom - before.bottom);
 
         // Convert any drag `top` into `bottom` so expand/collapse never pushes transport down.
-        const leftPx = before.left - rootRect.left;
+        let leftPx = before.left - rootRect.left;
         controlsPanel.style.bottom = bottomPx + 'px';
         controlsPanel.style.top = 'auto';
+        controlsPanel.style.right = 'auto';
         // Preserve horizontal place after a drag (clear centering transform).
         if (controlsPanel.style.transform === 'none' || controlsPanel.style.left) {
+            // Clamp so a shrink cannot leave the card hanging past the right edge
+            // (Xeatre narrow-window right-pin — v2.2.19).
+            const maxLeft = Math.max(0, rootRect.width - before.width);
+            leftPx = Math.max(0, Math.min(leftPx, maxLeft));
             controlsPanel.style.left = leftPx + 'px';
             controlsPanel.style.transform = 'none';
         }
@@ -419,7 +424,16 @@
         const after = controlsPanel.getBoundingClientRect();
         if (after.top < rootRect.top) {
             const overflow = rootRect.top - after.top;
-            controlsPanel.style.bottom = Math.max(0, bottomPx - overflow) + 'px';
+            bottomPx = Math.max(0, bottomPx - overflow);
+            controlsPanel.style.bottom = bottomPx + 'px';
+        }
+        // Re-clamp left after width may have changed (compact / min() shrink).
+        if (controlsPanel.style.transform === 'none' || controlsPanel.style.left) {
+            const live = controlsPanel.getBoundingClientRect();
+            const maxLeft = Math.max(0, rootRect.width - live.width);
+            let liveLeft = live.left - rootRect.left;
+            liveLeft = Math.max(0, Math.min(liveLeft, maxLeft));
+            controlsPanel.style.left = liveLeft + 'px';
         }
         updateControlsTipFlip();
     }

@@ -1473,21 +1473,26 @@
         shuttleCheatsheet = q('omt-shuttle-cheatsheet');
     }
 
-    /** Keep card bottom-anchored so height changes grow UP; clamp so top stays on-screen. */
+    /** Keep card bottom-anchored so height changes grow UP; clamp fully inside root. */
     function anchorControlsPanelBottom(preserveBottomPx) {
         if (!controlsPanel || !omtRoot) return;
         const rootRect = omtRoot.getBoundingClientRect();
         const before = controlsPanel.getBoundingClientRect();
-        const bottomPx = (preserveBottomPx != null)
+        let bottomPx = (preserveBottomPx != null)
             ? preserveBottomPx
             : Math.max(0, rootRect.bottom - before.bottom);
 
         // Convert any drag `top` into `bottom` so expand/collapse never pushes transport down.
-        const leftPx = before.left - rootRect.left;
+        let leftPx = before.left - rootRect.left;
         controlsPanel.style.bottom = bottomPx + 'px';
         controlsPanel.style.top = 'auto';
+        controlsPanel.style.right = 'auto';
         // Preserve horizontal place after a drag (clear centering transform).
         if (controlsPanel.style.transform === 'none' || controlsPanel.style.left) {
+            // Clamp so a shrink cannot leave the card hanging past the right edge
+            // (Xeatre narrow-window right-pin — v2.2.19).
+            const maxLeft = Math.max(0, rootRect.width - before.width);
+            leftPx = Math.max(0, Math.min(leftPx, maxLeft));
             controlsPanel.style.left = leftPx + 'px';
             controlsPanel.style.transform = 'none';
         }
@@ -1495,7 +1500,16 @@
         const after = controlsPanel.getBoundingClientRect();
         if (after.top < rootRect.top) {
             const overflow = rootRect.top - after.top;
-            controlsPanel.style.bottom = Math.max(0, bottomPx - overflow) + 'px';
+            bottomPx = Math.max(0, bottomPx - overflow);
+            controlsPanel.style.bottom = bottomPx + 'px';
+        }
+        // Re-clamp left after width may have changed (compact / min() shrink).
+        if (controlsPanel.style.transform === 'none' || controlsPanel.style.left) {
+            const live = controlsPanel.getBoundingClientRect();
+            const maxLeft = Math.max(0, rootRect.width - live.width);
+            let liveLeft = live.left - rootRect.left;
+            liveLeft = Math.max(0, Math.min(liveLeft, maxLeft));
+            controlsPanel.style.left = liveLeft + 'px';
         }
         updateControlsTipFlip();
     }
@@ -4298,7 +4312,7 @@
        15. PANEL DRAG SYSTEM
        ========================================================= */
     function fazerArrastavel(panel, handle) {
-        let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+        let pos3 = 0, pos4 = 0;
         let dragging = false;
         let activePointerId = null;
 
@@ -4311,28 +4325,36 @@
             e.preventDefault();
             const clientX = e.clientX;
             const clientY = e.clientY;
-            pos1 = pos3 - clientX;
-            pos2 = pos4 - clientY;
+            const dx = clientX - pos3;
+            const dy = clientY - pos4;
             pos3 = clientX;
             pos4 = clientY;
 
+            // Use visual box (getBoundingClientRect) — offsetTop/Left break when
+            // the panel is bottom-anchored or CSS `scale` is applied (Xeatre micro).
             const rootRect = omtRoot ? omtRoot.getBoundingClientRect() : null;
+            const rect = panel.getBoundingClientRect();
+            const baseLeft = rootRect ? (rect.left - rootRect.left) : rect.left;
+            const baseTop = rootRect ? (rect.top - rootRect.top) : rect.top;
             const maxTop = rootRect
-                ? Math.max(0, rootRect.height - panel.offsetHeight)
-                : Math.max(0, window.innerHeight - panel.offsetHeight);
+                ? Math.max(0, rootRect.height - rect.height)
+                : Math.max(0, window.innerHeight - rect.height);
             const maxLeft = rootRect
-                ? Math.max(0, rootRect.width - panel.offsetWidth)
-                : Math.max(0, window.innerWidth - panel.offsetWidth);
+                ? Math.max(0, rootRect.width - rect.width)
+                : Math.max(0, window.innerWidth - rect.width);
 
-            let newTop = panel.offsetTop - pos2;
-            let newLeft = panel.offsetLeft - pos1;
+            let newTop = baseTop + dy;
+            let newLeft = baseLeft + dx;
 
             newTop = Math.max(0, Math.min(newTop, maxTop));
             newLeft = Math.max(0, Math.min(newLeft, maxLeft));
 
+            // One consistent anchor while dragging: left + top (bottom cleared).
             panel.style.top = newTop + 'px';
             panel.style.left = newLeft + 'px';
             panel.style.bottom = 'auto';
+            panel.style.right = 'auto';
+            panel.style.transform = 'none';
         }
 
         function stopDrag() {
@@ -4368,11 +4390,16 @@
 
             // Anchor the panel at its current rendered position before clearing transforms
             const rect = panel.getBoundingClientRect();
-            const rootRect = omtRoot.getBoundingClientRect();
+            const rootRect = omtRoot
+                ? omtRoot.getBoundingClientRect()
+                : { top: 0, left: 0 };
             panel.style.top = (rect.top - rootRect.top) + 'px';
             panel.style.left = (rect.left - rootRect.left) + 'px';
             panel.style.transform = 'none';
             panel.style.bottom = 'auto';
+            panel.style.right = 'auto';
+            // User drag takes ownership — do not auto-restore CSS center later.
+            try { delete panel.dataset.omtXeatreAutoClamp; } catch (_) {}
 
             pos3 = e.clientX;
             pos4 = e.clientY;
@@ -7765,6 +7792,8 @@ var OMT_SYNC_FEATURE_ENABLED = false;
  * v2.2.9: never display:none #hdmi-video / .video-js / any ancestor of <video>
  *   (field: #ControlBar wrapped the player → bare #ControlBar hide = black).
  * v2.2.18: nanoplayer.html is skipped in detect.js (no HUD / no chrome hide).
+ * v2.2.19: narrow window shrinks the panel in place (like Examino) — never park
+ *   it at top-right or wipe left/bottom on micro/compact.
  * - Hide only control-bar / chrome leaves (not poster / tech / player shell).
  * - Never call videojs(); never reparent <video>; never attribute-mutate the shell.
  * - Force-visible CSS on the tech + player root so a sticky class cannot black the feed.
@@ -8112,19 +8141,113 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         xeatreFitStyled.clear();
     }
 
-    /** Drop panel inline fit leftovers so CSS classes + user prefs win on grow. */
+    /**
+     * Drop scale/size leftovers only — never wipe left/bottom/top (v2.2.19).
+     * Clearing position made the panel snap to CSS left:50% / micro top and
+     * look "pinned" to a corner after narrow resize.
+     */
     function omtXeatreClearPanelInlineFit() {
         const panel = document.getElementById('omt-controls-panel');
         if (!panel || !panel.style) return;
         [
-            'top', 'bottom', 'left', 'right', 'transform', 'transform-origin',
-            'width', 'max-width', 'max-height', 'overflow', 'scale'
+            'width', 'max-width', 'max-height', 'overflow', 'scale',
+            'transform-origin'
         ].forEach((k) => {
             try { panel.style.removeProperty(k); } catch (_) {}
         });
+        // Only strip transform when it carries a scale() leftover — keep
+        // `transform: none` from drag so left+bottom stay the user anchor.
+        try {
+            const t = panel.style.getPropertyValue('transform') || '';
+            if (/scale\s*\(/.test(t)) panel.style.removeProperty('transform');
+        } catch (_) {}
         try { xeatreFitStyled.delete(panel); } catch (_) {}
         try {
             if (typeof omtApplyPanelAppearance === 'function') omtApplyPanelAppearance();
+        } catch (_) {}
+    }
+
+    /** True when the user has dragged the panel off the default CSS center. */
+    function omtXeatrePanelHasUserPosition(panel) {
+        if (!panel || !panel.style) return false;
+        try {
+            if (panel.dataset && panel.dataset.omtXeatreAutoClamp === '1') return false;
+            if (panel.style.transform === 'none') return true;
+            const left = panel.style.left || '';
+            if (left && left !== '50%' && left !== 'auto') return true;
+            const bottom = panel.style.bottom || '';
+            if (bottom && bottom !== 'auto') return true;
+            const top = panel.style.top || '';
+            if (top && top !== 'auto') return true;
+        } catch (_) {}
+        return false;
+    }
+
+    /**
+     * Keep the panel fully inside #omt-root after shrink/scale.
+     * CSS `scale` + transform-origin bottom center means the LAYOUT box is
+     * larger than the visual box — clamp the VISUAL box, then write layout
+     * left/bottom so scale does not push past the right edge again.
+     */
+    function omtXeatreClampPanelInRoot() {
+        const panel = document.getElementById('omt-controls-panel');
+        if (!panel || !omtRoot) return;
+        try {
+            const rootRect = omtRoot.getBoundingClientRect();
+            const rect = panel.getBoundingClientRect();
+            if (rect.width < 4 || rect.height < 4) return;
+            const overflow =
+                rect.left < -1 || rect.top < -1 ||
+                rect.right > rootRect.right + 1 || rect.bottom > rootRect.bottom + 1;
+            const userPos = omtXeatrePanelHasUserPosition(panel);
+            if (!overflow && !userPos) return;
+
+            const layoutW = Math.max(1, panel.offsetWidth || rect.width);
+            const layoutH = Math.max(1, panel.offsetHeight || rect.height);
+            let scale = 1;
+            try {
+                const s = getComputedStyle(panel).scale;
+                if (s && s !== 'none') {
+                    const n = parseFloat(String(s).split(/\s+/)[0]);
+                    if (isFinite(n) && n > 0) scale = n;
+                }
+            } catch (_) {}
+            const visualW = layoutW * scale;
+            const visualH = layoutH * scale;
+
+            let visualLeft = rect.left - rootRect.left;
+            let visualBottom = rootRect.bottom - rect.bottom;
+            const maxVL = Math.max(0, rootRect.width - visualW);
+            const maxVB = Math.max(0, rootRect.height - visualH);
+            visualLeft = Math.max(0, Math.min(visualLeft, maxVL));
+            visualBottom = Math.max(0, Math.min(visualBottom, maxVB));
+
+            // transform-origin: bottom center → layout left sits left of visual.
+            const layoutLeft = visualLeft - (layoutW - visualW) / 2;
+            const layoutBottom = visualBottom;
+
+            panel.style.left = layoutLeft + 'px';
+            panel.style.bottom = layoutBottom + 'px';
+            panel.style.top = 'auto';
+            panel.style.right = 'auto';
+            panel.style.transform = 'none';
+            if (!userPos) {
+                try { panel.dataset.omtXeatreAutoClamp = '1'; } catch (_) {}
+            } else {
+                try { delete panel.dataset.omtXeatreAutoClamp; } catch (_) {}
+            }
+        } catch (_) {}
+    }
+
+    /** Leaving micro: restore CSS center if we only auto-clamped (not user drag). */
+    function omtXeatreRestoreAutoClampedCenter() {
+        const panel = document.getElementById('omt-controls-panel');
+        if (!panel || !panel.dataset || panel.dataset.omtXeatreAutoClamp !== '1') return;
+        try {
+            ['top', 'bottom', 'left', 'right', 'transform'].forEach((k) => {
+                try { panel.style.removeProperty(k); } catch (_) {}
+            });
+            delete panel.dataset.omtXeatreAutoClamp;
         } catch (_) {}
     }
 
@@ -8300,8 +8423,9 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             });
         }
 
-        // HUD compact / micro when the popup is small — CSS only.
-        // Scale is a multiplier on top of user panel size/compact prefs.
+        // HUD compact / micro when the popup is small — CSS width shrink (+ micro
+        // scale). Same idea as Examino updateCompactLayout: shrink in place.
+        // Never clear left/bottom (v2.2.19 corner-jump / right-pin fix).
         if (omtRoot) {
             try {
                 const micro = vw < 480 || vh < 280;
@@ -8309,8 +8433,9 @@ var OMT_SYNC_FEATURE_ENABLED = false;
                 const wasMicro = omtRoot.classList.contains('omt-xeatre-micro');
                 omtRoot.classList.toggle('omt-compact', compact);
                 omtRoot.classList.toggle('omt-xeatre-micro', micro);
-                // Enter/leave micro: strip sticky inline transform/width so CSS
-                // scale + user size prefs apply (grow must not need a click).
+                if (wasMicro && !micro) {
+                    omtXeatreRestoreAutoClampedCenter();
+                }
                 if (wasMicro !== micro) {
                     omtXeatreClearPanelInlineFit();
                 } else if (!micro) {
@@ -8322,6 +8447,7 @@ var OMT_SYNC_FEATURE_ENABLED = false;
                         omtXeatreClearPanelInlineFit();
                     }
                 }
+                omtXeatreClampPanelInRoot();
             } catch (_) {}
         }
 
