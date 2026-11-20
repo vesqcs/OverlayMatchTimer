@@ -2191,20 +2191,21 @@ html.omt-host-xeatre.omt-hud-on .video-js.vjs-fluid {
     max-height: 100vh !important;
     z-index: 2147483646;
 }
-/* Tiny popup: keep panel/bar inside the window (scale + lower bottom offset).
-   Scale uses the independent CSS `scale` property so it multiplies on top of
-   user panel size/compact prefs (width classes) and does not fight drag
-   `transform`. Do not hardcode width here. */
+/* Narrow Xeatre: shrink in place like Examino/InPlay (v2.2.19).
+   Never force top/right — that jumped the panel to a corner and broke drag.
+   Scale (micro) multiplies via the CSS `scale` property so it does not fight
+   drag `transform: none` / left+bottom anchors. */
 #omt-root.omt-xeatre.omt-compact #omt-controls-panel {
-    bottom: 56px;
+    width: min(560px, calc(100% - 16px));
 }
 #omt-root.omt-xeatre.omt-xeatre-micro #omt-controls-panel {
-    /* Tiny popup: park panel at top so it cannot overflow above the bar. */
-    top: 4px;
-    bottom: auto;
+    width: min(480px, calc(100% - 8px));
     scale: 0.55;
-    transform-origin: top center;
-    max-height: calc(100vh - 56px);
+    transform-origin: bottom center;
+    /* Default only (inline user bottom wins) — keep card in a tiny popup
+       without parking it at top-right (old top:4px caused the field jump). */
+    bottom: 8px;
+    max-height: calc(100vh - 16px);
     overflow: hidden;
 }
 #omt-root.omt-xeatre.omt-xeatre-micro .omt-timeline-bar {

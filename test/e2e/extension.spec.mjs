@@ -6101,6 +6101,140 @@ async function run() {
       detail: xeatrePanelDrag
     });
 
+    // v2.2.19: narrow window shrinks in place (like Examino) — no top-right jump,
+    // drag follows L/R/U/D and does not stick to the right edge.
+    await page.setViewportSize({ width: 960, height: 540 });
+    await page.waitForTimeout(120);
+    await page.evaluate(() => {
+      localStorage.setItem('omtPanelSize', 'medium');
+      localStorage.setItem('omtPanelCompact', 'false');
+      const panel = document.getElementById('omt-controls-panel');
+      if (panel) {
+        panel.classList.remove('omt-panel-size-small', 'omt-panel-compact');
+        panel.style.opacity = '1';
+        panel.style.pointerEvents = 'auto';
+        // Seed a mid-window user position (left+bottom), then shrink.
+        panel.style.left = '120px';
+        panel.style.bottom = '80px';
+        panel.style.top = 'auto';
+        panel.style.right = 'auto';
+        panel.style.transform = 'none';
+      }
+      if (typeof window.__omtXeatreFitViewport === 'function') window.__omtXeatreFitViewport();
+    });
+    const beforeNarrow = await page.evaluate(() => {
+      const panel = document.getElementById('omt-controls-panel');
+      const r = panel.getBoundingClientRect();
+      return { left: r.left, top: r.top, width: r.width, bottom: r.bottom };
+    });
+    await page.setViewportSize({ width: 779, height: 678 });
+    await page.waitForTimeout(200);
+    await page.evaluate(() => {
+      if (typeof window.__omtXeatreFitViewport === 'function') window.__omtXeatreFitViewport();
+    });
+    await page.waitForTimeout(80);
+    const afterNarrow = await page.evaluate(() => {
+      const root = document.getElementById('omt-root');
+      const panel = document.getElementById('omt-controls-panel');
+      if (!root || !panel) return { ok: false, reason: 'missing' };
+      const rr = root.getBoundingClientRect();
+      const r = panel.getBoundingClientRect();
+      const jumpedTop = r.top < 40;
+      const pinnedRight = (rr.right - r.right) < 4 && r.left > rr.width * 0.45;
+      const inside = r.left >= -1 && r.right <= rr.right + 1 &&
+        r.top >= -1 && r.bottom <= rr.bottom + 1;
+      const shrunkOrFits = r.width <= Math.min(600, rr.width - 8) + 1;
+      return {
+        ok: inside && shrunkOrFits && !jumpedTop && !pinnedRight,
+        left: Math.round(r.left),
+        top: Math.round(r.top),
+        width: Math.round(r.width),
+        rightGap: Math.round(rr.right - r.right),
+        jumpedTop,
+        pinnedRight,
+        inside,
+        shrunkOrFits,
+        compact: root.classList.contains('omt-compact'),
+        beforeLeft: null
+      };
+    });
+    afterNarrow.beforeLeft = beforeNarrow.left;
+    // Left should stay near the seeded 120px (allow clamp if needed), not jump to right.
+    const leftStable = Math.abs(afterNarrow.left - beforeNarrow.left) < 80;
+    results.push({
+      name: 'xeatre-narrow-panel-shrinks-in-place',
+      pass: afterNarrow.ok === true && leftStable,
+      detail: { beforeNarrow, afterNarrow, leftStable }
+    });
+
+    const narrowDrag = await page.evaluate(async () => {
+      const panel = document.getElementById('omt-controls-panel');
+      const handle = document.getElementById('controls-handle');
+      const root = document.getElementById('omt-root');
+      if (!panel || !handle || !root) return { ok: false, reason: 'missing' };
+      panel.style.opacity = '1';
+      panel.style.pointerEvents = 'auto';
+
+      async function dragBy(dx, dy) {
+        const hr = handle.getBoundingClientRect();
+        const x0 = hr.left + hr.width / 2;
+        const y0 = hr.top + Math.min(10, hr.height / 2);
+        const before = panel.getBoundingClientRect();
+        handle.dispatchEvent(new MouseEvent('mousedown', {
+          bubbles: true, cancelable: true, clientX: x0, clientY: y0, button: 0, view: window
+        }));
+        window.dispatchEvent(new MouseEvent('mousemove', {
+          bubbles: true, cancelable: true, clientX: x0 + dx, clientY: y0 + dy, view: window
+        }));
+        await new Promise((r) => setTimeout(r, 40));
+        const mid = panel.getBoundingClientRect();
+        window.dispatchEvent(new MouseEvent('mouseup', {
+          bubbles: true, cancelable: true, clientX: x0 + dx, clientY: y0 + dy, view: window
+        }));
+        await new Promise((r) => setTimeout(r, 40));
+        const after = panel.getBoundingClientRect();
+        return { before, mid, after };
+      }
+
+      const right = await dragBy(50, 0);
+      const left = await dragBy(-70, 0);
+      const up = await dragBy(0, -40);
+      const down = await dragBy(0, 50);
+      const rr = root.getBoundingClientRect();
+      const final = panel.getBoundingClientRect();
+      const follows = (step, axis, sign) => {
+        const d = axis === 'x'
+          ? (step.mid.left - step.before.left)
+          : (step.mid.top - step.before.top);
+        return sign > 0 ? d > 8 : d < -8;
+      };
+      const notPinnedRight = (rr.right - final.right) > 8 || final.left < rr.width * 0.55;
+      const inside = final.left >= -1 && final.right <= rr.right + 1 &&
+        final.top >= -1 && final.bottom <= rr.bottom + 1;
+      return {
+        ok: follows(right, 'x', 1) && follows(left, 'x', -1) &&
+          follows(up, 'y', -1) && follows(down, 'y', 1) &&
+          notPinnedRight && inside,
+        followsRight: follows(right, 'x', 1),
+        followsLeft: follows(left, 'x', -1),
+        followsUp: follows(up, 'y', -1),
+        followsDown: follows(down, 'y', 1),
+        notPinnedRight,
+        inside,
+        finalLeft: Math.round(final.left),
+        finalRightGap: Math.round(rr.right - final.right)
+      };
+    });
+    results.push({
+      name: 'xeatre-narrow-panel-drag-follows-no-right-pin',
+      pass: narrowDrag.ok === true,
+      detail: narrowDrag
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v219_xeatre_narrow_panel.png'), fullPage: true });
+    // Restore a comfortable viewport for remaining Xeatre checks.
+    await page.setViewportSize({ width: 960, height: 540 });
+    await page.waitForTimeout(120);
+
     // v2.2.15 alt-tab both modes (visibility only; identical across sites).
     const xeatreBlurDoesNotPause = await page.evaluate(async () => {
       localStorage.setItem('omtKeepPlayingOnAltTab', 'false');

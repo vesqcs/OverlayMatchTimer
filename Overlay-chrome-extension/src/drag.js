@@ -3,7 +3,7 @@
        15. PANEL DRAG SYSTEM
        ========================================================= */
     function fazerArrastavel(panel, handle) {
-        let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+        let pos3 = 0, pos4 = 0;
         let dragging = false;
         let activePointerId = null;
 
@@ -16,28 +16,36 @@
             e.preventDefault();
             const clientX = e.clientX;
             const clientY = e.clientY;
-            pos1 = pos3 - clientX;
-            pos2 = pos4 - clientY;
+            const dx = clientX - pos3;
+            const dy = clientY - pos4;
             pos3 = clientX;
             pos4 = clientY;
 
+            // Use visual box (getBoundingClientRect) — offsetTop/Left break when
+            // the panel is bottom-anchored or CSS `scale` is applied (Xeatre micro).
             const rootRect = omtRoot ? omtRoot.getBoundingClientRect() : null;
+            const rect = panel.getBoundingClientRect();
+            const baseLeft = rootRect ? (rect.left - rootRect.left) : rect.left;
+            const baseTop = rootRect ? (rect.top - rootRect.top) : rect.top;
             const maxTop = rootRect
-                ? Math.max(0, rootRect.height - panel.offsetHeight)
-                : Math.max(0, window.innerHeight - panel.offsetHeight);
+                ? Math.max(0, rootRect.height - rect.height)
+                : Math.max(0, window.innerHeight - rect.height);
             const maxLeft = rootRect
-                ? Math.max(0, rootRect.width - panel.offsetWidth)
-                : Math.max(0, window.innerWidth - panel.offsetWidth);
+                ? Math.max(0, rootRect.width - rect.width)
+                : Math.max(0, window.innerWidth - rect.width);
 
-            let newTop = panel.offsetTop - pos2;
-            let newLeft = panel.offsetLeft - pos1;
+            let newTop = baseTop + dy;
+            let newLeft = baseLeft + dx;
 
             newTop = Math.max(0, Math.min(newTop, maxTop));
             newLeft = Math.max(0, Math.min(newLeft, maxLeft));
 
+            // One consistent anchor while dragging: left + top (bottom cleared).
             panel.style.top = newTop + 'px';
             panel.style.left = newLeft + 'px';
             panel.style.bottom = 'auto';
+            panel.style.right = 'auto';
+            panel.style.transform = 'none';
         }
 
         function stopDrag() {
@@ -73,11 +81,16 @@
 
             // Anchor the panel at its current rendered position before clearing transforms
             const rect = panel.getBoundingClientRect();
-            const rootRect = omtRoot.getBoundingClientRect();
+            const rootRect = omtRoot
+                ? omtRoot.getBoundingClientRect()
+                : { top: 0, left: 0 };
             panel.style.top = (rect.top - rootRect.top) + 'px';
             panel.style.left = (rect.left - rootRect.left) + 'px';
             panel.style.transform = 'none';
             panel.style.bottom = 'auto';
+            panel.style.right = 'auto';
+            // User drag takes ownership — do not auto-restore CSS center later.
+            try { delete panel.dataset.omtXeatreAutoClamp; } catch (_) {}
 
             pos3 = e.clientX;
             pos4 = e.clientY;
