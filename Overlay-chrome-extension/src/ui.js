@@ -75,9 +75,18 @@
             // Fit path also refreshes clock picture inset.
             return;
         }
-        const anchor = omtRoot.parentElement;
-        const w = (anchor && anchor.clientWidth) || window.innerWidth;
-        const h = (anchor && anchor.clientHeight) || window.innerHeight;
+        // Examino v2.2.16: #omt-root is viewport-fixed — compact from the tab,
+        // not the shorter .op-player box.
+        let w;
+        let h;
+        if (site && site.id === 'examino') {
+            w = window.innerWidth || 0;
+            h = window.innerHeight || 0;
+        } else {
+            const anchor = omtRoot.parentElement;
+            w = (anchor && anchor.clientWidth) || window.innerWidth;
+            h = (anchor && anchor.clientHeight) || window.innerHeight;
+        }
         const compact = site.id === 'examino' && (w < 720 || h < 420);
         omtRoot.classList.toggle('omt-compact', compact);
         if (typeof omtUpdateClockPictureInset === 'function') omtUpdateClockPictureInset();

@@ -872,6 +872,131 @@ async function run() {
       detail: examinoPanelDrag
     });
 
+    // v2.2.16: viewport-fixed HUD — bar in black area below player (narrow tab).
+    await page.setViewportSize({ width: 874, height: 886 });
+    await page.evaluate(() => {
+      // Field-like geometry: player strip on top, empty tab below (no OpenPlayer resize by OMT).
+      document.documentElement.style.height = '100%';
+      document.body.style.cssText = 'margin:0;height:100%;overflow:hidden;background:#000;';
+      const pageEl = document.querySelector('.page');
+      if (pageEl) {
+        pageEl.style.cssText =
+          'position:fixed;left:0;top:0;width:100%;height:492px;margin:0;display:block;background:#000;';
+      }
+      const main = document.getElementById('main-container') || document.querySelector('.main-container');
+      if (main) main.style.cssText = 'position:absolute;inset:0;height:100%;';
+      const player = document.getElementById('op-player') || document.querySelector('.op-player');
+      if (player) player.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;';
+      const bottom = document.getElementById('bottom-controls');
+      if (bottom) bottom.style.display = 'none';
+      if (typeof window.__omtUpdateClockPictureInset === 'function') {
+        /* no-op on examino */
+      }
+      window.dispatchEvent(new Event('resize'));
+    });
+    await page.waitForTimeout(120);
+    const examinoViewportHud = await page.evaluate(() => {
+      const root = document.getElementById('omt-root');
+      const bar = document.getElementById('omt-timeline-bar');
+      const v = document.querySelector('video');
+      if (!root || !bar || !v) return { ok: false, reason: 'missing' };
+      const cs = getComputedStyle(root);
+      const rr = root.getBoundingClientRect();
+      const br = bar.getBoundingClientRect();
+      const vr = v.getBoundingClientRect();
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const fixed = cs.position === 'fixed';
+      const coversTab = Math.abs(rr.width - vw) < 4 && Math.abs(rr.height - vh) < 4;
+      const barAtTabBottom = Math.abs(br.bottom - vh) < 6;
+      const barBelowVideo = br.top >= vr.bottom - 2;
+      const peNone = cs.pointerEvents === 'none';
+      return {
+        ok: fixed && coversTab && barAtTabBottom && barBelowVideo && peNone,
+        fixed, coversTab, barAtTabBottom, barBelowVideo, peNone,
+        root: { w: Math.round(rr.width), h: Math.round(rr.height), pos: cs.position },
+        bar: { top: Math.round(br.top), bottom: Math.round(br.bottom) },
+        video: { bottom: Math.round(vr.bottom), h: Math.round(vr.height) },
+        viewport: { w: vw, h: vh }
+      };
+    });
+    results.push({
+      name: 'examino-viewport-hud-bar-in-black-area',
+      pass: examinoViewportHud.ok === true,
+      detail: examinoViewportHud
+    });
+
+    const examinoDragIntoBlack = await page.evaluate(async () => {
+      const panel = document.getElementById('controls-panel');
+      const handle = document.getElementById('controls-handle');
+      const v = document.querySelector('video');
+      if (!panel || !handle || !v) return { ok: false, reason: 'missing' };
+      panel.style.opacity = '1';
+      panel.style.pointerEvents = 'auto';
+      const vr = v.getBoundingClientRect();
+      const hr = handle.getBoundingClientRect();
+      const x0 = hr.left + hr.width / 2;
+      const y0 = hr.top + Math.min(10, hr.height / 2);
+      // Park panel center in the black band below the video.
+      const targetY = Math.min(window.innerHeight - 80, vr.bottom + 120);
+      const targetX = Math.max(40, Math.min(window.innerWidth - 40, window.innerWidth / 2));
+      handle.dispatchEvent(new MouseEvent('mousedown', {
+        bubbles: true, cancelable: true, clientX: x0, clientY: y0, button: 0, view: window
+      }));
+      window.dispatchEvent(new MouseEvent('mousemove', {
+        bubbles: true, cancelable: true, clientX: targetX, clientY: targetY, view: window
+      }));
+      await new Promise((r) => setTimeout(r, 40));
+      window.dispatchEvent(new MouseEvent('mouseup', {
+        bubbles: true, cancelable: true, clientX: targetX, clientY: targetY, view: window
+      }));
+      await new Promise((r) => setTimeout(r, 40));
+      const pr = panel.getBoundingClientRect();
+      const inBlack = pr.top >= vr.bottom - 8;
+      return {
+        ok: inBlack,
+        inBlack,
+        panelTop: Math.round(pr.top),
+        videoBottom: Math.round(vr.bottom),
+        targetY: Math.round(targetY)
+      };
+    });
+    results.push({
+      name: 'examino-panel-drag-into-black-area',
+      pass: examinoDragIntoBlack.ok === true,
+      detail: examinoDragIntoBlack
+    });
+
+    // Empty root must not steal hits (pointer-events:none) — click through to host.
+    const examinoRootPassthrough = await page.evaluate(() => {
+      const root = document.getElementById('omt-root');
+      const player = document.getElementById('op-player') || document.querySelector('.op-player');
+      if (!root || !player) return { ok: false };
+      let hostClicks = 0;
+      const onClick = () => { hostClicks += 1; };
+      player.addEventListener('click', onClick);
+      // Click in black area (below video) through the fixed root.
+      const y = Math.min(window.innerHeight - 20, (document.querySelector('video')?.getBoundingClientRect().bottom || 0) + 40);
+      const x = Math.floor(window.innerWidth / 2);
+      const top = document.elementFromPoint(x, y);
+      const throughRoot = !(top && root.contains(top) && top !== root);
+      // Synthetic click on player (gear zone) must still fire.
+      const gear = document.getElementById('native-gear') || player;
+      gear.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+      player.removeEventListener('click', onClick);
+      const pe = getComputedStyle(root).pointerEvents;
+      return {
+        ok: pe === 'none' && hostClicks >= 1,
+        pe, hostClicks, throughRoot,
+        topTag: top && (top.id || top.tagName)
+      };
+    });
+    results.push({
+      name: 'examino-root-pointer-events-passthrough',
+      pass: examinoRootPassthrough.ok === true,
+      detail: examinoRootPassthrough
+    });
+
     // v2.2.12 #7: Enter on timer edit commits seek immediately (no video click).
     const examinoEnterSeek = await page.evaluate(async () => {
       const v = document.querySelector('video');
@@ -4398,21 +4523,184 @@ async function run() {
       if (el) { delete el.dataset.omtHold; el.dispatchEvent(new PointerEvent('pointerleave', { bubbles: true })); }
     });
 
-    // Fullscreen
-    await page.evaluate(async () => {
-      const target = document.querySelector('.op-player');
-      if (target?.requestFullscreen) await target.requestFullscreen();
+    // Fullscreen helpers — icon and dblclick must share one toggle (v2.2.16).
+    async function examinoEnterFsViaIcon() {
+      return page.evaluate(async () => {
+        const btn = document.getElementById('omt-btn-fullscreen');
+        if (!btn) return { ok: false, reason: 'no-btn' };
+        btn.click();
+        await new Promise((r) => setTimeout(r, 350));
+        const fs = document.fullscreenElement;
+        return {
+          ok: !!fs,
+          tag: fs && fs.tagName,
+          id: fs && fs.id,
+          className: fs && (typeof fs.className === 'string' ? fs.className.slice(0, 80) : '')
+        };
+      });
+    }
+    async function examinoExitFsViaIcon() {
+      return page.evaluate(async () => {
+        const btn = document.getElementById('omt-btn-fullscreen');
+        if (!btn) return { ok: false, reason: 'no-btn' };
+        btn.click();
+        await new Promise((r) => setTimeout(r, 350));
+        return { ok: !document.fullscreenElement };
+      });
+    }
+    async function examinoToggleFsViaDblclick() {
+      return page.evaluate(async () => {
+        const v = document.querySelector('video');
+        if (!v) return { ok: false, reason: 'no-video' };
+        const r = v.getBoundingClientRect();
+        const x = r.left + r.width / 2;
+        const y = r.top + r.height / 2;
+        // Capture-phase window listener sees this with target=video.
+        v.dispatchEvent(new MouseEvent('dblclick', {
+          bubbles: true, cancelable: true, clientX: x, clientY: y, view: window
+        }));
+        await new Promise((r) => setTimeout(r, 350));
+        const fs = document.fullscreenElement;
+        return {
+          ok: true,
+          inFs: !!fs,
+          tag: fs && fs.tagName,
+          className: fs && (typeof fs.className === 'string' ? fs.className.slice(0, 80) : '')
+        };
+      });
+    }
+
+    // Icon enter → dblclick exit (field black-screen repro).
+    let entered = await examinoEnterFsViaIcon();
+    await page.waitForTimeout(100);
+    let exited = await examinoToggleFsViaDblclick();
+    results.push({
+      name: 'examino-fs-icon-enter-dblclick-exit',
+      pass: entered.ok === true && exited.inFs === false && !await page.evaluate(() => !!document.fullscreenElement),
+      detail: { entered, exited }
     });
-    await page.waitForTimeout(400);
+
+    // Dblclick enter → icon exit.
+    if (await page.evaluate(() => !!document.fullscreenElement)) {
+      await page.evaluate(async () => { try { await document.exitFullscreen(); } catch (_) {} });
+      await page.waitForTimeout(200);
+    }
+    entered = await examinoToggleFsViaDblclick();
+    await page.waitForTimeout(100);
+    exited = await examinoExitFsViaIcon();
+    results.push({
+      name: 'examino-fs-dblclick-enter-icon-exit',
+      pass: entered.inFs === true && exited.ok === true,
+      detail: { entered, exited }
+    });
+
+    // Icon enter → icon exit.
+    if (await page.evaluate(() => !!document.fullscreenElement)) {
+      await page.evaluate(async () => { try { await document.exitFullscreen(); } catch (_) {} });
+      await page.waitForTimeout(200);
+    }
+    entered = await examinoEnterFsViaIcon();
+    await page.waitForTimeout(100);
+    exited = await examinoExitFsViaIcon();
+    results.push({
+      name: 'examino-fs-icon-enter-icon-exit',
+      pass: entered.ok === true && exited.ok === true,
+      detail: { entered, exited }
+    });
+
+    // HUD coverage while in FS (re-enter via icon for screenshot).
+    if (await page.evaluate(() => !!document.fullscreenElement)) {
+      await page.evaluate(async () => { try { await document.exitFullscreen(); } catch (_) {} });
+      await page.waitForTimeout(200);
+    }
+    await examinoEnterFsViaIcon();
+    await page.waitForTimeout(300);
     const fsState = await page.evaluate(() => {
       const fs = document.fullscreenElement;
       const root = document.getElementById('omt-root');
-      return { hasFs: !!fs, rootInFs: !!(fs && root && fs.contains(root)) };
+      const bar = document.getElementById('omt-timeline-bar');
+      if (!fs || !root || !bar) {
+        return { hasFs: !!fs, rootInFs: false, ok: false };
+      }
+      const rr = root.getBoundingClientRect();
+      const br = bar.getBoundingClientRect();
+      const fr = fs.getBoundingClientRect();
+      const cs = getComputedStyle(root);
+      const coversFs = Math.abs(rr.width - fr.width) < 8 && Math.abs(rr.height - fr.height) < 8;
+      const barAtBottom = Math.abs(br.bottom - fr.bottom) < 8;
+      return {
+        hasFs: true,
+        rootInFs: fs.contains(root),
+        coversFs,
+        barAtBottom,
+        fixedOrAbs: cs.position === 'fixed' || cs.position === 'absolute',
+        ok: fs.contains(root) && coversFs && barAtBottom
+      };
     });
-    results.push({ name: 'examino-fullscreen-keeps-overlay', pass: fsState.hasFs && fsState.rootInFs });
+    results.push({
+      name: 'examino-fullscreen-keeps-overlay',
+      pass: fsState.hasFs && fsState.rootInFs === true,
+      detail: fsState
+    });
+    results.push({
+      name: 'examino-fullscreen-hud-covers-fs',
+      pass: fsState.ok === true,
+      detail: fsState
+    });
     await page.screenshot({ path: path.join(ARTIFACTS, 'examino-fullscreen.png'), fullPage: true });
     await page.evaluate(async () => {
       if (document.fullscreenElement) await document.exitFullscreen();
+    });
+    await page.waitForTimeout(200);
+    const fsExit = await page.evaluate(() => {
+      const root = document.getElementById('omt-root');
+      const bar = document.getElementById('omt-timeline-bar');
+      if (!root || !bar) return { ok: false };
+      const rr = root.getBoundingClientRect();
+      const br = bar.getBoundingClientRect();
+      const vh = window.innerHeight;
+      const vw = window.innerWidth;
+      return {
+        ok: !document.fullscreenElement &&
+          getComputedStyle(root).position === 'fixed' &&
+          Math.abs(rr.height - vh) < 4 &&
+          Math.abs(br.bottom - vh) < 6,
+        rootH: Math.round(rr.height),
+        barBottom: Math.round(br.bottom),
+        vw, vh
+      };
+    });
+    results.push({
+      name: 'examino-fullscreen-exit-restores-viewport-hud',
+      pass: fsExit.ok === true,
+      detail: fsExit
+    });
+
+    // Source / LIVE smoke after viewport HUD (no media-logic changes).
+    const examinoSourceLiveSmoke = await page.evaluate(() => {
+      const section = document.getElementById('omt-examino-settings');
+      const sel = document.getElementById('omt-examino-source');
+      const live = document.getElementById('omt-live-btn');
+      const root = document.getElementById('omt-root');
+      const more = document.getElementById('omt-more-panel');
+      if (more && !more.classList.contains('is-open')) {
+        document.getElementById('omt-more-toggle')?.click();
+      }
+      const sectionVisible = !!(section && getComputedStyle(section).display !== 'none');
+      const opts = sel ? Array.from(sel.options).map((o) => o.value) : [];
+      const pe = root ? getComputedStyle(root).pointerEvents : null;
+      return {
+        ok: sectionVisible && !!sel && opts.length >= 1 && !!live && pe === 'none',
+        sectionVisible,
+        opts,
+        hasLive: !!live,
+        pe
+      };
+    });
+    results.push({
+      name: 'examino-source-live-smoke-after-viewport-hud',
+      pass: examinoSourceLiveSmoke.ok === true,
+      detail: examinoSourceLiveSmoke
     });
 
     // ---------- InplayIP: auto-hide activity + regression ----------
@@ -4651,6 +4939,65 @@ async function run() {
       pass: inplayPanelDrag.ok === true,
       detail: inplayPanelDrag
     });
+
+    // v2.2.16: icon ↔ dblclick share one sync toggleFullScreen (no VJS async FS).
+    async function inplayEnterFsViaIcon() {
+      return page.evaluate(async () => {
+        const btn = document.getElementById('omt-btn-fullscreen');
+        if (!btn) return { ok: false, reason: 'no-btn' };
+        btn.click();
+        await new Promise((r) => setTimeout(r, 350));
+        return { ok: !!document.fullscreenElement };
+      });
+    }
+    async function inplayExitFsViaIcon() {
+      return page.evaluate(async () => {
+        const btn = document.getElementById('omt-btn-fullscreen');
+        if (!btn) return { ok: false, reason: 'no-btn' };
+        btn.click();
+        await new Promise((r) => setTimeout(r, 350));
+        return { ok: !document.fullscreenElement };
+      });
+    }
+    async function inplayToggleFsViaDblclick() {
+      return page.evaluate(async () => {
+        const v = document.querySelector('video');
+        if (!v) return { ok: false, reason: 'no-video' };
+        const r = v.getBoundingClientRect();
+        v.dispatchEvent(new MouseEvent('dblclick', {
+          bubbles: true, cancelable: true,
+          clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, view: window
+        }));
+        await new Promise((r) => setTimeout(r, 350));
+        return { ok: true, inFs: !!document.fullscreenElement };
+      });
+    }
+    if (await page.evaluate(() => !!document.fullscreenElement)) {
+      await page.evaluate(async () => { try { await document.exitFullscreen(); } catch (_) {} });
+      await page.waitForTimeout(200);
+    }
+    let inplayFsEntered = await inplayEnterFsViaIcon();
+    let inplayFsExited = await inplayToggleFsViaDblclick();
+    results.push({
+      name: 'inplayip-fs-icon-enter-dblclick-exit',
+      pass: inplayFsEntered.ok === true && inplayFsExited.inFs === false,
+      detail: { inplayFsEntered, inplayFsExited }
+    });
+    if (await page.evaluate(() => !!document.fullscreenElement)) {
+      await page.evaluate(async () => { try { await document.exitFullscreen(); } catch (_) {} });
+      await page.waitForTimeout(200);
+    }
+    inplayFsEntered = await inplayToggleFsViaDblclick();
+    inplayFsExited = await inplayExitFsViaIcon();
+    results.push({
+      name: 'inplayip-fs-dblclick-enter-icon-exit',
+      pass: inplayFsEntered.inFs === true && inplayFsExited.ok === true,
+      detail: { inplayFsEntered, inplayFsExited }
+    });
+    if (await page.evaluate(() => !!document.fullscreenElement)) {
+      await page.evaluate(async () => { try { await document.exitFullscreen(); } catch (_) {} });
+      await page.waitForTimeout(200);
+    }
 
     // v2.2.15 alt-tab (visibility only; no InPlay seek/player changes).
     const inplayBlurDoesNotPause = await page.evaluate(async () => {

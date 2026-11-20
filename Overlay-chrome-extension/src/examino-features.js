@@ -175,6 +175,29 @@
         console.log('[OMT] Examino click-to-toggle installed (video surface only).');
     }
 
+    /* ---- v2.2.16 Examino fullscreen: one toggle for icon + dblclick ----
+     * Field: icon used OMT requestFullscreen(.op-player); dblclick fell through
+     * to OvenPlayer which toggled a different FS path → black on "exit".
+     * Capture dblclick on the video surface and call the same toggleFullScreen
+     * (exitFullscreen whenever document.fullscreenElement is set). */
+    let examinoFullscreenToggleInstalled = false;
+
+    function handleExaminoDblclickFullscreen(e) {
+        if (!(site && site.id === 'examino')) return;
+        if (!isExaminoPlayerMediaTarget(e.target)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        if (typeof toggleFullScreen === 'function') toggleFullScreen();
+    }
+
+    function installExaminoFullscreenToggle() {
+        if (examinoFullscreenToggleInstalled) return;
+        examinoFullscreenToggleInstalled = true;
+        window.addEventListener('dblclick', handleExaminoDblclickFullscreen, true);
+        console.log('[OMT] Examino fullscreen toggle installed (icon + dblclick share exitFullscreen).');
+    }
+
     // ---- v1.2.0 host-hide / settings / Source (811be7b) + OMT-DEBUG ----
 
     // Always one string line — field consoles paste "Object" for raw objects.
@@ -1664,12 +1687,42 @@
         dismissOpSettingsChrome();
     }
 
+    /* ---- v2.2.16 viewport HUD: hover reveal over black tab below player ----
+     * Fixed #omt-root covers the tab; mousemove on <video> alone misses the
+     * empty region under #video-player. Document capture, event-only (no poll). */
+    let examinoHoverRevealInstalled = false;
+
+    function onExaminoHoverRevealActivity() {
+        if (!(site && site.id === 'examino')) return;
+        try {
+            if (typeof noteOmtUiActivity === 'function') noteOmtUiActivity(true);
+            else if (typeof resetControlsTimeout === 'function') resetControlsTimeout(true);
+        } catch (_) {}
+    }
+
+    function startExaminoHoverReveal() {
+        if (examinoHoverRevealInstalled) return;
+        examinoHoverRevealInstalled = true;
+        const opts = { capture: true, passive: true };
+        document.addEventListener('pointermove', onExaminoHoverRevealActivity, opts);
+        document.addEventListener('mousemove', onExaminoHoverRevealActivity, opts);
+    }
+
+    function stopExaminoHoverReveal() {
+        if (!examinoHoverRevealInstalled) return;
+        document.removeEventListener('pointermove', onExaminoHoverRevealActivity, true);
+        document.removeEventListener('mousemove', onExaminoHoverRevealActivity, true);
+        examinoHoverRevealInstalled = false;
+    }
+
     function initExaminoPlayerFeatures() {
         installExaminoHotkeys();
         installExaminoClickToToggle();
+        installExaminoFullscreenToggle();
         injectExaminoHideCSS();
         hideExaminoNativeChrome();
         startExaminoNativeChromeObserver();
+        startExaminoHoverReveal();
         // Delay auto-VOD so OpenPlayer settings exist; retries handle late menus
         // and mid-switch <video> replacements. (v1.2.0)
         setTimeout(() => {

@@ -251,10 +251,13 @@
         },
 
         findFullscreenTarget(videoEl) {
-            return videoEl.closest('.op-player') ||
-                videoEl.closest('.video-container') ||
-                videoEl.closest('.op-media-element-container') ||
-                videoEl.parentElement ||
+            // v2.2.16: always the same .op-player OvenPlayer uses for dblclick FS
+            // (field black screen when icon/dblclick targeted different nodes).
+            return (videoEl && videoEl.closest && videoEl.closest('.op-player')) ||
+                document.querySelector('.op-player.op-clear, .op-player') ||
+                (videoEl && videoEl.closest && videoEl.closest('.video-container')) ||
+                (videoEl && videoEl.closest && videoEl.closest('.op-media-element-container')) ||
+                (videoEl && videoEl.parentElement) ||
                 videoEl;
         },
 
@@ -266,6 +269,7 @@
             injectExaminoHideCSS();
             hideExaminoNativeChrome();
             startExaminoNativeChromeObserver();
+            if (typeof startExaminoHoverReveal === 'function') startExaminoHoverReveal();
             // Soften OpenPlayer keyboard/focus capture so our capture-phase
             // hotkeys win; CSS hides the chrome.
             const root = this.findAnchor(videoEl) || document;
@@ -1127,9 +1131,18 @@
             // Fit path also refreshes clock picture inset.
             return;
         }
-        const anchor = omtRoot.parentElement;
-        const w = (anchor && anchor.clientWidth) || window.innerWidth;
-        const h = (anchor && anchor.clientHeight) || window.innerHeight;
+        // Examino v2.2.16: #omt-root is viewport-fixed — compact from the tab,
+        // not the shorter .op-player box.
+        let w;
+        let h;
+        if (site && site.id === 'examino') {
+            w = window.innerWidth || 0;
+            h = window.innerHeight || 0;
+        } else {
+            const anchor = omtRoot.parentElement;
+            w = (anchor && anchor.clientWidth) || window.innerWidth;
+            h = (anchor && anchor.clientHeight) || window.innerHeight;
+        }
         const compact = site.id === 'examino' && (w < 720 || h < 420);
         omtRoot.classList.toggle('omt-compact', compact);
         if (typeof omtUpdateClockPictureInset === 'function') omtUpdateClockPictureInset();
@@ -1932,6 +1945,7 @@
         if (site.id === 'examino') {
             installExaminoHotkeys();
             installExaminoClickToToggle();
+            if (typeof installExaminoFullscreenToggle === 'function') installExaminoFullscreenToggle();
             wireExaminoSettingsUI();
             if (examinoPendingDvrSettle) {
                 examinoPendingDvrSettle = false;
@@ -1941,23 +1955,22 @@
             document.addEventListener('keydown', handleKeydown, true);
             // Xeatre: window capture click-to-toggle (viewport-fit / VJS hit targets).
             if (typeof installXeatreClickToToggle === 'function') installXeatreClickToToggle();
+            // v2.2.16: capture + stop so host VJS cannot also toggle FS
+            // (async host path → "requestFullscreen requires user gesture").
             vid.addEventListener('dblclick', function (e) {
                 if (!e.target || (e.target !== vid && !(e.target.closest && e.target.closest('video') === vid))) {
                     return;
                 }
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
                 toggleFullScreen();
-            }, vsig);
-            vid.addEventListener('dblclick', function (e) {
-                if (!e.target || (e.target !== vid && !(e.target.closest && e.target.closest('video') === vid))) {
-                    return;
-                }
+                // Click fires before dblclick — reverse play/pause so transport
+                // is unchanged after going fullscreen.
                 if (!vid.src && !vid.currentSrc && !vid.srcObject) return;
-                if (vid.paused) {
-                    safePlay(vid);
-                } else {
-                    vid.pause();
-                }
-            }, vsig);
+                if (vid.paused) safePlay(vid);
+                else vid.pause();
+            }, { capture: true, signal: vidAbortController.signal });
         } else {
             document.addEventListener('keydown', handleKeydown, true);
             // Click-to-play/pause on the <video> surface — same mechanism as
@@ -1976,21 +1989,23 @@
                 e.stopImmediatePropagation();
                 togglePlay();
             }, { capture: true, signal: vidAbortController.signal });
+            // v2.2.16: same unified sync toggle as Examino — capture stops VJS
+            // native FS so icon + dblclick never desync / async-requestFullscreen.
             vid.addEventListener('dblclick', function (e) {
-                if (e.target !== vid) return;
-                toggleFullScreen();
-            }, vsig);
-            // Click fires once before dblclick — reverse that toggle so
-            // play/pause is unchanged after going fullscreen (original HTML).
-            vid.addEventListener('dblclick', function (e) {
-                if (e.target !== vid) return;
-                if (!vid.src && !vid.currentSrc && !vid.srcObject) return;
-                if (vid.paused) {
-                    safePlay(vid);
-                } else {
-                    vid.pause();
+                if (e.target !== vid &&
+                    !(e.target && e.target.closest && e.target.closest('video') === vid)) {
+                    return;
                 }
-            }, vsig);
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                toggleFullScreen();
+                // Click fires once before dblclick — reverse that toggle so
+                // play/pause is unchanged after going fullscreen (original HTML).
+                if (!vid.src && !vid.currentSrc && !vid.srcObject) return;
+                if (vid.paused) safePlay(vid);
+                else vid.pause();
+            }, { capture: true, signal: vidAbortController.signal });
         }
 
         // v2.2.12 / v2.2.14: swallow click/dblclick on interactive HUD so host
@@ -3893,12 +3908,51 @@
         if (!isDraggingTimeline) paintTimelineScrubberProgress(false);
     }
 
+    /** True when the browser still has a transient user activation for FS. */
+    function omtFullscreenGestureActive() {
+        try {
+            if (navigator.userActivation && typeof navigator.userActivation.isActive === 'boolean') {
+                return !!navigator.userActivation.isActive;
+            }
+        } catch (_) {}
+        // Older engines: allow the attempt; rejection is swallowed below.
+        return true;
+    }
+
+    /**
+     * Single shared fullscreen toggle (icon + dblclick, all hosts).
+     * - Exit: always document.exitFullscreen() when fullscreenElement is set.
+     * - Enter: one synchronous requestFullscreen on the site target; never from
+     *   a .catch()/await/timer (InPlay 2.2.15: fallback request after rejection
+     *   threw "API can only be initiated by a user gesture").
+     * - Never auto-enter without a gesture. Rejected promises are always caught.
+     */
     function toggleFullScreen() {
-        const container = site.findFullscreenTarget(vid);
-        if (!document.fullscreenElement) {
-            (container || vid).requestFullscreen().catch(() => vid.requestFullscreen().catch(() => { }));
-        } else {
-            document.exitFullscreen();
+        if (document.fullscreenElement) {
+            try {
+                const p = document.exitFullscreen();
+                if (p && typeof p.catch === 'function') p.catch(() => {});
+            } catch (_) {}
+            return;
+        }
+        if (!omtFullscreenGestureActive()) return;
+        if (typeof ensureLiveVideo === 'function') ensureLiveVideo();
+        let container = (site && typeof site.findFullscreenTarget === 'function')
+            ? site.findFullscreenTarget(vid)
+            : null;
+        // Examino: same .op-player target as the working native dblclick path.
+        if (site && site.id === 'examino') {
+            const op = (vid && vid.closest && vid.closest('.op-player')) ||
+                document.querySelector('.op-player.op-clear, .op-player');
+            if (op) container = op;
+        }
+        const target = container || vid;
+        if (!target || typeof target.requestFullscreen !== 'function') return;
+        try {
+            const p = target.requestFullscreen();
+            if (p && typeof p.catch === 'function') p.catch(() => {});
+        } catch (_) {
+            // Sync throw (some engines) — never retry requestFullscreen here.
         }
     }
 
@@ -6068,6 +6122,29 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         console.log('[OMT] Examino click-to-toggle installed (video surface only).');
     }
 
+    /* ---- v2.2.16 Examino fullscreen: one toggle for icon + dblclick ----
+     * Field: icon used OMT requestFullscreen(.op-player); dblclick fell through
+     * to OvenPlayer which toggled a different FS path → black on "exit".
+     * Capture dblclick on the video surface and call the same toggleFullScreen
+     * (exitFullscreen whenever document.fullscreenElement is set). */
+    let examinoFullscreenToggleInstalled = false;
+
+    function handleExaminoDblclickFullscreen(e) {
+        if (!(site && site.id === 'examino')) return;
+        if (!isExaminoPlayerMediaTarget(e.target)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        if (typeof toggleFullScreen === 'function') toggleFullScreen();
+    }
+
+    function installExaminoFullscreenToggle() {
+        if (examinoFullscreenToggleInstalled) return;
+        examinoFullscreenToggleInstalled = true;
+        window.addEventListener('dblclick', handleExaminoDblclickFullscreen, true);
+        console.log('[OMT] Examino fullscreen toggle installed (icon + dblclick share exitFullscreen).');
+    }
+
     // ---- v1.2.0 host-hide / settings / Source (811be7b) + OMT-DEBUG ----
 
     // Always one string line — field consoles paste "Object" for raw objects.
@@ -7557,12 +7634,42 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         dismissOpSettingsChrome();
     }
 
+    /* ---- v2.2.16 viewport HUD: hover reveal over black tab below player ----
+     * Fixed #omt-root covers the tab; mousemove on <video> alone misses the
+     * empty region under #video-player. Document capture, event-only (no poll). */
+    let examinoHoverRevealInstalled = false;
+
+    function onExaminoHoverRevealActivity() {
+        if (!(site && site.id === 'examino')) return;
+        try {
+            if (typeof noteOmtUiActivity === 'function') noteOmtUiActivity(true);
+            else if (typeof resetControlsTimeout === 'function') resetControlsTimeout(true);
+        } catch (_) {}
+    }
+
+    function startExaminoHoverReveal() {
+        if (examinoHoverRevealInstalled) return;
+        examinoHoverRevealInstalled = true;
+        const opts = { capture: true, passive: true };
+        document.addEventListener('pointermove', onExaminoHoverRevealActivity, opts);
+        document.addEventListener('mousemove', onExaminoHoverRevealActivity, opts);
+    }
+
+    function stopExaminoHoverReveal() {
+        if (!examinoHoverRevealInstalled) return;
+        document.removeEventListener('pointermove', onExaminoHoverRevealActivity, true);
+        document.removeEventListener('mousemove', onExaminoHoverRevealActivity, true);
+        examinoHoverRevealInstalled = false;
+    }
+
     function initExaminoPlayerFeatures() {
         installExaminoHotkeys();
         installExaminoClickToToggle();
+        installExaminoFullscreenToggle();
         injectExaminoHideCSS();
         hideExaminoNativeChrome();
         startExaminoNativeChromeObserver();
+        startExaminoHoverReveal();
         // Delay auto-VOD so OpenPlayer settings exist; retries handle late menus
         // and mid-switch <video> replacements. (v1.2.0)
         setTimeout(() => {
