@@ -818,6 +818,60 @@ async function run() {
       detail: examinoPanelSwallow
     });
 
+    // v2.2.14: panel drag starts, moves, then mouseup ends (no stick-to-mouse).
+    const examinoPanelDrag = await page.evaluate(async () => {
+      const panel = document.getElementById('controls-panel');
+      const handle = document.getElementById('controls-handle');
+      if (!panel || !handle) return { ok: false, reason: 'missing' };
+      panel.style.opacity = '1';
+      panel.style.pointerEvents = 'auto';
+      const before = panel.getBoundingClientRect();
+      const hr = handle.getBoundingClientRect();
+      const x0 = hr.left + hr.width / 2;
+      const y0 = hr.top + Math.min(10, hr.height / 2);
+      handle.dispatchEvent(new MouseEvent('mousedown', {
+        bubbles: true, cancelable: true, clientX: x0, clientY: y0, button: 0, view: window
+      }));
+      document.dispatchEvent(new MouseEvent('mousemove', {
+        bubbles: true, cancelable: true, clientX: x0 + 40, clientY: y0 + 30, view: window
+      }));
+      window.dispatchEvent(new MouseEvent('mousemove', {
+        bubbles: true, cancelable: true, clientX: x0 + 40, clientY: y0 + 30, view: window
+      }));
+      await new Promise((r) => setTimeout(r, 30));
+      const mid = panel.getBoundingClientRect();
+      const moved = Math.abs(mid.left - before.left) > 8 || Math.abs(mid.top - before.top) > 8;
+      window.dispatchEvent(new MouseEvent('mouseup', {
+        bubbles: true, cancelable: true, clientX: x0 + 40, clientY: y0 + 30, view: window
+      }));
+      document.dispatchEvent(new MouseEvent('mouseup', {
+        bubbles: true, cancelable: true, clientX: x0 + 40, clientY: y0 + 30, view: window
+      }));
+      await new Promise((r) => setTimeout(r, 30));
+      const afterRelease = panel.getBoundingClientRect();
+      // Extra move after release must NOT move the panel (drag ended).
+      window.dispatchEvent(new MouseEvent('mousemove', {
+        bubbles: true, cancelable: true, clientX: x0 + 120, clientY: y0 + 90, view: window
+      }));
+      await new Promise((r) => setTimeout(r, 30));
+      const afterExtra = panel.getBoundingClientRect();
+      const stuck = Math.abs(afterExtra.left - afterRelease.left) > 2 ||
+        Math.abs(afterExtra.top - afterRelease.top) > 2;
+      return {
+        ok: moved && !stuck,
+        moved, stuck,
+        before: { l: before.left, t: before.top },
+        mid: { l: mid.left, t: mid.top },
+        afterRelease: { l: afterRelease.left, t: afterRelease.top },
+        afterExtra: { l: afterExtra.left, t: afterExtra.top }
+      };
+    });
+    results.push({
+      name: 'examino-panel-drag-ends-on-mouseup',
+      pass: examinoPanelDrag.ok === true,
+      detail: examinoPanelDrag
+    });
+
     // v2.2.12 #7: Enter on timer edit commits seek immediately (no video click).
     const examinoEnterSeek = await page.evaluate(async () => {
       const v = document.querySelector('video');
@@ -2091,28 +2145,12 @@ async function run() {
       document.querySelector('.omt-speed-chip[data-speed="1.0"]')?.click();
     });
 
-    // Auto pause on Alt+Tab (default off; resume only when we auto-paused)
-    const autoPauseOff = await page.evaluate(async () => {
-      localStorage.setItem('omtAutoPauseOnBlur', 'false');
-      const v = document.querySelector('video');
-      if (!v) return { ok: false, reason: 'no-video' };
-      try { await v.play(); } catch (_) {}
-      await new Promise((r) => setTimeout(r, 40));
-      window.dispatchEvent(new Event('blur'));
-      document.dispatchEvent(new Event('visibilitychange'));
-      // Force hidden path
-      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
-      document.dispatchEvent(new Event('visibilitychange'));
-      await new Promise((r) => setTimeout(r, 40));
-      const paused = v.paused;
-      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
-      return { ok: paused === false, paused };
-    });
-    results.push({ name: 'examino-auto-pause-off', pass: autoPauseOff.ok === true, detail: autoPauseOff });
-
-    // v2.2.13 #8: setting OFF — host pauses on blur; we resume once if we were playing.
-    const examinoHostPauseResume = await page.evaluate(async () => {
-      localStorage.setItem('omtAutoPauseOnBlur', 'false');
+    // v2.2.14: "Não pausar no alt tab" (omtKeepPlayingOnAltTab).
+    // Default OFF = pause on hide + resume on return if we paused.
+    // ON = keep playing; undo host pause via one microtask play().
+    const examinoAltTabDefaultPause = await page.evaluate(async () => {
+      try { localStorage.removeItem('omtAutoPauseOnBlur'); } catch (_) {}
+      localStorage.setItem('omtKeepPlayingOnAltTab', 'false');
       localStorage.setItem('shuttleXpressEnabled', 'false');
       const v = document.querySelector('video');
       if (!v) return { ok: false, reason: 'no-video' };
@@ -2123,96 +2161,35 @@ async function run() {
       Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
       Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
       document.dispatchEvent(new Event('visibilitychange'));
-      // Simulate Examino host pause after our capture note.
-      v.pause();
       await new Promise((r) => setTimeout(r, 40));
-      const awayPaused = v.paused;
+      const afterAway = v.paused;
+      const osd = (document.getElementById('osd-message')?.innerText || '');
       Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
       Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
-      document.dispatchEvent(new Event('visibilitychange'));
-      window.dispatchEvent(new Event('focus'));
-      await new Promise((r) => setTimeout(r, 200));
-      return { ok: awayPaused === true && v.paused === false, awayPaused, afterReturn: v.paused };
-    });
-    results.push({
-      name: 'examino-host-pause-resumes-when-setting-off',
-      pass: examinoHostPauseResume.ok === true,
-      detail: examinoHostPauseResume
-    });
-
-    // v2.2.13 #8: setting OFF + user paused before away → stay paused.
-    const examinoHostPauseManual = await page.evaluate(async () => {
-      localStorage.setItem('omtAutoPauseOnBlur', 'false');
-      const v = document.querySelector('video');
-      if (!v) return { ok: false };
-      try { await v.play(); } catch (_) {}
-      await new Promise((r) => setTimeout(r, 30));
-      v.pause();
-      await new Promise((r) => setTimeout(r, 30));
-      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
-      document.dispatchEvent(new Event('visibilitychange'));
-      // Host "pause" while already paused.
-      v.pause();
-      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
       document.dispatchEvent(new Event('visibilitychange'));
       window.dispatchEvent(new Event('focus'));
       await new Promise((r) => setTimeout(r, 120));
-      return { ok: v.paused === true, paused: v.paused };
-    });
-    results.push({
-      name: 'examino-host-pause-manual-stays-when-setting-off',
-      pass: examinoHostPauseManual.ok === true,
-      detail: examinoHostPauseManual
-    });
-
-    const autoPauseOnResume = await page.evaluate(async () => {
-      localStorage.setItem('omtAutoPauseOnBlur', 'true');
-      localStorage.setItem('shuttleXpressEnabled', 'false');
-      const v = document.querySelector('video');
-      if (!v) return { ok: false, reason: 'no-video' };
-      v.muted = true;
-      try { await v.play(); } catch (e) { return { ok: false, reason: 'play-failed', err: String(e) }; }
-      await new Promise((r) => setTimeout(r, 40));
-      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
-      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
-      document.dispatchEvent(new Event('visibilitychange'));
-      await new Promise((r) => setTimeout(r, 60));
-      const afterAway = v.paused;
-      const osd = (document.getElementById('osd-message')?.innerText || '');
-      const origPlay = HTMLMediaElement.prototype.play;
-      let playCalls = 0;
-      HTMLMediaElement.prototype.play = function (...args) {
-        playCalls += 1;
-        return origPlay.apply(this, args);
-      };
-      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
-      Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
-      document.dispatchEvent(new Event('visibilitychange'));
-      window.dispatchEvent(new Event('focus'));
-      await new Promise((r) => setTimeout(r, 200));
-      HTMLMediaElement.prototype.play = origPlay;
       return {
-        ok: afterAway === true && v.paused === false && /Auto paused/i.test(osd) && playCalls >= 1,
+        ok: afterAway === true && v.paused === false && /Auto paused/i.test(osd),
         afterAway,
         afterReturn: v.paused,
-        osd,
-        playCalls
+        osd
       };
     });
     results.push({
-      name: 'examino-auto-pause-resumes',
-      pass: autoPauseOnResume.ok === true,
-      detail: autoPauseOnResume
+      name: 'examino-alt-tab-default-pauses-and-resumes',
+      pass: examinoAltTabDefaultPause.ok === true,
+      detail: examinoAltTabDefaultPause
     });
 
-    const autoPauseManualStays = await page.evaluate(async () => {
-      localStorage.setItem('omtAutoPauseOnBlur', 'true');
+    const examinoAltTabManualStays = await page.evaluate(async () => {
+      localStorage.setItem('omtKeepPlayingOnAltTab', 'false');
       localStorage.setItem('shuttleXpressEnabled', 'false');
       const v = document.querySelector('video');
       if (!v) return { ok: false };
       try { await v.play(); } catch (_) {}
       await new Promise((r) => setTimeout(r, 30));
-      v.pause(); // manual pause before away
+      v.pause();
       await new Promise((r) => setTimeout(r, 30));
       Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
       document.dispatchEvent(new Event('visibilitychange'));
@@ -2224,13 +2201,92 @@ async function run() {
       return { ok: v.paused === true, paused: v.paused };
     });
     results.push({
-      name: 'examino-auto-pause-manual-stays-paused',
-      pass: autoPauseManualStays.ok === true,
-      detail: autoPauseManualStays
+      name: 'examino-alt-tab-manual-stays-paused',
+      pass: examinoAltTabManualStays.ok === true,
+      detail: examinoAltTabManualStays
     });
 
-    const autoPauseShuttleSkip = await page.evaluate(async () => {
-      localStorage.setItem('omtAutoPauseOnBlur', 'true');
+    const examinoKeepPlayingOn = await page.evaluate(async () => {
+      localStorage.setItem('omtKeepPlayingOnAltTab', 'true');
+      localStorage.setItem('shuttleXpressEnabled', 'false');
+      const v = document.querySelector('video');
+      if (!v) return { ok: false, reason: 'no-video' };
+      v.muted = true;
+      try { await v.play(); } catch (e) { return { ok: false, reason: 'play-failed', err: String(e) }; }
+      await new Promise((r) => setTimeout(r, 40));
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+      document.dispatchEvent(new Event('visibilitychange'));
+      await new Promise((r) => setTimeout(r, 40));
+      const afterAway = v.paused;
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+      document.dispatchEvent(new Event('visibilitychange'));
+      return { ok: afterAway === false, afterAway };
+    });
+    results.push({
+      name: 'examino-alt-tab-keep-playing-stays',
+      pass: examinoKeepPlayingOn.ok === true,
+      detail: examinoKeepPlayingOn
+    });
+
+    // Keep-playing ON: Examino host pause while hidden → one microtask play().
+    const examinoKeepPlayingHostUndo = await page.evaluate(async () => {
+      localStorage.setItem('omtKeepPlayingOnAltTab', 'true');
+      localStorage.setItem('shuttleXpressEnabled', 'false');
+      const v = document.querySelector('video');
+      if (!v) return { ok: false, reason: 'no-video' };
+      v.muted = true;
+      try { await v.play(); } catch (e) { return { ok: false, reason: 'play-failed', err: String(e) }; }
+      await new Promise((r) => setTimeout(r, 40));
+      if (v.paused) return { ok: false, reason: 'not-playing' };
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+      document.dispatchEvent(new Event('visibilitychange'));
+      // Host pauses after our capture arm.
+      v.pause();
+      await Promise.resolve();
+      await Promise.resolve();
+      await new Promise((r) => setTimeout(r, 40));
+      const whileHidden = v.paused;
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+      document.dispatchEvent(new Event('visibilitychange'));
+      return { ok: whileHidden === false, whileHidden };
+    });
+    results.push({
+      name: 'examino-alt-tab-keep-playing-undoes-host-pause',
+      pass: examinoKeepPlayingHostUndo.ok === true,
+      detail: examinoKeepPlayingHostUndo
+    });
+
+    const examinoKeepPlayingManual = await page.evaluate(async () => {
+      localStorage.setItem('omtKeepPlayingOnAltTab', 'true');
+      const v = document.querySelector('video');
+      if (!v) return { ok: false };
+      try { await v.play(); } catch (_) {}
+      await new Promise((r) => setTimeout(r, 30));
+      v.pause();
+      await new Promise((r) => setTimeout(r, 30));
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+      document.dispatchEvent(new Event('visibilitychange'));
+      v.pause();
+      await Promise.resolve();
+      await new Promise((r) => setTimeout(r, 40));
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+      document.dispatchEvent(new Event('visibilitychange'));
+      window.dispatchEvent(new Event('focus'));
+      await new Promise((r) => setTimeout(r, 80));
+      return { ok: v.paused === true, paused: v.paused };
+    });
+    results.push({
+      name: 'examino-alt-tab-keep-playing-manual-stays',
+      pass: examinoKeepPlayingManual.ok === true,
+      detail: examinoKeepPlayingManual
+    });
+
+    const examinoAltTabShuttleSkip = await page.evaluate(async () => {
+      localStorage.setItem('omtKeepPlayingOnAltTab', 'false');
       localStorage.setItem('shuttleXpressEnabled', 'true');
       const v = document.querySelector('video');
       if (!v) return { ok: false, reason: 'no-video' };
@@ -2238,13 +2294,11 @@ async function run() {
       try { await v.play(); } catch (e) { return { ok: false, reason: 'play-failed', err: String(e) }; }
       await new Promise((r) => setTimeout(r, 40));
       if (v.paused) return { ok: false, reason: 'still-paused-before-hide' };
-      // Clear stale OSD from the previous auto-pause case (toast lasts ~1.1s).
       const osdEl = document.getElementById('osd-message');
       if (osdEl) {
         osdEl.innerText = '';
         osdEl.classList.remove('visible');
       }
-      // Re-assert shuttle flag immediately before the hide event (bridge may sync prefs).
       localStorage.setItem('shuttleXpressEnabled', 'true');
       Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
       Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
@@ -2259,14 +2313,13 @@ async function run() {
       return {
         ok: paused === false && !/Auto paused/i.test(osd),
         paused,
-        osd,
-        shuttleFlag: localStorage.getItem('shuttleXpressEnabled')
+        osd
       };
     });
     results.push({
-      name: 'examino-auto-pause-shuttle-skips',
-      pass: autoPauseShuttleSkip.ok === true,
-      detail: autoPauseShuttleSkip
+      name: 'examino-alt-tab-shuttle-skips',
+      pass: examinoAltTabShuttleSkip.ok === true,
+      detail: examinoAltTabShuttleSkip
     });
 
     // Expanded more panel with custom period + start-minute edit visible
@@ -4536,6 +4589,102 @@ async function run() {
       detail: inplayPanelSwallow
     });
 
+    const inplayPanelDrag = await page.evaluate(async () => {
+      const panel = document.getElementById('controls-panel');
+      const handle = document.getElementById('controls-handle');
+      if (!panel || !handle) return { ok: false, reason: 'missing' };
+      panel.style.opacity = '1';
+      panel.style.pointerEvents = 'auto';
+      const before = panel.getBoundingClientRect();
+      const hr = handle.getBoundingClientRect();
+      const x0 = hr.left + hr.width / 2;
+      const y0 = hr.top + Math.min(10, hr.height / 2);
+      handle.dispatchEvent(new MouseEvent('mousedown', {
+        bubbles: true, cancelable: true, clientX: x0, clientY: y0, button: 0, view: window
+      }));
+      window.dispatchEvent(new MouseEvent('mousemove', {
+        bubbles: true, cancelable: true, clientX: x0 + 35, clientY: y0 + 25, view: window
+      }));
+      await new Promise((r) => setTimeout(r, 30));
+      const mid = panel.getBoundingClientRect();
+      const moved = Math.abs(mid.left - before.left) > 8 || Math.abs(mid.top - before.top) > 8;
+      window.dispatchEvent(new MouseEvent('mouseup', {
+        bubbles: true, cancelable: true, clientX: x0 + 35, clientY: y0 + 25, view: window
+      }));
+      await new Promise((r) => setTimeout(r, 30));
+      const afterRelease = panel.getBoundingClientRect();
+      window.dispatchEvent(new MouseEvent('mousemove', {
+        bubbles: true, cancelable: true, clientX: x0 + 100, clientY: y0 + 80, view: window
+      }));
+      await new Promise((r) => setTimeout(r, 30));
+      const afterExtra = panel.getBoundingClientRect();
+      const stuck = Math.abs(afterExtra.left - afterRelease.left) > 2 ||
+        Math.abs(afterExtra.top - afterRelease.top) > 2;
+      return { ok: moved && !stuck, moved, stuck };
+    });
+    results.push({
+      name: 'inplayip-panel-drag-ends-on-mouseup',
+      pass: inplayPanelDrag.ok === true,
+      detail: inplayPanelDrag
+    });
+
+    // v2.2.14 alt-tab (same as Examino/Xeatre/local; no InPlay seek/player changes).
+    const inplayAltTabDefault = await page.evaluate(async () => {
+      try { localStorage.removeItem('omtAutoPauseOnBlur'); } catch (_) {}
+      localStorage.setItem('omtKeepPlayingOnAltTab', 'false');
+      localStorage.setItem('shuttleXpressEnabled', 'false');
+      const v = document.querySelector('video');
+      if (!v) return { ok: false, reason: 'no-video' };
+      v.muted = true;
+      try { await v.play(); } catch (e) { return { ok: false, reason: 'play-failed', err: String(e) }; }
+      await new Promise((r) => setTimeout(r, 40));
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+      document.dispatchEvent(new Event('visibilitychange'));
+      await new Promise((r) => setTimeout(r, 40));
+      const afterAway = v.paused;
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+      document.dispatchEvent(new Event('visibilitychange'));
+      window.dispatchEvent(new Event('focus'));
+      await new Promise((r) => setTimeout(r, 100));
+      return { ok: afterAway === true && v.paused === false, afterAway, afterReturn: v.paused };
+    });
+    results.push({
+      name: 'inplayip-alt-tab-default-pauses-and-resumes',
+      pass: inplayAltTabDefault.ok === true,
+      detail: inplayAltTabDefault
+    });
+
+    const inplayAltTabKeep = await page.evaluate(async () => {
+      localStorage.setItem('omtKeepPlayingOnAltTab', 'true');
+      localStorage.setItem('shuttleXpressEnabled', 'false');
+      const v = document.querySelector('video');
+      if (!v) return { ok: false };
+      v.muted = true;
+      try { await v.play(); } catch (_) {}
+      await new Promise((r) => setTimeout(r, 40));
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+      document.dispatchEvent(new Event('visibilitychange'));
+      await new Promise((r) => setTimeout(r, 40));
+      const afterAway = v.paused;
+      v.pause();
+      await Promise.resolve();
+      await Promise.resolve();
+      await new Promise((r) => setTimeout(r, 40));
+      const afterHostPause = v.paused;
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+      document.dispatchEvent(new Event('visibilitychange'));
+      return { ok: afterAway === false && afterHostPause === false, afterAway, afterHostPause };
+    });
+    results.push({
+      name: 'inplayip-alt-tab-keep-playing',
+      pass: inplayAltTabKeep.ok === true,
+      detail: inplayAltTabKeep
+    });
+
     const inplayAutohide = await page.evaluate(async () => {
       const panel = document.getElementById('controls-panel');
       const btn = document.getElementById('omt-m2');
@@ -5465,6 +5614,102 @@ async function run() {
       detail: xeatreHudNoToggle
     });
 
+    const xeatrePanelDrag = await page.evaluate(async () => {
+      const panel = document.getElementById('controls-panel');
+      const handle = document.getElementById('controls-handle');
+      if (!panel || !handle) return { ok: false, reason: 'missing' };
+      panel.style.opacity = '1';
+      panel.style.pointerEvents = 'auto';
+      const before = panel.getBoundingClientRect();
+      const hr = handle.getBoundingClientRect();
+      const x0 = hr.left + hr.width / 2;
+      const y0 = hr.top + Math.min(10, hr.height / 2);
+      handle.dispatchEvent(new MouseEvent('mousedown', {
+        bubbles: true, cancelable: true, clientX: x0, clientY: y0, button: 0, view: window
+      }));
+      window.dispatchEvent(new MouseEvent('mousemove', {
+        bubbles: true, cancelable: true, clientX: x0 + 35, clientY: y0 + 25, view: window
+      }));
+      await new Promise((r) => setTimeout(r, 30));
+      const mid = panel.getBoundingClientRect();
+      const moved = Math.abs(mid.left - before.left) > 8 || Math.abs(mid.top - before.top) > 8;
+      window.dispatchEvent(new MouseEvent('mouseup', {
+        bubbles: true, cancelable: true, clientX: x0 + 35, clientY: y0 + 25, view: window
+      }));
+      await new Promise((r) => setTimeout(r, 30));
+      const afterRelease = panel.getBoundingClientRect();
+      window.dispatchEvent(new MouseEvent('mousemove', {
+        bubbles: true, cancelable: true, clientX: x0 + 100, clientY: y0 + 80, view: window
+      }));
+      await new Promise((r) => setTimeout(r, 30));
+      const afterExtra = panel.getBoundingClientRect();
+      const stuck = Math.abs(afterExtra.left - afterRelease.left) > 2 ||
+        Math.abs(afterExtra.top - afterRelease.top) > 2;
+      return { ok: moved && !stuck, moved, stuck };
+    });
+    results.push({
+      name: 'xeatre-panel-drag-ends-on-mouseup',
+      pass: xeatrePanelDrag.ok === true,
+      detail: xeatrePanelDrag
+    });
+
+    // v2.2.14 alt-tab both modes (identical semantics to Examino/InPlay/local).
+    const xeatreAltTabDefault = await page.evaluate(async () => {
+      try { localStorage.removeItem('omtAutoPauseOnBlur'); } catch (_) {}
+      localStorage.setItem('omtKeepPlayingOnAltTab', 'false');
+      localStorage.setItem('shuttleXpressEnabled', 'false');
+      const v = document.querySelector('video');
+      if (!v) return { ok: false, reason: 'no-video' };
+      v.muted = true;
+      try { await v.play(); } catch (e) { return { ok: false, reason: 'play-failed', err: String(e) }; }
+      await new Promise((r) => setTimeout(r, 40));
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+      document.dispatchEvent(new Event('visibilitychange'));
+      await new Promise((r) => setTimeout(r, 40));
+      const afterAway = v.paused;
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+      document.dispatchEvent(new Event('visibilitychange'));
+      window.dispatchEvent(new Event('focus'));
+      await new Promise((r) => setTimeout(r, 100));
+      return { ok: afterAway === true && v.paused === false, afterAway, afterReturn: v.paused };
+    });
+    results.push({
+      name: 'xeatre-alt-tab-default-pauses-and-resumes',
+      pass: xeatreAltTabDefault.ok === true,
+      detail: xeatreAltTabDefault
+    });
+
+    const xeatreAltTabKeep = await page.evaluate(async () => {
+      localStorage.setItem('omtKeepPlayingOnAltTab', 'true');
+      localStorage.setItem('shuttleXpressEnabled', 'false');
+      const v = document.querySelector('video');
+      if (!v) return { ok: false };
+      v.muted = true;
+      try { await v.play(); } catch (_) {}
+      await new Promise((r) => setTimeout(r, 40));
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+      document.dispatchEvent(new Event('visibilitychange'));
+      await new Promise((r) => setTimeout(r, 40));
+      const afterAway = v.paused;
+      v.pause();
+      await Promise.resolve();
+      await Promise.resolve();
+      await new Promise((r) => setTimeout(r, 40));
+      const afterHostPause = v.paused;
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+      document.dispatchEvent(new Event('visibilitychange'));
+      return { ok: afterAway === false && afterHostPause === false, afterAway, afterHostPause };
+    });
+    results.push({
+      name: 'xeatre-alt-tab-keep-playing',
+      pass: xeatreAltTabKeep.ok === true,
+      detail: xeatreAltTabKeep
+    });
+
     // v2.2.12 #4: Xeatre clock inside letterboxed picture.
     const xeatreClockInset = await page.evaluate(() => {
       const root = document.getElementById('omt-root');
@@ -6091,10 +6336,12 @@ async function run() {
           noPersonalizar: !document.body.textContent.includes('Personalizar') &&
             !document.body.textContent.includes('Em breve'),
           footOk: foot === 'v' + manifestVersion,
-          hasAutoPause: !!document.getElementById('omt-auto-pause-blur'),
-          autoPauseDefaultOff: document.getElementById('omt-auto-pause-blur')
-            ? document.getElementById('omt-auto-pause-blur').checked === false
+          hasKeepPlayingAltTab: !!document.getElementById('omt-keep-playing-alt-tab'),
+          keepPlayingDefaultOff: document.getElementById('omt-keep-playing-alt-tab')
+            ? document.getElementById('omt-keep-playing-alt-tab').checked === false
             : false,
+          keepPlayingLabel: (document.querySelector('label[for="omt-keep-playing-alt-tab"], .omt-toggle-row:has(#omt-keep-playing-alt-tab) .omt-toggle-label')?.textContent || '').trim(),
+          noLegacyAutoPause: !document.getElementById('omt-auto-pause-blur'),
           hasOpenLocal: !!document.getElementById('omt-open-local-player'),
           openLocalLabel: (document.getElementById('omt-open-local-player')?.textContent || '').trim(),
           logoSrc: document.querySelector('.omt-sp-logo')?.getAttribute('src') || '',
@@ -6207,7 +6454,8 @@ async function run() {
           popupOk.noSwap && popupOk.noCredit && popupOk.noPersonalizar &&
           popupOk.footOk && popupOk.keyCaps && popupOk.logoUncropped &&
           popupOk.logoNoTitle === true &&
-          popupOk.hasAutoPause && popupOk.autoPauseDefaultOff &&
+          popupOk.hasKeepPlayingAltTab && popupOk.keepPlayingDefaultOff &&
+          popupOk.noLegacyAutoPause && /Não pausar no alt tab/i.test(popupOk.keepPlayingLabel || '') &&
           popupOk.hasOpenLocal && popupOk.openLocalLabel === 'Open local player' &&
           /stats-perform-logo-dark\.png/i.test(popupOk.logoSrc || '') &&
           popupOk.hasShuttleSummary &&
@@ -7695,6 +7943,102 @@ async function run() {
         detail: { beforeCtrlClick, afterCtrlClick }
       });
 
+      // v2.2.14: panel drag ends on mouseup; dblclick on panel does not toggle.
+      const localPanelDrag = await localPage.evaluate(async () => {
+        const panel = document.getElementById('controls-panel');
+        const handle = document.getElementById('controls-handle');
+        if (!panel || !handle) return { ok: false, reason: 'missing' };
+        panel.style.opacity = '1';
+        panel.style.pointerEvents = 'auto';
+        const before = panel.getBoundingClientRect();
+        const hr = handle.getBoundingClientRect();
+        const x0 = hr.left + hr.width / 2;
+        const y0 = hr.top + Math.min(10, hr.height / 2);
+        handle.dispatchEvent(new MouseEvent('mousedown', {
+          bubbles: true, cancelable: true, clientX: x0, clientY: y0, button: 0, view: window
+        }));
+        window.dispatchEvent(new MouseEvent('mousemove', {
+          bubbles: true, cancelable: true, clientX: x0 + 35, clientY: y0 + 25, view: window
+        }));
+        await new Promise((r) => setTimeout(r, 30));
+        const mid = panel.getBoundingClientRect();
+        const moved = Math.abs(mid.left - before.left) > 8 || Math.abs(mid.top - before.top) > 8;
+        window.dispatchEvent(new MouseEvent('mouseup', {
+          bubbles: true, cancelable: true, clientX: x0 + 35, clientY: y0 + 25, view: window
+        }));
+        await new Promise((r) => setTimeout(r, 30));
+        const afterRelease = panel.getBoundingClientRect();
+        window.dispatchEvent(new MouseEvent('mousemove', {
+          bubbles: true, cancelable: true, clientX: x0 + 100, clientY: y0 + 80, view: window
+        }));
+        await new Promise((r) => setTimeout(r, 30));
+        const afterExtra = panel.getBoundingClientRect();
+        const stuck = Math.abs(afterExtra.left - afterRelease.left) > 2 ||
+          Math.abs(afterExtra.top - afterRelease.top) > 2;
+        return { ok: moved && !stuck, moved, stuck };
+      });
+      results.push({
+        name: 'local-panel-drag-ends-on-mouseup',
+        pass: localPanelDrag.ok === true,
+        detail: localPanelDrag
+      });
+
+      const localAltTabDefault = await localPage.evaluate(async () => {
+        try { localStorage.removeItem('omtAutoPauseOnBlur'); } catch (_) {}
+        localStorage.setItem('omtKeepPlayingOnAltTab', 'false');
+        try { sessionStorage.setItem('omtLocalShuttleEnabled', 'false'); } catch (_) {}
+        const v = document.getElementById('omt-local-video');
+        if (!v) return { ok: false, reason: 'no-video' };
+        v.muted = true;
+        try { await v.play(); } catch (e) { return { ok: false, reason: 'play-failed', err: String(e) }; }
+        await new Promise((r) => setTimeout(r, 40));
+        Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+        Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+        document.dispatchEvent(new Event('visibilitychange'));
+        await new Promise((r) => setTimeout(r, 40));
+        const afterAway = v.paused;
+        Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+        Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+        document.dispatchEvent(new Event('visibilitychange'));
+        window.dispatchEvent(new Event('focus'));
+        await new Promise((r) => setTimeout(r, 100));
+        return { ok: afterAway === true && v.paused === false, afterAway, afterReturn: v.paused };
+      });
+      results.push({
+        name: 'local-alt-tab-default-pauses-and-resumes',
+        pass: localAltTabDefault.ok === true,
+        detail: localAltTabDefault
+      });
+
+      const localAltTabKeep = await localPage.evaluate(async () => {
+        localStorage.setItem('omtKeepPlayingOnAltTab', 'true');
+        try { sessionStorage.setItem('omtLocalShuttleEnabled', 'false'); } catch (_) {}
+        const v = document.getElementById('omt-local-video');
+        if (!v) return { ok: false };
+        v.muted = true;
+        try { await v.play(); } catch (_) {}
+        await new Promise((r) => setTimeout(r, 40));
+        Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+        Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+        document.dispatchEvent(new Event('visibilitychange'));
+        await new Promise((r) => setTimeout(r, 40));
+        const afterAway = v.paused;
+        v.pause();
+        await Promise.resolve();
+        await Promise.resolve();
+        await new Promise((r) => setTimeout(r, 40));
+        const afterHostPause = v.paused;
+        Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+        Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+        document.dispatchEvent(new Event('visibilitychange'));
+        return { ok: afterAway === false && afterHostPause === false, afterAway, afterHostPause };
+      });
+      results.push({
+        name: 'local-alt-tab-keep-playing',
+        pass: localAltTabKeep.ok === true,
+        detail: localAltTabKeep
+      });
+
       // Space / seek / speed / kickoff / period / custom / OSD / timeline / hide / LIVE
       await localPage.evaluate(() => {
         if (window.__omtPlaybackRateStubbed) return;
@@ -7837,8 +8181,11 @@ async function run() {
         const stage = document.getElementById('omt-local-stage');
         if (!v || !stage) return { ok: false, reason: 'missing' };
 
-        // Auto-pause off so the case matches typical local use; wake still runs.
-        try { localStorage.setItem('omtAutoPauseOnBlur', 'false'); } catch (_) {}
+        // Keep playing while hidden so wake/seek path is not entangled with pause/resume.
+        try {
+          localStorage.setItem('omtKeepPlayingOnAltTab', 'true');
+          localStorage.removeItem('omtAutoPauseOnBlur');
+        } catch (_) {}
 
         const uncaught = [];
         const onRej = (ev) => {

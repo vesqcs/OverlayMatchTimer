@@ -40,6 +40,8 @@
 
     function togglePlay() {
         if (!ensureLiveVideo()) return;
+        // User intent: cancel any Examino host-resume retry window.
+        if (typeof clearExaminoHostResumeIntent === 'function') clearExaminoHostResumeIntent();
         if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
         if (vid.paused || vid.ended) {
             safePlay(vid);

@@ -1889,6 +1889,8 @@
         vid.addEventListener('pause', () => {
             // Do not clear auto-pause flag here — auto-pause itself fires pause.
             // Manual pause clears via togglePlay / click / Shuttle handlers.
+            // v2.2.14: undo host pause-on-hidden when "Não pausar no alt tab" is ON.
+            if (typeof onMaybeKeepPlaying === 'function') onMaybeKeepPlaying();
             syncPlayButtonFromVideo();
         }, vsig);
         vid.addEventListener('ended', () => {
@@ -1991,8 +1993,9 @@
             }, vsig);
         }
 
-        // v2.2.12: swallow interactive HUD events so dblclick / repeated clicks
-        // on panel, bar or timer never reach the host player (all sites).
+        // v2.2.12 / v2.2.14: swallow click/dblclick on interactive HUD so host
+        // players do not toggle play/pause. Do NOT swallow mousedown/mouseup/
+        // pointerup — that blocked document drag-end (panel stuck to mouse).
         // Bubble phase — our button handlers still run on the target first.
         if (omtRoot) {
             const swallowHostLeak = (e) => {
@@ -2000,7 +2003,7 @@
                     e.stopPropagation();
                 }
             };
-            ['click', 'dblclick', 'mousedown', 'mouseup', 'pointerdown', 'pointerup'].forEach((type) => {
+            ['click', 'dblclick'].forEach((type) => {
                 omtRoot.addEventListener(type, swallowHostLeak, false);
             });
             omtRoot.addEventListener('click', function (e) {
@@ -3679,6 +3682,8 @@
 
     function togglePlay() {
         if (!ensureLiveVideo()) return;
+        // User intent: cancel any Examino host-resume retry window.
+        if (typeof clearExaminoHostResumeIntent === 'function') clearExaminoHostResumeIntent();
         if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
         if (vid.paused || vid.ended) {
             safePlay(vid);
@@ -4219,33 +4224,22 @@
        ========================================================= */
     function fazerArrastavel(panel, handle) {
         let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
-
-        handle.onmousedown = function (e) {
-            // Ignore clicks on interactive child elements
-            if (e.target.closest('button, select, input')) return;
-            e.preventDefault();
-
-            // Anchor the panel at its current rendered position before clearing transforms
-            const rect = panel.getBoundingClientRect();
-            const rootRect = omtRoot.getBoundingClientRect();
-            panel.style.top = (rect.top - rootRect.top) + 'px';
-            panel.style.left = (rect.left - rootRect.left) + 'px';
-            panel.style.transform = 'none';
-            panel.style.bottom = 'auto';
-
-            pos3 = e.clientX;
-            pos4 = e.clientY;
-
-            document.onmousemove = drag;
-            document.onmouseup = stopDrag;
-        };
+        let dragging = false;
+        let activePointerId = null;
 
         function drag(e) {
+            if (!dragging) return;
+            // Prefer pointer events when available; fall back to mouse.
+            if (e.pointerId != null && activePointerId != null && e.pointerId !== activePointerId) {
+                return;
+            }
             e.preventDefault();
-            pos1 = pos3 - e.clientX;
-            pos2 = pos4 - e.clientY;
-            pos3 = e.clientX;
-            pos4 = e.clientY;
+            const clientX = e.clientX;
+            const clientY = e.clientY;
+            pos1 = pos3 - clientX;
+            pos2 = pos4 - clientY;
+            pos3 = clientX;
+            pos4 = clientY;
 
             const rootRect = omtRoot ? omtRoot.getBoundingClientRect() : null;
             const maxTop = rootRect
@@ -4267,8 +4261,16 @@
         }
 
         function stopDrag() {
-            document.onmouseup = null;
-            document.onmousemove = null;
+            if (!dragging) return;
+            dragging = false;
+            activePointerId = null;
+            window.removeEventListener('pointermove', drag, true);
+            window.removeEventListener('mousemove', drag, true);
+            window.removeEventListener('pointerup', stopDrag, true);
+            window.removeEventListener('mouseup', stopDrag, true);
+            window.removeEventListener('pointercancel', stopDrag, true);
+            window.removeEventListener('blur', stopDrag, true);
+            document.removeEventListener('visibilitychange', onVisibilityStop, true);
             // Store as bottom-anchored so a later more-panel expand grows UP.
             if (panel === controlsPanel && typeof anchorControlsPanelBottom === 'function') {
                 anchorControlsPanelBottom();
@@ -4277,6 +4279,54 @@
                 updateControlsTipFlip();
             }
         }
+
+        function onVisibilityStop() {
+            if (document.visibilityState === 'hidden') stopDrag();
+        }
+
+        function startDrag(e) {
+            // Ignore clicks on interactive child elements
+            if (e.target.closest && e.target.closest('button, select, input')) return;
+            // Only primary button / touch.
+            if (e.button != null && e.button !== 0) return;
+            e.preventDefault();
+
+            // Anchor the panel at its current rendered position before clearing transforms
+            const rect = panel.getBoundingClientRect();
+            const rootRect = omtRoot.getBoundingClientRect();
+            panel.style.top = (rect.top - rootRect.top) + 'px';
+            panel.style.left = (rect.left - rootRect.left) + 'px';
+            panel.style.transform = 'none';
+            panel.style.bottom = 'auto';
+
+            pos3 = e.clientX;
+            pos4 = e.clientY;
+            dragging = true;
+            activePointerId = e.pointerId != null ? e.pointerId : null;
+
+            // Capture-phase on window so mouseup/pointerup outside the panel
+            // (and past omtRoot stopPropagation on click only) always ends drag.
+            window.addEventListener('pointermove', drag, true);
+            window.addEventListener('mousemove', drag, true);
+            window.addEventListener('pointerup', stopDrag, true);
+            window.addEventListener('mouseup', stopDrag, true);
+            window.addEventListener('pointercancel', stopDrag, true);
+            window.addEventListener('blur', stopDrag, true);
+            document.addEventListener('visibilitychange', onVisibilityStop, true);
+
+            try {
+                if (e.pointerId != null && handle.setPointerCapture) {
+                    handle.setPointerCapture(e.pointerId);
+                }
+            } catch (_) {}
+        }
+
+        handle.addEventListener('pointerdown', startDrag);
+        // Older paths / synthetic tests may only fire mousedown.
+        handle.addEventListener('mousedown', function (e) {
+            if (e.pointerType) return; // pointerdown already handled
+            startDrag(e);
+        });
     }
 
 /* Show / hide the legacy setup panel (unused in-video; kept null-safe). */
@@ -4688,7 +4738,8 @@
     const OMT_STORAGE_KEYS = {
         autoVod: 'omtAutoSwitchVod',
         shuttle: 'shuttleXpressEnabled',
-        autoPauseOnBlur: 'omtAutoPauseOnBlur',
+        autoPauseOnBlur: 'omtAutoPauseOnBlur', // legacy; migrated away in v2.2.14
+        keepPlayingOnAltTab: 'omtKeepPlayingOnAltTab',
         autoHideChrome: 'omtAutoHideChrome',
         clockPos: 'omtClockPosition',
         clockSize: 'omtClockSize',
@@ -4723,24 +4774,40 @@
         });
     }
 
-    function storageGetAutoPauseOnBlur() {
-        const v = localStorage.getItem(OMT_STORAGE_KEYS.autoPauseOnBlur);
-        if (v === null || v === undefined || v === '') return false; // default OFF
-        return v === 'true';
+    /**
+     * v2.2.14: "Não pausar no alt tab" — default OFF = pause on hide, resume on
+     * return. Old omtAutoPauseOnBlur is dropped (not inverted) so everyone lands
+     * on the new default without a silent behaviour flip of the same checkbox.
+     */
+    function storageGetKeepPlayingOnAltTab() {
+        const v = localStorage.getItem(OMT_STORAGE_KEYS.keepPlayingOnAltTab);
+        if (v === 'true' || v === 'false') return v === 'true';
+        try { localStorage.removeItem(OMT_STORAGE_KEYS.autoPauseOnBlur); } catch (_) {}
+        return false; // new default OFF
     }
 
-    function storageSetAutoPauseOnBlur(enabled) {
+    function storageSetKeepPlayingOnAltTab(enabled) {
         const next = enabled ? 'true' : 'false';
         let prev = null;
-        try { prev = localStorage.getItem(OMT_STORAGE_KEYS.autoPauseOnBlur); } catch (_) {}
-        try { localStorage.setItem(OMT_STORAGE_KEYS.autoPauseOnBlur, next); } catch (_) {}
+        try { prev = localStorage.getItem(OMT_STORAGE_KEYS.keepPlayingOnAltTab); } catch (_) {}
+        try { localStorage.setItem(OMT_STORAGE_KEYS.keepPlayingOnAltTab, next); } catch (_) {}
+        try { localStorage.removeItem(OMT_STORAGE_KEYS.autoPauseOnBlur); } catch (_) {}
         if (prev === next) return;
         omtBusPost({
             source: 'omt-page',
             type: 'OMT_STORAGE_SET',
-            key: OMT_STORAGE_KEYS.autoPauseOnBlur,
+            key: OMT_STORAGE_KEYS.keepPlayingOnAltTab,
             value: !!enabled
         });
+    }
+
+    // Legacy name kept for any stray callers — maps to inverted keep-playing.
+    function storageGetAutoPauseOnBlur() {
+        return !storageGetKeepPlayingOnAltTab();
+    }
+
+    function storageSetAutoPauseOnBlur(enabled) {
+        storageSetKeepPlayingOnAltTab(!enabled);
     }
 
     function storageGetAutoVod() {
@@ -4848,12 +4915,19 @@
             const autoBox = omtRoot && omtRoot.querySelector('#omt-examino-auto-vod');
             if (autoBox) autoBox.checked = !!values[OMT_STORAGE_KEYS.autoVod] && examinoManualSourceChoice !== 'DVR';
         }
-        if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.autoPauseOnBlur)) {
+        if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.keepPlayingOnAltTab)) {
             try {
                 localStorage.setItem(
-                    OMT_STORAGE_KEYS.autoPauseOnBlur,
-                    values[OMT_STORAGE_KEYS.autoPauseOnBlur] ? 'true' : 'false'
+                    OMT_STORAGE_KEYS.keepPlayingOnAltTab,
+                    values[OMT_STORAGE_KEYS.keepPlayingOnAltTab] ? 'true' : 'false'
                 );
+                localStorage.removeItem(OMT_STORAGE_KEYS.autoPauseOnBlur);
+            } catch (_) {}
+        } else if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.autoPauseOnBlur)) {
+            // One-shot migration from chrome.storage legacy key → new default OFF.
+            try {
+                localStorage.setItem(OMT_STORAGE_KEYS.keepPlayingOnAltTab, 'false');
+                localStorage.removeItem(OMT_STORAGE_KEYS.autoPauseOnBlur);
             } catch (_) {}
         }
         if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.autoHideChrome)) {
@@ -5311,34 +5385,59 @@
         omtInstallClockClickEdit();
     }
 
-/* Auto pause on Alt+Tab / tab hidden (popup General setting, default OFF).
- * Never touches ShuttleXpress pages; resumes only when we caused the pause.
- * v2.2.13 Examino: when setting is OFF, host still pauses on blur — note if
- * we were playing (capture) and resume once on return without fighting a
- * manual pause. InPlay/Xeatre unchanged.
+/* Alt+Tab / tab-hidden playback (all sites: Examino, InPlay, Xeatre, local).
+ *
+ * v2.2.14 setting "Não pausar no alt tab" (omtKeepPlayingOnAltTab, default OFF):
+ *   OFF (default): pause on blur/hidden if playing; resume on return only if we
+ *                  paused (autoPausedByBlur). User pause is never auto-resumed.
+ *   ON: keep playing while hidden — if the host pauses on away, play() once on
+ *       the next microtask. Armed only between away and return / user pause.
+ *
+ * Cost: one-time visibilitychange/blur/focus listeners. No intervals, no
+ * timeouts, no observers. One-shot pause()/play() only on those events.
  */
     let autoPauseInstalled = false;
     let autoPausedByBlur = false;
     let autoPauseInProgress = false;
     let autoResumeInProgress = false;
     let lastShuttleActivityAt = 0;
-    let examinoResumeAfterHostPause = false;
+    // Keep-playing arm (setting ON): set on away while playing; cleared on
+    // return or user intent. No wall-clock window / timers.
+    let keepPlayingArmed = false;
+    let keepPlayingInFlight = false;
 
     function noteShuttleActivity() {
         lastShuttleActivityAt = Date.now();
     }
 
+    function clearKeepPlayingArm() {
+        keepPlayingArmed = false;
+    }
+
+    /** Used by togglePlay — user intent cancels keep-playing and blur-resume. */
+    function clearExaminoHostResumeIntent() {
+        clearKeepPlayingArm();
+    }
+
     function clearAutoPauseFlag() {
         if (autoPauseInProgress || autoResumeInProgress) return;
         autoPausedByBlur = false;
-        examinoResumeAfterHostPause = false;
+        if (!keepPlayingInFlight) clearKeepPlayingArm();
     }
 
-    function shouldBypassAutoPause() {
-        // Setting off, Shuttle enabled on this page, or recent WebHID/shuttle input.
-        if (typeof storageGetAutoPauseOnBlur === 'function' && !storageGetAutoPauseOnBlur()) {
-            return true;
+    function storageKeepPlayingOnAltTab() {
+        if (typeof storageGetKeepPlayingOnAltTab === 'function') {
+            return !!storageGetKeepPlayingOnAltTab();
         }
+        // Legacy fallback during partial loads: old key meant "pause on blur".
+        if (typeof storageGetAutoPauseOnBlur === 'function') {
+            return !storageGetAutoPauseOnBlur();
+        }
+        return false;
+    }
+
+    function shouldSkipAwayPause() {
+        if (storageKeepPlayingOnAltTab()) return true;
         if (typeof storageGetShuttleEnabled === 'function' && storageGetShuttleEnabled()) {
             return true;
         }
@@ -5346,61 +5445,85 @@
         return false;
     }
 
-    /** Capture-phase: record playing-before-away before host pause handlers run. */
-    function noteExaminoPlayingBeforeAway() {
-        if (!(site && site.id === 'examino')) return;
-        if (typeof storageGetAutoPauseOnBlur === 'function' && storageGetAutoPauseOnBlur()) {
-            examinoResumeAfterHostPause = false;
+    /** Capture on away: arm keep-playing if setting ON and media is playing. */
+    function onAwayCapture() {
+        if (!storageKeepPlayingOnAltTab()) {
+            clearKeepPlayingArm();
             return;
         }
-        if (!vid || !vid.isConnected) {
-            examinoResumeAfterHostPause = false;
-            return;
-        }
-        examinoResumeAfterHostPause = !vid.paused && !vid.ended;
+        if (!vid || !vid.isConnected) return;
+        if (vid.paused || vid.ended) return;
+        keepPlayingArmed = true;
     }
 
-    function maybeExaminoResumeAfterHostPause() {
-        if (!(site && site.id === 'examino')) return;
-        if (typeof storageGetAutoPauseOnBlur === 'function' && storageGetAutoPauseOnBlur()) {
-            examinoResumeAfterHostPause = false;
+    /**
+     * Video 'pause' while keep-playing is armed → host hid the tab.
+     * Re-play on next microtask (event-driven, not a timer poll).
+     */
+    function onMaybeKeepPlaying() {
+        if (!storageKeepPlayingOnAltTab()) return;
+        if (autoPauseInProgress) return;
+        if (!keepPlayingArmed) return;
+        if (!vid || !vid.isConnected || vid.ended) {
+            clearKeepPlayingArm();
             return;
         }
-        if (!examinoResumeAfterHostPause) return;
-        examinoResumeAfterHostPause = false;
-        if (!ensureLiveVideo()) return;
-        // Already playing, or user paused themselves — do nothing.
-        if (!vid.paused || vid.ended) return;
-        autoResumeInProgress = true;
-        safePlay(vid)
-            .finally(() => {
-                autoResumeInProgress = false;
-                if (typeof syncPlayButtonFromVideo === 'function') syncPlayButtonFromVideo();
-            });
+        if (!vid.paused) return;
+        const media = vid;
+        keepPlayingInFlight = true;
+        const resume = () => {
+            keepPlayingInFlight = false;
+            if (!storageKeepPlayingOnAltTab() || !keepPlayingArmed) return;
+            if (!media.isConnected || media.ended || !media.paused) return;
+            try {
+                const p = media.play();
+                if (p && typeof p.then === 'function') {
+                    p.then(() => {
+                        if (typeof syncPlayButtonFromVideo === 'function') syncPlayButtonFromVideo();
+                    }).catch((err) => {
+                        try {
+                            console.warn('[OMT] Keep-playing while hidden: play() rejected',
+                                err && (err.name || err.message) || err);
+                        } catch (_) {}
+                    });
+                    return;
+                }
+            } catch (err) {
+                try {
+                    console.warn('[OMT] Keep-playing while hidden: play() threw',
+                        err && (err.name || err.message) || err);
+                } catch (_) {}
+            }
+            if (typeof syncPlayButtonFromVideo === 'function') syncPlayButtonFromVideo();
+        };
+        try {
+            queueMicrotask(resume);
+        } catch (_) {
+            // queueMicrotask unavailable — same-tick fallback (still not a timer).
+            resume();
+        }
     }
 
     function maybeAutoPauseOnAway() {
-        if (shouldBypassAutoPause()) return;
+        if (shouldSkipAwayPause()) return;
         if (!ensureLiveVideo()) return;
-        // Already paused (manual or ended) — do not claim an auto-pause resume.
         if (vid.paused || vid.ended) return;
         autoPauseInProgress = true;
         try {
             vid.pause();
-            // Set after pause so the pause listener's clear (if any) is skipped via in-progress.
             if (vid.paused) {
                 autoPausedByBlur = true;
-                mostrarOSD('Auto paused');
+                if (typeof mostrarOSD === 'function') mostrarOSD('Auto paused');
             }
         } finally {
             autoPauseInProgress = false;
         }
-        syncPlayButtonFromVideo();
+        if (typeof syncPlayButtonFromVideo === 'function') syncPlayButtonFromVideo();
     }
 
     function maybeAutoResumeOnReturn() {
+        clearKeepPlayingArm();
         if (!autoPausedByBlur) return;
-        // Shuttle pages never auto-pause; if shuttle was enabled while away, drop resume.
         if (typeof storageGetShuttleEnabled === 'function' && storageGetShuttleEnabled()) {
             autoPausedByBlur = false;
             return;
@@ -5415,45 +5538,39 @@
         safePlay(vid)
             .finally(() => {
                 autoResumeInProgress = false;
-                syncPlayButtonFromVideo();
+                if (typeof syncPlayButtonFromVideo === 'function') syncPlayButtonFromVideo();
             });
     }
 
     function onDocumentVisibilityChangeCapture() {
-        if (document.visibilityState === 'hidden') noteExaminoPlayingBeforeAway();
+        if (document.visibilityState === 'hidden') onAwayCapture();
     }
 
     function onWindowBlurCapture() {
-        if (document.visibilityState === 'hidden') return;
-        noteExaminoPlayingBeforeAway();
+        onAwayCapture();
     }
 
     function onDocumentVisibilityChange() {
         if (document.visibilityState === 'hidden') maybeAutoPauseOnAway();
         else if (document.visibilityState === 'visible') {
             maybeAutoResumeOnReturn();
-            maybeExaminoResumeAfterHostPause();
-            // FS decode can stall after Alt+Tab even when auto-pause is off.
-            wakeFullscreenDecode();
+            if (typeof wakeFullscreenDecode === 'function') wakeFullscreenDecode();
         }
     }
 
     function onWindowBlur() {
-        // visibilitychange usually covers Alt+Tab; blur covers focus loss while visible.
         if (document.visibilityState === 'hidden') return;
         maybeAutoPauseOnAway();
     }
 
     function onWindowFocus() {
         maybeAutoResumeOnReturn();
-        maybeExaminoResumeAfterHostPause();
-        wakeFullscreenDecode();
+        if (typeof wakeFullscreenDecode === 'function') wakeFullscreenDecode();
     }
 
     function installAutoPauseOnBlur() {
         if (autoPauseInstalled) return;
         autoPauseInstalled = true;
-        // Capture first so Examino host pause (bubble) does not erase "was playing".
         document.addEventListener('visibilitychange', onDocumentVisibilityChangeCapture, true);
         window.addEventListener('blur', onWindowBlurCapture, true);
         document.addEventListener('visibilitychange', onDocumentVisibilityChange);
@@ -8138,47 +8255,70 @@ var OMT_SYNC_FEATURE_ENABLED = false;
 
     try { window.__omtXeatreFitViewport = omtXeatreFitViewport; } catch (_) {}
 
-    /* ---- v2.2.12 click-to-play/pause on the video picture ----
-     * wire.js vid click uses e.target === vid; after viewport-fit / VJS layers
-     * the hit target is often the tech wrapper. Window capture (Examino-style)
-     * toggles only on the media surface, never on our HUD. */
+    /* ---- v2.2.12 / v2.2.14 click-to-play/pause on the video picture ----
+     * Field: VJS often suppresses the click after pointerdown, so toggle on
+     * pointerup (armed) and ignore a following click to avoid double toggle.
+     * Also treat #ControlBar / #player-wrap that wrap the tech as media. */
+    let xeatreToggleConsumedGesture = false;
+
+    function isXeatreHostChromeTarget(el) {
+        if (!el || !el.closest) return false;
+        if (el.closest('.vjs-control-bar, .xeatre-control-panel, .xeatre-host-panel')) return true;
+        if (el.closest('#jwplay, #GoLive, #GoStart, #FullScreen, #AutoHide, #autohide')) return true;
+        if (el.closest('#Speed025, #Speed05, #Speed1, #Speed15, #Speed2')) return true;
+        return false;
+    }
+
     function isXeatrePlayerMediaTarget(target) {
         if (!target) return false;
         const el = target.nodeType === 1 ? target : target.parentElement;
         if (!el || !el.closest) return false;
         if (typeof isOmtInteractiveTarget === 'function' && isOmtInteractiveTarget(el)) return false;
         if (omtRoot && omtRoot.contains(el)) return false;
+        if (isXeatreHostChromeTarget(el)) return false;
         if (el.tagName === 'VIDEO') return true;
-        const shell = el.closest('#hdmi-video, .video-js');
-        if (!shell) return false;
-        // Host chrome (if any) stays excluded; picture/shell clicks toggle.
-        if (el.closest('.vjs-control-bar')) return false;
-        return true;
+        if (el.classList && el.classList.contains('vjs-tech')) return true;
+        // Picture / letterboxed shell / field ControlBar wrapper around the tech.
+        if (el.closest('#hdmi-video, .video-js, #ControlBar, #player-wrap, #video-player')) {
+            return true;
+        }
+        return false;
     }
 
-    function handleXeatreClickArm(e) {
-        if (!(site && site.id === 'xeatre')) return;
-        xeatreClickArmed = isXeatrePlayerMediaTarget(e.target);
+    function resolveXeatreMedia(fromTarget) {
+        if (fromTarget && fromTarget.tagName === 'VIDEO') return fromTarget;
+        if (fromTarget && fromTarget.closest) {
+            const nested = fromTarget.closest('video');
+            if (nested) return nested;
+        }
+        return vid || (site && site.findVideo && site.findVideo()) || null;
     }
 
-    function handleXeatreClickToggle(e) {
-        if (!(site && site.id === 'xeatre')) return;
-        if (!xeatreClickArmed) return;
-        xeatreClickArmed = false;
-        if (!isXeatrePlayerMediaTarget(e.target)) return;
-        const media = (e.target && e.target.tagName === 'VIDEO')
-            ? e.target
-            : ((e.target && e.target.closest && e.target.closest('video')) || vid ||
-                (site && site.findVideo && site.findVideo()));
-        if (!media) return;
-        if (!media.src && !media.currentSrc && !media.srcObject) return;
+    function xeatreMediaCanToggle(media) {
+        if (!media) return false;
+        if (media.src || media.currentSrc || media.srcObject) return true;
+        // MSE / VHS may expose neither src nor srcObject until later — allow if live.
+        try {
+            if (media.readyState > 0) return true;
+            if (media.seekable && media.seekable.length > 0) return true;
+        } catch (_) {}
+        return false;
+    }
+
+    function performXeatreClickToggle(e, media) {
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
+        try { omtUserGestureSeen = true; } catch (_) {}
         if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
-        if (media.paused) {
-            if (typeof safePlay === 'function') safePlay(media);
-            else try { media.play(); } catch (_) {}
+        if (media.paused || media.ended) {
+            // Prefer direct play() on this gesture; safePlay may no-op pre-gesture.
+            try {
+                const p = media.play();
+                if (p && typeof p.catch === 'function') p.catch(() => {});
+            } catch (_) {
+                if (typeof safePlay === 'function') safePlay(media);
+            }
             if (typeof mostrarOSD === 'function') mostrarOSD('Play');
         } else {
             media.pause();
@@ -8188,13 +8328,49 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         else if (typeof resetControlsTimeout === 'function') resetControlsTimeout(false);
     }
 
+    function handleXeatreClickArm(e) {
+        if (!(site && site.id === 'xeatre')) return;
+        xeatreToggleConsumedGesture = false;
+        xeatreClickArmed = isXeatrePlayerMediaTarget(e.target);
+    }
+
+    function handleXeatrePointerUpToggle(e) {
+        if (!(site && site.id === 'xeatre')) return;
+        if (!xeatreClickArmed) return;
+        xeatreClickArmed = false;
+        if (!isXeatrePlayerMediaTarget(e.target)) return;
+        const media = resolveXeatreMedia(e.target);
+        if (!xeatreMediaCanToggle(media)) return;
+        xeatreToggleConsumedGesture = true;
+        performXeatreClickToggle(e, media);
+    }
+
+    function handleXeatreClickToggle(e) {
+        if (!(site && site.id === 'xeatre')) return;
+        // pointerup already toggled — swallow click so VJS cannot double-toggle.
+        if (xeatreToggleConsumedGesture) {
+            xeatreToggleConsumedGesture = false;
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            return;
+        }
+        if (!xeatreClickArmed) return;
+        xeatreClickArmed = false;
+        if (!isXeatrePlayerMediaTarget(e.target)) return;
+        const media = resolveXeatreMedia(e.target);
+        if (!xeatreMediaCanToggle(media)) return;
+        performXeatreClickToggle(e, media);
+    }
+
     function installXeatreClickToToggle() {
         if (xeatreClickToggleInstalled) return;
         xeatreClickToggleInstalled = true;
         window.addEventListener('pointerdown', handleXeatreClickArm, true);
         window.addEventListener('mousedown', handleXeatreClickArm, true);
+        window.addEventListener('pointerup', handleXeatrePointerUpToggle, true);
         window.addEventListener('click', handleXeatreClickToggle, true);
-        console.log('[OMT] Xeatre click-to-toggle installed (video surface only).');
+        console.log('[OMT] Xeatre click-to-toggle installed (pointerup + click, video surface only).');
     }
 
     function initXeatrePlayerFeatures() {

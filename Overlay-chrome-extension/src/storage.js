@@ -6,7 +6,8 @@
     const OMT_STORAGE_KEYS = {
         autoVod: 'omtAutoSwitchVod',
         shuttle: 'shuttleXpressEnabled',
-        autoPauseOnBlur: 'omtAutoPauseOnBlur',
+        autoPauseOnBlur: 'omtAutoPauseOnBlur', // legacy; migrated away in v2.2.14
+        keepPlayingOnAltTab: 'omtKeepPlayingOnAltTab',
         autoHideChrome: 'omtAutoHideChrome',
         clockPos: 'omtClockPosition',
         clockSize: 'omtClockSize',
@@ -41,24 +42,40 @@
         });
     }
 
-    function storageGetAutoPauseOnBlur() {
-        const v = localStorage.getItem(OMT_STORAGE_KEYS.autoPauseOnBlur);
-        if (v === null || v === undefined || v === '') return false; // default OFF
-        return v === 'true';
+    /**
+     * v2.2.14: "Não pausar no alt tab" — default OFF = pause on hide, resume on
+     * return. Old omtAutoPauseOnBlur is dropped (not inverted) so everyone lands
+     * on the new default without a silent behaviour flip of the same checkbox.
+     */
+    function storageGetKeepPlayingOnAltTab() {
+        const v = localStorage.getItem(OMT_STORAGE_KEYS.keepPlayingOnAltTab);
+        if (v === 'true' || v === 'false') return v === 'true';
+        try { localStorage.removeItem(OMT_STORAGE_KEYS.autoPauseOnBlur); } catch (_) {}
+        return false; // new default OFF
     }
 
-    function storageSetAutoPauseOnBlur(enabled) {
+    function storageSetKeepPlayingOnAltTab(enabled) {
         const next = enabled ? 'true' : 'false';
         let prev = null;
-        try { prev = localStorage.getItem(OMT_STORAGE_KEYS.autoPauseOnBlur); } catch (_) {}
-        try { localStorage.setItem(OMT_STORAGE_KEYS.autoPauseOnBlur, next); } catch (_) {}
+        try { prev = localStorage.getItem(OMT_STORAGE_KEYS.keepPlayingOnAltTab); } catch (_) {}
+        try { localStorage.setItem(OMT_STORAGE_KEYS.keepPlayingOnAltTab, next); } catch (_) {}
+        try { localStorage.removeItem(OMT_STORAGE_KEYS.autoPauseOnBlur); } catch (_) {}
         if (prev === next) return;
         omtBusPost({
             source: 'omt-page',
             type: 'OMT_STORAGE_SET',
-            key: OMT_STORAGE_KEYS.autoPauseOnBlur,
+            key: OMT_STORAGE_KEYS.keepPlayingOnAltTab,
             value: !!enabled
         });
+    }
+
+    // Legacy name kept for any stray callers — maps to inverted keep-playing.
+    function storageGetAutoPauseOnBlur() {
+        return !storageGetKeepPlayingOnAltTab();
+    }
+
+    function storageSetAutoPauseOnBlur(enabled) {
+        storageSetKeepPlayingOnAltTab(!enabled);
     }
 
     function storageGetAutoVod() {
@@ -166,12 +183,19 @@
             const autoBox = omtRoot && omtRoot.querySelector('#omt-examino-auto-vod');
             if (autoBox) autoBox.checked = !!values[OMT_STORAGE_KEYS.autoVod] && examinoManualSourceChoice !== 'DVR';
         }
-        if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.autoPauseOnBlur)) {
+        if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.keepPlayingOnAltTab)) {
             try {
                 localStorage.setItem(
-                    OMT_STORAGE_KEYS.autoPauseOnBlur,
-                    values[OMT_STORAGE_KEYS.autoPauseOnBlur] ? 'true' : 'false'
+                    OMT_STORAGE_KEYS.keepPlayingOnAltTab,
+                    values[OMT_STORAGE_KEYS.keepPlayingOnAltTab] ? 'true' : 'false'
                 );
+                localStorage.removeItem(OMT_STORAGE_KEYS.autoPauseOnBlur);
+            } catch (_) {}
+        } else if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.autoPauseOnBlur)) {
+            // One-shot migration from chrome.storage legacy key → new default OFF.
+            try {
+                localStorage.setItem(OMT_STORAGE_KEYS.keepPlayingOnAltTab, 'false');
+                localStorage.removeItem(OMT_STORAGE_KEYS.autoPauseOnBlur);
             } catch (_) {}
         }
         if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.autoHideChrome)) {

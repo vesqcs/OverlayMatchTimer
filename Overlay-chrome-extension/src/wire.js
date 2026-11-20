@@ -223,6 +223,8 @@
         vid.addEventListener('pause', () => {
             // Do not clear auto-pause flag here — auto-pause itself fires pause.
             // Manual pause clears via togglePlay / click / Shuttle handlers.
+            // v2.2.14: undo host pause-on-hidden when "Não pausar no alt tab" is ON.
+            if (typeof onMaybeKeepPlaying === 'function') onMaybeKeepPlaying();
             syncPlayButtonFromVideo();
         }, vsig);
         vid.addEventListener('ended', () => {
@@ -325,8 +327,9 @@
             }, vsig);
         }
 
-        // v2.2.12: swallow interactive HUD events so dblclick / repeated clicks
-        // on panel, bar or timer never reach the host player (all sites).
+        // v2.2.12 / v2.2.14: swallow click/dblclick on interactive HUD so host
+        // players do not toggle play/pause. Do NOT swallow mousedown/mouseup/
+        // pointerup — that blocked document drag-end (panel stuck to mouse).
         // Bubble phase — our button handlers still run on the target first.
         if (omtRoot) {
             const swallowHostLeak = (e) => {
@@ -334,7 +337,7 @@
                     e.stopPropagation();
                 }
             };
-            ['click', 'dblclick', 'mousedown', 'mouseup', 'pointerdown', 'pointerup'].forEach((type) => {
+            ['click', 'dblclick'].forEach((type) => {
                 omtRoot.addEventListener(type, swallowHostLeak, false);
             });
             omtRoot.addEventListener('click', function (e) {

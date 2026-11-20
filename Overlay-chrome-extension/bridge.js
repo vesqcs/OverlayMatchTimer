@@ -17,7 +17,8 @@
 
   const KEY_AUTO_VOD = 'omtAutoSwitchVod';
   const KEY_SHUTTLE = 'shuttleXpressEnabled';
-  const KEY_AUTO_PAUSE = 'omtAutoPauseOnBlur';
+  const KEY_AUTO_PAUSE_LEGACY = 'omtAutoPauseOnBlur';
+  const KEY_KEEP_PLAYING_ALT_TAB = 'omtKeepPlayingOnAltTab';
   const KEY_CLOCK_POS = 'omtClockPosition';
   const KEY_CLOCK_SIZE = 'omtClockSize';
   const KEY_CLOCK_SHAPE = 'omtClockShape';
@@ -35,7 +36,7 @@
   const DEFAULTS = {
     [KEY_AUTO_VOD]: true,
     [KEY_SHUTTLE]: false,
-    [KEY_AUTO_PAUSE]: false,
+    [KEY_KEEP_PLAYING_ALT_TAB]: false,
     [KEY_CLOCK_POS]: 'top-left',
     [KEY_CLOCK_SIZE]: 'medium',
     [KEY_CLOCK_SHAPE]: 'rounded',
@@ -74,8 +75,13 @@
       if (Object.prototype.hasOwnProperty.call(values, KEY_SHUTTLE)) {
         writeLocal(KEY_SHUTTLE, !!values[KEY_SHUTTLE]);
       }
-      if (Object.prototype.hasOwnProperty.call(values, KEY_AUTO_PAUSE)) {
-        writeLocal(KEY_AUTO_PAUSE, !!values[KEY_AUTO_PAUSE]);
+      if (Object.prototype.hasOwnProperty.call(values, KEY_KEEP_PLAYING_ALT_TAB)) {
+        writeLocal(KEY_KEEP_PLAYING_ALT_TAB, !!values[KEY_KEEP_PLAYING_ALT_TAB]);
+        try { localStorage.removeItem(KEY_AUTO_PAUSE_LEGACY); } catch (_) {}
+      } else if (Object.prototype.hasOwnProperty.call(values, KEY_AUTO_PAUSE_LEGACY)) {
+        // Migrate: ignore old value, land on new default OFF.
+        writeLocal(KEY_KEEP_PLAYING_ALT_TAB, false);
+        try { localStorage.removeItem(KEY_AUTO_PAUSE_LEGACY); } catch (_) {}
       }
       [KEY_CLOCK_POS, KEY_CLOCK_SIZE, KEY_CLOCK_SHAPE, KEY_PANEL_SIZE].forEach((k) => {
         if (Object.prototype.hasOwnProperty.call(values, k)) writeLocal(k, values[k]);
