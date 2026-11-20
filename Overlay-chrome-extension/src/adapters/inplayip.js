@@ -49,9 +49,21 @@
         },
 
         suppressHostControls(videoEl) {
-            document.querySelectorAll('.video-js, .vjs-tech').forEach(el => {
-                el.setAttribute('tabindex', '-1');
-            });
+            // v2.2.13: only soften the player that hosts #omt-root (multi-view
+            // tiles must keep native focus/controls). Single-video identical.
+            const shell = (typeof omtRoot !== 'undefined' && omtRoot && omtRoot.closest)
+                ? omtRoot.closest('.video-js')
+                : null;
+            const target = shell ||
+                (videoEl && videoEl.closest && videoEl.closest('.video-js')) ||
+                videoEl;
+            if (!target) return;
+            try { target.setAttribute('tabindex', '-1'); } catch (_) {}
+            try {
+                target.querySelectorAll('.vjs-tech, video').forEach((el) => {
+                    try { el.setAttribute('tabindex', '-1'); } catch (_) {}
+                });
+            } catch (_) {}
         },
 
         // MSE DVR on Inplay Review exposes a finite duration — keep baseline gate.

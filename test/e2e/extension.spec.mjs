@@ -2110,6 +2110,61 @@ async function run() {
     });
     results.push({ name: 'examino-auto-pause-off', pass: autoPauseOff.ok === true, detail: autoPauseOff });
 
+    // v2.2.13 #8: setting OFF — host pauses on blur; we resume once if we were playing.
+    const examinoHostPauseResume = await page.evaluate(async () => {
+      localStorage.setItem('omtAutoPauseOnBlur', 'false');
+      localStorage.setItem('shuttleXpressEnabled', 'false');
+      const v = document.querySelector('video');
+      if (!v) return { ok: false, reason: 'no-video' };
+      v.muted = true;
+      try { await v.play(); } catch (e) { return { ok: false, reason: 'play-failed', err: String(e) }; }
+      await new Promise((r) => setTimeout(r, 40));
+      if (v.paused) return { ok: false, reason: 'not-playing' };
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+      document.dispatchEvent(new Event('visibilitychange'));
+      // Simulate Examino host pause after our capture note.
+      v.pause();
+      await new Promise((r) => setTimeout(r, 40));
+      const awayPaused = v.paused;
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+      document.dispatchEvent(new Event('visibilitychange'));
+      window.dispatchEvent(new Event('focus'));
+      await new Promise((r) => setTimeout(r, 200));
+      return { ok: awayPaused === true && v.paused === false, awayPaused, afterReturn: v.paused };
+    });
+    results.push({
+      name: 'examino-host-pause-resumes-when-setting-off',
+      pass: examinoHostPauseResume.ok === true,
+      detail: examinoHostPauseResume
+    });
+
+    // v2.2.13 #8: setting OFF + user paused before away → stay paused.
+    const examinoHostPauseManual = await page.evaluate(async () => {
+      localStorage.setItem('omtAutoPauseOnBlur', 'false');
+      const v = document.querySelector('video');
+      if (!v) return { ok: false };
+      try { await v.play(); } catch (_) {}
+      await new Promise((r) => setTimeout(r, 30));
+      v.pause();
+      await new Promise((r) => setTimeout(r, 30));
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+      document.dispatchEvent(new Event('visibilitychange'));
+      // Host "pause" while already paused.
+      v.pause();
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+      document.dispatchEvent(new Event('visibilitychange'));
+      window.dispatchEvent(new Event('focus'));
+      await new Promise((r) => setTimeout(r, 120));
+      return { ok: v.paused === true, paused: v.paused };
+    });
+    results.push({
+      name: 'examino-host-pause-manual-stays-when-setting-off',
+      pass: examinoHostPauseManual.ok === true,
+      detail: examinoHostPauseManual
+    });
+
     const autoPauseOnResume = await page.evaluate(async () => {
       localStorage.setItem('omtAutoPauseOnBlur', 'true');
       localStorage.setItem('shuttleXpressEnabled', 'false');
@@ -4412,6 +4467,54 @@ async function run() {
       name: 'inplayip-clock-in-picture',
       pass: inplayClockInset.ok === true,
       detail: inplayClockInset
+    });
+
+    // v2.2.13 #5A: multi-view — hide host chrome only on the .video-js with #omt-root.
+    const inplayMultiviewNative = await page.evaluate(() => {
+      const primary = document.querySelector('.video-js');
+      const root = document.getElementById('omt-root');
+      if (!primary || !root || !document.documentElement.classList.contains('omt-host-inplayip')) {
+        return { ok: false, reason: 'missing-primary' };
+      }
+      // Ensure HUD is inside primary (production mount).
+      if (!primary.contains(root)) primary.appendChild(root);
+      let secondary = document.getElementById('omt-test-video-js2');
+      if (!secondary) {
+        secondary = document.createElement('div');
+        secondary.id = 'omt-test-video-js2';
+        secondary.className = 'video-js video-js2';
+        secondary.innerHTML =
+          '<video class="vjs-tech"></video>' +
+          '<div class="vjs-control-bar" id="omt-test-bar2">bar2</div>' +
+          '<button class="vjs-big-play-button" id="omt-test-play2">play</button>';
+        (primary.parentElement || document.body).appendChild(secondary);
+      }
+      const bar1 = primary.querySelector('.vjs-control-bar');
+      const bar2 = secondary.querySelector('.vjs-control-bar');
+      const cs = (el) => (el ? getComputedStyle(el) : null);
+      const hidden = (el) => {
+        const c = cs(el);
+        return !c || c.display === 'none' || Number(c.opacity) === 0 || c.pointerEvents === 'none';
+      };
+      // Primary (has #omt-root) stays hidden; secondary native chrome visible.
+      const primaryHidden = !bar1 || hidden(bar1);
+      const secondaryVisible = !!(bar2 && !hidden(bar2) && cs(bar2).display !== 'none');
+      // Tabindex softening must not hit secondary tech.
+      const tech2 = secondary.querySelector('.vjs-tech');
+      const tech2Tab = tech2 ? tech2.getAttribute('tabindex') : null;
+      return {
+        ok: primaryHidden && secondaryVisible && tech2Tab !== '-1',
+        primaryHidden,
+        secondaryVisible,
+        tech2Tab,
+        hudInPrimary: primary.contains(root),
+        secondaryHasHud: secondary.contains(root)
+      };
+    });
+    results.push({
+      name: 'inplayip-multiview-native-controls-on-secondary',
+      pass: inplayMultiviewNative.ok === true,
+      detail: inplayMultiviewNative
     });
 
     // v2.2.12 #6 generic swallow on InPlay panel.
