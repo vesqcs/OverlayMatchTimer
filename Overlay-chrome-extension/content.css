@@ -428,9 +428,10 @@ html.omt-host-examino.omt-hud-on .setting-holder.omt-examino-native-hidden.omt-s
 }
 #match-timer-wrap.omt-clock-pos-bottom-right { bottom: 196px; right: 14px; top: auto; left: auto; transform: none; }
 
-/* v2.2.12 / v2.2.20: InPlay + Xeatre + Examino — pin clock to the video
-   picture (not tab black bars). Examino #omt-root is viewport-fixed since
-   2.2.16; picture inset restores pre-2.2.16 clock-on-video placement.
+/* v2.2.12 / v2.2.21: InPlay + Xeatre + Examino — pin clock to the video
+   picture (not tab black bars). Clock CSS only — never moves/resizes the
+   <video> or host layout. Examino #omt-root is viewport-fixed (v2.2.16);
+   --omt-pic-* follows the video's real on-screen content rect.
    Bottom presets keep a single bottom offset (timeline clearance); only shift
    horizontally into the picture so insets are not doubled. */
 #omt-root.omt-inplayip.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-top-left,

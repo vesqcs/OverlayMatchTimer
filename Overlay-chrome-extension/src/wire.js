@@ -238,7 +238,8 @@
             if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
             syncPlayButtonFromVideo();
         }, vsig);
-        // Picture inset for InPlay/Xeatre clocks — metadata may arrive after mount.
+        // Picture inset (InPlay / Xeatre / Examino) — metadata may arrive after mount.
+        // Clock-only; never writes video/host layout (v2.2.21).
         vid.addEventListener('loadedmetadata', () => {
             if (typeof omtUpdateClockPictureInset === 'function') omtUpdateClockPictureInset();
         }, vsig);
