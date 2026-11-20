@@ -843,6 +843,9 @@
         suppressNativeControls();
         injectUI();
         if (omtRoot) omtSetHudMounted(true);
+        // v2.2.22: Examino host-centre CSS applies with omt-hud-on — one
+        // compact/inset pass so the clock tracks the centred picture (no poll).
+        if (typeof updateCompactLayout === 'function') updateCompactLayout();
         cacheUIRefs();
         if (typeof omtApplyCustomizeFromStorage === 'function') omtApplyCustomizeFromStorage();
         wireEvents();

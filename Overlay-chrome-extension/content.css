@@ -157,10 +157,56 @@ html.omt-host-examino.omt-hud-on .omt-examino-native-hidden:has(.op-player) {
     padding: 0 !important;
 }
 
-html.omt-host-examino.omt-hud-on .main-container.svelte-iq8mv8,
-html.omt-host-examino.omt-hud-on .main-container {
+/* v2.2.22: centre the Examino player block in the tab (field probe: the
+   whole VIDEO→.grow chain sat at y=0 with black below). Fill the viewport
+   on the outer hosts and flex-centre; do NOT resize .video-container /
+   #video-player / .op-player. Beats the sticky-hide undo `display:block`
+   and injected `height:100%` via higher specificity. */
+html.omt-host-examino.omt-hud-on,
+html.omt-host-examino.omt-hud-on body {
     height: 100% !important;
-    max-height: 100% !important;
+    min-height: 100vh !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    background: #000 !important;
+}
+html.omt-host-examino.omt-hud-on .grow.overflow-y-auto,
+html.omt-host-examino.omt-hud-on .grow.overflow-y-auto.omt-examino-native-hidden,
+html.omt-host-examino.omt-hud-on .grow,
+html.omt-host-examino.omt-hud-on .main-container.svelte-iq8mv8,
+html.omt-host-examino.omt-hud-on .main-container,
+html.omt-host-examino.omt-hud-on .main-container.omt-examino-native-hidden {
+    height: 100vh !important;
+    max-height: 100vh !important;
+    min-height: 100vh !important;
+    width: 100% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    overflow: hidden !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-sizing: border-box !important;
+}
+/* Fullscreen: do not impose flex/100vh on the FS element — host owns FS. */
+html.omt-host-examino.omt-hud-on :fullscreen.grow,
+html.omt-host-examino.omt-hud-on :fullscreen.main-container,
+html.omt-host-examino.omt-hud-on :fullscreen.video-container,
+html.omt-host-examino.omt-hud-on :fullscreen.op-player,
+html.omt-host-examino.omt-hud-on :fullscreen#video-player,
+html.omt-host-examino.omt-hud-on :-webkit-full-screen.grow,
+html.omt-host-examino.omt-hud-on :-webkit-full-screen.main-container,
+html.omt-host-examino.omt-hud-on :-webkit-full-screen.video-container,
+html.omt-host-examino.omt-hud-on :-webkit-full-screen.op-player,
+html.omt-host-examino.omt-hud-on :-webkit-full-screen#video-player {
+    display: block !important;
+    align-items: normal !important;
+    justify-content: normal !important;
+    height: 100% !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    width: 100% !important;
+    overflow: hidden !important;
 }
 
 /* Raised settings panel + temp-visible gear must beat
@@ -2177,10 +2223,10 @@ html.omt-host-examino.omt-hud-on .setting-holder.omt-examino-native-hidden.omt-s
     display: none !important;
 }
 
-/* ---- EXAMINO VIEWPORT HUD (v2.2.16) ----
-   Field: player is a top strip; black tab below. Pin HUD to the tab so the
-   timeline sits in that black area and the panel can drag over the whole tab.
-   Do NOT resize OpenPlayer (unlike Xeatre viewport-fit). Root stays
+/* ---- EXAMINO VIEWPORT HUD (v2.2.16 / v2.2.22) ----
+   Pin HUD to the tab so the timeline/panel cover the whole window while
+   host CSS (above) centres the player block in the viewport. Do NOT resize
+   OpenPlayer media nodes (unlike Xeatre viewport-fit). Root stays
    pointer-events:none (base rule) so gear/Source/clicks under empty root work;
    interactive children restore pointer-events:auto.
    FS: no transform ancestors → fixed still covers the FS viewport; existing
