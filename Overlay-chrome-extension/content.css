@@ -428,36 +428,44 @@ html.omt-host-examino.omt-hud-on .setting-holder.omt-examino-native-hidden.omt-s
 }
 #match-timer-wrap.omt-clock-pos-bottom-right { bottom: 196px; right: 14px; top: auto; left: auto; transform: none; }
 
-/* v2.2.12: InPlay + Xeatre — pin clock to letterboxed picture (not black bars).
+/* v2.2.12 / v2.2.20: InPlay + Xeatre + Examino — pin clock to the video
+   picture (not tab black bars). Examino #omt-root is viewport-fixed since
+   2.2.16; picture inset restores pre-2.2.16 clock-on-video placement.
    Bottom presets keep a single bottom offset (timeline clearance); only shift
-   horizontally into the picture so insets are not doubled. Examino unchanged. */
+   horizontally into the picture so insets are not doubled. */
 #omt-root.omt-inplayip.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-top-left,
-#omt-root.omt-xeatre.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-top-left {
+#omt-root.omt-xeatre.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-top-left,
+#omt-root.omt-examino.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-top-left {
     top: calc(var(--omt-pic-top, 0px) + 14px);
     left: calc(var(--omt-pic-left, 0px) + 14px);
 }
 #omt-root.omt-inplayip.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-top-centre,
-#omt-root.omt-xeatre.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-top-centre {
+#omt-root.omt-xeatre.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-top-centre,
+#omt-root.omt-examino.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-top-centre {
     top: calc(var(--omt-pic-top, 0px) + 44px);
     left: calc(var(--omt-pic-left, 0px) + (var(--omt-pic-width, 100%) / 2));
     transform: translateX(-50%);
 }
 #omt-root.omt-inplayip.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-top-right,
-#omt-root.omt-xeatre.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-top-right {
+#omt-root.omt-xeatre.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-top-right,
+#omt-root.omt-examino.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-top-right {
     top: calc(var(--omt-pic-top, 0px) + 14px);
     right: calc(var(--omt-pic-right, 0px) + 14px);
 }
 #omt-root.omt-inplayip.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-bottom-left,
-#omt-root.omt-xeatre.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-bottom-left {
+#omt-root.omt-xeatre.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-bottom-left,
+#omt-root.omt-examino.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-bottom-left {
     left: calc(var(--omt-pic-left, 0px) + 14px);
 }
 #omt-root.omt-inplayip.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-bottom-centre,
-#omt-root.omt-xeatre.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-bottom-centre {
+#omt-root.omt-xeatre.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-bottom-centre,
+#omt-root.omt-examino.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-bottom-centre {
     left: calc(var(--omt-pic-left, 0px) + (var(--omt-pic-width, 100%) / 2));
     transform: translateX(-50%);
 }
 #omt-root.omt-inplayip.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-bottom-right,
-#omt-root.omt-xeatre.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-bottom-right {
+#omt-root.omt-xeatre.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-bottom-right,
+#omt-root.omt-examino.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-bottom-right {
     right: calc(var(--omt-pic-right, 0px) + 14px);
 }
 #match-timer {
@@ -2101,13 +2109,40 @@ html.omt-host-examino.omt-hud-on .setting-holder.omt-examino-native-hidden.omt-s
 
 /* Legacy tick class unused (bookmarks replace colour bands/ticks). */
 .timeline-marker-tick { display: none; }
-/* Compact Examino — keep corner insets; size/style classes still apply */
-#omt-root.omt-examino.omt-compact #match-timer-wrap.omt-clock-pos-top-left { top: 8px; left: 8px; }
-#omt-root.omt-examino.omt-compact #match-timer-wrap.omt-clock-pos-top-centre { top: 36px; left: 50%; transform: translateX(-50%); }
-#omt-root.omt-examino.omt-compact #match-timer-wrap.omt-clock-pos-top-right { top: 8px; right: 8px; }
-#omt-root.omt-examino.omt-compact #match-timer-wrap.omt-clock-pos-bottom-left { bottom: 150px; left: 8px; }
-#omt-root.omt-examino.omt-compact #match-timer-wrap.omt-clock-pos-bottom-centre { bottom: 150px; left: 50%; transform: translateX(-50%); }
-#omt-root.omt-examino.omt-compact #match-timer-wrap.omt-clock-pos-bottom-right { bottom: 150px; right: 8px; }
+/* Compact Examino — tighter picture insets (still relative to video via --omt-pic-*). */
+#omt-root.omt-examino.omt-compact.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-top-left {
+    top: calc(var(--omt-pic-top, 0px) + 8px);
+    left: calc(var(--omt-pic-left, 0px) + 8px);
+}
+#omt-root.omt-examino.omt-compact.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-top-centre {
+    top: calc(var(--omt-pic-top, 0px) + 36px);
+    left: calc(var(--omt-pic-left, 0px) + (var(--omt-pic-width, 100%) / 2));
+    transform: translateX(-50%);
+}
+#omt-root.omt-examino.omt-compact.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-top-right {
+    top: calc(var(--omt-pic-top, 0px) + 8px);
+    right: calc(var(--omt-pic-right, 0px) + 8px);
+}
+#omt-root.omt-examino.omt-compact.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-bottom-left {
+    bottom: 150px;
+    left: calc(var(--omt-pic-left, 0px) + 8px);
+}
+#omt-root.omt-examino.omt-compact.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-bottom-centre {
+    bottom: 150px;
+    left: calc(var(--omt-pic-left, 0px) + (var(--omt-pic-width, 100%) / 2));
+    transform: translateX(-50%);
+}
+#omt-root.omt-examino.omt-compact.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-bottom-right {
+    bottom: 150px;
+    right: calc(var(--omt-pic-right, 0px) + 8px);
+}
+/* Compact fallback when picture inset is not yet available */
+#omt-root.omt-examino.omt-compact:not(.omt-clock-in-picture) #match-timer-wrap.omt-clock-pos-top-left { top: 8px; left: 8px; }
+#omt-root.omt-examino.omt-compact:not(.omt-clock-in-picture) #match-timer-wrap.omt-clock-pos-top-centre { top: 36px; left: 50%; transform: translateX(-50%); }
+#omt-root.omt-examino.omt-compact:not(.omt-clock-in-picture) #match-timer-wrap.omt-clock-pos-top-right { top: 8px; right: 8px; }
+#omt-root.omt-examino.omt-compact:not(.omt-clock-in-picture) #match-timer-wrap.omt-clock-pos-bottom-left { bottom: 150px; left: 8px; }
+#omt-root.omt-examino.omt-compact:not(.omt-clock-in-picture) #match-timer-wrap.omt-clock-pos-bottom-centre { bottom: 150px; left: 50%; transform: translateX(-50%); }
+#omt-root.omt-examino.omt-compact:not(.omt-clock-in-picture) #match-timer-wrap.omt-clock-pos-bottom-right { bottom: 150px; right: 8px; }
 #omt-root.omt-examino.omt-compact #omt-controls-panel {
     /* Clear YouTube-style timeline (tip + track + chrome row). */
     bottom: 100px;
@@ -2191,30 +2226,30 @@ html.omt-host-xeatre.omt-hud-on .video-js.vjs-fluid {
     max-height: 100vh !important;
     z-index: 2147483646;
 }
-/* Narrow Xeatre: shrink in place like Examino/InPlay (v2.2.19).
-   Never force top/right — that jumped the panel to a corner and broke drag.
-   Scale (micro) multiplies via the CSS `scale` property so it does not fight
-   drag `transform: none` / left+bottom anchors. */
+/* Narrow Xeatre: SAME shrink-in-place path as Examino (v2.2.20).
+   No CSS `scale` on the panel — scale + getBoundingClientRect made drag
+   offsets drift to the bottom-right corner in the field.
+   Clamp unscaled size with width min() + max-height (not transform). */
 #omt-root.omt-xeatre.omt-compact #omt-controls-panel {
     width: min(560px, calc(100% - 16px));
+    max-height: calc(100vh - 12px);
+    overflow-x: hidden;
+    overflow-y: auto;
 }
 #omt-root.omt-xeatre.omt-xeatre-micro #omt-controls-panel {
-    width: min(480px, calc(100% - 8px));
-    scale: 0.55;
-    transform-origin: bottom center;
-    /* Default only (inline user bottom wins) — keep card in a tiny popup
-       without parking it at top-right (old top:4px caused the field jump). */
-    bottom: 8px;
-    max-height: calc(100vh - 16px);
-    overflow: hidden;
+    width: min(400px, calc(100% - 12px));
+    max-height: calc(100vh - 8px);
+    overflow-x: hidden;
+    overflow-y: auto;
 }
 #omt-root.omt-xeatre.omt-xeatre-micro .omt-timeline-bar {
     padding: 10px 4px 2px;
 }
-#omt-root.omt-xeatre.omt-xeatre-micro #match-timer-wrap {
-    scale: 0.8;
-    transform-origin: top left;
-}
 #omt-root.omt-xeatre.omt-xeatre-micro .controls-content {
+    padding: 4px 6px 6px;
     gap: 4px;
+}
+#omt-root.omt-xeatre.omt-xeatre-micro .ctrl-btn {
+    padding: 4px 5px;
+    min-width: 28px;
 }

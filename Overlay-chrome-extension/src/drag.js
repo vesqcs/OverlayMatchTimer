@@ -3,7 +3,8 @@
        15. PANEL DRAG SYSTEM
        ========================================================= */
     function fazerArrastavel(panel, handle) {
-        let pos3 = 0, pos4 = 0;
+        let grabOffsetX = 0;
+        let grabOffsetY = 0;
         let dragging = false;
         let activePointerId = null;
 
@@ -14,35 +15,25 @@
                 return;
             }
             e.preventDefault();
-            const clientX = e.clientX;
-            const clientY = e.clientY;
-            const dx = clientX - pos3;
-            const dy = clientY - pos4;
-            pos3 = clientX;
-            pos4 = clientY;
 
-            // Use visual box (getBoundingClientRect) — offsetTop/Left break when
-            // the panel is bottom-anchored or CSS `scale` is applied (Xeatre micro).
-            const rootRect = omtRoot ? omtRoot.getBoundingClientRect() : null;
-            const rect = panel.getBoundingClientRect();
-            const baseLeft = rootRect ? (rect.left - rootRect.left) : rect.left;
-            const baseTop = rootRect ? (rect.top - rootRect.top) : rect.top;
-            const maxTop = rootRect
-                ? Math.max(0, rootRect.height - rect.height)
-                : Math.max(0, window.innerHeight - rect.height);
-            const maxLeft = rootRect
-                ? Math.max(0, rootRect.width - rect.width)
-                : Math.max(0, window.innerWidth - rect.width);
+            // Unscaled size + pointer grab offset (v2.2.20). Never mix scaled
+            // getBoundingClientRect with layout left/bottom — that drifted to
+            // the corner on Xeatre. Same path Examino uses: left/top in px.
+            const rootRect = omtRoot
+                ? omtRoot.getBoundingClientRect()
+                : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+            const panelW = panel.offsetWidth || 0;
+            const panelH = panel.offsetHeight || 0;
+            const maxLeft = Math.max(0, rootRect.width - panelW);
+            const maxTop = Math.max(0, rootRect.height - panelH);
 
-            let newTop = baseTop + dy;
-            let newLeft = baseLeft + dx;
-
-            newTop = Math.max(0, Math.min(newTop, maxTop));
+            let newLeft = e.clientX - rootRect.left - grabOffsetX;
+            let newTop = e.clientY - rootRect.top - grabOffsetY;
             newLeft = Math.max(0, Math.min(newLeft, maxLeft));
+            newTop = Math.max(0, Math.min(newTop, maxTop));
 
-            // One consistent anchor while dragging: left + top (bottom cleared).
-            panel.style.top = newTop + 'px';
             panel.style.left = newLeft + 'px';
+            panel.style.top = newTop + 'px';
             panel.style.bottom = 'auto';
             panel.style.right = 'auto';
             panel.style.transform = 'none';
@@ -79,21 +70,24 @@
             if (e.button != null && e.button !== 0) return;
             e.preventDefault();
 
-            // Anchor the panel at its current rendered position before clearing transforms
-            const rect = panel.getBoundingClientRect();
             const rootRect = omtRoot
                 ? omtRoot.getBoundingClientRect()
-                : { top: 0, left: 0 };
-            panel.style.top = (rect.top - rootRect.top) + 'px';
+                : { left: 0, top: 0 };
+            const rect = panel.getBoundingClientRect();
+
+            // Convert whatever CSS (bottom / left:50% / transform) into left+top px
+            // before the first move — one consistent anchor for the whole gesture.
             panel.style.left = (rect.left - rootRect.left) + 'px';
-            panel.style.transform = 'none';
+            panel.style.top = (rect.top - rootRect.top) + 'px';
             panel.style.bottom = 'auto';
             panel.style.right = 'auto';
-            // User drag takes ownership — do not auto-restore CSS center later.
+            panel.style.transform = 'none';
             try { delete panel.dataset.omtXeatreAutoClamp; } catch (_) {}
 
-            pos3 = e.clientX;
-            pos4 = e.clientY;
+            // Pointer offset inside the panel (client space).
+            grabOffsetX = e.clientX - rect.left;
+            grabOffsetY = e.clientY - rect.top;
+
             dragging = true;
             activePointerId = e.pointerId != null ? e.pointerId : null;
 

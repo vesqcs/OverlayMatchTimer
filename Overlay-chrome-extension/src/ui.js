@@ -93,9 +93,11 @@
     }
 
     /**
-     * v2.2.12: Anchor #match-timer-wrap to the letterboxed video *picture*
-     * (InPlay + Xeatre). Examino already sits on the picture — leave it alone.
-     * Sets CSS vars on #omt-root; no polling — called from resize / FS / fit.
+     * v2.2.12 / v2.2.20: Anchor #match-timer-wrap to the video *picture*
+     * (InPlay + Xeatre + Examino). Examino's #omt-root is viewport-fixed
+     * (v2.2.16), so without this the clock sits on the tab — including the
+     * black band below the player. Panel/bar stay full-tab.
+     * Sets CSS vars on #omt-root; no polling — resize / fullscreen / fit only.
      */
     function omtVideoContentRect(videoEl) {
         if (!videoEl || !videoEl.getBoundingClientRect) return null;
@@ -126,7 +128,7 @@
     function omtUpdateClockPictureInset() {
         if (!omtRoot) return;
         const id = site && site.id;
-        if (id !== 'inplayip' && id !== 'xeatre') {
+        if (id !== 'inplayip' && id !== 'xeatre' && id !== 'examino') {
             try {
                 omtRoot.classList.remove('omt-clock-in-picture');
                 ['--omt-pic-top', '--omt-pic-left', '--omt-pic-right', '--omt-pic-bottom',

@@ -890,10 +890,10 @@ async function run() {
       if (player) player.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;';
       const bottom = document.getElementById('bottom-controls');
       if (bottom) bottom.style.display = 'none';
-      if (typeof window.__omtUpdateClockPictureInset === 'function') {
-        /* no-op on examino */
-      }
       window.dispatchEvent(new Event('resize'));
+      if (typeof window.__omtUpdateClockPictureInset === 'function') {
+        window.__omtUpdateClockPictureInset();
+      }
     });
     await page.waitForTimeout(120);
     const examinoViewportHud = await page.evaluate(() => {
@@ -926,6 +926,120 @@ async function run() {
       pass: examinoViewportHud.ok === true,
       detail: examinoViewportHud
     });
+
+    // v2.2.20: Examino clock sits inside the video picture (not the black tab
+    // band) even though #omt-root is viewport-fixed. Panel/bar stay full-tab.
+    async function assertExaminoClockInVideo(label) {
+      return page.evaluate((label) => {
+        const root = document.getElementById('omt-root');
+        const wrap = document.getElementById('match-timer-wrap');
+        const v = document.querySelector('video');
+        if (!root || !wrap || !v) return { ok: false, reason: 'missing', label };
+        try {
+          localStorage.setItem('omtClockPosition', 'top-left');
+        } catch (_) {}
+        wrap.classList.remove(
+          'omt-clock-pos-top-centre', 'omt-clock-pos-top-right',
+          'omt-clock-pos-bottom-left', 'omt-clock-pos-bottom-centre',
+          'omt-clock-pos-bottom-right'
+        );
+        wrap.classList.add('omt-clock-pos-top-left', 'is-visible');
+        root.classList.add('omt-timer-on');
+        wrap.style.display = 'block';
+        wrap.style.opacity = '1';
+        if (typeof window.__omtUpdateClockPictureInset === 'function') {
+          window.__omtUpdateClockPictureInset();
+        } else {
+          window.dispatchEvent(new Event('resize'));
+        }
+        const vr = v.getBoundingClientRect();
+        const cr = wrap.getBoundingClientRect();
+        const inside =
+          cr.width > 4 && cr.height > 4 &&
+          cr.left >= vr.left - 1 && cr.right <= vr.right + 1 &&
+          cr.top >= vr.top - 1 && cr.bottom <= vr.bottom + 1;
+        const inPicture = root.classList.contains('omt-clock-in-picture');
+        const picTop = parseFloat(root.style.getPropertyValue('--omt-pic-top')) || 0;
+        return {
+          ok: inside && inPicture && picTop >= 0,
+          label,
+          inside,
+          inPicture,
+          picTop,
+          clock: {
+            left: Math.round(cr.left), top: Math.round(cr.top),
+            right: Math.round(cr.right), bottom: Math.round(cr.bottom)
+          },
+          video: {
+            left: Math.round(vr.left), top: Math.round(vr.top),
+            right: Math.round(vr.right), bottom: Math.round(vr.bottom),
+            h: Math.round(vr.height)
+          },
+          viewportH: window.innerHeight
+        };
+      }, label);
+    }
+
+    const examinoClockWindowed = await assertExaminoClockInVideo('windowed-narrow');
+    results.push({
+      name: 'examino-clock-inside-video-windowed',
+      pass: examinoClockWindowed.ok === true,
+      detail: examinoClockWindowed
+    });
+
+    const examinoClockFs = await page.evaluate(async () => {
+      const root = document.getElementById('omt-root');
+      const wrap = document.getElementById('match-timer-wrap');
+      const v = document.querySelector('video');
+      if (!root || !wrap || !v) return { ok: false, reason: 'missing' };
+      const fsTarget = document.getElementById('op-player') ||
+        document.querySelector('.op-player') || v.parentElement || document.documentElement;
+      try {
+        if (fsTarget.requestFullscreen) await fsTarget.requestFullscreen();
+      } catch (e) {
+        return { ok: false, reason: 'fs-denied', err: String(e && e.message || e) };
+      }
+      await new Promise((r) => setTimeout(r, 120));
+      if (typeof window.__omtUpdateClockPictureInset === 'function') {
+        window.__omtUpdateClockPictureInset();
+      }
+      wrap.classList.add('omt-clock-pos-top-left', 'is-visible');
+      root.classList.add('omt-timer-on');
+      wrap.style.display = 'block';
+      const vr = v.getBoundingClientRect();
+      const cr = wrap.getBoundingClientRect();
+      const inside =
+        cr.width > 4 && cr.height > 4 &&
+        cr.left >= vr.left - 1 && cr.right <= vr.right + 1 &&
+        cr.top >= vr.top - 1 && cr.bottom <= vr.bottom + 1;
+      const inPicture = root.classList.contains('omt-clock-in-picture');
+      const out = {
+        ok: inside && inPicture && !!document.fullscreenElement,
+        inside,
+        inPicture,
+        hasFs: !!document.fullscreenElement,
+        clock: {
+          left: Math.round(cr.left), top: Math.round(cr.top),
+          right: Math.round(cr.right), bottom: Math.round(cr.bottom)
+        },
+        video: {
+          left: Math.round(vr.left), top: Math.round(vr.top),
+          right: Math.round(vr.right), bottom: Math.round(vr.bottom)
+        }
+      };
+      try { await document.exitFullscreen(); } catch (_) {}
+      await new Promise((r) => setTimeout(r, 80));
+      if (typeof window.__omtUpdateClockPictureInset === 'function') {
+        window.__omtUpdateClockPictureInset();
+      }
+      return out;
+    });
+    results.push({
+      name: 'examino-clock-inside-video-fullscreen',
+      pass: examinoClockFs.ok === true || examinoClockFs.reason === 'fs-denied',
+      detail: examinoClockFs
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v220_examino_clock_in_video.png'), fullPage: true });
 
     const examinoDragIntoBlack = await page.evaluate(async () => {
       const panel = document.getElementById('omt-controls-panel');
@@ -5770,7 +5884,7 @@ async function run() {
       detail: xeatreFsFit
     });
 
-    // v2.2.11: shrink → grow restores HUD scale without a click (default prefs).
+    // v2.2.20: shrink → grow uses width min() only (no panel CSS scale).
     await page.setViewportSize({ width: 960, height: 540 });
     await page.waitForTimeout(80);
     await page.evaluate(() => {
@@ -5790,18 +5904,19 @@ async function run() {
       const panel = document.getElementById('omt-controls-panel');
       const cs = panel ? getComputedStyle(panel) : null;
       const scale = cs ? (cs.scale || 'none') : 'missing';
-      const scaled = scale !== 'none' && scale !== '1' && scale !== '1 1' &&
-        scale !== '1 1 1' && !(parseFloat(scale) === 1);
+      const noScale = scale === 'none' || scale === '1' || scale === '1 1' ||
+        scale === '1 1 1' || parseFloat(scale) === 1;
+      const width = panel ? Math.round(panel.getBoundingClientRect().width) : 0;
       return {
         micro: !!(root && root.classList.contains('omt-xeatre-micro')),
+        noScale,
         scale,
-        scaled,
-        width: panel ? Math.round(panel.getBoundingClientRect().width) : 0
+        width,
+        shrunk: width > 0 && width <= 200
       };
     });
     await page.setViewportSize({ width: 960, height: 540 });
     await page.waitForTimeout(150);
-    // No click — only resize + fit.
     const xeatreScaleRestored = await page.evaluate(() => {
       if (typeof window.__omtXeatreFitViewport === 'function') window.__omtXeatreFitViewport();
       const root = document.getElementById('omt-root');
@@ -5809,24 +5924,23 @@ async function run() {
       if (!root || !panel) return { ok: false, reason: 'missing' };
       const cs = getComputedStyle(panel);
       const scale = cs.scale || 'none';
-      const inlineTransform = panel.style.getPropertyValue('transform') || '';
       const micro = root.classList.contains('omt-xeatre-micro');
-      const scaleOk = !micro && (scale === 'none' || scale === '1' || scale === '1 1' ||
-        scale === '1 1 1' || parseFloat(scale) === 1);
-      const noStickyInlineScale = !/scale\s*\(/.test(inlineTransform);
+      const noScale = scale === 'none' || scale === '1' || scale === '1 1' ||
+        scale === '1 1 1' || parseFloat(scale) === 1;
+      const width = Math.round(panel.getBoundingClientRect().width);
       return {
-        ok: scaleOk && noStickyInlineScale && !panel.classList.contains('omt-panel-size-small'),
-        micro, scale, inlineTransform,
-        width: Math.round(panel.getBoundingClientRect().width)
+        ok: !micro && noScale && width >= 400 && !panel.classList.contains('omt-panel-size-small'),
+        micro, scale, width
       };
     });
     results.push({
       name: 'xeatre-scale-restores-on-grow-default',
-      pass: xeatreScaleRestored.ok === true && xeatreScaleTiny.micro === true && xeatreScaleTiny.scaled === true,
+      pass: xeatreScaleRestored.ok === true && xeatreScaleTiny.micro === true &&
+        xeatreScaleTiny.noScale === true && xeatreScaleTiny.shrunk === true,
       detail: { tiny: xeatreScaleTiny, restored: xeatreScaleRestored }
     });
 
-    // v2.2.11: custom small + compact prefs survive shrink → grow (scale is multiplier).
+    // Custom small + compact prefs survive shrink → grow (width min, no scale).
     await page.evaluate(() => {
       localStorage.setItem('omtPanelSize', 'small');
       localStorage.setItem('omtPanelCompact', 'true');
@@ -5849,18 +5963,20 @@ async function run() {
       const root = document.getElementById('omt-root');
       const panel = document.getElementById('omt-controls-panel');
       const cs = panel ? getComputedStyle(panel) : null;
+      const scale = cs ? (cs.scale || 'none') : 'missing';
+      const noScale = scale === 'none' || scale === '1' || scale === '1 1' ||
+        scale === '1 1 1' || parseFloat(scale) === 1;
       return {
         micro: !!(root && root.classList.contains('omt-xeatre-micro')),
         small: !!(panel && panel.classList.contains('omt-panel-size-small')),
         panelCompact: !!(panel && panel.classList.contains('omt-panel-compact')),
-        scale: cs ? (cs.scale || 'none') : 'missing',
+        noScale,
         width: panel ? Math.round(panel.getBoundingClientRect().width) : 0
       };
     });
     await page.setViewportSize({ width: 960, height: 540 });
     await page.waitForTimeout(150);
     const xeatreScaleCustomRestored = await page.evaluate(() => {
-      // No click. Fit on resize clears micro inline leftovers and re-applies prefs.
       if (typeof window.__omtXeatreFitViewport === 'function') window.__omtXeatreFitViewport();
       const root = document.getElementById('omt-root');
       const panel = document.getElementById('omt-controls-panel');
@@ -5868,16 +5984,15 @@ async function run() {
       const cs = getComputedStyle(panel);
       const scale = cs.scale || 'none';
       const micro = root.classList.contains('omt-xeatre-micro');
-      const scaleOk = !micro && (scale === 'none' || scale === '1' || scale === '1 1' ||
-        scale === '1 1 1' || parseFloat(scale) === 1);
-      const inlineTransform = panel.style.getPropertyValue('transform') || '';
+      const noScale = scale === 'none' || scale === '1' || scale === '1 1' ||
+        scale === '1 1 1' || parseFloat(scale) === 1;
       const small = panel.classList.contains('omt-panel-size-small');
       const panelCompact = panel.classList.contains('omt-panel-compact');
       const width = Math.round(panel.getBoundingClientRect().width);
       const widthOk = width > 40 && width <= 500;
       return {
-        ok: scaleOk && !/scale\s*\(/.test(inlineTransform) && small && panelCompact && widthOk,
-        micro, scale, inlineTransform, small, panelCompact, width
+        ok: !micro && noScale && small && panelCompact && widthOk,
+        micro, scale, small, panelCompact, width
       };
     });
     results.push({
@@ -5885,6 +6000,7 @@ async function run() {
       pass: xeatreScaleCustomRestored.ok === true &&
         xeatreScaleCustomTiny.micro === true &&
         xeatreScaleCustomTiny.small === true &&
+        xeatreScaleCustomTiny.noScale === true &&
         xeatreScaleCustom.small === true,
       detail: { setup: xeatreScaleCustom, tiny: xeatreScaleCustomTiny, restored: xeatreScaleCustomRestored }
     });
@@ -6101,88 +6217,46 @@ async function run() {
       detail: xeatrePanelDrag
     });
 
-    // v2.2.19: narrow window shrinks in place (like Examino) — no top-right jump,
-    // drag follows L/R/U/D and does not stick to the right edge.
-    await page.setViewportSize({ width: 960, height: 540 });
-    await page.waitForTimeout(120);
-    await page.evaluate(() => {
-      localStorage.setItem('omtPanelSize', 'medium');
-      localStorage.setItem('omtPanelCompact', 'false');
-      const panel = document.getElementById('omt-controls-panel');
-      if (panel) {
+    // v2.2.20 field repro: 779×678, panel left 59 / bottom 79, medium.
+    // Pointerdown on handle then move −50x/−50y — panel must follow that delta
+    // and must NOT jump to the right or bottom edge (2.2.19 field failure).
+    async function seedXeatreFieldPanel() {
+      await page.setViewportSize({ width: 779, height: 678 });
+      await page.waitForTimeout(120);
+      await page.evaluate(() => {
+        localStorage.setItem('omtPanelSize', 'medium');
+        localStorage.setItem('omtPanelCompact', 'false');
+        const panel = document.getElementById('omt-controls-panel');
+        if (!panel) return;
         panel.classList.remove('omt-panel-size-small', 'omt-panel-compact');
         panel.style.opacity = '1';
         panel.style.pointerEvents = 'auto';
-        // Seed a mid-window user position (left+bottom), then shrink.
-        panel.style.left = '120px';
-        panel.style.bottom = '80px';
+        panel.style.left = '59px';
+        panel.style.bottom = '79px';
         panel.style.top = 'auto';
         panel.style.right = 'auto';
         panel.style.transform = 'none';
-      }
-      if (typeof window.__omtXeatreFitViewport === 'function') window.__omtXeatreFitViewport();
-    });
-    const beforeNarrow = await page.evaluate(() => {
-      const panel = document.getElementById('omt-controls-panel');
-      const r = panel.getBoundingClientRect();
-      return { left: r.left, top: r.top, width: r.width, bottom: r.bottom };
-    });
-    await page.setViewportSize({ width: 779, height: 678 });
-    await page.waitForTimeout(200);
-    await page.evaluate(() => {
-      if (typeof window.__omtXeatreFitViewport === 'function') window.__omtXeatreFitViewport();
-    });
-    await page.waitForTimeout(80);
-    const afterNarrow = await page.evaluate(() => {
-      const root = document.getElementById('omt-root');
-      const panel = document.getElementById('omt-controls-panel');
-      if (!root || !panel) return { ok: false, reason: 'missing' };
-      const rr = root.getBoundingClientRect();
-      const r = panel.getBoundingClientRect();
-      const jumpedTop = r.top < 40;
-      const pinnedRight = (rr.right - r.right) < 4 && r.left > rr.width * 0.45;
-      const inside = r.left >= -1 && r.right <= rr.right + 1 &&
-        r.top >= -1 && r.bottom <= rr.bottom + 1;
-      const shrunkOrFits = r.width <= Math.min(600, rr.width - 8) + 1;
-      return {
-        ok: inside && shrunkOrFits && !jumpedTop && !pinnedRight,
-        left: Math.round(r.left),
-        top: Math.round(r.top),
-        width: Math.round(r.width),
-        rightGap: Math.round(rr.right - r.right),
-        jumpedTop,
-        pinnedRight,
-        inside,
-        shrunkOrFits,
-        compact: root.classList.contains('omt-compact'),
-        beforeLeft: null
-      };
-    });
-    afterNarrow.beforeLeft = beforeNarrow.left;
-    // Left should stay near the seeded 120px (allow clamp if needed), not jump to right.
-    const leftStable = Math.abs(afterNarrow.left - beforeNarrow.left) < 80;
-    results.push({
-      name: 'xeatre-narrow-panel-shrinks-in-place',
-      pass: afterNarrow.ok === true && leftStable,
-      detail: { beforeNarrow, afterNarrow, leftStable }
-    });
+        if (typeof window.__omtXeatreFitViewport === 'function') window.__omtXeatreFitViewport();
+      });
+      await page.waitForTimeout(60);
+    }
 
-    const narrowDrag = await page.evaluate(async () => {
-      const panel = document.getElementById('omt-controls-panel');
-      const handle = document.getElementById('controls-handle');
-      const root = document.getElementById('omt-root');
-      if (!panel || !handle || !root) return { ok: false, reason: 'missing' };
-      panel.style.opacity = '1';
-      panel.style.pointerEvents = 'auto';
-
-      async function dragBy(dx, dy) {
+    async function dragHandleDelta(dx, dy) {
+      return page.evaluate(async ({ dx, dy }) => {
+        const panel = document.getElementById('omt-controls-panel');
+        const handle = document.getElementById('controls-handle');
+        const root = document.getElementById('omt-root');
+        if (!panel || !handle || !root) return { ok: false, reason: 'missing' };
+        panel.style.opacity = '1';
+        panel.style.pointerEvents = 'auto';
+        const before = panel.getBoundingClientRect();
         const hr = handle.getBoundingClientRect();
         const x0 = hr.left + hr.width / 2;
         const y0 = hr.top + Math.min(10, hr.height / 2);
-        const before = panel.getBoundingClientRect();
         handle.dispatchEvent(new MouseEvent('mousedown', {
           bubbles: true, cancelable: true, clientX: x0, clientY: y0, button: 0, view: window
         }));
+        // Mid-gesture sample (no mouseup yet) — field bug jumped on first move.
         window.dispatchEvent(new MouseEvent('mousemove', {
           bubbles: true, cancelable: true, clientX: x0 + dx, clientY: y0 + dy, view: window
         }));
@@ -6193,44 +6267,84 @@ async function run() {
         }));
         await new Promise((r) => setTimeout(r, 40));
         const after = panel.getBoundingClientRect();
-        return { before, mid, after };
-      }
+        const rr = root.getBoundingClientRect();
+        const dLeft = mid.left - before.left;
+        const dTop = mid.top - before.top;
+        const deltaOk = Math.abs(dLeft - dx) <= 6 && Math.abs(dTop - dy) <= 6;
+        const notRightEdge = (rr.right - mid.right) > 20;
+        const notBottomEdge = (rr.bottom - mid.bottom) > 20;
+        const notCornerJump = mid.left < before.left + 10 && mid.top < before.top + 10;
+        return {
+          ok: deltaOk && notRightEdge && notBottomEdge && notCornerJump,
+          before: { left: Math.round(before.left), top: Math.round(before.top) },
+          mid: { left: Math.round(mid.left), top: Math.round(mid.top) },
+          after: { left: Math.round(after.left), top: Math.round(after.top) },
+          dLeft: Math.round(dLeft),
+          dTop: Math.round(dTop),
+          dx, dy,
+          deltaOk,
+          notRightEdge,
+          notBottomEdge,
+          rightGap: Math.round(rr.right - mid.right),
+          bottomGap: Math.round(rr.bottom - mid.bottom),
+          inline: {
+            left: panel.style.left,
+            top: panel.style.top,
+            bottom: panel.style.bottom,
+            transform: panel.style.transform
+          }
+        };
+      }, { dx, dy });
+    }
 
-      const right = await dragBy(50, 0);
-      const left = await dragBy(-70, 0);
-      const up = await dragBy(0, -40);
-      const down = await dragBy(0, 50);
-      const rr = root.getBoundingClientRect();
-      const final = panel.getBoundingClientRect();
-      const follows = (step, axis, sign) => {
-        const d = axis === 'x'
-          ? (step.mid.left - step.before.left)
-          : (step.mid.top - step.before.top);
-        return sign > 0 ? d > 8 : d < -8;
-      };
-      const notPinnedRight = (rr.right - final.right) > 8 || final.left < rr.width * 0.55;
-      const inside = final.left >= -1 && final.right <= rr.right + 1 &&
-        final.top >= -1 && final.bottom <= rr.bottom + 1;
+    await seedXeatreFieldPanel();
+    const seeded = await page.evaluate(() => {
+      const panel = document.getElementById('omt-controls-panel');
+      const r = panel.getBoundingClientRect();
       return {
-        ok: follows(right, 'x', 1) && follows(left, 'x', -1) &&
-          follows(up, 'y', -1) && follows(down, 'y', 1) &&
-          notPinnedRight && inside,
-        followsRight: follows(right, 'x', 1),
-        followsLeft: follows(left, 'x', -1),
-        followsUp: follows(up, 'y', -1),
-        followsDown: follows(down, 'y', 1),
-        notPinnedRight,
-        inside,
-        finalLeft: Math.round(final.left),
-        finalRightGap: Math.round(rr.right - final.right)
+        left: Math.round(r.left),
+        bottom: Math.round(window.innerHeight - r.bottom),
+        width: Math.round(r.width),
+        styleLeft: panel.style.left,
+        styleBottom: panel.style.bottom
       };
     });
     results.push({
-      name: 'xeatre-narrow-panel-drag-follows-no-right-pin',
-      pass: narrowDrag.ok === true,
-      detail: narrowDrag
+      name: 'xeatre-field-panel-seed-779',
+      pass: seeded.left === 59 && Math.abs(seeded.bottom - 79) <= 1 && seeded.width <= 763,
+      detail: seeded
     });
-    await page.screenshot({ path: path.join(ARTIFACTS, 'v219_xeatre_narrow_panel.png'), fullPage: true });
+
+    const fieldDrag = await dragHandleDelta(-50, -50);
+    results.push({
+      name: 'xeatre-field-drag-delta-no-corner-jump',
+      pass: fieldDrag.ok === true,
+      detail: fieldDrag
+    });
+
+    // Repeat after another resize (still narrow) — must still follow the pointer.
+    await page.setViewportSize({ width: 700, height: 678 });
+    await page.waitForTimeout(150);
+    await page.evaluate(() => {
+      const panel = document.getElementById('omt-controls-panel');
+      if (panel) {
+        panel.style.left = '59px';
+        panel.style.bottom = '79px';
+        panel.style.top = 'auto';
+        panel.style.right = 'auto';
+        panel.style.transform = 'none';
+      }
+      if (typeof window.__omtXeatreFitViewport === 'function') window.__omtXeatreFitViewport();
+    });
+    await page.waitForTimeout(60);
+    const fieldDragAfterResize = await dragHandleDelta(-50, -50);
+    results.push({
+      name: 'xeatre-field-drag-delta-after-resize',
+      pass: fieldDragAfterResize.ok === true,
+      detail: fieldDragAfterResize
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v220_xeatre_field_drag.png'), fullPage: true });
+
     // Restore a comfortable viewport for remaining Xeatre checks.
     await page.setViewportSize({ width: 960, height: 540 });
     await page.waitForTimeout(120);
