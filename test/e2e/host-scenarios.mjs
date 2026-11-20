@@ -10,12 +10,16 @@ const ROUTES = [
   { re: /^\/examino\/play\/dvr\/bus-mock/, file: 'examino-ovenplayer-bus-mock.html' },
   { re: /^\/examino\/play\/dvr\//, file: 'examino-field-mock.html' },
   { re: /^\/xeatre\/dvrplayer\.html/, file: 'xeatre-dvr-mock.html' },
+  // Field live ULL: nanoplayer.html?StreamID=… (nanoStream H5Live, not Video.js).
+  { re: /^\/xeatre\/nanoplayer\.html/, file: 'xeatre-nanoplayer-mock.html' },
   { re: /^\/inplay\/schedule\/?$/, file: 'inplayip-schedule-mock.html' }
 ];
 
 export const EXAMINO_FIELD_PATH = '/examino/play/dvr/match-123';
 export const EXAMINO_BUS_MOCK_PATH = '/examino/play/dvr/bus-mock';
 export const XEATRE_DVR_PATH = '/xeatre/dvrplayer.html';
+export const XEATRE_NANOPLAYER_PATH =
+  '/xeatre/nanoplayer.html?StreamID=mock&StreamEnd=1&TimerId=1&WStart=0';
 export const INPLAY_SCHEDULE_PATH = '/inplay/schedule';
 
 function contentType(filePath) {
@@ -209,7 +213,7 @@ async function hudCoverageWhileCurtainOpen(page) {
       }
     }
     // Our bar/panel centres specifically (where the field report saw them).
-    const ids = ['controls-panel', 'omt-timeline-bar', 'match-timer-wrap'];
+    const ids = ['omt-controls-panel', 'omt-timeline-bar', 'match-timer-wrap'];
     const hudOnTop = [];
     ids.forEach((id) => {
       const n = document.getElementById(id);

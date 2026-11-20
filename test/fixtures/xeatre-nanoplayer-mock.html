@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>nanoplayer — Xeatre live ULL mock</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #000; color: #eee; font-family: "Segoe UI", sans-serif; }
+    #playerDiv {
+      position: relative; width: 100%; height: 100%; background: #000; overflow: hidden;
+    }
+    /* Field: VIDEO#h5live-playerDiv inside DIV#playerDiv (nanoStream H5Live). */
+    video#h5live-playerDiv {
+      position: absolute; inset: 0; width: 100%; height: 100%;
+      object-fit: contain; background: #143d2b;
+    }
+    /* Host chrome — same ids/classes as H5Live (clashed with pre-2.2.17 OMT HUD). */
+    #controls-panel.glass-panel {
+      position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%);
+      width: min(720px, 92%); z-index: 6;
+      background: rgba(20, 20, 20, 0.82); border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 10px; padding: 10px 12px; opacity: 1;
+    }
+    #controls-panel .controls-content {
+      display: flex; align-items: center; gap: 10px; color: #ddd; font-size: 13px;
+    }
+    #controls-panel .controls-content button {
+      background: #222; color: #ddd; border: 1px solid #444; padding: 6px 10px;
+      border-radius: 4px; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div id="playerDiv">
+    <video id="h5live-playerDiv" playsinline muted></video>
+    <div id="controls-panel" class="glass-panel">
+      <div class="controls-content">
+        <button type="button" id="nano-play">Play</button>
+        <button type="button" id="nano-live">LIVE</button>
+        <button type="button" id="nano-fs">FS</button>
+        <span>H5Live native bar</span>
+      </div>
+    </div>
+  </div>
+  <script>
+    (function () {
+      document.documentElement.dataset.omtSite = 'xeatre';
+      const stats = window.__xeatreNanoStats = { play: 0, pause: 0, hostClicks: 0, player: 'h5live' };
+      const v = document.getElementById('h5live-playerDiv');
+      ['play', 'pause'].forEach((type) => {
+        v.addEventListener(type, () => { stats[type] += 1; });
+      });
+      document.querySelectorAll('#controls-panel button').forEach((b) => {
+        b.addEventListener('click', () => { stats.hostClicks += 1; });
+      });
+      // Real mp4 so play/pause e2e works (same asset as DVR mock).
+      v.src = '/xeatre-color-bars.mp4';
+      v.addEventListener('loadeddata', () => {
+        v.play().catch(() => {});
+      }, { once: true });
+      v.play().catch(() => {});
+      // Mimic nanoplayer console noise analysts see — tests must ignore these.
+      console.warn('Permissions policy violation: unload is not allowed in this document.');
+    })();
+  </script>
+</body>
+</html>

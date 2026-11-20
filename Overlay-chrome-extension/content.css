@@ -76,7 +76,10 @@ html.omt-host-xeatre.omt-hud-on #AutoHide,
 html.omt-host-xeatre.omt-hud-on #autohide,
 html.omt-host-xeatre.omt-hud-on .xeatre-control-panel:not(:has(#hdmi-video)):not(:has(video)):not(:has(.vjs-tech)):not(:has(.video-js)),
 html.omt-host-xeatre.omt-hud-on .xeatre-host-panel:not(:has(#hdmi-video)):not(:has(video)):not(:has(.vjs-tech)):not(:has(.video-js)),
-html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:not(:has(#hdmi-video)):not(:has(video)):not(:has(.vjs-tech)):not(:has(.video-js)) {
+/* H5Live nanoplayer (live ULL): host #controls-panel — OMT HUD is #omt-controls-panel. */
+html.omt-host-xeatre.omt-hud-on #controls-panel:not(:has(#hdmi-video)):not(:has(video)):not(:has(.vjs-tech)):not(:has(.video-js)):not(:has(#h5live-playerDiv)),
+html.omt-host-xeatre.omt-hud-on #controls-panel .controls-content,
+html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:not(:has(#hdmi-video)):not(:has(video)):not(:has(.vjs-tech)):not(:has(.video-js)):not(:has(#h5live-playerDiv)) {
     display: none !important;
     visibility: hidden !important;
     opacity: 0 !important;
@@ -85,9 +88,12 @@ html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:not(:has(#hdmi-video)):n
 html.omt-host-xeatre.omt-hud-on .video-js.omt-xeatre-host-hidden,
 html.omt-host-xeatre.omt-hud-on .vjs-tech.omt-xeatre-host-hidden,
 html.omt-host-xeatre.omt-hud-on #hdmi-video.omt-xeatre-host-hidden,
+html.omt-host-xeatre.omt-hud-on #h5live-playerDiv.omt-xeatre-host-hidden,
+html.omt-host-xeatre.omt-hud-on #playerDiv.omt-xeatre-host-hidden,
 html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(video),
 html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(.vjs-tech),
 html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(#hdmi-video),
+html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(#h5live-playerDiv),
 html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(.video-js) {
     display: block !important;
     visibility: visible !important;
@@ -100,7 +106,10 @@ html.omt-host-xeatre.omt-hud-on .video-js,
 html.omt-host-xeatre.omt-hud-on #hdmi-video video,
 html.omt-host-xeatre.omt-hud-on .video-js > video,
 html.omt-host-xeatre.omt-hud-on video.vjs-tech,
-html.omt-host-xeatre.omt-hud-on .vjs-tech {
+html.omt-host-xeatre.omt-hud-on .vjs-tech,
+html.omt-host-xeatre.omt-hud-on #playerDiv > video,
+html.omt-host-xeatre.omt-hud-on video#h5live-playerDiv,
+html.omt-host-xeatre.omt-hud-on #h5live-playerDiv {
     display: block !important;
     visibility: visible !important;
     opacity: 1 !important;
@@ -355,7 +364,7 @@ html.omt-host-examino.omt-hud-on .setting-holder.omt-examino-native-hidden.omt-s
     filter: none !important;
 }
 #omt-root .glass-panel,
-#omt-root #controls-panel,
+#omt-root #omt-controls-panel,
 #omt-root #match-timer-wrap,
 #omt-root #match-timer,
 #omt-root #omt-more-panel,
@@ -1030,7 +1039,7 @@ html.omt-host-examino.omt-hud-on .setting-holder.omt-examino-native-hidden.omt-s
 }
 
 /* ---- FLOATING CONTROLS PANEL (Option A polished transport) ---- */
-#controls-panel {
+#omt-controls-panel {
     /* Sit above the YouTube-style shell (tip pad + track + chrome row). */
     bottom: 100px;
     top: auto;
@@ -1043,76 +1052,76 @@ html.omt-host-examino.omt-hud-on .setting-holder.omt-examino-native-hidden.omt-s
     z-index: 50;
 }
 /* Bottom-anchored: when more opens, card grows UP (transport stays put). */
-#controls-panel.omt-more-open {
+#omt-controls-panel.omt-more-open {
     top: auto;
 }
 
 /* Customize: Control panel size S (M = current look, no extra class). */
-#controls-panel.omt-panel-size-small {
+#omt-controls-panel.omt-panel-size-small {
     width: min(480px, calc(100% - 24px));
 }
-#controls-panel.omt-panel-size-small .drag-handle {
+#omt-controls-panel.omt-panel-size-small .drag-handle {
     padding: 6px 8px;
     gap: 6px;
 }
-#controls-panel.omt-panel-size-small .top-select {
+#omt-controls-panel.omt-panel-size-small .top-select {
     font-size: 11px;
     padding: 3px 6px;
     max-width: 72px;
 }
-#controls-panel.omt-panel-size-small .handle-btn,
-#controls-panel.omt-panel-size-small .omt-more-toggle {
+#omt-controls-panel.omt-panel-size-small .handle-btn,
+#omt-controls-panel.omt-panel-size-small .omt-more-toggle {
     width: 28px;
     height: 28px;
 }
-#controls-panel.omt-panel-size-small .handle-btn .omt-icon,
-#controls-panel.omt-panel-size-small .omt-more-toggle .omt-icon {
+#omt-controls-panel.omt-panel-size-small .handle-btn .omt-icon,
+#omt-controls-panel.omt-panel-size-small .omt-more-toggle .omt-icon {
     width: 14px;
     height: 14px;
 }
-#controls-panel.omt-panel-size-small #omt-live-btn {
+#omt-controls-panel.omt-panel-size-small #omt-live-btn {
     font-size: 10px;
     padding: 4px 8px;
 }
-#controls-panel.omt-panel-size-small #omt-volume-range {
+#omt-controls-panel.omt-panel-size-small #omt-volume-range {
     width: 56px;
 }
-#controls-panel.omt-panel-size-small .controls-content {
+#omt-controls-panel.omt-panel-size-small .controls-content {
     padding: 6px 8px 8px;
     gap: 6px;
 }
-#controls-panel.omt-panel-size-small .omt-transport-seg .ctrl-btn {
+#omt-controls-panel.omt-panel-size-small .omt-transport-seg .ctrl-btn {
     min-height: 36px;
     padding: 8px 4px;
     gap: 3px;
 }
-#controls-panel.omt-panel-size-small .omt-transport-seg .ctrl-btn .omt-btn-label {
+#omt-controls-panel.omt-panel-size-small .omt-transport-seg .ctrl-btn .omt-btn-label {
     font-size: 10px;
 }
-#controls-panel.omt-panel-size-small .omt-transport-seg .ctrl-btn .omt-icon {
+#omt-controls-panel.omt-panel-size-small .omt-transport-seg .ctrl-btn .omt-icon {
     width: 14px;
     height: 14px;
 }
-#controls-panel.omt-panel-size-small .omt-transport-seg .ctrl-btn.btn-play {
+#omt-controls-panel.omt-panel-size-small .omt-transport-seg .ctrl-btn.btn-play {
     min-width: 52px;
     padding: 8px 6px;
 }
-#controls-panel.omt-panel-size-small .omt-speed-chip {
+#omt-controls-panel.omt-panel-size-small .omt-speed-chip {
     min-height: 28px;
     padding: 5px 2px;
     font-size: 10px;
 }
-#controls-panel.omt-panel-size-small .omt-more-panel.is-open {
+#omt-controls-panel.omt-panel-size-small .omt-more-panel.is-open {
     margin: 6px 8px 0;
     padding: 6px;
 }
-#controls-panel.omt-panel-size-small .omt-more-label,
-#controls-panel.omt-panel-size-small .omt-more-block {
+#omt-controls-panel.omt-panel-size-small .omt-more-label,
+#omt-controls-panel.omt-panel-size-small .omt-more-block {
     font-size: 11px;
 }
 
 /* Customize: Compact hides the lower speed-chip row (top speed select stays). */
-#controls-panel.omt-panel-compact .omt-speed-row {
+#omt-controls-panel.omt-panel-compact .omt-speed-row {
     display: none;
 }
 
@@ -1769,10 +1778,10 @@ html.omt-host-examino.omt-hud-on .setting-holder.omt-examino-native-hidden.omt-s
 .omt-tip.omt-tip-fixed[data-tip]:hover::after,
 .omt-tip.omt-tip-fixed[data-tip]:focus-visible::after,
 .omt-tip.omt-tip-fixed.omt-tip-show[data-tip]::after,
-#omt-root.omt-tips-flip-below #controls-panel .omt-tip.omt-tip-fixed[data-tip]::after,
-#controls-panel.omt-tips-flip-below .omt-tip.omt-tip-fixed[data-tip]::after,
-#omt-root.omt-tips-flip-below #controls-panel .omt-tip.omt-tip-fixed[data-tip]:hover::after,
-#controls-panel.omt-tips-flip-below .omt-tip.omt-tip-fixed[data-tip]:hover::after,
+#omt-root.omt-tips-flip-below #omt-controls-panel .omt-tip.omt-tip-fixed[data-tip]::after,
+#omt-controls-panel.omt-tips-flip-below .omt-tip.omt-tip-fixed[data-tip]::after,
+#omt-root.omt-tips-flip-below #omt-controls-panel .omt-tip.omt-tip-fixed[data-tip]:hover::after,
+#omt-controls-panel.omt-tips-flip-below .omt-tip.omt-tip-fixed[data-tip]:hover::after,
 .drag-side-left .omt-tip.omt-tip-fixed[data-tip]::after,
 .drag-side-right .omt-tip.omt-tip-fixed[data-tip]::after,
 .drag-side-left .omt-tip.omt-tip-fixed[data-tip]:hover::after,
@@ -1806,36 +1815,36 @@ html.omt-host-examino.omt-hud-on .setting-holder.omt-examino-native-hidden.omt-s
     transform: translateX(var(--omt-tip-shift)) translateY(0);
 }
 /* When the card sits near the top of the player, flip tips below the control. */
-#omt-root.omt-tips-flip-below #controls-panel .omt-tip[data-tip]::after,
-#controls-panel.omt-tips-flip-below .omt-tip[data-tip]::after {
+#omt-root.omt-tips-flip-below #omt-controls-panel .omt-tip[data-tip]::after,
+#omt-controls-panel.omt-tips-flip-below .omt-tip[data-tip]::after {
     bottom: auto;
     top: calc(100% + 8px);
     transform: translateX(calc(-50% + var(--omt-tip-shift))) translateY(-2px);
 }
-#omt-root.omt-tips-flip-below #controls-panel .omt-tip[data-tip]:hover::after,
-#omt-root.omt-tips-flip-below #controls-panel .omt-tip[data-tip]:focus-visible::after,
-#controls-panel.omt-tips-flip-below .omt-tip[data-tip]:hover::after,
-#controls-panel.omt-tips-flip-below .omt-tip[data-tip]:focus-visible::after {
+#omt-root.omt-tips-flip-below #omt-controls-panel .omt-tip[data-tip]:hover::after,
+#omt-root.omt-tips-flip-below #omt-controls-panel .omt-tip[data-tip]:focus-visible::after,
+#omt-controls-panel.omt-tips-flip-below .omt-tip[data-tip]:hover::after,
+#omt-controls-panel.omt-tips-flip-below .omt-tip[data-tip]:focus-visible::after {
     transform: translateX(calc(-50% + var(--omt-tip-shift))) translateY(0);
 }
-#omt-root.omt-tips-flip-below #controls-panel .drag-side-right .omt-tip[data-tip]::after,
-#controls-panel.omt-tips-flip-below .drag-side-right .omt-tip[data-tip]::after {
+#omt-root.omt-tips-flip-below #omt-controls-panel .drag-side-right .omt-tip[data-tip]::after,
+#omt-controls-panel.omt-tips-flip-below .drag-side-right .omt-tip[data-tip]::after {
     transform: translateX(var(--omt-tip-shift)) translateY(-2px);
 }
-#omt-root.omt-tips-flip-below #controls-panel .drag-side-right .omt-tip[data-tip]:hover::after,
-#omt-root.omt-tips-flip-below #controls-panel .drag-side-right .omt-tip[data-tip]:focus-visible::after,
-#controls-panel.omt-tips-flip-below .drag-side-right .omt-tip[data-tip]:hover::after,
-#controls-panel.omt-tips-flip-below .drag-side-right .omt-tip[data-tip]:focus-visible::after {
+#omt-root.omt-tips-flip-below #omt-controls-panel .drag-side-right .omt-tip[data-tip]:hover::after,
+#omt-root.omt-tips-flip-below #omt-controls-panel .drag-side-right .omt-tip[data-tip]:focus-visible::after,
+#omt-controls-panel.omt-tips-flip-below .drag-side-right .omt-tip[data-tip]:hover::after,
+#omt-controls-panel.omt-tips-flip-below .drag-side-right .omt-tip[data-tip]:focus-visible::after {
     transform: translateX(var(--omt-tip-shift)) translateY(0);
 }
-#omt-root.omt-tips-flip-below #controls-panel .drag-side-left .omt-tip[data-tip]::after,
-#controls-panel.omt-tips-flip-below .drag-side-left .omt-tip[data-tip]::after {
+#omt-root.omt-tips-flip-below #omt-controls-panel .drag-side-left .omt-tip[data-tip]::after,
+#omt-controls-panel.omt-tips-flip-below .drag-side-left .omt-tip[data-tip]::after {
     transform: translateX(var(--omt-tip-shift)) translateY(-2px);
 }
-#omt-root.omt-tips-flip-below #controls-panel .drag-side-left .omt-tip[data-tip]:hover::after,
-#omt-root.omt-tips-flip-below #controls-panel .drag-side-left .omt-tip[data-tip]:focus-visible::after,
-#controls-panel.omt-tips-flip-below .drag-side-left .omt-tip[data-tip]:hover::after,
-#controls-panel.omt-tips-flip-below .drag-side-left .omt-tip[data-tip]:focus-visible::after {
+#omt-root.omt-tips-flip-below #omt-controls-panel .drag-side-left .omt-tip[data-tip]:hover::after,
+#omt-root.omt-tips-flip-below #omt-controls-panel .drag-side-left .omt-tip[data-tip]:focus-visible::after,
+#omt-controls-panel.omt-tips-flip-below .drag-side-left .omt-tip[data-tip]:hover::after,
+#omt-controls-panel.omt-tips-flip-below .drag-side-left .omt-tip[data-tip]:focus-visible::after {
     transform: translateX(var(--omt-tip-shift)) translateY(0);
 }
 
@@ -2108,7 +2117,7 @@ html.omt-host-examino.omt-hud-on .setting-holder.omt-examino-native-hidden.omt-s
 #omt-root.omt-examino.omt-compact #match-timer-wrap.omt-clock-pos-bottom-left { bottom: 150px; left: 8px; }
 #omt-root.omt-examino.omt-compact #match-timer-wrap.omt-clock-pos-bottom-centre { bottom: 150px; left: 50%; transform: translateX(-50%); }
 #omt-root.omt-examino.omt-compact #match-timer-wrap.omt-clock-pos-bottom-right { bottom: 150px; right: 8px; }
-#omt-root.omt-examino.omt-compact #controls-panel {
+#omt-root.omt-examino.omt-compact #omt-controls-panel {
     /* Clear YouTube-style timeline (tip + track + chrome row). */
     bottom: 100px;
     width: min(560px, calc(100% - 16px));
@@ -2195,10 +2204,10 @@ html.omt-host-xeatre.omt-hud-on .video-js.vjs-fluid {
    Scale uses the independent CSS `scale` property so it multiplies on top of
    user panel size/compact prefs (width classes) and does not fight drag
    `transform`. Do not hardcode width here. */
-#omt-root.omt-xeatre.omt-compact #controls-panel {
+#omt-root.omt-xeatre.omt-compact #omt-controls-panel {
     bottom: 56px;
 }
-#omt-root.omt-xeatre.omt-xeatre-micro #controls-panel {
+#omt-root.omt-xeatre.omt-xeatre-micro #omt-controls-panel {
     /* Tiny popup: park panel at top so it cannot overflow above the bar. */
     top: 4px;
     bottom: auto;
