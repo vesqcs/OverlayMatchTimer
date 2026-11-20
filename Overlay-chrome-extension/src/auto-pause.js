@@ -1,11 +1,15 @@
 /* Auto pause on Alt+Tab / tab hidden (popup General setting, default OFF).
  * Never touches ShuttleXpress pages; resumes only when we caused the pause.
+ * v2.2.13 Examino: when setting is OFF, host still pauses on blur — note if
+ * we were playing (capture) and resume once on return without fighting a
+ * manual pause. InPlay/Xeatre unchanged.
  */
     let autoPauseInstalled = false;
     let autoPausedByBlur = false;
     let autoPauseInProgress = false;
     let autoResumeInProgress = false;
     let lastShuttleActivityAt = 0;
+    let examinoResumeAfterHostPause = false;
 
     function noteShuttleActivity() {
         lastShuttleActivityAt = Date.now();
@@ -14,6 +18,7 @@
     function clearAutoPauseFlag() {
         if (autoPauseInProgress || autoResumeInProgress) return;
         autoPausedByBlur = false;
+        examinoResumeAfterHostPause = false;
     }
 
     function shouldBypassAutoPause() {
@@ -26,6 +31,39 @@
         }
         if (Date.now() - lastShuttleActivityAt < 1000) return true;
         return false;
+    }
+
+    /** Capture-phase: record playing-before-away before host pause handlers run. */
+    function noteExaminoPlayingBeforeAway() {
+        if (!(site && site.id === 'examino')) return;
+        if (typeof storageGetAutoPauseOnBlur === 'function' && storageGetAutoPauseOnBlur()) {
+            examinoResumeAfterHostPause = false;
+            return;
+        }
+        if (!vid || !vid.isConnected) {
+            examinoResumeAfterHostPause = false;
+            return;
+        }
+        examinoResumeAfterHostPause = !vid.paused && !vid.ended;
+    }
+
+    function maybeExaminoResumeAfterHostPause() {
+        if (!(site && site.id === 'examino')) return;
+        if (typeof storageGetAutoPauseOnBlur === 'function' && storageGetAutoPauseOnBlur()) {
+            examinoResumeAfterHostPause = false;
+            return;
+        }
+        if (!examinoResumeAfterHostPause) return;
+        examinoResumeAfterHostPause = false;
+        if (!ensureLiveVideo()) return;
+        // Already playing, or user paused themselves — do nothing.
+        if (!vid.paused || vid.ended) return;
+        autoResumeInProgress = true;
+        safePlay(vid)
+            .finally(() => {
+                autoResumeInProgress = false;
+                if (typeof syncPlayButtonFromVideo === 'function') syncPlayButtonFromVideo();
+            });
     }
 
     function maybeAutoPauseOnAway() {
@@ -68,10 +106,20 @@
             });
     }
 
+    function onDocumentVisibilityChangeCapture() {
+        if (document.visibilityState === 'hidden') noteExaminoPlayingBeforeAway();
+    }
+
+    function onWindowBlurCapture() {
+        if (document.visibilityState === 'hidden') return;
+        noteExaminoPlayingBeforeAway();
+    }
+
     function onDocumentVisibilityChange() {
         if (document.visibilityState === 'hidden') maybeAutoPauseOnAway();
         else if (document.visibilityState === 'visible') {
             maybeAutoResumeOnReturn();
+            maybeExaminoResumeAfterHostPause();
             // FS decode can stall after Alt+Tab even when auto-pause is off.
             wakeFullscreenDecode();
         }
@@ -85,12 +133,16 @@
 
     function onWindowFocus() {
         maybeAutoResumeOnReturn();
+        maybeExaminoResumeAfterHostPause();
         wakeFullscreenDecode();
     }
 
     function installAutoPauseOnBlur() {
         if (autoPauseInstalled) return;
         autoPauseInstalled = true;
+        // Capture first so Examino host pause (bubble) does not erase "was playing".
+        document.addEventListener('visibilitychange', onDocumentVisibilityChangeCapture, true);
+        window.addEventListener('blur', onWindowBlurCapture, true);
         document.addEventListener('visibilitychange', onDocumentVisibilityChange);
         window.addEventListener('blur', onWindowBlur);
         window.addEventListener('focus', onWindowFocus);

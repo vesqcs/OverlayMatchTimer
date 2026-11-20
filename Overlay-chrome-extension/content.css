@@ -39,14 +39,15 @@
 
 /* ---- HIDE NATIVE VIDEO.JS CONTROLS (InplayIP only) ----
    Host class is set with the HUD so Examino :has() rules never run on
-   InPlay's heavy /schedule DOM (style recalc cost). */
-html.omt-host-inplayip.omt-hud-on .vjs-control-bar,
-html.omt-host-inplayip.omt-hud-on .vjs-big-play-button,
-html.omt-host-inplayip.omt-hud-on .vjs-loading-spinner,
-html.omt-host-inplayip.omt-hud-on .vjs-poster,
-html.omt-host-inplayip.omt-hud-on .vjs-menu-button-popup .vjs-menu,
-html.omt-host-inplayip.omt-hud-on .vjs-text-track-display,
-html.omt-host-inplayip.omt-hud-on .video-js .vjs-control-bar {
+   InPlay's heavy /schedule DOM (style recalc cost).
+   v2.2.13: scope to the .video-js that contains #omt-root so multi-view
+   tiles 2–4 keep InPlay's native controls (single-video behaviour unchanged). */
+html.omt-host-inplayip.omt-hud-on .video-js:has(#omt-root) .vjs-control-bar,
+html.omt-host-inplayip.omt-hud-on .video-js:has(#omt-root) .vjs-big-play-button,
+html.omt-host-inplayip.omt-hud-on .video-js:has(#omt-root) .vjs-loading-spinner,
+html.omt-host-inplayip.omt-hud-on .video-js:has(#omt-root) .vjs-poster,
+html.omt-host-inplayip.omt-hud-on .video-js:has(#omt-root) .vjs-menu-button-popup .vjs-menu,
+html.omt-host-inplayip.omt-hud-on .video-js:has(#omt-root) .vjs-text-track-display {
     display: none !important;
     opacity: 0 !important;
     pointer-events: none !important;
