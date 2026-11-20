@@ -93,11 +93,12 @@
     }
 
     /**
-     * v2.2.12 / v2.2.20: Anchor #match-timer-wrap to the video *picture*
-     * (InPlay + Xeatre + Examino). Examino's #omt-root is viewport-fixed
-     * (v2.2.16), so without this the clock sits on the tab — including the
-     * black band below the player. Panel/bar stay full-tab.
-     * Sets CSS vars on #omt-root; no polling — resize / fullscreen / fit only.
+     * v2.2.12 / v2.2.21: Anchor #match-timer-wrap to the video *picture*
+     * (InPlay + Xeatre + Examino). Read-only on the <video> — never writes
+     * size/position/transform on the media element or host layout.
+     * Examino's #omt-root is viewport-fixed (v2.2.16); the clock follows the
+     * video's real on-screen rect (incl. object-fit letterboxing). Panel/bar
+     * stay full-tab. No polling — resize / fullscreenchange / loadedmetadata.
      */
     function omtVideoContentRect(videoEl) {
         if (!videoEl || !videoEl.getBoundingClientRect) return null;
@@ -105,7 +106,12 @@
         if (r.width < 2 || r.height < 2) return null;
         const vw = videoEl.videoWidth || 0;
         const vh = videoEl.videoHeight || 0;
-        if (vw > 0 && vh > 0) {
+        let fit = 'fill';
+        try {
+            fit = (getComputedStyle(videoEl).objectFit || 'fill').toLowerCase();
+        } catch (_) {}
+        // object-fit:contain / scale-down — letterbox inside the element box.
+        if (vw > 0 && vh > 0 && (fit === 'contain' || fit === 'scale-down')) {
             const scale = Math.min(r.width / vw, r.height / vh);
             const w = vw * scale;
             const h = vh * scale;
@@ -118,7 +124,8 @@
                 bottom: r.top + (r.height - h) / 2 + h
             };
         }
-        // Metadata not ready — treat the element box as the picture.
+        // cover — picture fills the box; element rect is the visible frame.
+        // fill / none / metadata missing — use the element box as-is.
         return {
             left: r.left, top: r.top, width: r.width, height: r.height,
             right: r.right, bottom: r.bottom
@@ -138,6 +145,7 @@
             } catch (_) {}
             return;
         }
+        // READ ONLY — never assign videoEl.style / host layout here (v2.2.21).
         const videoEl = vid || (site && typeof site.findVideo === 'function' && site.findVideo());
         const rootRect = omtRoot.getBoundingClientRect();
         const pic = omtVideoContentRect(videoEl);
