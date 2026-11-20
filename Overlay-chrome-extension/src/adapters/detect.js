@@ -39,6 +39,24 @@
         return null;
     }
 
+    /** v2.2.18: nanoplayer.html is live ULL video-only — never inject HUD/chrome. */
+    function isXeatreNanoplayerPage() {
+        const host = (location.hostname || '').toLowerCase();
+        const path = location.pathname || '';
+        const forced = (document.documentElement.dataset.omtSite || '').toLowerCase();
+        if (!/\/nanoplayer\.html$/i.test(path)) return false;
+        if (host.includes('xeatre')) return true;
+        if (forced === 'xeatre') return true;
+        if ((host === 'localhost' || host === '127.0.0.1') && /\/xeatre\//i.test(path)) return true;
+        return false;
+    }
+
+    // Early-exit before any site boot, DOM work, listeners, or observers.
+    if (isXeatreNanoplayerPage()) {
+        console.log('[OMT] Xeatre nanoplayer.html — content script idle (video-only host).');
+        return;
+    }
+
     const site = detectSite();
     if (!site) {
         console.log('[OMT] No matching site adapter — content script idle.');

@@ -76,10 +76,7 @@ html.omt-host-xeatre.omt-hud-on #AutoHide,
 html.omt-host-xeatre.omt-hud-on #autohide,
 html.omt-host-xeatre.omt-hud-on .xeatre-control-panel:not(:has(#hdmi-video)):not(:has(video)):not(:has(.vjs-tech)):not(:has(.video-js)),
 html.omt-host-xeatre.omt-hud-on .xeatre-host-panel:not(:has(#hdmi-video)):not(:has(video)):not(:has(.vjs-tech)):not(:has(.video-js)),
-/* H5Live nanoplayer (live ULL): host #controls-panel — OMT HUD is #omt-controls-panel. */
-html.omt-host-xeatre.omt-hud-on #controls-panel:not(:has(#hdmi-video)):not(:has(video)):not(:has(.vjs-tech)):not(:has(.video-js)):not(:has(#h5live-playerDiv)),
-html.omt-host-xeatre.omt-hud-on #controls-panel .controls-content,
-html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:not(:has(#hdmi-video)):not(:has(video)):not(:has(.vjs-tech)):not(:has(.video-js)):not(:has(#h5live-playerDiv)) {
+html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:not(:has(#hdmi-video)):not(:has(video)):not(:has(.vjs-tech)):not(:has(.video-js)) {
     display: none !important;
     visibility: hidden !important;
     opacity: 0 !important;
@@ -88,12 +85,9 @@ html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:not(:has(#hdmi-video)):n
 html.omt-host-xeatre.omt-hud-on .video-js.omt-xeatre-host-hidden,
 html.omt-host-xeatre.omt-hud-on .vjs-tech.omt-xeatre-host-hidden,
 html.omt-host-xeatre.omt-hud-on #hdmi-video.omt-xeatre-host-hidden,
-html.omt-host-xeatre.omt-hud-on #h5live-playerDiv.omt-xeatre-host-hidden,
-html.omt-host-xeatre.omt-hud-on #playerDiv.omt-xeatre-host-hidden,
 html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(video),
 html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(.vjs-tech),
 html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(#hdmi-video),
-html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(#h5live-playerDiv),
 html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(.video-js) {
     display: block !important;
     visibility: visible !important;
@@ -106,10 +100,7 @@ html.omt-host-xeatre.omt-hud-on .video-js,
 html.omt-host-xeatre.omt-hud-on #hdmi-video video,
 html.omt-host-xeatre.omt-hud-on .video-js > video,
 html.omt-host-xeatre.omt-hud-on video.vjs-tech,
-html.omt-host-xeatre.omt-hud-on .vjs-tech,
-html.omt-host-xeatre.omt-hud-on #playerDiv > video,
-html.omt-host-xeatre.omt-hud-on video#h5live-playerDiv,
-html.omt-host-xeatre.omt-hud-on #h5live-playerDiv {
+html.omt-host-xeatre.omt-hud-on .vjs-tech {
     display: block !important;
     visibility: visible !important;
     opacity: 1 !important;

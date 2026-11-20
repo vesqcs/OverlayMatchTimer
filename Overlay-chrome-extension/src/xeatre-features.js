@@ -1,10 +1,8 @@
-/* Xeatre-only: hide host chrome (6-column panel + VJS control bar + H5Live nano).
+/* Xeatre-only: hide host chrome (6-column panel + VJS control bar).
  * v2.2.5: transplant the pre-2.1.0 safe hide — never blank the picture.
  * v2.2.9: never display:none #hdmi-video / .video-js / any ancestor of <video>
  *   (field: #ControlBar wrapped the player → bare #ControlBar hide = black).
- * v2.2.17: live ULL nanoplayer.html uses nanoStream H5Live (VIDEO#h5live-playerDiv
- *   in #playerDiv). Host chrome is DIV#controls-panel.glass-panel — same id our
- *   HUD used to use. OMT panel is now #omt-controls-panel; hide host #controls-panel.
+ * v2.2.18: nanoplayer.html is skipped in detect.js (no HUD / no chrome hide).
  * - Hide only control-bar / chrome leaves (not poster / tech / player shell).
  * - Never call videojs(); never reparent <video>; never attribute-mutate the shell.
  * - Force-visible CSS on the tech + player root so a sticky class cannot black the feed.
@@ -72,10 +70,6 @@
             'html.omt-host-xeatre.omt-hud-on #autohide,',
             'html.omt-host-xeatre.omt-hud-on .xeatre-control-panel' + OMT_XEATRE_NOT_MEDIA + ',',
             'html.omt-host-xeatre.omt-hud-on .xeatre-host-panel' + OMT_XEATRE_NOT_MEDIA + ',',
-            /* H5Live nanoplayer (live ULL): host bar id clashes with pre-2.2.17 OMT.
-               Our HUD is #omt-controls-panel — safe to hide every host #controls-panel. */
-            'html.omt-host-xeatre.omt-hud-on #controls-panel' + OMT_XEATRE_NOT_MEDIA + ',',
-            'html.omt-host-xeatre.omt-hud-on #controls-panel .controls-content,',
             'html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden' + OMT_XEATRE_NOT_MEDIA + ' {',
             '  display: none !important;',
             '  visibility: hidden !important;',
@@ -86,12 +80,9 @@
             'html.omt-host-xeatre.omt-hud-on .video-js.omt-xeatre-host-hidden,',
             'html.omt-host-xeatre.omt-hud-on .vjs-tech.omt-xeatre-host-hidden,',
             'html.omt-host-xeatre.omt-hud-on #hdmi-video.omt-xeatre-host-hidden,',
-            'html.omt-host-xeatre.omt-hud-on #h5live-playerDiv.omt-xeatre-host-hidden,',
-            'html.omt-host-xeatre.omt-hud-on #playerDiv.omt-xeatre-host-hidden,',
             'html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(video),',
             'html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(.vjs-tech),',
             'html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(#hdmi-video),',
-            'html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(#h5live-playerDiv),',
             'html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(.video-js) {',
             '  display: block !important;',
             '  visibility: visible !important;',
@@ -110,10 +101,7 @@
             'html.omt-host-xeatre.omt-hud-on #hdmi-video video,',
             'html.omt-host-xeatre.omt-hud-on .video-js > video,',
             'html.omt-host-xeatre.omt-hud-on video.vjs-tech,',
-            'html.omt-host-xeatre.omt-hud-on .vjs-tech,',
-            'html.omt-host-xeatre.omt-hud-on #playerDiv > video,',
-            'html.omt-host-xeatre.omt-hud-on video#h5live-playerDiv,',
-            'html.omt-host-xeatre.omt-hud-on #h5live-playerDiv {',
+            'html.omt-host-xeatre.omt-hud-on .vjs-tech {',
             '  display: block !important;',
             '  visibility: visible !important;',
             '  opacity: 1 !important;',
@@ -126,7 +114,7 @@
         if (!el || el.nodeType !== 1) return true;
         try {
             if (el.tagName === 'VIDEO' || el.tagName === 'AUDIO') return true;
-            if (el.id === 'hdmi-video' || el.id === 'h5live-playerDiv' || el.id === 'playerDiv') return true;
+            if (el.id === 'hdmi-video') return true;
             if (el.classList && (
                 el.classList.contains('video-js') ||
                 el.classList.contains('vjs-tech') ||
@@ -134,9 +122,7 @@
             )) return true;
             if (el.id === 'omt-root' || (omtRoot && omtRoot.contains(el))) return true;
             // Any ancestor/container of the picture — never stamp hide on these.
-            if (el.querySelector && el.querySelector(
-                'video, .vjs-tech, .video-js, #hdmi-video, #h5live-playerDiv'
-            )) return true;
+            if (el.querySelector && el.querySelector('video, .vjs-tech, .video-js, #hdmi-video')) return true;
         } catch (_) {
             return true;
         }
@@ -279,13 +265,6 @@
 
         // Leaf VJS chrome only — no broad heuristic near the media tree.
         document.querySelectorAll('.vjs-control-bar').forEach(markXeatreHostHidden);
-
-        // H5Live nanoplayer bar (live ULL). Never our #omt-controls-panel.
-        document.querySelectorAll('#controls-panel').forEach((el) => {
-            if (omtRoot && omtRoot.contains(el)) return;
-            if (omtXeatreIsMediaHostNode(el)) return;
-            markXeatreHostHidden(el);
-        });
 
         omtXeatreEnsurePlayerVisible();
         // Debug-only (gated). Never stringify paint chains on every chrome pass.
@@ -683,11 +662,6 @@
         // Visible host controls only — never the whole #videowrapper / #ControlBar
         // wrapper that contains the picture.
         if (el.closest('.vjs-control-bar, .xeatre-control-panel, .xeatre-host-panel')) return true;
-        // H5Live nanoplayer native bar (id clash fixed — ours is #omt-controls-panel).
-        try {
-            const hostPanel = el.closest('#controls-panel');
-            if (hostPanel && !(omtRoot && omtRoot.contains(hostPanel))) return true;
-        } catch (_) {}
         if (el.closest('#jwplay, #GoLive, #GoStart, #FullScreen, #AutoHide, #autohide')) return true;
         if (el.closest('#Speed025, #Speed05, #Speed1, #Speed15, #Speed2')) return true;
         if (el.closest('#SkipM30, #SkipM7, #SkipM2, #SkipP2, #SkipP7, #SkipP30')) return true;
@@ -722,8 +696,7 @@
         if (found && found.isConnected) return found;
         if (vid && vid.isConnected) return vid;
         return document.querySelector(
-            '#hdmi-video video, video#hdmi-video_html5_api, video.vjs-tech, #hdmi-video.vjs-tech, ' +
-            'video#h5live-playerDiv, #playerDiv > video, video'
+            '#hdmi-video video, video#hdmi-video_html5_api, video.vjs-tech, #hdmi-video.vjs-tech, video'
         );
     }
 
@@ -767,8 +740,7 @@
             const shell = media.closest && (
                 media.closest('#hdmi-video') ||
                 media.closest('.video-js') ||
-                media.closest('#videowrapper') ||
-                media.closest('#playerDiv')
+                media.closest('#videowrapper')
             );
             if (shell && pointInRect(x, y, shell.getBoundingClientRect())) return media;
         } catch (_) {}
