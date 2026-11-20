@@ -28,10 +28,10 @@
       <div class="omt-cust-details-body">
         <button type="button" id="omt-open-local-player" class="omt-local-open-btn">Open local player</button>
         <p class="omt-note">Standalone player for local or NAS match files.</p>
-        <div class="omt-toggle-row" title="Pauses when the window loses focus. Skipped when ShuttleXpress is on.">
-          <span class="omt-toggle-label">Auto pause on Alt+Tab</span>
-          <label class="omt-switch" for="omt-auto-pause-blur">
-            <input type="checkbox" id="omt-auto-pause-blur" />
+        <div class="omt-toggle-row" title="Off (default): pause on Alt+Tab / hidden tab and resume on return if it was playing. On: keep playing while hidden (counters Examino’s native pause). Skipped when ShuttleXpress is on.">
+          <span class="omt-toggle-label">Não pausar no alt tab</span>
+          <label class="omt-switch" for="omt-keep-playing-alt-tab">
+            <input type="checkbox" id="omt-keep-playing-alt-tab" />
             <span class="omt-switch-slider"></span>
           </label>
         </div>
@@ -148,7 +148,7 @@
     </div>
   </section>
 
-  <footer class="omt-popup-foot">v2.2.13</footer>
+  <footer class="omt-popup-foot">v2.2.14</footer>
   <script src="sync-feature-flag.js"></script>
   <script src="popup.js"></script>
 </body>

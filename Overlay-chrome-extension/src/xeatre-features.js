@@ -615,47 +615,70 @@
 
     try { window.__omtXeatreFitViewport = omtXeatreFitViewport; } catch (_) {}
 
-    /* ---- v2.2.12 click-to-play/pause on the video picture ----
-     * wire.js vid click uses e.target === vid; after viewport-fit / VJS layers
-     * the hit target is often the tech wrapper. Window capture (Examino-style)
-     * toggles only on the media surface, never on our HUD. */
+    /* ---- v2.2.12 / v2.2.14 click-to-play/pause on the video picture ----
+     * Field: VJS often suppresses the click after pointerdown, so toggle on
+     * pointerup (armed) and ignore a following click to avoid double toggle.
+     * Also treat #ControlBar / #player-wrap that wrap the tech as media. */
+    let xeatreToggleConsumedGesture = false;
+
+    function isXeatreHostChromeTarget(el) {
+        if (!el || !el.closest) return false;
+        if (el.closest('.vjs-control-bar, .xeatre-control-panel, .xeatre-host-panel')) return true;
+        if (el.closest('#jwplay, #GoLive, #GoStart, #FullScreen, #AutoHide, #autohide')) return true;
+        if (el.closest('#Speed025, #Speed05, #Speed1, #Speed15, #Speed2')) return true;
+        return false;
+    }
+
     function isXeatrePlayerMediaTarget(target) {
         if (!target) return false;
         const el = target.nodeType === 1 ? target : target.parentElement;
         if (!el || !el.closest) return false;
         if (typeof isOmtInteractiveTarget === 'function' && isOmtInteractiveTarget(el)) return false;
         if (omtRoot && omtRoot.contains(el)) return false;
+        if (isXeatreHostChromeTarget(el)) return false;
         if (el.tagName === 'VIDEO') return true;
-        const shell = el.closest('#hdmi-video, .video-js');
-        if (!shell) return false;
-        // Host chrome (if any) stays excluded; picture/shell clicks toggle.
-        if (el.closest('.vjs-control-bar')) return false;
-        return true;
+        if (el.classList && el.classList.contains('vjs-tech')) return true;
+        // Picture / letterboxed shell / field ControlBar wrapper around the tech.
+        if (el.closest('#hdmi-video, .video-js, #ControlBar, #player-wrap, #video-player')) {
+            return true;
+        }
+        return false;
     }
 
-    function handleXeatreClickArm(e) {
-        if (!(site && site.id === 'xeatre')) return;
-        xeatreClickArmed = isXeatrePlayerMediaTarget(e.target);
+    function resolveXeatreMedia(fromTarget) {
+        if (fromTarget && fromTarget.tagName === 'VIDEO') return fromTarget;
+        if (fromTarget && fromTarget.closest) {
+            const nested = fromTarget.closest('video');
+            if (nested) return nested;
+        }
+        return vid || (site && site.findVideo && site.findVideo()) || null;
     }
 
-    function handleXeatreClickToggle(e) {
-        if (!(site && site.id === 'xeatre')) return;
-        if (!xeatreClickArmed) return;
-        xeatreClickArmed = false;
-        if (!isXeatrePlayerMediaTarget(e.target)) return;
-        const media = (e.target && e.target.tagName === 'VIDEO')
-            ? e.target
-            : ((e.target && e.target.closest && e.target.closest('video')) || vid ||
-                (site && site.findVideo && site.findVideo()));
-        if (!media) return;
-        if (!media.src && !media.currentSrc && !media.srcObject) return;
+    function xeatreMediaCanToggle(media) {
+        if (!media) return false;
+        if (media.src || media.currentSrc || media.srcObject) return true;
+        // MSE / VHS may expose neither src nor srcObject until later — allow if live.
+        try {
+            if (media.readyState > 0) return true;
+            if (media.seekable && media.seekable.length > 0) return true;
+        } catch (_) {}
+        return false;
+    }
+
+    function performXeatreClickToggle(e, media) {
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
+        try { omtUserGestureSeen = true; } catch (_) {}
         if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
-        if (media.paused) {
-            if (typeof safePlay === 'function') safePlay(media);
-            else try { media.play(); } catch (_) {}
+        if (media.paused || media.ended) {
+            // Prefer direct play() on this gesture; safePlay may no-op pre-gesture.
+            try {
+                const p = media.play();
+                if (p && typeof p.catch === 'function') p.catch(() => {});
+            } catch (_) {
+                if (typeof safePlay === 'function') safePlay(media);
+            }
             if (typeof mostrarOSD === 'function') mostrarOSD('Play');
         } else {
             media.pause();
@@ -665,13 +688,49 @@
         else if (typeof resetControlsTimeout === 'function') resetControlsTimeout(false);
     }
 
+    function handleXeatreClickArm(e) {
+        if (!(site && site.id === 'xeatre')) return;
+        xeatreToggleConsumedGesture = false;
+        xeatreClickArmed = isXeatrePlayerMediaTarget(e.target);
+    }
+
+    function handleXeatrePointerUpToggle(e) {
+        if (!(site && site.id === 'xeatre')) return;
+        if (!xeatreClickArmed) return;
+        xeatreClickArmed = false;
+        if (!isXeatrePlayerMediaTarget(e.target)) return;
+        const media = resolveXeatreMedia(e.target);
+        if (!xeatreMediaCanToggle(media)) return;
+        xeatreToggleConsumedGesture = true;
+        performXeatreClickToggle(e, media);
+    }
+
+    function handleXeatreClickToggle(e) {
+        if (!(site && site.id === 'xeatre')) return;
+        // pointerup already toggled — swallow click so VJS cannot double-toggle.
+        if (xeatreToggleConsumedGesture) {
+            xeatreToggleConsumedGesture = false;
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            return;
+        }
+        if (!xeatreClickArmed) return;
+        xeatreClickArmed = false;
+        if (!isXeatrePlayerMediaTarget(e.target)) return;
+        const media = resolveXeatreMedia(e.target);
+        if (!xeatreMediaCanToggle(media)) return;
+        performXeatreClickToggle(e, media);
+    }
+
     function installXeatreClickToToggle() {
         if (xeatreClickToggleInstalled) return;
         xeatreClickToggleInstalled = true;
         window.addEventListener('pointerdown', handleXeatreClickArm, true);
         window.addEventListener('mousedown', handleXeatreClickArm, true);
+        window.addEventListener('pointerup', handleXeatrePointerUpToggle, true);
         window.addEventListener('click', handleXeatreClickToggle, true);
-        console.log('[OMT] Xeatre click-to-toggle installed (video surface only).');
+        console.log('[OMT] Xeatre click-to-toggle installed (pointerup + click, video surface only).');
     }
 
     function initXeatrePlayerFeatures() {

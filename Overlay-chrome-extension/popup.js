@@ -13,7 +13,8 @@
     skipSeconds: 'omtSkipSeconds',
     hotkeys: 'omtHotkeys',
     shuttlePrefs: 'omtShuttlePrefs',
-    autoPauseOnBlur: 'omtAutoPauseOnBlur',
+    autoPauseOnBlur: 'omtAutoPauseOnBlur', // legacy, migrated in v2.2.14
+    keepPlayingOnAltTab: 'omtKeepPlayingOnAltTab',
     custSections: 'omtCustSectionsOpen',
     syncEnabled: 'omtKickoffSyncEnabled',
     syncUrl: 'omtKickoffSyncUrl',
@@ -180,7 +181,7 @@
   const clockShape = document.getElementById('clock-shape');
   const panelSize = document.getElementById('panel-size');
   const panelCompact = document.getElementById('panel-compact');
-  const autoPause = document.getElementById('omt-auto-pause-blur');
+  const keepPlayingAltTab = document.getElementById('omt-keep-playing-alt-tab');
   const previewStage = document.getElementById('omt-clock-preview-stage');
   const previewFace = document.getElementById('omt-clock-preview-face');
 
@@ -846,7 +847,7 @@
     [KEYS.skipSeconds]: null,
     [KEYS.hotkeys]: null,
     [KEYS.shuttlePrefs]: null,
-    [KEYS.autoPauseOnBlur]: false,
+    [KEYS.keepPlayingOnAltTab]: false,
     [KEYS.custSections]: null
   };
   if (SYNC_FEATURE) {
@@ -864,7 +865,25 @@
       if (panelSize) panelSize.value = result[KEYS.panelSize] === 'small' ? 'small' : 'medium';
       if (panelCompact) panelCompact.checked = !!result[KEYS.panelCompact];
       skipSeconds = normalizeSkipSeconds(result[KEYS.skipSeconds]);
-      if (autoPause) autoPause.checked = !!result[KEYS.autoPauseOnBlur];
+      // v2.2.14: new key default OFF. chrome.storage.get(defaults) fills missing
+      // keys, so migrate legacy via a separate raw get (do not invert old value).
+      if (keepPlayingAltTab) {
+        keepPlayingAltTab.checked = !!result[KEYS.keepPlayingOnAltTab];
+        try {
+          chrome.storage.local.get([KEYS.keepPlayingOnAltTab, KEYS.autoPauseOnBlur], (raw) => {
+            const hasNew = Object.prototype.hasOwnProperty.call(raw || {}, KEYS.keepPlayingOnAltTab);
+            const hasLegacy = Object.prototype.hasOwnProperty.call(raw || {}, KEYS.autoPauseOnBlur);
+            if (!hasNew) {
+              keepPlayingAltTab.checked = false;
+              chrome.storage.local.set({ [KEYS.keepPlayingOnAltTab]: false }, () => {
+                if (hasLegacy) chrome.storage.local.remove(KEYS.autoPauseOnBlur);
+              });
+            } else if (hasLegacy) {
+              chrome.storage.local.remove(KEYS.autoPauseOnBlur);
+            }
+          });
+        } catch (_) {}
+      }
       hotkeys = mergeHotkeys(result[KEYS.hotkeys]);
       applySkipLabelsToHotkeyDefaults();
       shuttlePrefs = mergeShuttle(result[KEYS.shuttlePrefs]);
@@ -879,9 +898,9 @@
     });
   });
 
-  if (autoPause) {
-    autoPause.addEventListener('change', () => {
-      chrome.storage.local.set({ [KEYS.autoPauseOnBlur]: !!autoPause.checked });
+  if (keepPlayingAltTab) {
+    keepPlayingAltTab.addEventListener('change', () => {
+      chrome.storage.local.set({ [KEYS.keepPlayingOnAltTab]: !!keepPlayingAltTab.checked });
     });
   }
 

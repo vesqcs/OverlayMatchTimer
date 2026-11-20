@@ -1,31 +1,56 @@
-/* Auto pause on Alt+Tab / tab hidden (popup General setting, default OFF).
- * Never touches ShuttleXpress pages; resumes only when we caused the pause.
- * v2.2.13 Examino: when setting is OFF, host still pauses on blur — note if
- * we were playing (capture) and resume once on return without fighting a
- * manual pause. InPlay/Xeatre unchanged.
+/* Alt+Tab / tab-hidden playback (all sites: Examino, InPlay, Xeatre, local).
+ *
+ * v2.2.14 setting "Não pausar no alt tab" (omtKeepPlayingOnAltTab, default OFF):
+ *   OFF (default): pause on blur/hidden if playing; resume on return only if we
+ *                  paused (autoPausedByBlur). User pause is never auto-resumed.
+ *   ON: keep playing while hidden — if the host pauses on away, play() once on
+ *       the next microtask. Armed only between away and return / user pause.
+ *
+ * Cost: one-time visibilitychange/blur/focus listeners. No intervals, no
+ * timeouts, no observers. One-shot pause()/play() only on those events.
  */
     let autoPauseInstalled = false;
     let autoPausedByBlur = false;
     let autoPauseInProgress = false;
     let autoResumeInProgress = false;
     let lastShuttleActivityAt = 0;
-    let examinoResumeAfterHostPause = false;
+    // Keep-playing arm (setting ON): set on away while playing; cleared on
+    // return or user intent. No wall-clock window / timers.
+    let keepPlayingArmed = false;
+    let keepPlayingInFlight = false;
 
     function noteShuttleActivity() {
         lastShuttleActivityAt = Date.now();
     }
 
+    function clearKeepPlayingArm() {
+        keepPlayingArmed = false;
+    }
+
+    /** Used by togglePlay — user intent cancels keep-playing and blur-resume. */
+    function clearExaminoHostResumeIntent() {
+        clearKeepPlayingArm();
+    }
+
     function clearAutoPauseFlag() {
         if (autoPauseInProgress || autoResumeInProgress) return;
         autoPausedByBlur = false;
-        examinoResumeAfterHostPause = false;
+        if (!keepPlayingInFlight) clearKeepPlayingArm();
     }
 
-    function shouldBypassAutoPause() {
-        // Setting off, Shuttle enabled on this page, or recent WebHID/shuttle input.
-        if (typeof storageGetAutoPauseOnBlur === 'function' && !storageGetAutoPauseOnBlur()) {
-            return true;
+    function storageKeepPlayingOnAltTab() {
+        if (typeof storageGetKeepPlayingOnAltTab === 'function') {
+            return !!storageGetKeepPlayingOnAltTab();
         }
+        // Legacy fallback during partial loads: old key meant "pause on blur".
+        if (typeof storageGetAutoPauseOnBlur === 'function') {
+            return !storageGetAutoPauseOnBlur();
+        }
+        return false;
+    }
+
+    function shouldSkipAwayPause() {
+        if (storageKeepPlayingOnAltTab()) return true;
         if (typeof storageGetShuttleEnabled === 'function' && storageGetShuttleEnabled()) {
             return true;
         }
@@ -33,61 +58,85 @@
         return false;
     }
 
-    /** Capture-phase: record playing-before-away before host pause handlers run. */
-    function noteExaminoPlayingBeforeAway() {
-        if (!(site && site.id === 'examino')) return;
-        if (typeof storageGetAutoPauseOnBlur === 'function' && storageGetAutoPauseOnBlur()) {
-            examinoResumeAfterHostPause = false;
+    /** Capture on away: arm keep-playing if setting ON and media is playing. */
+    function onAwayCapture() {
+        if (!storageKeepPlayingOnAltTab()) {
+            clearKeepPlayingArm();
             return;
         }
-        if (!vid || !vid.isConnected) {
-            examinoResumeAfterHostPause = false;
-            return;
-        }
-        examinoResumeAfterHostPause = !vid.paused && !vid.ended;
+        if (!vid || !vid.isConnected) return;
+        if (vid.paused || vid.ended) return;
+        keepPlayingArmed = true;
     }
 
-    function maybeExaminoResumeAfterHostPause() {
-        if (!(site && site.id === 'examino')) return;
-        if (typeof storageGetAutoPauseOnBlur === 'function' && storageGetAutoPauseOnBlur()) {
-            examinoResumeAfterHostPause = false;
+    /**
+     * Video 'pause' while keep-playing is armed → host hid the tab.
+     * Re-play on next microtask (event-driven, not a timer poll).
+     */
+    function onMaybeKeepPlaying() {
+        if (!storageKeepPlayingOnAltTab()) return;
+        if (autoPauseInProgress) return;
+        if (!keepPlayingArmed) return;
+        if (!vid || !vid.isConnected || vid.ended) {
+            clearKeepPlayingArm();
             return;
         }
-        if (!examinoResumeAfterHostPause) return;
-        examinoResumeAfterHostPause = false;
-        if (!ensureLiveVideo()) return;
-        // Already playing, or user paused themselves — do nothing.
-        if (!vid.paused || vid.ended) return;
-        autoResumeInProgress = true;
-        safePlay(vid)
-            .finally(() => {
-                autoResumeInProgress = false;
-                if (typeof syncPlayButtonFromVideo === 'function') syncPlayButtonFromVideo();
-            });
+        if (!vid.paused) return;
+        const media = vid;
+        keepPlayingInFlight = true;
+        const resume = () => {
+            keepPlayingInFlight = false;
+            if (!storageKeepPlayingOnAltTab() || !keepPlayingArmed) return;
+            if (!media.isConnected || media.ended || !media.paused) return;
+            try {
+                const p = media.play();
+                if (p && typeof p.then === 'function') {
+                    p.then(() => {
+                        if (typeof syncPlayButtonFromVideo === 'function') syncPlayButtonFromVideo();
+                    }).catch((err) => {
+                        try {
+                            console.warn('[OMT] Keep-playing while hidden: play() rejected',
+                                err && (err.name || err.message) || err);
+                        } catch (_) {}
+                    });
+                    return;
+                }
+            } catch (err) {
+                try {
+                    console.warn('[OMT] Keep-playing while hidden: play() threw',
+                        err && (err.name || err.message) || err);
+                } catch (_) {}
+            }
+            if (typeof syncPlayButtonFromVideo === 'function') syncPlayButtonFromVideo();
+        };
+        try {
+            queueMicrotask(resume);
+        } catch (_) {
+            // queueMicrotask unavailable — same-tick fallback (still not a timer).
+            resume();
+        }
     }
 
     function maybeAutoPauseOnAway() {
-        if (shouldBypassAutoPause()) return;
+        if (shouldSkipAwayPause()) return;
         if (!ensureLiveVideo()) return;
-        // Already paused (manual or ended) — do not claim an auto-pause resume.
         if (vid.paused || vid.ended) return;
         autoPauseInProgress = true;
         try {
             vid.pause();
-            // Set after pause so the pause listener's clear (if any) is skipped via in-progress.
             if (vid.paused) {
                 autoPausedByBlur = true;
-                mostrarOSD('Auto paused');
+                if (typeof mostrarOSD === 'function') mostrarOSD('Auto paused');
             }
         } finally {
             autoPauseInProgress = false;
         }
-        syncPlayButtonFromVideo();
+        if (typeof syncPlayButtonFromVideo === 'function') syncPlayButtonFromVideo();
     }
 
     function maybeAutoResumeOnReturn() {
+        clearKeepPlayingArm();
         if (!autoPausedByBlur) return;
-        // Shuttle pages never auto-pause; if shuttle was enabled while away, drop resume.
         if (typeof storageGetShuttleEnabled === 'function' && storageGetShuttleEnabled()) {
             autoPausedByBlur = false;
             return;
@@ -102,45 +151,39 @@
         safePlay(vid)
             .finally(() => {
                 autoResumeInProgress = false;
-                syncPlayButtonFromVideo();
+                if (typeof syncPlayButtonFromVideo === 'function') syncPlayButtonFromVideo();
             });
     }
 
     function onDocumentVisibilityChangeCapture() {
-        if (document.visibilityState === 'hidden') noteExaminoPlayingBeforeAway();
+        if (document.visibilityState === 'hidden') onAwayCapture();
     }
 
     function onWindowBlurCapture() {
-        if (document.visibilityState === 'hidden') return;
-        noteExaminoPlayingBeforeAway();
+        onAwayCapture();
     }
 
     function onDocumentVisibilityChange() {
         if (document.visibilityState === 'hidden') maybeAutoPauseOnAway();
         else if (document.visibilityState === 'visible') {
             maybeAutoResumeOnReturn();
-            maybeExaminoResumeAfterHostPause();
-            // FS decode can stall after Alt+Tab even when auto-pause is off.
-            wakeFullscreenDecode();
+            if (typeof wakeFullscreenDecode === 'function') wakeFullscreenDecode();
         }
     }
 
     function onWindowBlur() {
-        // visibilitychange usually covers Alt+Tab; blur covers focus loss while visible.
         if (document.visibilityState === 'hidden') return;
         maybeAutoPauseOnAway();
     }
 
     function onWindowFocus() {
         maybeAutoResumeOnReturn();
-        maybeExaminoResumeAfterHostPause();
-        wakeFullscreenDecode();
+        if (typeof wakeFullscreenDecode === 'function') wakeFullscreenDecode();
     }
 
     function installAutoPauseOnBlur() {
         if (autoPauseInstalled) return;
         autoPauseInstalled = true;
-        // Capture first so Examino host pause (bubble) does not erase "was playing".
         document.addEventListener('visibilitychange', onDocumentVisibilityChangeCapture, true);
         window.addEventListener('blur', onWindowBlurCapture, true);
         document.addEventListener('visibilitychange', onDocumentVisibilityChange);
