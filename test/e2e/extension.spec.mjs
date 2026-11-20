@@ -9,7 +9,8 @@ import {
   runExaminoFieldScenario,
   runInplayScheduleScenario,
   EXAMINO_BUS_MOCK_PATH,
-  XEATRE_DVR_PATH
+  XEATRE_DVR_PATH,
+  XEATRE_NANOPLAYER_PATH
 } from './host-scenarios.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -149,7 +150,7 @@ function posOptsInclude(opts) {
 async function captureUiFingerprint(page) {
   return page.evaluate(() => {
     const root = document.getElementById('omt-root');
-    const seg = document.querySelector('#controls-panel .omt-transport-seg');
+    const seg = document.querySelector('#omt-controls-panel .omt-transport-seg');
     const buttons = seg ? Array.from(seg.querySelectorAll('.ctrl-btn')) : [];
     const ids = buttons.map((b) => b.id);
     const expected = ['omt-m120', 'omt-m10', 'omt-m2', 'omt-prev-frame', 'omt-btn-play', 'omt-next-frame', 'omt-p2', 'omt-p10', 'omt-p120'];
@@ -338,7 +339,7 @@ async function run() {
     await page.evaluate(async () => {
       const setup = document.getElementById('setup-panel');
       if (setup) setup.style.display = 'none';
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       if (panel) {
         panel.style.opacity = '0';
         panel.style.pointerEvents = 'none';
@@ -657,7 +658,7 @@ async function run() {
     await page.evaluate(async () => {
       const setup = document.getElementById('setup-panel');
       if (setup) setup.style.display = 'none';
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       if (panel) {
         panel.style.opacity = '0';
         panel.style.pointerEvents = 'none';
@@ -674,7 +675,7 @@ async function run() {
     // aim at a video point our HUD never covers, as an analyst would.
     const videoPoint = await page.evaluate(() => {
       const v = document.querySelector('video');
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       if (!v) return null;
       if (panel) { panel.style.opacity = '1'; panel.style.pointerEvents = 'auto'; }
       const r = v.getBoundingClientRect();
@@ -764,7 +765,7 @@ async function run() {
 
     // ---- Auto-hide: repeated clicks keep panel visible ----
     const autoHide = await page.evaluate(async () => {
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const btn = document.getElementById('omt-m2');
       if (!panel || !btn) return { ok: false, reason: 'missing' };
       panel.style.opacity = '1';
@@ -793,7 +794,7 @@ async function run() {
 
     // v2.2.12 #6: dblclick / repeated clicks on panel must not toggle host playback.
     const examinoPanelSwallow = await page.evaluate(async () => {
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const v = document.querySelector('video');
       if (!panel || !v) return { ok: false, reason: 'missing' };
       panel.style.opacity = '1';
@@ -820,7 +821,7 @@ async function run() {
 
     // v2.2.14: panel drag starts, moves, then mouseup ends (no stick-to-mouse).
     const examinoPanelDrag = await page.evaluate(async () => {
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const handle = document.getElementById('controls-handle');
       if (!panel || !handle) return { ok: false, reason: 'missing' };
       panel.style.opacity = '1';
@@ -927,7 +928,7 @@ async function run() {
     });
 
     const examinoDragIntoBlack = await page.evaluate(async () => {
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const handle = document.getElementById('controls-handle');
       const v = document.querySelector('video');
       if (!panel || !handle || !v) return { ok: false, reason: 'missing' };
@@ -1455,7 +1456,7 @@ async function run() {
 
     // Floating glass control panel + bottom-only timeline (v1.2.2 structure restored)
     const chromeShape = await page.evaluate(() => {
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const timelineBar = document.getElementById('omt-timeline-bar');
       const jumps = document.getElementById('omt-kickoff-jumps');
       const badges = document.querySelectorAll('.kickoff-badge, .timeline-badges-row');
@@ -1467,7 +1468,7 @@ async function run() {
       const timesInBar = !!(timelineBar && timelineBar.querySelector('#omt-v-time-current') &&
         timelineBar.querySelector('#omt-v-time-duration'));
       const moreBtn = document.getElementById('omt-more-toggle');
-      const tipCount = document.querySelectorAll('#controls-panel [data-tip], #omt-timeline-bar [data-tip]').length;
+      const tipCount = document.querySelectorAll('#omt-controls-panel [data-tip], #omt-timeline-bar [data-tip]').length;
       const panelBox = panel ? panel.getBoundingClientRect() : null;
       const timelineBox = timelineBar ? timelineBar.getBoundingClientRect() : null;
       const root = document.getElementById('omt-root');
@@ -1508,7 +1509,7 @@ async function run() {
 
     // Card grows UP: transport+bottom fixed; top row rises; more sits in middle (v1.7.2 layout)
     const moreExpandUp = await page.evaluate(async () => {
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const more = document.getElementById('omt-more-panel');
       const handle = document.getElementById('controls-handle');
       const transport = panel?.querySelector('.controls-content');
@@ -1585,7 +1586,7 @@ async function run() {
 
     // Force controls + timeline visible for polish screenshots
     await page.evaluate(() => {
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const timelineBar = document.getElementById('omt-timeline-bar');
       [panel, timelineBar].forEach((el) => {
         if (!el) return;
@@ -1689,7 +1690,7 @@ async function run() {
 
     // Option A transport: flush segmented row + speed chips under it
     const optionA = await page.evaluate(() => {
-      const seg = document.querySelector('#controls-panel .omt-transport-seg');
+      const seg = document.querySelector('#omt-controls-panel .omt-transport-seg');
       const buttons = seg ? Array.from(seg.querySelectorAll('.ctrl-btn')) : [];
       const ids = buttons.map((b) => b.id);
       const expected = ['omt-m120', 'omt-m10', 'omt-m2', 'omt-prev-frame', 'omt-btn-play', 'omt-next-frame', 'omt-p2', 'omt-p10', 'omt-p120'];
@@ -1789,7 +1790,7 @@ async function run() {
       const labels = ['omt-m2', 'omt-m10', 'omt-m120', 'omt-p2', 'omt-p10', 'omt-p120'].map((id) =>
         (document.getElementById(id)?.querySelector('.omt-btn-label')?.textContent || '').trim()
       );
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const speedRow = document.querySelector('.omt-speed-row');
       const speedCs = speedRow ? getComputedStyle(speedRow) : null;
       const v = document.querySelector('video');
@@ -1820,7 +1821,7 @@ async function run() {
       detail: panelPrefs
     });
     await page.evaluate(() => {
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const timelineBar = document.getElementById('omt-timeline-bar');
       [panel, timelineBar].forEach((el) => {
         if (!el) return;
@@ -1832,7 +1833,7 @@ async function run() {
 
     // Screenshots: panel M (default), S, and Compact (for Vasco)
     await page.evaluate(() => {
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const timelineBar = document.getElementById('omt-timeline-bar');
       [panel, timelineBar].forEach((el) => {
         if (!el) return;
@@ -1995,7 +1996,7 @@ async function run() {
 
     // Eye button = Auto hide toggle (does NOT hide immediately). H still hides completely.
     await page.evaluate(() => {
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const timeline = document.getElementById('omt-timeline-bar');
       [panel, timeline].forEach((el) => {
         if (!el) return;
@@ -2029,7 +2030,7 @@ async function run() {
     await page.locator('#omt-hide-panel').click();
     await page.waitForTimeout(100);
     const afterToggleOff = await page.evaluate(() => {
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const timeline = document.getElementById('omt-timeline-bar');
       const btn = document.getElementById('omt-hide-panel');
       return {
@@ -2052,17 +2053,17 @@ async function run() {
     await page.keyboard.press('KeyH');
     await page.waitForTimeout(80);
     const afterHHide = await page.evaluate(() => {
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       return { panel: panel?.style.opacity, pe: panel?.style.pointerEvents };
     });
     await page.keyboard.press('KeyH');
     await page.waitForTimeout(80);
     const afterHShow = await page.evaluate(() => {
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       return { panel: panel?.style.opacity, pe: panel?.style.pointerEvents };
     });
     await page.evaluate(() => {
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const timeline = document.getElementById('omt-timeline-bar');
       [panel, timeline].forEach((el) => {
         if (!el) return;
@@ -2090,7 +2091,7 @@ async function run() {
 
     // Auto hide ON: idle over the video fades chrome; mouse move restores; OFF stays visible
     await page.evaluate(() => {
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const timeline = document.getElementById('omt-timeline-bar');
       [panel, timeline].forEach((el) => {
         if (!el) return;
@@ -2118,7 +2119,7 @@ async function run() {
     }
     await page.waitForTimeout(2800);
     const idleOn = await page.evaluate(() => {
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const timeline = document.getElementById('omt-timeline-bar');
       const btn = document.getElementById('omt-hide-panel');
       return {
@@ -2133,12 +2134,12 @@ async function run() {
     }
     await page.waitForTimeout(120);
     const afterMove = await page.evaluate(() => {
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       return { panel: panel?.style.opacity };
     });
     // Toggle Auto hide OFF and confirm idle no longer fades
     await page.evaluate(() => {
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       if (panel) { panel.style.opacity = '1'; panel.style.pointerEvents = 'auto'; }
       document.getElementById('omt-hide-panel')?.click();
     });
@@ -2150,7 +2151,7 @@ async function run() {
     }
     await page.waitForTimeout(2800);
     const idleOff = await page.evaluate(() => {
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const btn = document.getElementById('omt-hide-panel');
       return {
         panel: panel?.style.opacity,
@@ -2175,7 +2176,7 @@ async function run() {
         type: 'OMT_STORAGE_SYNC',
         values: { omtAutoHideChrome: true }
       }, '*');
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const timeline = document.getElementById('omt-timeline-bar');
       if (panel) { panel.style.opacity = '1'; panel.style.pointerEvents = 'auto'; }
       if (timeline) { timeline.style.opacity = '1'; timeline.classList.remove('omt-chrome-hidden'); }
@@ -2183,7 +2184,7 @@ async function run() {
 
     // Play/pause centre button follows real media state; top OSD only (no centre flash)
     await page.evaluate(() => {
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const timeline = document.getElementById('omt-timeline-bar');
       [panel, timeline].forEach((el) => {
         if (!el) return;
@@ -2258,7 +2259,7 @@ async function run() {
     // Speed 2x active screenshot
     await page.evaluate(() => {
       document.querySelector('.omt-speed-chip[data-speed="2.0"]')?.click();
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       if (panel) {
         panel.style.opacity = '1';
         panel.style.pointerEvents = 'auto';
@@ -2630,7 +2631,7 @@ async function run() {
         const v = document.querySelector('video');
         const slider = document.getElementById('omt-timeline-slider');
         const bar = document.getElementById('omt-timeline-bar');
-        const panel = document.getElementById('controls-panel');
+        const panel = document.getElementById('omt-controls-panel');
         if (!v) return;
         try { v.pause(); } catch (_) {}
         const end = v.seekable?.length ? v.seekable.end(v.seekable.length - 1) : v.duration;
@@ -2719,7 +2720,7 @@ async function run() {
           volBox.left <= timesBox.left + 2 &&
           (!rangeBox || (rangeBox.left >= timesBox.right - 2 && rangeBox.right <= fsBox.left + 2))),
         panelClearance: (() => {
-          const panel = document.getElementById('controls-panel');
+          const panel = document.getElementById('omt-controls-panel');
           if (!panel || !barBox) return null;
           const pb = panel.getBoundingClientRect();
           return pb.bottom <= barBox.top + 4;
@@ -2728,7 +2729,7 @@ async function run() {
     });
     const shotTimelineFrame = async (name, { showPanel = false } = {}) => {
       await page.evaluate((show) => {
-        const panel = document.getElementById('controls-panel');
+        const panel = document.getElementById('omt-controls-panel');
         const bar = document.getElementById('omt-timeline-bar');
         if (bar) {
           bar.style.opacity = '1';
@@ -3762,7 +3763,7 @@ async function run() {
 
     // Volume tooltip must escape the card (not clipped by overflow)
     await page.evaluate(() => {
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const bar = document.getElementById('omt-timeline-bar');
       if (panel) { panel.style.opacity = '1'; panel.style.pointerEvents = 'auto'; }
       if (bar) { bar.style.opacity = '1'; bar.style.pointerEvents = 'auto'; }
@@ -3779,7 +3780,7 @@ async function run() {
     }
     const volumeTip = await page.evaluate(() => {
       const el = document.getElementById('omt-volume-range');
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const root = document.getElementById('omt-root');
       const portal = document.getElementById('omt-control-tip');
       if (!el || !panel) return { ok: false, reason: 'missing' };
@@ -3841,7 +3842,7 @@ async function run() {
     const moreTip = await page.evaluate(async () => {
       const btn = document.getElementById('omt-more-toggle');
       const panel = document.getElementById('omt-more-panel');
-      const card = document.getElementById('controls-panel');
+      const card = document.getElementById('omt-controls-panel');
       if (!btn || !panel || !card) return { ok: false, reason: 'missing' };
       if (panel.classList.contains('is-open')) btn.click();
       await new Promise((r) => setTimeout(r, 80));
@@ -3937,7 +3938,7 @@ async function run() {
     await page.waitForTimeout(120);
 
     await page.evaluate(() => {
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const bar = document.getElementById('omt-timeline-bar');
       if (panel) { panel.style.opacity = '1'; panel.style.pointerEvents = 'auto'; }
       if (bar) { bar.style.opacity = '1'; }
@@ -4360,7 +4361,7 @@ async function run() {
       const more = document.getElementById('omt-more-panel');
       const btn = document.getElementById('omt-more-toggle');
       if (more && !more.classList.contains('is-open')) btn?.click();
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       if (panel) { panel.style.opacity = '1'; panel.style.pointerEvents = 'auto'; }
     });
     await page.waitForTimeout(120);
@@ -4381,7 +4382,7 @@ async function run() {
       const portal = document.getElementById('omt-control-tip');
       const tip = el ? getComputedStyle(el, '::after') : null;
       const portalCs = portal && !portal.hidden ? getComputedStyle(portal) : null;
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const more = document.getElementById('omt-more-panel');
       const btnRect = el?.getBoundingClientRect();
       const tipTopVp = parseFloat(el?.dataset.omtTipViewportTop || 'NaN');
@@ -4736,7 +4737,7 @@ async function run() {
     const fsBtnUi = await page.evaluate(() => {
       const btn = document.getElementById('omt-btn-fullscreen');
       const bar = document.getElementById('omt-timeline-bar');
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       return {
         inTimeline: !!(btn && bar && bar.contains(btn)),
         notInPanel: !(panel && btn && panel.contains(btn)),
@@ -4751,7 +4752,7 @@ async function run() {
       detail: fsBtnUi
     });
     await page.evaluate(() => {
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const bar = document.getElementById('omt-timeline-bar');
       [panel, bar].forEach((el) => {
         if (!el) return;
@@ -4764,7 +4765,7 @@ async function run() {
 
     // Click-to-toggle on video surface (not controls)
     await page.evaluate(() => {
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const bar = document.getElementById('omt-timeline-bar');
       if (panel) { panel.style.opacity = '0'; panel.style.pointerEvents = 'none'; }
       if (bar) { bar.style.opacity = '0'; bar.style.pointerEvents = 'none'; }
@@ -4884,7 +4885,7 @@ async function run() {
 
     // v2.2.12 #6 generic swallow on InPlay panel.
     const inplayPanelSwallow = await page.evaluate(async () => {
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const v = document.querySelector('video');
       if (!panel || !v) return { ok: false, reason: 'missing' };
       panel.style.opacity = '1';
@@ -4902,7 +4903,7 @@ async function run() {
     });
 
     const inplayPanelDrag = await page.evaluate(async () => {
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const handle = document.getElementById('controls-handle');
       if (!panel || !handle) return { ok: false, reason: 'missing' };
       panel.style.opacity = '1';
@@ -5076,7 +5077,7 @@ async function run() {
     });
 
     const inplayAutohide = await page.evaluate(async () => {
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const btn = document.getElementById('omt-m2');
       if (!panel || !btn) return { ok: false };
       panel.style.opacity = '1';
@@ -5119,7 +5120,7 @@ async function run() {
     });
 
     await page.evaluate(() => {
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const timelineBar = document.getElementById('omt-timeline-bar');
       [panel, timelineBar].forEach((el) => {
         if (!el) return;
@@ -5448,7 +5449,7 @@ async function run() {
       let ourHitOk = false;
       if (playBtn) {
         playBtn.scrollIntoView({ block: 'center' });
-        const panel = document.getElementById('controls-panel');
+        const panel = document.getElementById('omt-controls-panel');
         if (panel) {
           panel.style.opacity = '1';
           panel.style.pointerEvents = 'auto';
@@ -5654,7 +5655,7 @@ async function run() {
       const v = document.querySelector('#hdmi-video video.vjs-tech, video.vjs-tech, video');
       const shell = document.getElementById('hdmi-video');
       const root = document.getElementById('omt-root');
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const bar = document.getElementById('omt-timeline-bar');
       if (!v || !shell || !root || !panel || !bar) return { ok: false, reason: 'missing' };
       // Force chrome visible for the hit-test (autohide may have faded it).
@@ -5735,7 +5736,7 @@ async function run() {
       await new Promise((r) => setTimeout(r, 60));
       const v = document.querySelector('video');
       const root = document.getElementById('omt-root');
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const bar = document.getElementById('omt-timeline-bar');
       if (panel) { panel.style.opacity = '1'; panel.style.pointerEvents = 'auto'; }
       if (bar) { bar.style.opacity = '1'; bar.classList.remove('omt-chrome-hidden'); }
@@ -5777,7 +5778,7 @@ async function run() {
         localStorage.removeItem('omtPanelSize');
         localStorage.removeItem('omtPanelCompact');
       } catch (_) {}
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       if (panel) panel.classList.remove('omt-panel-size-small', 'omt-panel-compact');
       if (typeof window.__omtXeatreFitViewport === 'function') window.__omtXeatreFitViewport();
     });
@@ -5786,7 +5787,7 @@ async function run() {
     const xeatreScaleTiny = await page.evaluate(() => {
       if (typeof window.__omtXeatreFitViewport === 'function') window.__omtXeatreFitViewport();
       const root = document.getElementById('omt-root');
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const cs = panel ? getComputedStyle(panel) : null;
       const scale = cs ? (cs.scale || 'none') : 'missing';
       const scaled = scale !== 'none' && scale !== '1' && scale !== '1 1' &&
@@ -5804,7 +5805,7 @@ async function run() {
     const xeatreScaleRestored = await page.evaluate(() => {
       if (typeof window.__omtXeatreFitViewport === 'function') window.__omtXeatreFitViewport();
       const root = document.getElementById('omt-root');
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       if (!root || !panel) return { ok: false, reason: 'missing' };
       const cs = getComputedStyle(panel);
       const scale = cs.scale || 'none';
@@ -5829,12 +5830,12 @@ async function run() {
     await page.evaluate(() => {
       localStorage.setItem('omtPanelSize', 'small');
       localStorage.setItem('omtPanelCompact', 'true');
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       if (panel) panel.classList.add('omt-panel-size-small', 'omt-panel-compact');
       if (typeof window.__omtXeatreFitViewport === 'function') window.__omtXeatreFitViewport();
     });
     const xeatreScaleCustom = await page.evaluate(() => {
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       return {
         small: !!(panel && panel.classList.contains('omt-panel-size-small')),
         panelCompact: !!(panel && panel.classList.contains('omt-panel-compact')),
@@ -5846,7 +5847,7 @@ async function run() {
     const xeatreScaleCustomTiny = await page.evaluate(() => {
       if (typeof window.__omtXeatreFitViewport === 'function') window.__omtXeatreFitViewport();
       const root = document.getElementById('omt-root');
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const cs = panel ? getComputedStyle(panel) : null;
       return {
         micro: !!(root && root.classList.contains('omt-xeatre-micro')),
@@ -5862,7 +5863,7 @@ async function run() {
       // No click. Fit on resize clears micro inline leftovers and re-applies prefs.
       if (typeof window.__omtXeatreFitViewport === 'function') window.__omtXeatreFitViewport();
       const root = document.getElementById('omt-root');
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       if (!root || !panel) return { ok: false, reason: 'missing' };
       const cs = getComputedStyle(panel);
       const scale = cs.scale || 'none';
@@ -5896,12 +5897,12 @@ async function run() {
         localStorage.removeItem('omtPanelSize');
         localStorage.removeItem('omtPanelCompact');
       } catch (_) {}
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       if (panel) panel.classList.remove('omt-panel-size-small', 'omt-panel-compact');
       if (typeof window.__omtXeatreFitViewport === 'function') window.__omtXeatreFitViewport();
     });
     const xeatreHoverReveal = await page.evaluate(async () => {
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const bar = document.getElementById('omt-timeline-bar');
       const v = document.querySelector('#hdmi-video video.vjs-tech, video.vjs-tech, video');
       if (!panel || !bar || !v) return { ok: false, reason: 'missing' };
@@ -5958,7 +5959,7 @@ async function run() {
     });
     await page.evaluate(async () => {
       const v = document.querySelector('#hdmi-video video, video.vjs-tech, video');
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const bar = document.getElementById('omt-timeline-bar');
       if (panel) { panel.style.opacity = '0'; panel.style.pointerEvents = 'none'; }
       if (bar) { bar.style.opacity = '0'; bar.classList.add('omt-chrome-hidden'); }
@@ -5999,7 +6000,7 @@ async function run() {
       const wrap = document.getElementById('videowrapper');
       const v = document.querySelector('#hdmi-video_html5_api, #hdmi-video video, video.vjs-tech, video');
       if (!wrap || !v) return { ok: false, reason: 'missing' };
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const bar = document.getElementById('omt-timeline-bar');
       if (panel) { panel.style.opacity = '0'; panel.style.pointerEvents = 'none'; }
       if (bar) { bar.style.opacity = '0'; bar.classList.add('omt-chrome-hidden'); }
@@ -6043,7 +6044,7 @@ async function run() {
     // HUD click must NOT toggle.
     const xeatreHudNoToggle = await page.evaluate(async () => {
       const v = document.querySelector('video');
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       if (!v || !panel) return { ok: false, reason: 'missing' };
       panel.style.opacity = '1';
       panel.style.pointerEvents = 'auto';
@@ -6062,7 +6063,7 @@ async function run() {
     });
 
     const xeatrePanelDrag = await page.evaluate(async () => {
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const handle = document.getElementById('controls-handle');
       if (!panel || !handle) return { ok: false, reason: 'missing' };
       panel.style.opacity = '1';
@@ -6175,6 +6176,127 @@ async function run() {
       pass: xeatreAltTabKeep.ok === true,
       detail: xeatreAltTabKeep
     });
+
+    // ---- v2.2.17: Xeatre live ULL nanoplayer (H5Live) — host #controls-panel hidden ----
+    // Field: VIDEO#h5live-playerDiv > DIV#playerDiv; native DIV#controls-panel.glass-panel
+    // clashes with pre-2.2.17 OMT id. Our HUD is #omt-controls-panel.
+    await page.goto(`${base}${XEATRE_NANOPLAYER_PATH}`, { waitUntil: 'domcontentloaded' });
+    await waitForOmt(page, 15000);
+    await page.waitForFunction(() => {
+      const v = document.getElementById('h5live-playerDiv');
+      return !!(v && document.getElementById('omt-root') &&
+        document.documentElement.classList.contains('omt-host-xeatre'));
+    }, { timeout: 15000 }).catch(() => {});
+    await page.waitForTimeout(400);
+
+    const nanoChrome = await page.evaluate(() => {
+      const hostPanel = document.getElementById('controls-panel');
+      const omtPanel = document.getElementById('omt-controls-panel');
+      const root = document.getElementById('omt-root');
+      const timer = document.getElementById('match-timer-wrap') || document.getElementById('match-timer');
+      const v = document.getElementById('h5live-playerDiv');
+      // Reveal OMT chrome for the visibility check (autohide may have faded it).
+      if (omtPanel) {
+        omtPanel.style.opacity = '1';
+        omtPanel.style.pointerEvents = 'auto';
+      }
+      const cs = (el) => (el ? getComputedStyle(el) : null);
+      const chromeHidden = (el) => {
+        const c = cs(el);
+        if (!c) return true;
+        return c.display === 'none' || c.visibility === 'hidden' || Number(c.opacity) === 0 ||
+          c.pointerEvents === 'none';
+      };
+      const hostOutsideHud = !!(hostPanel && root && !root.contains(hostPanel));
+      const omtInsideHud = !!(omtPanel && root && root.contains(omtPanel));
+      const hostHasOmtClass = !!(hostPanel && (
+        hostPanel.classList.contains('omt-panel-size-small') ||
+        hostPanel.classList.contains('omt-at-live') ||
+        hostPanel.classList.contains('playing-state')
+      ));
+      const videoOk = !!(v && v.getBoundingClientRect().height >= 24 &&
+        cs(v).display !== 'none' && cs(v).visibility !== 'hidden');
+      return {
+        ok: hostOutsideHud && chromeHidden(hostPanel) && omtInsideHud &&
+          !!omtPanel && !!timer && videoOk && !hostHasOmtClass,
+        hostOutsideHud,
+        hostHidden: chromeHidden(hostPanel),
+        omtInsideHud,
+        timer: !!timer,
+        videoOk,
+        hostHasOmtClass,
+        hostId: hostPanel && hostPanel.id,
+        omtId: omtPanel && omtPanel.id
+      };
+    });
+    results.push({
+      name: 'xeatre-nanoplayer-host-controls-hidden',
+      pass: nanoChrome.ok === true,
+      detail: nanoChrome
+    });
+
+    const nanoClick = await page.evaluate(async () => {
+      const v = document.getElementById('h5live-playerDiv');
+      const playerDiv = document.getElementById('playerDiv');
+      const omtPanel = document.getElementById('omt-controls-panel');
+      const bar = document.getElementById('omt-timeline-bar');
+      if (!v || !playerDiv) return { ok: false, reason: 'missing' };
+      if (omtPanel) { omtPanel.style.opacity = '0'; omtPanel.style.pointerEvents = 'none'; }
+      if (bar) { bar.style.opacity = '0'; bar.classList.add('omt-chrome-hidden'); }
+      try { await v.play(); } catch (_) {}
+      await new Promise((r) => setTimeout(r, 40));
+      if (v.paused) return { ok: false, reason: 'not-playing' };
+      const r = v.getBoundingClientRect();
+      const x = r.left + r.width / 2;
+      const y = r.top + r.height / 2;
+      const before = !!v.paused;
+      for (const type of ['pointerdown', 'pointerup', 'click']) {
+        v.dispatchEvent(new PointerEvent(type, {
+          bubbles: true, cancelable: true, composed: true,
+          clientX: x, clientY: y, button: 0, buttons: type === 'pointerup' ? 0 : 1,
+          pointerId: 1, pointerType: 'mouse', view: window
+        }));
+      }
+      await new Promise((r) => setTimeout(r, 80));
+      return { ok: before === false && v.paused === true, before, after: v.paused };
+    });
+    results.push({
+      name: 'xeatre-nanoplayer-click-toggles-play',
+      pass: nanoClick.ok === true,
+      detail: nanoClick
+    });
+
+    const nanoHud = await page.evaluate(() => {
+      const root = document.getElementById('omt-root');
+      const panel = document.getElementById('omt-controls-panel');
+      const timer = document.getElementById('match-timer-wrap') || document.getElementById('match-timer');
+      const hostPanel = document.getElementById('controls-panel');
+      return {
+        ok: !!(root && panel && timer && hostPanel &&
+          root.contains(panel) && !root.contains(hostPanel) &&
+          panel.id === 'omt-controls-panel' && hostPanel.id === 'controls-panel'),
+        hasRoot: !!root,
+        hasPanel: !!panel,
+        hasTimer: !!timer,
+        idsClash: !!(panel && hostPanel && panel.id === hostPanel.id)
+      };
+    });
+    results.push({
+      name: 'xeatre-nanoplayer-omt-hud-and-timer',
+      pass: nanoHud.ok === true,
+      detail: nanoHud
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v217_xeatre_nanoplayer.png'), fullPage: true });
+
+    // Resume DVR mock for remaining Xeatre clock/inset checks.
+    await page.goto(`${base}${XEATRE_DVR_PATH}`, { waitUntil: 'domcontentloaded' });
+    await waitForOmt(page, 15000);
+    await page.waitForFunction(() => {
+      const v = document.querySelector('video');
+      return !!(v && document.getElementById('omt-root') &&
+        document.documentElement.classList.contains('omt-host-xeatre'));
+    }, { timeout: 15000 }).catch(() => {});
+    await page.waitForTimeout(300);
 
     // v2.2.12 #4: Xeatre clock inside letterboxed picture.
     const xeatreClockInset = await page.evaluate(() => {
@@ -6292,7 +6414,7 @@ async function run() {
       const root = document.getElementById('omt-root');
       const v = document.querySelector('video');
       const bar = document.querySelector('.vjs-control-bar');
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const r = v?.getBoundingClientRect();
       const rootCs = root ? getComputedStyle(root) : null;
       return {
@@ -6642,7 +6764,7 @@ async function run() {
     await page.goto(`${base}/inplayip-css-leak-mock.html`, { waitUntil: 'domcontentloaded' });
     await waitForOmt(page, 15000);
     await page.evaluate(() => {
-      const panel = document.getElementById('controls-panel');
+      const panel = document.getElementById('omt-controls-panel');
       const bar = document.getElementById('omt-timeline-bar');
       [panel, bar].forEach((el) => {
         if (!el) return;
@@ -7954,7 +8076,7 @@ async function run() {
             localStorage.setItem('omtClockShape', 'rounded');
           } catch (_) {}
           // Keep transport chrome out of the way for bottom-position shots.
-          const panel = document.getElementById('controls-panel');
+          const panel = document.getElementById('omt-controls-panel');
           const bar = document.getElementById('omt-timeline-bar');
           const kick = document.getElementById('omt-kickoff-bar');
           if (panel) {
@@ -8081,7 +8203,7 @@ async function run() {
         const root = document.getElementById('omt-root');
         if (root) root.classList.add('omt-more-open');
         // Ensure controls visible
-        const controls = document.getElementById('controls-panel');
+        const controls = document.getElementById('omt-controls-panel');
         if (controls) {
           controls.style.opacity = '1';
           controls.style.pointerEvents = 'auto';
@@ -8179,7 +8301,7 @@ async function run() {
 
       // Force HUD visible for screenshots / interaction
       await localPage.evaluate(() => {
-        const panel = document.getElementById('controls-panel');
+        const panel = document.getElementById('omt-controls-panel');
         const timelineBar = document.getElementById('omt-timeline-bar');
         [panel, timelineBar].forEach((el) => {
           if (!el) return;
@@ -8260,7 +8382,7 @@ async function run() {
         const more = document.getElementById('omt-more-panel');
         const btn = document.getElementById('omt-more-toggle');
         if (more && !more.classList.contains('is-open')) btn?.click();
-        const panel = document.getElementById('controls-panel');
+        const panel = document.getElementById('omt-controls-panel');
         if (panel) { panel.style.opacity = '1'; panel.style.pointerEvents = 'auto'; }
       });
       await localPage.waitForTimeout(120);
@@ -8280,7 +8402,7 @@ async function run() {
         const portal = document.getElementById('omt-control-tip');
         const tip = el ? getComputedStyle(el, '::after') : null;
         const portalCs = portal && !portal.hidden ? getComputedStyle(portal) : null;
-        const panel = document.getElementById('controls-panel');
+        const panel = document.getElementById('omt-controls-panel');
         const more = document.getElementById('omt-more-panel');
         const period = document.getElementById('omt-half-select');
         const btnRect = el?.getBoundingClientRect();
@@ -8354,7 +8476,7 @@ async function run() {
 
       // Click-to-toggle on <video> (original HTML dashboard behaviour)
       await localPage.evaluate(() => {
-        const panel = document.getElementById('controls-panel');
+        const panel = document.getElementById('omt-controls-panel');
         const bar = document.getElementById('omt-timeline-bar');
         if (panel) { panel.style.opacity = '0'; panel.style.pointerEvents = 'none'; }
         if (bar) { bar.style.opacity = '0'; bar.style.pointerEvents = 'none'; }
@@ -8393,7 +8515,7 @@ async function run() {
       });
       // Click on controls must NOT toggle
       await localPage.evaluate(() => {
-        const panel = document.getElementById('controls-panel');
+        const panel = document.getElementById('omt-controls-panel');
         if (panel) { panel.style.opacity = '1'; panel.style.pointerEvents = 'auto'; }
         const v = document.getElementById('omt-local-video');
         try { v.pause(); } catch (_) {}
@@ -8411,7 +8533,7 @@ async function run() {
 
       // v2.2.14: panel drag ends on mouseup; dblclick on panel does not toggle.
       const localPanelDrag = await localPage.evaluate(async () => {
-        const panel = document.getElementById('controls-panel');
+        const panel = document.getElementById('omt-controls-panel');
         const handle = document.getElementById('controls-handle');
         if (!panel || !handle) return { ok: false, reason: 'missing' };
         panel.style.opacity = '1';
@@ -8972,7 +9094,7 @@ async function run() {
       await localPage.evaluate(() => {
         document.getElementById('omt-btn-clear-timer')?.click();
         const bar = document.getElementById('omt-timeline-bar');
-        const panel = document.getElementById('controls-panel');
+        const panel = document.getElementById('omt-controls-panel');
         if (bar) { bar.style.opacity = '1'; bar.classList.remove('omt-chrome-hidden'); }
         if (panel) { panel.style.opacity = '1'; panel.style.pointerEvents = 'auto'; }
         document.querySelector('video')?.dispatchEvent(new Event('timeupdate'));
@@ -9027,7 +9149,7 @@ async function run() {
       results.push({ name: 'local-live-and-l-hotkey', pass: localLive.ok === true, detail: localLive });
 
       const localHide = await localPage.evaluate(async () => {
-        const panel = document.getElementById('controls-panel');
+        const panel = document.getElementById('omt-controls-panel');
         const timeline = document.getElementById('omt-timeline-bar');
         const btn = document.getElementById('omt-hide-panel');
         const read = () => ({

@@ -260,7 +260,7 @@
 <div id="omt-control-tip" class="omt-control-tip" hidden></div>
 
 <!-- Floating control card (v1.7.2 layout): handle → more (middle) → transport/speeds. Grows UP via bottom anchor. -->
-<div id="controls-panel" class="glass-panel">
+<div id="omt-controls-panel" class="glass-panel">
     <div class="drag-handle" id="controls-handle">
         <div class="drag-side-left">
             <button type="button" id="omt-more-toggle" class="omt-more-toggle handle-btn omt-tip" aria-expanded="false"${tip('More controls')}>
@@ -380,7 +380,7 @@
         timerUI = q('match-timer');
         osd = q('osd-message');
         setupPanel = q('setup-panel');
-        controlsPanel = q('controls-panel');
+        controlsPanel = q('omt-controls-panel');
         timelineSlider = q('omt-timeline-slider');
         vTimeCurrent = q('omt-v-time-current');
         vTimeDuration = q('omt-v-time-duration');
@@ -453,7 +453,7 @@
 
     /**
      * Ancestors with transform / filter / backdrop-filter become the containing
-     * block for position:fixed. Tips inside #controls-panel (.glass-panel) must
+     * block for position:fixed. Tips inside #omt-controls-panel (.glass-panel) must
      * use coordinates relative to that box, not the viewport.
      */
     function omtFixedContainingBlockOrigin(el) {
@@ -485,7 +485,7 @@
         if (!tipW) return;
         const tipH = 24;
         const rootRect = omtRoot.getBoundingClientRect();
-        const panel = el.closest('#controls-panel');
+        const panel = el.closest('#omt-controls-panel');
         const panelRect = panel ? panel.getBoundingClientRect() : rootRect;
         const rect = el.getBoundingClientRect();
         const pad = 8;

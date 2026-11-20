@@ -1,10 +1,13 @@
 /* Xeatre (Stats Perform Global Media Manager DVR popup) site adapter.
  * Player: Video.js 7.7.4 + videojs-http-streaming over Wowza nDVR HLS.
+ * Also: nanoplayer.html live ULL — nanoStream H5Live (VIDEO#h5live-playerDiv).
  * Host-only hide/CSS lives in xeatre-features.js — do not touch Examino/InPlay.
  * v2.2.5: never call videojs(); never reparent <video>; HUD mounts outside the
  * VJS player tree so host MutationObservers cannot re-init "hdmi-video".
  * v2.2.9: never mount HUD under #ControlBar (may wrap the player); never
  * attribute-mutate the tech/shell (host re-calls videojs → already initialised).
+ * v2.2.17: find H5Live video; OMT panel id is #omt-controls-panel (host keeps
+ * #controls-panel).
  */
     const SITE_XEATRE = {
         id: 'xeatre',
@@ -18,6 +21,11 @@
                 const inner = byId.querySelector('video.vjs-tech, video');
                 if (inner) return inner;
             }
+            // Live ULL nanoplayer.html — nanoStream H5Live (not Video.js).
+            const h5 = document.getElementById('h5live-playerDiv');
+            if (h5 && h5.tagName === 'VIDEO') return h5;
+            const nano = document.querySelector('#playerDiv > video, video#h5live-playerDiv');
+            if (nano && nano.tagName === 'VIDEO') return nano;
             const tech = document.querySelector('.video-js video.vjs-tech, .video-js video, video.vjs-tech');
             if (tech && tech.tagName === 'VIDEO') return tech;
             const any = document.querySelector('video');
@@ -29,10 +37,15 @@
             // sibling of the player — not a child. Appending into #hdmi-video /
             // .video-js mutates the player tree and can make the host call
             // videojs('hdmi-video') again ("already initialised" → black).
+            // H5Live: mount under #playerDiv's parent (or #playerDiv) — never
+            // inside the <video> itself.
             const shell = videoEl.closest('.video-js') ||
                 videoEl.closest('#hdmi-video') ||
                 videoEl.closest('.vjs-player') ||
-                videoEl.closest('#video-player');
+                videoEl.closest('#video-player') ||
+                (videoEl.id === 'h5live-playerDiv' || videoEl.closest('#playerDiv')
+                    ? (videoEl.closest('#playerDiv') || videoEl.parentElement)
+                    : null);
             let anchor = shell && shell.parentElement;
             // Field: #ControlBar may WRAP #hdmi-video. Never mount under a
             // chrome wrapper we hide — HUD would go display:none with the video.

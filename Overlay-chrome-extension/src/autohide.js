@@ -10,7 +10,9 @@
         if (!target || !omtRoot) return false;
         const el = target.nodeType === 1 ? target : target.parentElement;
         if (!el || !omtRoot.contains(el)) return false;
-        return !!el.closest('.glass-panel, #controls-panel, #match-timer-wrap, #match-timer, #omt-timeline-bar, #omt-more-panel, #omt-kickoff-bar, #omt-examino-settings, #osd-message, button, input, select, label, a, .omt-hud-chip');
+        // Prefer #omt-controls-panel over bare .glass-panel — Xeatre H5Live also
+        // uses .glass-panel on host #controls-panel (v2.2.17 id clash fix).
+        return !!el.closest('#omt-controls-panel, #omt-root .glass-panel, #match-timer-wrap, #match-timer, #omt-timeline-bar, #omt-more-panel, #omt-kickoff-bar, #omt-examino-settings, #osd-message, button, input, select, label, a, .omt-hud-chip');
     }
 
     function noteOmtUiActivity(showPanel = true) {
