@@ -471,6 +471,8 @@
 
         function finishEdit() {
             isEditingTimer = false;
+            omtClockEditCommit = null;
+            omtClockEditCancel = null;
             timerUI.classList.remove('is-editing', 'is-invalid');
             omtClockEditHint(false);
             atualizarRelogio();
@@ -485,6 +487,7 @@
             }
             isCommitted = true;
             if (!parsed.empty) {
+                // Existing seek path only (seekTo via navegarParaMinutoDeJogo).
                 navegarParaMinutoDeJogo(parsed.minuteFloat);
                 mostrarOSD('Clock set ' + parsed.label);
             }
@@ -497,22 +500,28 @@
             finishEdit();
         }
 
+        omtClockEditCommit = salvarEdicao;
+        omtClockEditCancel = cancelarEdicao;
+
         input.addEventListener('input', function () {
             timerUI.classList.remove('is-invalid');
             omtClockEditHint(false);
         });
 
+        // Capture so host window/document key handlers cannot eat Enter first.
         input.addEventListener('keydown', function (e) {
             if (e.key === 'Enter') {
                 e.preventDefault();
                 e.stopPropagation();
+                e.stopImmediatePropagation();
                 salvarEdicao();
             } else if (e.key === 'Escape') {
                 e.preventDefault();
                 e.stopPropagation();
+                e.stopImmediatePropagation();
                 cancelarEdicao();
             }
-        });
+        }, true);
 
         // Production: blur commits. Defer binding so the opening click cannot
         // immediately dismiss the field before the analyst types.

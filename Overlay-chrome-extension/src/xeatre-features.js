@@ -537,6 +537,8 @@
             if (window.scrollY || window.scrollX) window.scrollTo(0, 0);
         } catch (_) {}
 
+        if (typeof omtUpdateClockPictureInset === 'function') omtUpdateClockPictureInset();
+
         omtDebugXeatre('viewport-fit', {
             vw, vh, w, h, left, top,
             scrollW: document.documentElement.scrollWidth,
@@ -613,11 +615,72 @@
 
     try { window.__omtXeatreFitViewport = omtXeatreFitViewport; } catch (_) {}
 
+    /* ---- v2.2.12 click-to-play/pause on the video picture ----
+     * wire.js vid click uses e.target === vid; after viewport-fit / VJS layers
+     * the hit target is often the tech wrapper. Window capture (Examino-style)
+     * toggles only on the media surface, never on our HUD. */
+    function isXeatrePlayerMediaTarget(target) {
+        if (!target) return false;
+        const el = target.nodeType === 1 ? target : target.parentElement;
+        if (!el || !el.closest) return false;
+        if (typeof isOmtInteractiveTarget === 'function' && isOmtInteractiveTarget(el)) return false;
+        if (omtRoot && omtRoot.contains(el)) return false;
+        if (el.tagName === 'VIDEO') return true;
+        const shell = el.closest('#hdmi-video, .video-js');
+        if (!shell) return false;
+        // Host chrome (if any) stays excluded; picture/shell clicks toggle.
+        if (el.closest('.vjs-control-bar')) return false;
+        return true;
+    }
+
+    function handleXeatreClickArm(e) {
+        if (!(site && site.id === 'xeatre')) return;
+        xeatreClickArmed = isXeatrePlayerMediaTarget(e.target);
+    }
+
+    function handleXeatreClickToggle(e) {
+        if (!(site && site.id === 'xeatre')) return;
+        if (!xeatreClickArmed) return;
+        xeatreClickArmed = false;
+        if (!isXeatrePlayerMediaTarget(e.target)) return;
+        const media = (e.target && e.target.tagName === 'VIDEO')
+            ? e.target
+            : ((e.target && e.target.closest && e.target.closest('video')) || vid ||
+                (site && site.findVideo && site.findVideo()));
+        if (!media) return;
+        if (!media.src && !media.currentSrc && !media.srcObject) return;
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
+        if (media.paused) {
+            if (typeof safePlay === 'function') safePlay(media);
+            else try { media.play(); } catch (_) {}
+            if (typeof mostrarOSD === 'function') mostrarOSD('Play');
+        } else {
+            media.pause();
+            if (typeof mostrarOSD === 'function') mostrarOSD('Pause');
+        }
+        if (typeof noteOmtUiActivity === 'function') noteOmtUiActivity(false);
+        else if (typeof resetControlsTimeout === 'function') resetControlsTimeout(false);
+    }
+
+    function installXeatreClickToToggle() {
+        if (xeatreClickToggleInstalled) return;
+        xeatreClickToggleInstalled = true;
+        window.addEventListener('pointerdown', handleXeatreClickArm, true);
+        window.addEventListener('mousedown', handleXeatreClickArm, true);
+        window.addEventListener('click', handleXeatreClickToggle, true);
+        console.log('[OMT] Xeatre click-to-toggle installed (video surface only).');
+    }
+
     function initXeatrePlayerFeatures() {
         injectXeatreHideCSS();
         hideXeatreNativeChrome();
         startXeatreNativeChromeObserver();
         startXeatreViewportFit();
+        installXeatreClickToToggle();
+        if (typeof omtUpdateClockPictureInset === 'function') omtUpdateClockPictureInset();
         omtDebugXeatre('init', describeXeatreVideoPaint());
         console.log('[OMT] Xeatre host chrome hide + viewport fit installed.');
     }

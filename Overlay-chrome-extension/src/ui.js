@@ -72,6 +72,7 @@
         // Xeatre: viewport-fit owns compact/micro + player sizing (v2.2.10).
         if (site && site.id === 'xeatre') {
             if (typeof omtXeatreFitViewport === 'function') omtXeatreFitViewport();
+            // Fit path also refreshes clock picture inset.
             return;
         }
         const anchor = omtRoot.parentElement;
@@ -79,7 +80,75 @@
         const h = (anchor && anchor.clientHeight) || window.innerHeight;
         const compact = site.id === 'examino' && (w < 720 || h < 420);
         omtRoot.classList.toggle('omt-compact', compact);
+        if (typeof omtUpdateClockPictureInset === 'function') omtUpdateClockPictureInset();
     }
+
+    /**
+     * v2.2.12: Anchor #match-timer-wrap to the letterboxed video *picture*
+     * (InPlay + Xeatre). Examino already sits on the picture — leave it alone.
+     * Sets CSS vars on #omt-root; no polling — called from resize / FS / fit.
+     */
+    function omtVideoContentRect(videoEl) {
+        if (!videoEl || !videoEl.getBoundingClientRect) return null;
+        const r = videoEl.getBoundingClientRect();
+        if (r.width < 2 || r.height < 2) return null;
+        const vw = videoEl.videoWidth || 0;
+        const vh = videoEl.videoHeight || 0;
+        if (vw > 0 && vh > 0) {
+            const scale = Math.min(r.width / vw, r.height / vh);
+            const w = vw * scale;
+            const h = vh * scale;
+            return {
+                left: r.left + (r.width - w) / 2,
+                top: r.top + (r.height - h) / 2,
+                width: w,
+                height: h,
+                right: r.left + (r.width - w) / 2 + w,
+                bottom: r.top + (r.height - h) / 2 + h
+            };
+        }
+        // Metadata not ready — treat the element box as the picture.
+        return {
+            left: r.left, top: r.top, width: r.width, height: r.height,
+            right: r.right, bottom: r.bottom
+        };
+    }
+
+    function omtUpdateClockPictureInset() {
+        if (!omtRoot) return;
+        const id = site && site.id;
+        if (id !== 'inplayip' && id !== 'xeatre') {
+            try {
+                omtRoot.classList.remove('omt-clock-in-picture');
+                ['--omt-pic-top', '--omt-pic-left', '--omt-pic-right', '--omt-pic-bottom',
+                    '--omt-pic-width', '--omt-pic-height'].forEach((k) => {
+                    try { omtRoot.style.removeProperty(k); } catch (_) {}
+                });
+            } catch (_) {}
+            return;
+        }
+        const videoEl = vid || (site && typeof site.findVideo === 'function' && site.findVideo());
+        const rootRect = omtRoot.getBoundingClientRect();
+        const pic = omtVideoContentRect(videoEl);
+        if (!pic || rootRect.width < 2 || rootRect.height < 2) {
+            try { omtRoot.classList.remove('omt-clock-in-picture'); } catch (_) {}
+            return;
+        }
+        const top = Math.max(0, pic.top - rootRect.top);
+        const left = Math.max(0, pic.left - rootRect.left);
+        const right = Math.max(0, rootRect.right - pic.right);
+        const bottom = Math.max(0, rootRect.bottom - pic.bottom);
+        try {
+            omtRoot.style.setProperty('--omt-pic-top', top + 'px');
+            omtRoot.style.setProperty('--omt-pic-left', left + 'px');
+            omtRoot.style.setProperty('--omt-pic-right', right + 'px');
+            omtRoot.style.setProperty('--omt-pic-bottom', bottom + 'px');
+            omtRoot.style.setProperty('--omt-pic-width', pic.width + 'px');
+            omtRoot.style.setProperty('--omt-pic-height', pic.height + 'px');
+            omtRoot.classList.add('omt-clock-in-picture');
+        } catch (_) {}
+    }
+    try { window.__omtUpdateClockPictureInset = omtUpdateClockPictureInset; } catch (_) {}
 
     function updateFullscreenButton() {
         const btn = q('omt-btn-fullscreen');
@@ -109,6 +178,7 @@
                     anchor.appendChild(omtRoot);
                 }
             }
+            if (typeof omtUpdateClockPictureInset === 'function') omtUpdateClockPictureInset();
         });
         window.addEventListener('resize', () => updateCompactLayout());
     }

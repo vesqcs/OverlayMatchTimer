@@ -320,6 +320,7 @@
         wrap.style.bottom = '';
         wrap.style.transform = '';
         wrap.style.cursor = 'pointer';
+        if (typeof omtUpdateClockPictureInset === 'function') omtUpdateClockPictureInset();
     }
 
     function omtInstallClockClickEdit() {

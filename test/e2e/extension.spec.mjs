@@ -791,6 +791,73 @@ async function run() {
     });
     results.push({ name: 'examino-autohide-respects-clicks', pass: autoHide.ok === true, detail: autoHide });
 
+    // v2.2.12 #6: dblclick / repeated clicks on panel must not toggle host playback.
+    const examinoPanelSwallow = await page.evaluate(async () => {
+      const panel = document.getElementById('controls-panel');
+      const v = document.querySelector('video');
+      if (!panel || !v) return { ok: false, reason: 'missing' };
+      panel.style.opacity = '1';
+      panel.style.pointerEvents = 'auto';
+      try { await v.play(); } catch (_) {}
+      await new Promise((r) => setTimeout(r, 40));
+      const before = !!v.paused;
+      const x = panel.getBoundingClientRect();
+      const cx = x.left + x.width / 2;
+      const cy = x.top + Math.min(24, x.height / 3);
+      for (const type of ['pointerdown', 'mousedown', 'mouseup', 'click', 'click', 'dblclick']) {
+        panel.dispatchEvent(new MouseEvent(type, {
+          bubbles: true, cancelable: true, clientX: cx, clientY: cy, view: window
+        }));
+      }
+      await new Promise((r) => setTimeout(r, 80));
+      return { ok: !!v.paused === before, before, after: !!v.paused };
+    });
+    results.push({
+      name: 'examino-panel-swallows-dblclick',
+      pass: examinoPanelSwallow.ok === true,
+      detail: examinoPanelSwallow
+    });
+
+    // v2.2.12 #7: Enter on timer edit commits seek immediately (no video click).
+    const examinoEnterSeek = await page.evaluate(async () => {
+      const v = document.querySelector('video');
+      const wrap = document.getElementById('match-timer-wrap');
+      const timer = document.getElementById('match-timer');
+      const kick = document.getElementById('omt-btn-set-kickoff');
+      if (!v || !wrap || !timer || !kick) return { ok: false, reason: 'missing' };
+      try { v.pause(); } catch (_) {}
+      try { v.currentTime = 5; } catch (_) {}
+      kick.click();
+      await new Promise((r) => setTimeout(r, 40));
+      wrap.classList.add('is-visible');
+      document.getElementById('omt-root')?.classList.add('omt-timer-on');
+      timer.click();
+      await new Promise((r) => setTimeout(r, 60));
+      const input = document.getElementById('timer-edit-input');
+      if (!input) return { ok: false, reason: 'no-input' };
+      input.focus();
+      input.value = '1';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      const before = v.currentTime;
+      input.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
+        bubbles: true, cancelable: true
+      }));
+      await new Promise((r) => setTimeout(r, 80));
+      const stillEditing = !!document.getElementById('timer-edit-input');
+      const after = v.currentTime;
+      // Kickoff at ~5s + 1 minute → ~65s (or 60 if kickoff=0 path). Must move without video click.
+      return {
+        ok: !stillEditing && Math.abs(after - before) > 10,
+        stillEditing, before, after
+      };
+    });
+    results.push({
+      name: 'examino-clock-edit-enter-seeks',
+      pass: examinoEnterSeek.ok === true,
+      detail: examinoEnterSeek
+    });
+
     // Kick-off sync (in expandable more panel; same handlers)
     const timerSync = await page.evaluate(() => {
       document.getElementById('omt-more-toggle')?.click();
@@ -4313,6 +4380,59 @@ async function run() {
       detail: inplayClickPlay
     });
 
+    // v2.2.12 #3: match timer anchored inside video picture (letterbox inset).
+    const inplayClockInset = await page.evaluate(() => {
+      const root = document.getElementById('omt-root');
+      const wrap = document.getElementById('match-timer-wrap');
+      const v = document.querySelector('video');
+      if (!root || !wrap || !v) return { ok: false, reason: 'missing' };
+      try {
+        Object.defineProperty(v, 'videoWidth', { configurable: true, get: () => 1920 });
+        Object.defineProperty(v, 'videoHeight', { configurable: true, get: () => 800 });
+      } catch (_) {}
+      if (typeof window.__omtUpdateClockPictureInset === 'function') {
+        window.__omtUpdateClockPictureInset();
+      } else {
+        window.dispatchEvent(new Event('resize'));
+      }
+      wrap.classList.add('omt-clock-pos-top-left', 'is-visible');
+      const top = parseFloat(getComputedStyle(wrap).top) || 0;
+      const left = parseFloat(getComputedStyle(wrap).left) || 0;
+      const picTop = parseFloat(root.style.getPropertyValue('--omt-pic-top')) || 0;
+      const picLeft = parseFloat(root.style.getPropertyValue('--omt-pic-left')) || 0;
+      const parentIso = getComputedStyle(root.parentElement || root).isolation;
+      return {
+        ok: root.classList.contains('omt-clock-in-picture') && top >= picTop + 10 && left >= picLeft + 10,
+        top, left, picTop, picLeft,
+        isolation: parentIso,
+        inPicture: root.classList.contains('omt-clock-in-picture')
+      };
+    });
+    results.push({
+      name: 'inplayip-clock-in-picture',
+      pass: inplayClockInset.ok === true,
+      detail: inplayClockInset
+    });
+
+    // v2.2.12 #6 generic swallow on InPlay panel.
+    const inplayPanelSwallow = await page.evaluate(async () => {
+      const panel = document.getElementById('controls-panel');
+      const v = document.querySelector('video');
+      if (!panel || !v) return { ok: false, reason: 'missing' };
+      panel.style.opacity = '1';
+      panel.style.pointerEvents = 'auto';
+      const before = !!v.paused;
+      panel.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
+      panel.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      await new Promise((r) => setTimeout(r, 60));
+      return { ok: !!v.paused === before, before, after: !!v.paused };
+    });
+    results.push({
+      name: 'inplayip-panel-swallows-dblclick',
+      pass: inplayPanelSwallow.ok === true,
+      detail: inplayPanelSwallow
+    });
+
     const inplayAutohide = await page.evaluate(async () => {
       const panel = document.getElementById('controls-panel');
       const btn = document.getElementById('omt-m2');
@@ -5181,6 +5301,98 @@ async function run() {
       name: 'xeatre-hover-video-reveals-hud',
       pass: xeatreHoverReveal.ok === true,
       detail: xeatreHoverReveal
+    });
+
+    // v2.2.12 #1: click on Xeatre video picture toggles play/pause (not HUD).
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.waitForTimeout(100);
+    await page.evaluate(() => {
+      if (typeof window.__omtXeatreFitViewport === 'function') window.__omtXeatreFitViewport();
+    });
+    await page.evaluate(async () => {
+      const v = document.querySelector('#hdmi-video video, video.vjs-tech, video');
+      const panel = document.getElementById('controls-panel');
+      const bar = document.getElementById('omt-timeline-bar');
+      if (panel) { panel.style.opacity = '0'; panel.style.pointerEvents = 'none'; }
+      if (bar) { bar.style.opacity = '0'; bar.classList.add('omt-chrome-hidden'); }
+      try { await v?.play(); } catch (_) {}
+    });
+    await page.waitForTimeout(60);
+    const xeatreVidBox = await page.locator('#hdmi-video video, video.vjs-tech, video').first().boundingBox();
+    let xeatreClickToggle = { ok: false, reason: 'no-box' };
+    if (xeatreVidBox) {
+      const cx = xeatreVidBox.x + xeatreVidBox.width / 2;
+      const cy = xeatreVidBox.y + xeatreVidBox.height / 2;
+      const before = await page.evaluate(() => !!document.querySelector('video')?.paused);
+      await page.mouse.click(cx, cy);
+      await page.waitForTimeout(120);
+      const afterClick = await page.evaluate(() => !!document.querySelector('video')?.paused);
+      await page.mouse.click(cx, cy);
+      await page.waitForTimeout(120);
+      const afterSecond = await page.evaluate(() => !!document.querySelector('video')?.paused);
+      xeatreClickToggle = {
+        ok: before === false && afterClick === true && afterSecond === false,
+        before, afterClick, afterSecond, cx, cy
+      };
+    }
+    results.push({
+      name: 'xeatre-video-click-toggles-play',
+      pass: xeatreClickToggle.ok === true,
+      detail: xeatreClickToggle
+    });
+
+    // HUD click must NOT toggle.
+    const xeatreHudNoToggle = await page.evaluate(async () => {
+      const v = document.querySelector('video');
+      const panel = document.getElementById('controls-panel');
+      if (!v || !panel) return { ok: false, reason: 'missing' };
+      panel.style.opacity = '1';
+      panel.style.pointerEvents = 'auto';
+      try { await v.play(); } catch (_) {}
+      await new Promise((r) => setTimeout(r, 40));
+      const before = !!v.paused;
+      panel.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      panel.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
+      await new Promise((r) => setTimeout(r, 60));
+      return { ok: !!v.paused === before, before, after: !!v.paused };
+    });
+    results.push({
+      name: 'xeatre-hud-click-does-not-toggle',
+      pass: xeatreHudNoToggle.ok === true,
+      detail: xeatreHudNoToggle
+    });
+
+    // v2.2.12 #4: Xeatre clock inside letterboxed picture.
+    const xeatreClockInset = await page.evaluate(() => {
+      const root = document.getElementById('omt-root');
+      const wrap = document.getElementById('match-timer-wrap');
+      const v = document.querySelector('video');
+      if (!root || !wrap || !v) return { ok: false, reason: 'missing' };
+      if (typeof window.__omtXeatreFitViewport === 'function') window.__omtXeatreFitViewport();
+      try {
+        Object.defineProperty(v, 'videoWidth', { configurable: true, get: () => 1920 });
+        Object.defineProperty(v, 'videoHeight', { configurable: true, get: () => 800 });
+      } catch (_) {}
+      if (typeof window.__omtUpdateClockPictureInset === 'function') {
+        window.__omtUpdateClockPictureInset();
+      } else {
+        window.dispatchEvent(new Event('resize'));
+      }
+      wrap.classList.add('omt-clock-pos-top-left', 'is-visible');
+      const top = parseFloat(getComputedStyle(wrap).top) || 0;
+      const left = parseFloat(getComputedStyle(wrap).left) || 0;
+      const picTop = parseFloat(root.style.getPropertyValue('--omt-pic-top')) || 0;
+      const picLeft = parseFloat(root.style.getPropertyValue('--omt-pic-left')) || 0;
+      return {
+        ok: root.classList.contains('omt-clock-in-picture') && top >= picTop + 10 && left >= picLeft + 10,
+        top, left, picTop, picLeft,
+        inPicture: root.classList.contains('omt-clock-in-picture')
+      };
+    });
+    results.push({
+      name: 'xeatre-clock-in-picture',
+      pass: xeatreClockInset.ok === true,
+      detail: xeatreClockInset
     });
 
     // Restore a comfortable viewport for later Xeatre live-UX checks.

@@ -423,6 +423,39 @@ html.omt-host-examino.omt-hud-on .setting-holder.omt-examino-native-hidden.omt-s
     transform: translateX(-50%);
 }
 #match-timer-wrap.omt-clock-pos-bottom-right { bottom: 196px; right: 14px; top: auto; left: auto; transform: none; }
+
+/* v2.2.12: InPlay + Xeatre — pin clock to letterboxed picture (not black bars).
+   Bottom presets keep a single bottom offset (timeline clearance); only shift
+   horizontally into the picture so insets are not doubled. Examino unchanged. */
+#omt-root.omt-inplayip.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-top-left,
+#omt-root.omt-xeatre.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-top-left {
+    top: calc(var(--omt-pic-top, 0px) + 14px);
+    left: calc(var(--omt-pic-left, 0px) + 14px);
+}
+#omt-root.omt-inplayip.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-top-centre,
+#omt-root.omt-xeatre.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-top-centre {
+    top: calc(var(--omt-pic-top, 0px) + 44px);
+    left: calc(var(--omt-pic-left, 0px) + (var(--omt-pic-width, 100%) / 2));
+    transform: translateX(-50%);
+}
+#omt-root.omt-inplayip.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-top-right,
+#omt-root.omt-xeatre.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-top-right {
+    top: calc(var(--omt-pic-top, 0px) + 14px);
+    right: calc(var(--omt-pic-right, 0px) + 14px);
+}
+#omt-root.omt-inplayip.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-bottom-left,
+#omt-root.omt-xeatre.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-bottom-left {
+    left: calc(var(--omt-pic-left, 0px) + 14px);
+}
+#omt-root.omt-inplayip.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-bottom-centre,
+#omt-root.omt-xeatre.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-bottom-centre {
+    left: calc(var(--omt-pic-left, 0px) + (var(--omt-pic-width, 100%) / 2));
+    transform: translateX(-50%);
+}
+#omt-root.omt-inplayip.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-bottom-right,
+#omt-root.omt-xeatre.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-bottom-right {
+    right: calc(var(--omt-pic-right, 0px) + 14px);
+}
 #match-timer {
     position: relative;
     top: auto;
