@@ -47,7 +47,14 @@ html.omt-host-inplayip.omt-hud-on .video-js:has(#omt-root) .vjs-big-play-button,
 html.omt-host-inplayip.omt-hud-on .video-js:has(#omt-root) .vjs-loading-spinner,
 html.omt-host-inplayip.omt-hud-on .video-js:has(#omt-root) .vjs-poster,
 html.omt-host-inplayip.omt-hud-on .video-js:has(#omt-root) .vjs-menu-button-popup .vjs-menu,
-html.omt-host-inplayip.omt-hud-on .video-js:has(#omt-root) .vjs-text-track-display {
+html.omt-host-inplayip.omt-hud-on .video-js:has(#omt-root) .vjs-text-track-display,
+/* v2.3.1: secondary tiles with our OMT bottom bar — same hide as primary. */
+html.omt-host-inplayip.omt-hud-on .video-js:has(.omt-tile-root) .vjs-control-bar,
+html.omt-host-inplayip.omt-hud-on .video-js:has(.omt-tile-root) .vjs-big-play-button,
+html.omt-host-inplayip.omt-hud-on .video-js:has(.omt-tile-root) .vjs-loading-spinner,
+html.omt-host-inplayip.omt-hud-on .video-js:has(.omt-tile-root) .vjs-poster,
+html.omt-host-inplayip.omt-hud-on .video-js:has(.omt-tile-root) .vjs-menu-button-popup .vjs-menu,
+html.omt-host-inplayip.omt-hud-on .video-js:has(.omt-tile-root) .vjs-text-track-display {
     display: none !important;
     opacity: 0 !important;
     pointer-events: none !important;
@@ -2283,11 +2290,12 @@ html.omt-host-xeatre.omt-hud-on .video-js.vjs-fluid {
     pointer-events: auto !important;
     position: absolute;
     left: 50%;
-    bottom: 32px;
+    /* Sit above the v2.3.1 tile bottom bar. */
+    bottom: 72px;
     top: auto;
     transform: translateX(-50%);
     width: min(360px, calc(100% - 12px));
-    max-height: calc(100% - 16px);
+    max-height: calc(100% - 88px);
     display: flex;
     flex-direction: column;
     z-index: 50;
@@ -2309,4 +2317,90 @@ html.omt-host-xeatre.omt-hud-on .video-js.vjs-fluid {
 .omt-tile-root .omt-tile-panel .omt-speed-chip {
     padding: 2px 4px;
     font-size: 10px;
+}
+
+/* v2.3.1: compact OMT bottom bar per secondary tile (same look as primary, tighter). */
+.omt-tile-root .omt-tile-bar {
+    pointer-events: none;
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 48;
+    padding: 16px 8px 4px;
+    gap: 1px;
+}
+.omt-tile-root .omt-tile-bar .omt-timeline-track,
+.omt-tile-root .omt-tile-bar .omt-timeline-chrome-row,
+.omt-tile-root .omt-tile-bar .omt-timeline-play-btn,
+.omt-tile-root .omt-tile-bar .omt-timeline-vol-btn,
+.omt-tile-root .omt-tile-bar .omt-timeline-vol-range,
+.omt-tile-root .omt-tile-bar .omt-timeline-live-indicator,
+.omt-tile-root .omt-tile-bar .omt-timeline-fs-btn,
+.omt-tile-root .omt-tile-bar .timeline-slider {
+    pointer-events: auto;
+}
+.omt-tile-root .omt-tile-bar .omt-timeline-chrome-row {
+    min-height: 24px;
+    gap: 6px;
+}
+.omt-tile-root .omt-tile-bar .omt-timeline-chrome-left {
+    gap: 6px;
+}
+.omt-tile-root .omt-tile-bar .omt-timeline-play-btn,
+.omt-tile-root .omt-tile-bar .omt-timeline-vol-btn,
+.omt-tile-root .omt-tile-bar .omt-timeline-fs-btn {
+    width: 24px;
+    height: 24px;
+    color: #f1f1f1;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+.omt-tile-root .omt-tile-bar .omt-timeline-play-btn.playing {
+    color: #f5831f;
+}
+.omt-tile-root .omt-tile-bar .omt-timeline-vol-range {
+    width: 56px;
+    max-width: 20vw;
+}
+.omt-tile-root .omt-tile-bar .omt-time-text,
+.omt-tile-root .omt-tile-bar .omt-timeline-live-delay,
+.omt-tile-root .omt-tile-bar .omt-timeline-live-chip {
+    font-size: 10px !important;
+    font-variant-numeric: tabular-nums;
+    color: #c8c8c8;
+}
+.omt-tile-root .omt-tile-bar .omt-timeline-live-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: none;
+    background: transparent;
+    color: #c8c8c8;
+    cursor: pointer;
+    padding: 0;
+}
+.omt-tile-root .omt-tile-bar .omt-timeline-live-chip {
+    color: #ff3b30;
+    font-weight: 700;
+}
+.omt-tile-root .omt-tile-bar.omt-at-live .omt-timeline-live-chip {
+    display: inline;
+}
+.omt-tile-root .omt-tile-bar .omt-timeline-post-times {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+}
+.omt-tile-root .omt-tile-bar .omt-timeline-post-times[hidden] {
+    display: none !important;
+}
+.omt-tile-root .omt-tile-bar .omt-timeline-live-indicator[hidden] {
+    display: none !important;
 }
