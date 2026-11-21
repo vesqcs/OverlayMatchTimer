@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Examino field vcenter probe (real frames)</title>
+  <style>
+    /* Matches Vasco's 2.2.21/22 field chain: player strip ~387px at top of tab. */
+    html, body { margin: 0; height: 100%; background: #000; }
+    .grow.overflow-y-auto { position: static; width: 100%; }
+    .main-container.svelte-iq8mv8 { position: static; width: 100%; }
+    .video-container.svelte-iq8mv8.hide-fullscreen {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 387px;
+      background: #111;
+    }
+    #video-player.ovenplayer.op-wrapper.small {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+    .op-player { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .op-core-ui-wrapper { position: relative; width: 100%; height: 100%; }
+    .op-media-element-container { position: absolute; inset: 0; width: 100%; height: 100%; }
+    video {
+      position: absolute; inset: 0; width: 100%; height: 100%;
+      object-fit: contain; background: #000;
+    }
+  </style>
+</head>
+<body>
+  <div class="grow overflow-y-auto">
+    <div class="main-container svelte-iq8mv8">
+      <div class="video-container svelte-iq8mv8 hide-fullscreen">
+        <div id="video-player" class="ovenplayer op-wrapper small">
+          <div class="op-player" id="op-player">
+            <div class="op-core-ui-wrapper">
+              <div class="op-media-element-container" id="media-host"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+    (function () {
+      const host = document.getElementById('media-host');
+      const v = document.createElement('video');
+      v.setAttribute('playsinline', '');
+      v.muted = true;
+      v.loop = true;
+      v.src = '/examino-visible-clip.mp4';
+      host.appendChild(v);
+      v.play().catch(function () {});
+    })();
+  </script>
+</body>
+</html>

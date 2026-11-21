@@ -2194,6 +2194,18 @@ html.omt-host-examino.omt-hud-on .setting-holder.omt-examino-native-hidden.omt-s
     z-index: 2147483646;
 }
 
+/* v2.2.23: translateY centre paints into the black tab — never change host
+   container sizes (2.2.22 100vh flex blacked the picture). Only allow
+   overflow so the shifted player block is not clipped. */
+html.omt-host-examino.omt-hud-on.omt-examino-vcenter .grow.overflow-y-auto,
+html.omt-host-examino.omt-hud-on.omt-examino-vcenter .grow,
+html.omt-host-examino.omt-hud-on.omt-examino-vcenter .main-container,
+html.omt-host-examino.omt-hud-on.omt-examino-vcenter .video-container,
+html.omt-host-examino.omt-hud-on.omt-examino-vcenter .page,
+html.omt-host-examino.omt-hud-on.omt-examino-vcenter .top {
+    overflow: visible !important;
+}
+
 /* ---- XEATRE VIEWPORT FIT (v2.2.10) ----
    Pin HUD to the viewport so fluid player overflow cannot scroll it away.
    Player sizing (contain / letterbox) is applied in xeatre-features.js. */

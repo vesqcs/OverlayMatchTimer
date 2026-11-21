@@ -1715,6 +1715,119 @@
         examinoHoverRevealInstalled = false;
     }
 
+    /* ---- v2.2.23: vertical centre via translateY on the player block ----
+     * Field 2.2.22: 100vh flex on .grow/.main-container blacked the picture.
+     * Here we never change host container sizes — only shift #video-player /
+     * .video-container with translateY((vh - h) / 2 - top). Skip in FS.
+     * Overflow:visible on ancestors (CSS class) so the shift is not clipped.
+     * ResizeObserver + resize/fullscreenchange; no polling. */
+    let examinoVCenterEl = null;
+    let examinoVCenterPrevTransform = '';
+    let examinoVCenterRO = null;
+    let examinoVCenterHooked = false;
+
+    function omtExaminoFindPlayerBlock() {
+        // Prefer the media leaf — NEVER .op-player / #video-player / .video-container
+        // when they contain #omt-root (transform would trap position:fixed HUD).
+        const v = vid ||
+            (site && typeof site.findVideo === 'function' && site.findVideo()) ||
+            document.querySelector('video');
+        if (v) {
+            const media = v.closest && v.closest('.op-media-element-container');
+            if (media && !(omtRoot && media.contains(omtRoot))) return media;
+            if (!(omtRoot && omtRoot.contains(v)) && !(omtRoot && v.contains && v.contains(omtRoot))) {
+                return v;
+            }
+        }
+        const mediaOnly = document.querySelector('.op-media-element-container');
+        if (mediaOnly && !(omtRoot && mediaOnly.contains(omtRoot))) return mediaOnly;
+        return null;
+    }
+
+    function omtExaminoClearPlayerVCenter() {
+        try { document.documentElement.classList.remove('omt-examino-vcenter'); } catch (_) {}
+        const el = examinoVCenterEl;
+        if (el && el.style) {
+            try {
+                el.classList.remove('omt-examino-vcenter-target');
+                if (examinoVCenterPrevTransform) el.style.transform = examinoVCenterPrevTransform;
+                else el.style.removeProperty('transform');
+            } catch (_) {}
+        }
+        examinoVCenterEl = null;
+        examinoVCenterPrevTransform = '';
+    }
+
+    function omtExaminoCenterPlayerInViewport() {
+        if (!(site && site.id === 'examino')) return;
+        if (document.fullscreenElement) {
+            omtExaminoClearPlayerVCenter();
+            if (typeof omtUpdateClockPictureInset === 'function') omtUpdateClockPictureInset();
+            return;
+        }
+        const el = omtExaminoFindPlayerBlock();
+        if (!el || !el.getBoundingClientRect) return;
+
+        if (examinoVCenterEl && examinoVCenterEl !== el) omtExaminoClearPlayerVCenter();
+        if (!examinoVCenterEl) {
+            examinoVCenterEl = el;
+            examinoVCenterPrevTransform = el.style.transform || '';
+            try { el.classList.add('omt-examino-vcenter-target'); } catch (_) {}
+        }
+
+        // Measure the unshifted box, then apply translateY.
+        try {
+            el.style.transform = examinoVCenterPrevTransform || 'none';
+        } catch (_) {}
+        void el.offsetHeight;
+        const r = el.getBoundingClientRect();
+        if (r.height < 8 || r.width < 8) {
+            omtExaminoClearPlayerVCenter();
+            if (typeof omtUpdateClockPictureInset === 'function') omtUpdateClockPictureInset();
+            return;
+        }
+        const targetTop = Math.max(0, (window.innerHeight - r.height) / 2);
+        const shift = Math.round(targetTop - r.top);
+        try { document.documentElement.classList.add('omt-examino-vcenter'); } catch (_) {}
+        try {
+            if (Math.abs(shift) < 1) {
+                if (examinoVCenterPrevTransform) el.style.transform = examinoVCenterPrevTransform;
+                else el.style.removeProperty('transform');
+            } else {
+                const prev = (examinoVCenterPrevTransform &&
+                    examinoVCenterPrevTransform !== 'none')
+                    ? (examinoVCenterPrevTransform + ' ')
+                    : '';
+                el.style.transform = prev + 'translateY(' + shift + 'px)';
+            }
+        } catch (_) {}
+
+        if (typeof omtUpdateClockPictureInset === 'function') omtUpdateClockPictureInset();
+    }
+    try { window.__omtExaminoCenterPlayer = omtExaminoCenterPlayerInViewport; } catch (_) {}
+
+    function startExaminoPlayerVCenter() {
+        const run = () => {
+            try { omtExaminoCenterPlayerInViewport(); } catch (_) {}
+        };
+        if (!examinoVCenterHooked) {
+            examinoVCenterHooked = true;
+            window.addEventListener('resize', run);
+            document.addEventListener('fullscreenchange', run);
+            try {
+                if (typeof ResizeObserver === 'function') {
+                    examinoVCenterRO = new ResizeObserver(run);
+                    const block = omtExaminoFindPlayerBlock();
+                    if (block) examinoVCenterRO.observe(block);
+                    examinoVCenterRO.observe(document.documentElement);
+                }
+            } catch (_) {}
+        }
+        // One-shot settles after chrome-hide / first layout (not a poll loop).
+        run();
+        try { requestAnimationFrame(run); } catch (_) { setTimeout(run, 0); }
+    }
+
     function initExaminoPlayerFeatures() {
         installExaminoHotkeys();
         installExaminoClickToToggle();
@@ -1723,6 +1836,7 @@
         hideExaminoNativeChrome();
         startExaminoNativeChromeObserver();
         startExaminoHoverReveal();
+        startExaminoPlayerVCenter();
         // Delay auto-VOD so OpenPlayer settings exist; retries handle late menus
         // and mid-switch <video> replacements. (v1.2.0)
         setTimeout(() => {
