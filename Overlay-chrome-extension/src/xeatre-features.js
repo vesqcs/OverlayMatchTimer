@@ -378,13 +378,11 @@
         if (!panel || !panel.style) return false;
         try {
             if (panel.dataset && panel.dataset.omtXeatreAutoClamp === '1') return false;
-            if (panel.style.transform === 'none') return true;
-            const left = panel.style.left || '';
-            if (left && left !== '50%' && left !== 'auto') return true;
-            const bottom = panel.style.bottom || '';
-            if (bottom && bottom !== 'auto') return true;
-            const top = panel.style.top || '';
-            if (top && top !== 'auto') return true;
+            // v2.3.6: shared drag flag — never treat default-center as positioned.
+            if (typeof omtPanelIsUserPositioned === 'function') {
+                return omtPanelIsUserPositioned(panel);
+            }
+            if (panel.dataset && panel.dataset.omtUserDragged === '1') return true;
         } catch (_) {}
         return false;
     }

@@ -5954,6 +5954,8 @@ print(lit)
         if (!root || !panel) return { ok: false, reason: 'missing' };
         panel.style.opacity = '1';
         panel.style.pointerEvents = 'auto';
+        // Mark as user-dragged so clamp may act (default-center is never clamped).
+        try { panel.dataset.omtUserDragged = '1'; } catch (_) {}
         const rw = root.clientWidth || root.getBoundingClientRect().width;
         const rh = root.clientHeight || root.getBoundingClientRect().height;
         const pw = panel.offsetWidth || 400;
@@ -5990,10 +5992,13 @@ print(lit)
         if (!root || !panel) return { ok: false, reason: 'missing' };
         const rr = root.getBoundingClientRect();
         const pr = panel.getBoundingClientRect();
+        const topSafe = (typeof window.__omtPanelTopSafeMargin === 'function')
+          ? window.__omtPanelTopSafeMargin(root)
+          : 8;
         const eps = 2;
         const inside =
           pr.left >= rr.left - eps &&
-          pr.top >= rr.top - eps &&
+          pr.top >= rr.top + topSafe - eps &&
           pr.right <= rr.right + eps &&
           pr.bottom <= rr.bottom + eps;
         const visible = pr.width > 20 && pr.height > 20 &&
@@ -6003,6 +6008,7 @@ print(lit)
           ok: inside && visible,
           inside,
           visible,
+          topSafe,
           panel: {
             left: Math.round(pr.left - rr.left),
             top: Math.round(pr.top - rr.top),
@@ -6051,6 +6057,7 @@ print(lit)
       if (panel && root) {
         const rw = root.clientWidth;
         const pw = panel.offsetWidth || 400;
+        try { panel.dataset.omtUserDragged = '1'; } catch (_) {}
         panel.style.opacity = '1';
         panel.style.left = Math.max(0, rw - pw - 8) + 'px';
         panel.style.top = '8px';
@@ -6061,6 +6068,7 @@ print(lit)
       if (tPanel && tile) {
         const tw = tile.clientWidth;
         const pw = tPanel.offsetWidth || 300;
+        try { tPanel.dataset.omtUserDragged = '1'; } catch (_) {}
         tPanel.style.opacity = '1';
         tPanel.style.left = Math.max(0, tw - pw - 8) + 'px';
         tPanel.style.top = '8px';
@@ -6086,12 +6094,16 @@ print(lit)
         if (!panel || !root) return { ok: false };
         const rr = root.getBoundingClientRect();
         const pr = panel.getBoundingClientRect();
+        const topSafe = (typeof window.__omtPanelTopSafeMargin === 'function')
+          ? window.__omtPanelTopSafeMargin(root)
+          : 8;
         const eps = 2;
         const inside =
-          pr.left >= rr.left - eps && pr.top >= rr.top - eps &&
+          pr.left >= rr.left - eps && pr.top >= rr.top + topSafe - eps &&
           pr.right <= rr.right + eps && pr.bottom <= rr.bottom + eps;
         return {
           ok: inside && pr.width > 20 && pr.height > 20,
+          topSafe: Math.round(topSafe),
           left: Math.round(pr.left - rr.left),
           top: Math.round(pr.top - rr.top),
           right: Math.round(rr.right - pr.right),
@@ -6144,7 +6156,99 @@ print(lit)
     });
 
     // ---------- v2.3.6: MV compact S + top-safe + edge drag + no-select ----------
-    const TOP_SAFE = 56;
+    // 0) Default-centered panel must stay centered across small→FS→small (no jump).
+    async function assertCenteredAcrossFs(label, url) {
+      await page.setViewportSize({ width: 900, height: 560 });
+      await page.goto(`${base}/${url}`, { waitUntil: 'domcontentloaded' });
+      await waitForOmt(page, 15000);
+      await page.waitForTimeout(200);
+      const snap = async (tag) => page.evaluate((t) => {
+        const root = document.getElementById('omt-root');
+        const panel = document.getElementById('omt-controls-panel');
+        if (!root || !panel) return { ok: false, tag: t, reason: 'missing' };
+        // Ensure default (never dragged).
+        try { delete panel.dataset.omtUserDragged; } catch (_) {}
+        panel.style.removeProperty('left');
+        panel.style.removeProperty('top');
+        panel.style.removeProperty('right');
+        panel.style.removeProperty('bottom');
+        panel.style.removeProperty('transform');
+        panel.style.opacity = '1';
+        const rr = root.getBoundingClientRect();
+        const pr = panel.getBoundingClientRect();
+        const midRoot = rr.left + rr.width / 2;
+        const midPanel = pr.left + pr.width / 2;
+        const offset = Math.abs(midPanel - midRoot);
+        const userPos = !!(panel.dataset && panel.dataset.omtUserDragged === '1');
+        const inlineLeft = panel.style.left || '';
+        return {
+          ok: offset < 24 && !userPos && !/px$/i.test(inlineLeft),
+          tag: t,
+          offset: Math.round(offset),
+          userPos,
+          inlineLeft,
+          transform: panel.style.transform || '',
+          rootW: Math.round(rr.width),
+          panelW: Math.round(pr.width)
+        };
+      }, tag);
+      const smallBefore = await snap('small-before');
+      await page.screenshot({
+        path: path.join(ARTIFACTS, `v236_center_${label}_small.png`),
+        fullPage: true
+      });
+      await page.setViewportSize({ width: 1400, height: 900 });
+      await page.waitForTimeout(60);
+      await page.evaluate(() => {
+        document.dispatchEvent(new Event('fullscreenchange'));
+        window.dispatchEvent(new Event('resize'));
+        if (typeof window.__omtSchedulePanelClamp === 'function') window.__omtSchedulePanelClamp();
+      });
+      await page.waitForTimeout(140);
+      const large = await snap('large-fs');
+      await page.screenshot({
+        path: path.join(ARTIFACTS, `v236_center_${label}_fs.png`),
+        fullPage: true
+      });
+      await page.setViewportSize({ width: 900, height: 560 });
+      await page.waitForTimeout(60);
+      await page.evaluate(() => {
+        document.dispatchEvent(new Event('fullscreenchange'));
+        window.dispatchEvent(new Event('resize'));
+        if (typeof window.__omtSchedulePanelClamp === 'function') window.__omtSchedulePanelClamp();
+      });
+      await page.waitForTimeout(140);
+      const smallAfter = await snap('small-after');
+      await page.screenshot({
+        path: path.join(ARTIFACTS, `v236_center_${label}_back.png`),
+        fullPage: true
+      });
+      return {
+        ok: smallBefore.ok && large.ok && smallAfter.ok,
+        smallBefore,
+        large,
+        smallAfter
+      };
+    }
+
+    const centerInplay = await assertCenteredAcrossFs('inplay', 'inplayip-schedule-mock.html');
+    results.push({
+      name: 'panel-default-stays-centered-inplay-fs',
+      pass: centerInplay.ok === true,
+      detail: centerInplay
+    });
+    const centerExamino = await assertCenteredAcrossFs('examino', 'examino-mock.html');
+    results.push({
+      name: 'panel-default-stays-centered-examino-fs',
+      pass: centerExamino.ok === true,
+      detail: centerExamino
+    });
+    const centerXeatre = await assertCenteredAcrossFs('xeatre', 'xeatre-dvr-mock.html');
+    results.push({
+      name: 'panel-default-stays-centered-xeatre-fs',
+      pass: centerXeatre.ok === true,
+      detail: centerXeatre
+    });
 
     // 1) Multi-view 4 tiles → every panel is S; single video reverts to user size.
     await page.setViewportSize({ width: 1280, height: 800 });
@@ -6229,7 +6333,7 @@ print(lit)
       detail: mvSingleSize
     });
 
-    // 2) Top-safe margin after FS-exit emulation (InPlay + Examino).
+    // 2) Top-safe: drag-handle row stays below measured native top chrome.
     async function placeAtTopThenClamp(label) {
       await page.setViewportSize({ width: 1280, height: 800 });
       await page.waitForTimeout(80);
@@ -6237,6 +6341,7 @@ print(lit)
         const root = document.getElementById('omt-root');
         const panel = document.getElementById('omt-controls-panel');
         if (!root || !panel) return;
+        try { panel.dataset.omtUserDragged = '1'; } catch (_) {}
         panel.style.opacity = '1';
         panel.style.pointerEvents = 'auto';
         panel.style.left = '24px';
@@ -6253,24 +6358,28 @@ print(lit)
         else if (typeof window.__omtClampAllPanels === 'function') window.__omtClampAllPanels();
       });
       await page.waitForTimeout(120);
-      return page.evaluate((safe) => {
+      return page.evaluate(() => {
         const root = document.getElementById('omt-root');
         const panel = document.getElementById('omt-controls-panel');
         if (!root || !panel) return { ok: false, reason: 'missing' };
+        const safe = (typeof window.__omtPanelTopSafeMargin === 'function')
+          ? window.__omtPanelTopSafeMargin(root)
+          : 8;
         const rr = root.getBoundingClientRect();
         const pr = panel.getBoundingClientRect();
         const top = Math.round(pr.top - rr.top);
         const eps = 2;
+        // Handle row = top of panel; must sit at/below measured blocked zone + gap.
         return {
           ok: top >= safe - eps && pr.bottom <= rr.bottom + eps &&
             pr.left >= rr.left - eps && pr.right <= rr.right + eps,
           top,
-          safe,
+          safe: Math.round(safe),
           left: Math.round(pr.left - rr.left),
           w: Math.round(pr.width),
           h: Math.round(pr.height)
         };
-      }, TOP_SAFE);
+      });
     }
 
     await page.goto(`${base}/inplayip-schedule-mock.html`, { waitUntil: 'domcontentloaded' });

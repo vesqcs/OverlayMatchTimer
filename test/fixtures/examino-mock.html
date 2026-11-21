@@ -29,6 +29,12 @@
       position: absolute; inset: 0; width: 100%; height: 100%;
     }
     video { object-fit: contain; background: #000; }
+    /* Field: OvenPlayer/Examino dark top overlay (~100px at 1080p) blocks clicks. */
+    .op-top-panel {
+      position: absolute; left: 0; right: 0; top: 0; height: 100px; z-index: 4;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.35) 55%, rgba(0,0,0,0) 100%);
+      pointer-events: auto;
+    }
     .hamburger-menu {
       position: absolute; left: 8px; top: 8px; z-index: 6;
       background: #222; border: 1px solid #555; padding: 4px 8px; border-radius: 4px;
@@ -79,6 +85,7 @@
           <div class="top-clock">12:34:56</div>
           <div class="op-player" id="op-player">
             <div class="op-media-element-container op-clear" id="media-host"></div>
+            <div class="op-top-panel" aria-hidden="true"></div>
             <div class="op-ui op-clear">OpenPlayer UI</div>
             <div class="op-controls">OpenPlayer Controls</div>
             <div class="op-progressbar-container op-clear">Progress</div>
