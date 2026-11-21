@@ -5532,7 +5532,7 @@ print(lit)
     }
     await page.screenshot({ path: path.join(ARTIFACTS, 'inplayip_hide_tooltip.png'), fullPage: true });
 
-    // ---------- InPlay multi-view per-tile panels (v2.3.0) — no per-tile clock ----------
+    // ---------- InPlay multi-view panels + bottom bars (v2.3.1) — no per-tile clock ----------
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto(`${base}/inplayip-multiview-mock.html?tiles=1`, { waitUntil: 'domcontentloaded' });
     await waitForOmt(page, 15000);
@@ -5543,25 +5543,26 @@ print(lit)
       active: !!window.__omtInplayMvActive,
       arm: !!window.__omtInplayMvArmInstalled,
       tiles: document.querySelectorAll('[data-omt-tile-root]').length,
+      bars: document.querySelectorAll('[data-omt-tile-bar]').length,
       hasRoot: !!document.getElementById('omt-root'),
       videos: document.querySelectorAll('video').length,
       hasPlayersContainer: !!document.querySelector('.players-container')
     }));
     results.push({
       name: 'inplayip-mv-1-tile-no-secondary-panels',
-      // Arm may be installed when .players-container exists, but sync must stay 0
-      // and no tile panels until a second VIDEO appears.
-      pass: mv1.hasRoot && mv1.videos === 1 && mv1.tiles === 0 && mv1.active === false &&
-        mv1.sync === 0 && mv1.hasPlayersContainer === true,
+      pass: mv1.hasRoot && mv1.videos === 1 && mv1.tiles === 0 && mv1.bars === 0 &&
+        mv1.active === false && mv1.sync === 0 && mv1.hasPlayersContainer === true,
       detail: mv1
     });
-    await page.screenshot({ path: path.join(ARTIFACTS, 'v230_inplay_mv_1tile.png'), fullPage: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v231_inplay_mv_1tile.png'), fullPage: true });
 
-    // 2 tiles: arm sees VIDEO add → secondary compact panel; primary keeps #omt-root.
+    // 2 tiles: secondary panel + bottom bar; bar seek hits only secondary.
     await page.evaluate(() => { window.__omtSetTiles && window.__omtSetTiles(2); });
     await waitForOmt(page, 15000);
     await page.waitForFunction(
-      () => window.__omtInplayMvActive === true && document.querySelectorAll('[data-omt-tile-root]').length >= 1,
+      () => window.__omtInplayMvActive === true &&
+        document.querySelectorAll('[data-omt-tile-root]').length >= 1 &&
+        document.querySelectorAll('[data-omt-tile-bar]').length >= 1,
       { timeout: 10000 }
     ).catch(() => {});
     const mv2 = await page.evaluate(async () => {
@@ -5573,32 +5574,48 @@ print(lit)
       if (!primary || !secondary || !root) {
         return { ok: false, reason: 'missing', videos: videos.length, tiles: tiles.length };
       }
-      // Secondary panel controls only secondary.
+      const tile = tiles[0];
+      const bar = tile && tile.querySelector('[data-omt-tile-bar]');
+      const slider = tile && tile.querySelector('.omt-tile-slider');
+      const hasBar = !!(bar && slider);
+
       const beforeP = primary.currentTime;
       const beforeS = secondary.currentTime;
-      const skip = tiles[0] && tiles[0].querySelector('.omt-tile-skip[data-skip="10"]');
+      const skip = tile && tile.querySelector('.omt-tile-skip[data-skip="10"]');
       if (skip) skip.click();
       await new Promise((r) => setTimeout(r, 80));
       const afterP = primary.currentTime;
       const afterS = secondary.currentTime;
       const secondaryOnly = Math.abs(afterP - beforeP) < 0.05 && Math.abs(afterS - (beforeS + 10)) < 0.2;
 
-      // Last-clicked tile gets hotkeys.
+      const p2 = primary.currentTime;
+      const s2 = secondary.currentTime;
+      if (slider) {
+        slider.value = String(Math.min(200, (parseFloat(slider.max) || 1200) * 0.25));
+        slider.dispatchEvent(new Event('input', { bubbles: true }));
+        slider.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      await new Promise((r) => setTimeout(r, 80));
+      const barSeekOk = Math.abs(primary.currentTime - p2) < 0.05 &&
+        Math.abs(secondary.currentTime - s2) > 1;
+
+      const shell2 = secondary.closest('.video-js');
+      const nativeBar = shell2 && shell2.querySelector('.vjs-control-bar');
+      const nCs = nativeBar ? getComputedStyle(nativeBar) : null;
+      const nativeHidden = !nativeBar || nCs.display === 'none' || Number(nCs.opacity) === 0;
+
       secondary.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
       secondary.click();
       await new Promise((r) => setTimeout(r, 40));
       const hotIdx = window.__omtInplayMvHotkeyIndex;
-      const tBefore = secondary.currentTime;
       document.dispatchEvent(new KeyboardEvent('keydown', {
         key: 'ArrowRight', code: 'ArrowRight', bubbles: true, cancelable: true
       }));
-      // Prefer explicit skip via known hotkey mapping if ArrowRight is not bound —
-      // fall back to invoking run path by clicking +2s on tile after ensuring hotkey target.
       await new Promise((r) => setTimeout(r, 40));
-      let hotkeyOk = hotIdx === 1;
-      // Drag release on tile panel.
-      const panel = tiles[0] && tiles[0].querySelector('[data-omt-tile-panel]');
-      const handle = tiles[0] && tiles[0].querySelector('[data-omt-tile-handle]');
+      const hotkeyOk = hotIdx === 1;
+
+      const panel = tile && tile.querySelector('[data-omt-tile-panel]');
+      const handle = tile && tile.querySelector('[data-omt-tile-handle]');
       let dragOk = false;
       if (panel && handle) {
         const before = panel.getBoundingClientRect();
@@ -5628,25 +5645,28 @@ print(lit)
           Math.abs(afterExtra.top - afterRelease.top) > 2;
         dragOk = moved && !stuck;
       }
-      // Curtain arrow still hit-testable.
       const arrow = document.getElementById('curtain-arrow');
       const ar = arrow.getBoundingClientRect();
       const hit = document.elementFromPoint(ar.left + ar.width / 2, ar.top + ar.height / 2);
       const curtainOk = !!(hit && (hit === arrow || arrow.contains(hit)));
+      const noClock = !tile.querySelector('#match-timer-wrap') && !tile.querySelector('#omt-kickoff-bar');
 
       return {
-        ok: tiles.length === 1 && !!window.__omtInplayMvActive && secondaryOnly &&
-          hotkeyOk && dragOk && curtainOk && !tiles[0].contains(root) && root.closest('.video-js') === primary.closest('.video-js'),
+        ok: tiles.length === 1 && hasBar && !!window.__omtInplayMvActive && secondaryOnly &&
+          barSeekOk && nativeHidden && hotkeyOk && dragOk && curtainOk && noClock &&
+          !tile.contains(root) && root.closest('.video-js') === primary.closest('.video-js'),
         tiles: tiles.length,
+        hasBar,
         active: !!window.__omtInplayMvActive,
         sync: window.__omtInplayMvSyncCount || 0,
         secondaryOnly,
+        barSeekOk,
+        nativeHidden,
         hotIdx,
         hotkeyOk,
         dragOk,
         curtainOk,
-        tBefore,
-        tAfter: secondary.currentTime
+        noClock
       };
     });
     results.push({
@@ -5654,15 +5674,20 @@ print(lit)
       pass: mv2.ok === true,
       detail: mv2
     });
-    await page.screenshot({ path: path.join(ARTIFACTS, 'v230_inplay_mv_2tile.png'), fullPage: true });
+    results.push({
+      name: 'inplayip-mv-2-tile-bottom-bar-seek',
+      pass: mv2.hasBar === true && mv2.barSeekOk === true && mv2.nativeHidden === true,
+      detail: mv2
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v231_inplay_mv_2tile.png'), fullPage: true });
 
-    // 4 tiles: fresh load so screenshot shows all three secondary panels
-    // (not a panel left at a dragged 2-tile offset).
+    // 4 tiles: three secondary panels + bars.
     await page.goto(`${base}/inplayip-multiview-mock.html?tiles=4`, { waitUntil: 'domcontentloaded' });
     await waitForOmt(page, 15000);
     await page.waitForFunction(
       () => document.querySelectorAll('video').length === 4 &&
-        document.querySelectorAll('[data-omt-tile-root]').length === 3,
+        document.querySelectorAll('[data-omt-tile-root]').length === 3 &&
+        document.querySelectorAll('[data-omt-tile-bar]').length === 3,
       { timeout: 10000 }
     ).catch(() => {});
     const mv4 = await page.evaluate(() => {
@@ -5670,22 +5695,37 @@ print(lit)
       const tileRoots = Array.from(document.querySelectorAll('[data-omt-tile-root]'));
       const root = document.getElementById('omt-root');
       const clocksOnTiles = document.querySelectorAll('[data-omt-tile-root] #match-timer-wrap').length;
+      const bars = document.querySelectorAll('[data-omt-tile-bar]').length;
       const panelsVisible = tileRoots.filter((tr) => {
         const p = tr.querySelector('[data-omt-tile-panel]');
-        if (!p) return false;
+        const b = tr.querySelector('[data-omt-tile-bar]');
+        if (!p || !b) return false;
         const r = p.getBoundingClientRect();
+        const br = b.getBoundingClientRect();
         const sr = tr.getBoundingClientRect();
-        return r.width > 40 && r.height > 20 &&
-          r.bottom > sr.top && r.top < sr.bottom &&
-          r.right > sr.left && r.left < sr.right;
+        const panelOk = r.width > 40 && r.height > 20 &&
+          r.bottom > sr.top && r.top < sr.bottom;
+        const barOk = br.width > 40 && br.height > 10 &&
+          br.bottom <= sr.bottom + 2 && br.top < sr.bottom;
+        return panelOk && barOk;
       }).length;
+      let nativeOk = true;
+      tileRoots.forEach((tr) => {
+        const shell = tr.closest('.video-js');
+        const nb = shell && shell.querySelector('.vjs-control-bar');
+        if (!nb) return;
+        const cs = getComputedStyle(nb);
+        if (cs.display !== 'none' && Number(cs.opacity) !== 0) nativeOk = false;
+      });
       return {
-        ok: videos === 4 && tileRoots.length === 3 && panelsVisible === 3 &&
-          !!root && clocksOnTiles === 0 && !!window.__omtInplayMvActive,
+        ok: videos === 4 && tileRoots.length === 3 && bars === 3 && panelsVisible === 3 &&
+          !!root && clocksOnTiles === 0 && nativeOk && !!window.__omtInplayMvActive,
         videos,
         tiles: tileRoots.length,
+        bars,
         panelsVisible,
         clocksOnTiles,
+        nativeOk,
         active: !!window.__omtInplayMvActive,
         sync: window.__omtInplayMvSyncCount || 0
       };
@@ -5695,7 +5735,7 @@ print(lit)
       pass: mv4.ok === true,
       detail: mv4
     });
-    await page.screenshot({ path: path.join(ARTIFACTS, 'v230_inplay_mv_4tile.png'), fullPage: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v231_inplay_mv_4tile.png'), fullPage: true });
 
     // Back to 1 tile: tear down multi-view.
     await page.evaluate(() => { window.__omtSetTiles && window.__omtSetTiles(1); });
@@ -5709,12 +5749,14 @@ print(lit)
     const mvBack = await page.evaluate(() => ({
       active: !!window.__omtInplayMvActive,
       tiles: document.querySelectorAll('[data-omt-tile-root]').length,
+      bars: document.querySelectorAll('[data-omt-tile-bar]').length,
       videos: document.querySelectorAll('video').length,
       hasRoot: !!document.getElementById('omt-root')
     }));
     results.push({
       name: 'inplayip-mv-teardown-to-one-tile',
-      pass: mvBack.videos === 1 && mvBack.tiles === 0 && mvBack.active === false && mvBack.hasRoot,
+      pass: mvBack.videos === 1 && mvBack.tiles === 0 && mvBack.bars === 0 &&
+        mvBack.active === false && mvBack.hasRoot,
       detail: mvBack
     });
 
