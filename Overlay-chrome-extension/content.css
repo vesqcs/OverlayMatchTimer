@@ -2342,7 +2342,7 @@ html.omt-host-xeatre.omt-hud-on .video-js.vjs-fluid {
     min-width: 28px;
 }
 
-/* ---- INPLAY MULTI-VIEW FULL HUD (v2.3.3) ----
+/* ---- INPLAY MULTI-VIEW FULL HUD (v2.3.4) ----
    Prefixed tile ids lose bare #omt-* / #omt-root rules. Mirror those styles
    under .omt-tile-root via classes and [id$="..."] so secondary HUDs match
    primary pixel-for-pixel at the same tile size. Primary selectors untouched. */
@@ -2497,6 +2497,7 @@ html.omt-host-xeatre.omt-hud-on .video-js.vjs-fluid {
 .omt-tile-root .omt-timeline-bar .omt-timeline-vol-btn,
 .omt-tile-root .omt-timeline-bar .omt-timeline-vol-range,
 .omt-tile-root .omt-timeline-bar .omt-timeline-live-indicator,
+.omt-tile-root .omt-timeline-bar .omt-timeline-video-range,
 .omt-tile-root .omt-timeline-bar .omt-timeline-fs-btn,
 .omt-tile-root .omt-timeline-bar .timeline-slider {
     pointer-events: auto;
@@ -2579,29 +2580,68 @@ html.omt-host-xeatre.omt-hud-on .video-js.vjs-fluid {
 .omt-tile-root .omt-timeline-live-indicator {
     display: inline-flex;
     align-items: center;
+    justify-content: flex-start;
+    height: 22px;
+    margin: 0;
+    padding: 0;
     gap: 4px;
     border: none;
     background: transparent;
-    color: #c8c8c8;
+    color: #ddd;
     cursor: pointer;
-    padding: 0;
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+    text-align: left;
 }
 .omt-tile-root .omt-timeline-live-indicator[hidden],
 .omt-tile-root .omt-timeline-post-times[hidden],
-.omt-tile-root .omt-timeline-live-chip[hidden] {
+.omt-tile-root .omt-timeline-live-chip[hidden],
+.omt-tile-root .omt-timeline-video-range[hidden],
+.omt-tile-root .omt-timeline-live-delay[hidden] {
     display: none !important;
 }
 .omt-tile-root .omt-timeline-live-chip {
-    color: #ff3b30;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--omt-font);
+    font-size: 10px !important;
     font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #fff !important;
+    background: #e5383b !important;
+    border: 1px solid #e5383b !important;
+    border-radius: 999px;
+    padding: 3px 9px;
+    line-height: 1;
 }
 .omt-tile-root .omt-timeline-post-times {
     display: inline-flex;
     align-items: center;
-    gap: 3px;
+    justify-content: flex-start;
+    gap: 4px;
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
 }
-.omt-tile-root .omt-time-text,
 .omt-tile-root .omt-timeline-live-delay {
+    font-family: var(--omt-mono);
+    font-size: 12px !important;
+    font-variant-numeric: tabular-nums;
+    color: #f1f1f1;
+    line-height: 1;
+    white-space: nowrap;
+}
+.omt-tile-root .omt-timeline-video-range {
+    font-family: var(--omt-mono);
+    font-size: 11px !important;
+    font-variant-numeric: tabular-nums;
+    color: #c8c8c8;
+    line-height: 1;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.omt-tile-root .omt-time-text {
     font-variant-numeric: tabular-nums;
     color: #c8c8c8;
     font-size: 11px;

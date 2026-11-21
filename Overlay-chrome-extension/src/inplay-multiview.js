@@ -1,4 +1,4 @@
-/* InPlay multi-view (v2.3.3): full primary-identical HUD per secondary tile.
+/* InPlay multi-view (v2.3.4): full primary-identical HUD per secondary tile.
  *
  * Scope: UI layer only. Player/seek/playback helpers stay untouched —
  * tile actions briefly swap global `vid` via omtInplayMvWithVideo().
@@ -198,11 +198,28 @@
         } catch (_) {}
     }
 
-    /* ---- Independent per-tile clock / kickoff (video-time, not PDT) ---- */
+    /* ---- Independent per-tile clock / kickoff (video-time, not PDT) ----
+     * Clock wrap stays visible on every secondary tile (like primary when
+     * timer chrome is on): Pre-Match until that tile's own kickoff. */
+    function omtInplayMvEnsureClockVisible(rec) {
+        if (!rec) return;
+        const wrap = omtInplayMvQ(rec, 'match-timer-wrap');
+        const timerUI = omtInplayMvQ(rec, 'match-timer');
+        if (wrap) wrap.style.display = 'block';
+        if (timerUI) timerUI.style.display = 'block';
+        try { rec.root.classList.add('omt-timer-on'); } catch (_) {}
+    }
+
     function omtInplayMvPaintClock(rec) {
-        if (!rec || !rec.timerAtivo || !rec.video) return;
+        if (!rec || !rec.video) return;
         const timerUI = omtInplayMvQ(rec, 'match-timer');
         if (!timerUI) return;
+        omtInplayMvEnsureClockVisible(rec);
+        if (!rec.timerAtivo) {
+            timerUI.innerText = 'Pre-Match';
+            timerUI.style.color = '#ffcc00';
+            return;
+        }
         const tAtual = rec.video.currentTime || 0;
         const k1 = rec.kickoff1;
         const k2 = rec.kickoff2;
@@ -260,11 +277,7 @@
         else if (parte === 'custom1') rec.kickoffC1 = offset;
         else if (parte === 'custom2') rec.kickoffC2 = offset;
 
-        const wrap = omtInplayMvQ(rec, 'match-timer-wrap');
-        const timerUI = omtInplayMvQ(rec, 'match-timer');
-        if (wrap) wrap.style.display = 'block';
-        if (timerUI) timerUI.style.display = 'block';
-        try { rec.root.classList.add('omt-timer-on'); } catch (_) {}
+        omtInplayMvEnsureClockVisible(rec);
         const kickBtn = omtInplayMvQ(rec, 'omt-btn-set-kickoff');
         if (kickBtn) kickBtn.classList.add('kickoff-set');
         omtInplayMvPaintClock(rec);
@@ -280,14 +293,6 @@
         rec.tempoBase = 0;
         rec.kickoff1 = rec.kickoff2 = rec.kickoffC1 = rec.kickoffC2 = null;
         rec.previousHalf = '1';
-        const wrap = omtInplayMvQ(rec, 'match-timer-wrap');
-        const timerUI = omtInplayMvQ(rec, 'match-timer');
-        if (wrap) wrap.style.display = 'none';
-        if (timerUI) {
-            timerUI.style.display = 'none';
-            timerUI.innerText = '00:00';
-        }
-        try { rec.root.classList.remove('omt-timer-on'); } catch (_) {}
         const kickBtn = omtInplayMvQ(rec, 'omt-btn-set-kickoff');
         if (kickBtn) kickBtn.classList.remove('kickoff-set');
         const half = omtInplayMvQ(rec, 'omt-half-select');
@@ -296,6 +301,8 @@
         const c2 = omtInplayMvQ(rec, 'omt-custom-c2');
         if (c1) c1.style.display = 'none';
         if (c2) c2.style.display = 'none';
+        // Keep clock visible — independent Pre-Match, not hidden.
+        omtInplayMvPaintClock(rec);
     }
 
     function omtInplayMvNudgeKickoff(rec, deltaSec) {
@@ -320,9 +327,11 @@
         const liveDelay = omtInplayMvQ(rec, 'omt-timeline-live-delay');
         const liveChip = omtInplayMvQ(rec, 'omt-timeline-live-chip');
         const postTimes = omtInplayMvQ(rec, 'omt-timeline-post-times');
+        const videoRange = omtInplayMvQ(rec, 'omt-timeline-video-range');
         const bar = omtInplayMvQ(rec, 'omt-timeline-bar');
         const barPlay = omtInplayMvQ(rec, 'omt-timeline-play-btn');
         const panelLive = omtInplayMvQ(rec, 'omt-live-btn');
+        const timesWrap = bar && bar.querySelector('.omt-timeline-times');
         const edge = omtInplayMvEdgeSec(videoEl);
         const playhead = videoEl.currentTime || 0;
         if (slider && !rec.dragging) {
@@ -342,25 +351,53 @@
                 slider.style.setProperty('--omt-progress', Math.max(0, Math.min(100, rounded)) + '%');
             }
         }
-        if (curEl) curEl.textContent = omtInplayMvFmtTime(playhead);
-        if (durEl) durEl.textContent = omtInplayMvFmtTime(edge > 0 ? edge : (videoEl.duration || 0));
 
+        // Same chrome layout as primary atualizarTempoTimelineDireito:
+        // live → left delay/LIVE only; right playhead/furthest. Never cram both left.
         const margin = (typeof OMT_LIVE_SAFE_MARGIN_S === 'number' && OMT_LIVE_SAFE_MARGIN_S > 0)
             ? OMT_LIVE_SAFE_MARGIN_S : 10;
         const delay = edge > 0 ? Math.max(0, edge - playhead) : 0;
         const atLive = edge > 0 && delay <= margin + 5;
+        const liveMode = edge > 0;
         if (bar) bar.classList.toggle('omt-at-live', atLive);
         if (panelLive) panelLive.classList.toggle('is-live', atLive);
-        if (liveBtn) {
-            if (edge > 0 && delay > 0.5) {
+        if (timesWrap) timesWrap.dataset.omtTimeMode = liveMode ? 'live' : 'post';
+
+        if (liveMode) {
+            if (postTimes) postTimes.hidden = true;
+            if (liveBtn) {
                 liveBtn.hidden = false;
-                if (liveDelay) liveDelay.textContent = omtInplayMvFmtDelay(delay);
-                if (liveChip) liveChip.hidden = !atLive;
-                if (postTimes) postTimes.hidden = atLive;
-            } else {
-                liveBtn.hidden = true;
-                if (postTimes) postTimes.hidden = false;
+                if (atLive) {
+                    if (liveDelay) liveDelay.hidden = true;
+                    if (liveChip) liveChip.hidden = false;
+                    liveBtn.classList.add('is-at-live');
+                    liveBtn.setAttribute('aria-label', 'At live');
+                } else {
+                    if (liveDelay) {
+                        liveDelay.hidden = false;
+                        liveDelay.textContent = omtInplayMvFmtDelay(delay);
+                    }
+                    if (liveChip) liveChip.hidden = true;
+                    liveBtn.classList.remove('is-at-live');
+                    liveBtn.setAttribute('aria-label', 'Go to live');
+                }
             }
+            if (videoRange) {
+                videoRange.hidden = false;
+                videoRange.textContent =
+                    omtInplayMvFmtTime(playhead) + ' / ' + omtInplayMvFmtTime(edge);
+            }
+        } else {
+            if (liveBtn) {
+                liveBtn.hidden = true;
+                liveBtn.classList.remove('is-at-live');
+            }
+            if (liveDelay) liveDelay.hidden = true;
+            if (liveChip) liveChip.hidden = true;
+            if (postTimes) postTimes.hidden = false;
+            if (curEl) curEl.textContent = omtInplayMvFmtTime(playhead);
+            if (durEl) durEl.textContent = omtInplayMvFmtTime(videoEl.duration || 0);
+            if (videoRange) videoRange.hidden = true;
         }
         const on = !videoEl.paused && !videoEl.ended;
         const playBtn = omtInplayMvQ(rec, 'omt-btn-play');
@@ -479,6 +516,8 @@
             previousHalf: '1', customMinC1: 90, customMinC2: 105
         };
         omtInplayMvApplyPrimaryChrome(rec);
+        // Show independent Pre-Match clock immediately (every tile, like primary chrome).
+        omtInplayMvPaintClock(rec);
 
         const run = (fn) => {
             omtInplayMvSetHotkeyTarget(videoEl);
@@ -590,6 +629,12 @@
                 slider.style.setProperty('--omt-progress', Math.max(0, Math.min(100, pct)) + '%');
                 const cur = omtInplayMvQ(rec, 'omt-v-time-current');
                 if (cur) cur.textContent = omtInplayMvFmtTime(val);
+                const videoRange = omtInplayMvQ(rec, 'omt-timeline-video-range');
+                if (videoRange && !videoRange.hidden) {
+                    const edgeNow = omtInplayMvEdgeSec(videoEl);
+                    videoRange.textContent =
+                        omtInplayMvFmtTime(val) + ' / ' + omtInplayMvFmtTime(edgeNow > 0 ? edgeNow : max);
+                }
             }, sig);
             slider.addEventListener('change', () => {
                 const t = parseFloat(slider.value);

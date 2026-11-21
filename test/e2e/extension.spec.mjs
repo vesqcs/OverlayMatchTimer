@@ -5532,7 +5532,7 @@ print(lit)
     }
     await page.screenshot({ path: path.join(ARTIFACTS, 'inplayip_hide_tooltip.png'), fullPage: true });
 
-    // ---------- InPlay multi-view FULL HUD CSS parity + clock (v2.3.3) ----------
+    // ---------- InPlay multi-view FULL HUD CSS parity + clock (v2.3.4) ----------
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto(`${base}/inplayip-multiview-mock.html?tiles=1`, { waitUntil: 'domcontentloaded' });
     await waitForOmt(page, 15000);
@@ -5553,7 +5553,7 @@ print(lit)
         mv1.active === false && mv1.sync === 0 && mv1.hasPlayersContainer === true,
       detail: mv1
     });
-    await page.screenshot({ path: path.join(ARTIFACTS, 'v233_inplay_mv_1tile.png'), fullPage: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v234_inplay_mv_1tile.png'), fullPage: true });
 
     await page.evaluate(() => { window.__omtSetTiles && window.__omtSetTiles(2); });
     await waitForOmt(page, 15000);
@@ -5698,7 +5698,7 @@ print(lit)
       document.querySelectorAll('[data-omt-tile-root] .omt-more-toggle[aria-expanded="true"]').forEach((b) => b.click());
     });
     await page.waitForTimeout(80);
-    await page.screenshot({ path: path.join(ARTIFACTS, 'v233_inplay_mv_2tile.png'), fullPage: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v234_inplay_mv_2tile.png'), fullPage: true });
 
     await page.goto(`${base}/inplayip-multiview-mock.html?tiles=4`, { waitUntil: 'domcontentloaded' });
     await waitForOmt(page, 15000);
@@ -5709,29 +5709,38 @@ print(lit)
     ).catch(() => {});
     await page.waitForTimeout(200);
 
-    // Style parity across all secondary tiles vs primary (no kickoff yet).
+    // Style parity + always-visible clocks + bar layout vs primary.
     const mv4style = await page.evaluate(() => {
       const root = document.getElementById('omt-root');
       const tiles = Array.from(document.querySelectorAll('[data-omt-tile-root]'));
-      const snap = (scope) => {
+      const snap = (scope, isTile) => {
         const live = scope.querySelector('#omt-live-btn, .omt-tile-panel-live, [id$="omt-live-btn"]');
         const speed = scope.querySelector('#omt-speed-select, .omt-tile-speed-select, [id$="omt-speed-select"]');
         const vol = scope.querySelector('#omt-volume-range, .omt-tile-panel-vol-range, [id$="omt-volume-range"]');
         const labels = Array.from(scope.querySelectorAll('.omt-btn-label')).map((el) => el.textContent.trim());
+        const clock = scope.querySelector('#match-timer, .omt-match-timer, [id$="match-timer"]');
+        const wrap = scope.querySelector('#match-timer-wrap, .omt-match-timer-wrap, [id$="match-timer-wrap"]');
+        const liveDelay = scope.querySelector('#omt-timeline-live-delay, .omt-timeline-live-delay, [id$="omt-timeline-live-delay"]');
+        const videoRange = scope.querySelector('#omt-timeline-video-range, .omt-timeline-video-range, [id$="omt-timeline-video-range"]');
+        const postTimes = scope.querySelector('#omt-timeline-post-times, .omt-timeline-post-times, [id$="omt-timeline-post-times"]');
         const cs = (el) => el ? getComputedStyle(el) : null;
         const l = cs(live); const s = cs(speed); const v = cs(vol);
+        const wrapDisp = wrap ? cs(wrap).display : 'none';
         return {
           liveRadius: l && l.borderRadius,
-          liveDisplay: l && l.display,
           speedAppearance: s && (s.appearance || s.webkitAppearance),
-          speedBg: s && s.backgroundColor,
           volW: v && v.width,
           volAppearance: v && (v.appearance || v.webkitAppearance),
-          labels
+          labels,
+          clockText: clock ? (clock.textContent || '').trim() : '',
+          clockVisible: !!(wrap && wrapDisp !== 'none' && wrapDisp !== ''),
+          liveDelayText: liveDelay && !liveDelay.hidden ? (liveDelay.textContent || '').trim() : null,
+          videoRangeText: videoRange && !videoRange.hidden ? (videoRange.textContent || '').trim() : null,
+          postHidden: !postTimes || !!postTimes.hidden
         };
       };
-      const primary = snap(root);
-      const secondaries = tiles.map(snap);
+      const primary = snap(root, false);
+      const secondaries = tiles.map((tr) => snap(tr, true));
       const labelsOk = [primary, ...secondaries].every((x) =>
         x.labels.includes('2 min') && x.labels.includes('10 s') && x.labels.includes('2 s'));
       const styleOk = secondaries.every((x) =>
@@ -5739,9 +5748,16 @@ print(lit)
         x.speedAppearance === 'none' &&
         x.volAppearance === 'none' &&
         Math.abs(parseFloat(x.volW) - parseFloat(primary.volW)) < 2);
+      const clocksVisible = secondaries.every((x) => x.clockVisible && /Pre-Match|\d+:\d+/.test(x.clockText));
+      // Live chrome: delay left, position/duration on right video-range; post-times hidden.
+      const barLayoutOk = secondaries.every((x) =>
+        x.postHidden === true &&
+        !!x.liveDelayText && /^-/.test(x.liveDelayText) &&
+        !!x.videoRangeText && /\//.test(x.videoRangeText));
       return {
-        ok: tiles.length === 3 && labelsOk && styleOk && !!window.__omtInplayMvActive,
-        primary, secondaries, labelsOk, styleOk
+        ok: tiles.length === 3 && labelsOk && styleOk && clocksVisible && barLayoutOk &&
+          !!window.__omtInplayMvActive,
+        primary, secondaries, labelsOk, styleOk, clocksVisible, barLayoutOk
       };
     });
     results.push({
@@ -5749,6 +5765,8 @@ print(lit)
       pass: mv4style.ok === true,
       detail: mv4style
     });
+    // All tiles show Pre-Match clocks + primary-identical bar layout (before kickoff).
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v234_inplay_mv_4tile.png'), fullPage: true });
 
     // Kickoff on tile B only — A / C / D clock state unchanged.
     const mv4kick = await page.evaluate(async () => {
@@ -5777,18 +5795,25 @@ print(lit)
       await new Promise((r) => setTimeout(r, 40));
       const kick = tileB.querySelector('[id$="omt-btn-set-kickoff"]');
       if (kick) kick.click();
-      await new Promise((r) => setTimeout(r, 80));
+      await new Promise((r) => setTimeout(r, 60));
+      // Advance this tile's video so the clock is clearly running (not 00:00).
+      const videoB = document.querySelectorAll('video')[1];
+      if (videoB) {
+        videoB.currentTime = Math.min((videoB.currentTime || 0) + 8, (videoB.duration || 20) - 1);
+        videoB.dispatchEvent(new Event('timeupdate'));
+      }
+      await new Promise((r) => setTimeout(r, 100));
       const after = snap();
-      const bOk = after.clocks[0].on && /Pre-Match|\d+:\d+/.test(after.clocks[0].text);
-      // Primary may already have a restored timer whose text ticks (00:00 → Pre-Match);
-      // prove B kickoff does not flip primary timer-on or wake C/D.
+      const bRunning = after.clocks[0].on && /^\d+:\d+$/.test(after.clocks[0].text) &&
+        after.clocks[0].text !== '00:00';
+      // Primary timer-on flag unchanged by B kickoff.
       const aUnchanged = before.primaryOn === after.primaryOn;
-      const cdUnchanged = before.clocks.slice(1).every((c, i) =>
-        c.on === after.clocks[i + 1].on);
-      const cdStillOff = after.clocks.slice(1).every((c) => !c.on);
+      // C/D stay Pre-Match (visible, not kicked).
+      const cdPreMatch = after.clocks.slice(1).every((c) =>
+        c.on && c.text === 'Pre-Match');
       return {
-        ok: bOk && aUnchanged && cdUnchanged && cdStillOff,
-        bOk, aUnchanged, cdUnchanged, cdStillOff,
+        ok: bRunning && aUnchanged && cdPreMatch,
+        bRunning, aUnchanged, cdPreMatch,
         before, after
       };
     });
@@ -5797,12 +5822,20 @@ print(lit)
       pass: mv4kick.ok === true,
       detail: mv4kick
     });
-
-    await page.evaluate(() => {
+    // Advance B so the match clock is visibly running vs A/C/D Pre-Match.
+    await page.evaluate(async () => {
+      const tiles = Array.from(document.querySelectorAll('[data-omt-tile-root]'));
+      const tileB = tiles[0];
+      const videoB = document.querySelectorAll('video')[1];
+      if (videoB) {
+        videoB.currentTime = Math.min((videoB.currentTime || 0) + 8, (videoB.duration || 20) - 1);
+        videoB.dispatchEvent(new Event('timeupdate'));
+      }
+      await new Promise((r) => setTimeout(r, 120));
       document.querySelectorAll('[data-omt-tile-root] .omt-more-toggle[aria-expanded="true"]').forEach((b) => b.click());
     });
-    await page.waitForTimeout(80);
-    await page.screenshot({ path: path.join(ARTIFACTS, 'v233_inplay_mv_4tile.png'), fullPage: true });
+    await page.waitForTimeout(120);
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v234_inplay_mv_kickoff_b_only.png'), fullPage: true });
 
     // Side-by-side crop of primary panel+bar vs tile B panel+bar.
     const cropBoxes = await page.evaluate(() => {
@@ -5829,11 +5862,11 @@ print(lit)
     });
     if (cropBoxes.a && cropBoxes.b) {
       await page.screenshot({
-        path: path.join(ARTIFACTS, 'v233_inplay_mv_crop_A_panel.png'),
+        path: path.join(ARTIFACTS, 'v234_inplay_mv_crop_A_panel.png'),
         clip: cropBoxes.a
       });
       await page.screenshot({
-        path: path.join(ARTIFACTS, 'v233_inplay_mv_crop_B_panel.png'),
+        path: path.join(ARTIFACTS, 'v234_inplay_mv_crop_B_panel.png'),
         clip: cropBoxes.b
       });
     }
@@ -5882,7 +5915,7 @@ print(lit)
     try {
       const fs = await import('fs');
       fs.writeFileSync(
-        path.join(ARTIFACTS, 'v233_inplay_mv_A_vs_B_diff.json'),
+        path.join(ARTIFACTS, 'v234_inplay_mv_A_vs_B_diff.json'),
         JSON.stringify(diffNote, null, 2)
       );
     } catch (_) {}
