@@ -1,4 +1,4 @@
-/* InPlay multi-view (v2.3.2): full primary-identical HUD per secondary tile.
+/* InPlay multi-view (v2.3.3): full primary-identical HUD per secondary tile.
  *
  * Scope: UI layer only. Player/seek/playback helpers stay untouched —
  * tile actions briefly swap global `vid` via omtInplayMvWithVideo().
@@ -128,6 +128,76 @@
         omtInplayMvWithVideo(videoEl, () => seekTo(Math.max(0, edge - margin)));
     }
 
+    /** Apply primary chrome that #id CSS / primary-only JS normally set:
+     *  skip labels ("2 min" / "10 s"), panel size prefs, clock size/style/pos. */
+    function omtInplayMvApplyPrimaryChrome(rec) {
+        if (!rec || !rec.root) return;
+        // Transport labels — same formatter as omtApplySkipButtonLabels.
+        try {
+            if (typeof omtFormatPanelSkipLabel === 'function') {
+                if (typeof omtSortedSkipSlots === 'function') {
+                    const back = omtSortedSkipSlots('back');
+                    const fwd = omtSortedSkipSlots('fwd');
+                    const map = [
+                        ['omt-m2', back[0].sec],
+                        ['omt-m10', back[1].sec],
+                        ['omt-m120', back[2].sec],
+                        ['omt-p2', fwd[0].sec],
+                        ['omt-p10', fwd[1].sec],
+                        ['omt-p120', fwd[2].sec]
+                    ];
+                    map.forEach(([suffix, sec]) => {
+                        const btn = omtInplayMvQ(rec, suffix);
+                        const label = btn && btn.querySelector('.omt-btn-label');
+                        if (label) label.textContent = omtFormatPanelSkipLabel(sec);
+                    });
+                } else {
+                    rec.root.querySelectorAll('.omt-tile-skip[data-skip]').forEach((btn) => {
+                        const sec = Math.abs(parseFloat(btn.getAttribute('data-skip')));
+                        const label = btn.querySelector('.omt-btn-label');
+                        if (label && isFinite(sec)) label.textContent = omtFormatPanelSkipLabel(sec);
+                    });
+                }
+            }
+        } catch (_) {}
+        // Panel size / compact prefs (same as primary).
+        try {
+            const panel = omtInplayMvQ(rec, 'omt-controls-panel');
+            if (panel && typeof omtReadPanelPrefs === 'function') {
+                const prefs = omtReadPanelPrefs();
+                panel.classList.toggle('omt-panel-size-small', prefs.size === 'small');
+                panel.classList.toggle('omt-panel-compact', !!prefs.compact);
+            }
+        } catch (_) {}
+        // Clock chrome classes from primary wrap (size / style / pos).
+        try {
+            const tileWrap = omtInplayMvQ(rec, 'match-timer-wrap');
+            if (!tileWrap) return;
+            const primaryWrap = document.getElementById('match-timer-wrap');
+            const SIZE = ['small', 'medium', 'large', 'xlarge'];
+            const STYLE = ['rounded', 'pill', 'minimal'];
+            const POS = ['top-left', 'top-centre', 'top-right',
+                'bottom-left', 'bottom-centre', 'bottom-right', 'custom'];
+            SIZE.forEach((s) => tileWrap.classList.remove('omt-clock-size-' + s));
+            STYLE.forEach((s) => tileWrap.classList.remove('omt-clock-style-' + s));
+            POS.forEach((p) => tileWrap.classList.remove('omt-clock-pos-' + p));
+            if (primaryWrap) {
+                primaryWrap.classList.forEach((c) => {
+                    if (c.indexOf('omt-clock-') === 0) tileWrap.classList.add(c);
+                });
+            } else if (typeof omtReadClockPrefs === 'function') {
+                const prefs = omtReadClockPrefs();
+                tileWrap.classList.add('omt-clock-size-' + (prefs.size || 'medium'));
+                tileWrap.classList.add('omt-clock-style-' + (prefs.shape || 'rounded'));
+                tileWrap.classList.add('omt-clock-pos-' + (prefs.pos || 'top-left'));
+            } else {
+                tileWrap.classList.add('omt-clock-size-medium');
+                tileWrap.classList.add('omt-clock-style-rounded');
+                tileWrap.classList.add('omt-clock-pos-top-left');
+            }
+        } catch (_) {}
+    }
+
     /* ---- Independent per-tile clock / kickoff (video-time, not PDT) ---- */
     function omtInplayMvPaintClock(rec) {
         if (!rec || !rec.timerAtivo || !rec.video) return;
@@ -192,7 +262,7 @@
 
         const wrap = omtInplayMvQ(rec, 'match-timer-wrap');
         const timerUI = omtInplayMvQ(rec, 'match-timer');
-        if (wrap) wrap.style.display = 'flex';
+        if (wrap) wrap.style.display = 'block';
         if (timerUI) timerUI.style.display = 'block';
         try { rec.root.classList.add('omt-timer-on'); } catch (_) {}
         const kickBtn = omtInplayMvQ(rec, 'omt-btn-set-kickoff');
@@ -408,6 +478,7 @@
             kickoff1: null, kickoff2: null, kickoffC1: null, kickoffC2: null,
             previousHalf: '1', customMinC1: 90, customMinC2: 105
         };
+        omtInplayMvApplyPrimaryChrome(rec);
 
         const run = (fn) => {
             omtInplayMvSetHotkeyTarget(videoEl);

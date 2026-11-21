@@ -5532,7 +5532,7 @@ print(lit)
     }
     await page.screenshot({ path: path.join(ARTIFACTS, 'inplayip_hide_tooltip.png'), fullPage: true });
 
-    // ---------- InPlay multi-view FULL HUD + per-tile clock (v2.3.2) ----------
+    // ---------- InPlay multi-view FULL HUD CSS parity + clock (v2.3.3) ----------
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto(`${base}/inplayip-multiview-mock.html?tiles=1`, { waitUntil: 'domcontentloaded' });
     await waitForOmt(page, 15000);
@@ -5553,7 +5553,7 @@ print(lit)
         mv1.active === false && mv1.sync === 0 && mv1.hasPlayersContainer === true,
       detail: mv1
     });
-    await page.screenshot({ path: path.join(ARTIFACTS, 'v232_inplay_mv_1tile.png'), fullPage: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v233_inplay_mv_1tile.png'), fullPage: true });
 
     await page.evaluate(() => { window.__omtSetTiles && window.__omtSetTiles(2); });
     await waitForOmt(page, 15000);
@@ -5580,7 +5580,7 @@ print(lit)
       const hide = tile.querySelector('.omt-tile-hide, [id$="omt-hide-panel"]');
       const transportLabels = Array.from(tile.querySelectorAll('.omt-btn-label')).map((el) => el.textContent.trim());
       const hasFullHud = !!(panel && bar && live && more && speedSel && hide &&
-        transportLabels.includes('2m') && transportLabels.includes('10s') && transportLabels.includes('2s'));
+        transportLabels.includes('2 min') && transportLabels.includes('10 s') && transportLabels.includes('2 s'));
 
       // Same layout as primary: full panel height + width = min(600, tile-24)
       // (half-width tiles correctly shrink via the same min() rule).
@@ -5639,9 +5639,32 @@ print(lit)
       const hit = document.elementFromPoint(ar.left + ar.width / 2, ar.top + ar.height / 2);
       const curtainOk = !!(hit && (hit === arrow || arrow.contains(hit)));
 
+      // Style parity vs primary (the #id CSS that tiles used to miss).
+      const pLive = root.querySelector('#omt-live-btn');
+      const pSpeed = root.querySelector('#omt-speed-select');
+      const pVol = root.querySelector('#omt-volume-range');
+      const tLive = live;
+      const tSpeed = speedSel;
+      const tVol = tile.querySelector('.omt-tile-panel-vol-range, [id$="omt-volume-range"]');
+      const cs = (el) => el ? getComputedStyle(el) : null;
+      const pLiveCs = cs(pLive); const tLiveCs = cs(tLive);
+      const pSpeedCs = cs(pSpeed); const tSpeedCs = cs(tSpeed);
+      const pVolCs = cs(pVol); const tVolCs = cs(tVol);
+      const livePill = !!(tLiveCs && tLiveCs.borderRadius === pLiveCs.borderRadius &&
+        parseFloat(tLiveCs.borderRadius) >= 20);
+      const speedChip = !!(tSpeedCs && tSpeedCs.appearance === 'none' &&
+        tSpeedCs.webkitAppearance === 'none' &&
+        tSpeedCs.backgroundColor === pSpeedCs.backgroundColor);
+      const volSlim = !!(tVolCs && Math.abs(parseFloat(tVolCs.width) - parseFloat(pVolCs.width)) < 2 &&
+        tVolCs.appearance === 'none');
+      const pLabels = Array.from(root.querySelectorAll('.omt-btn-label')).map((el) => el.textContent.trim());
+      const labelsMatchPrimary = pLabels.includes('2 min') && transportLabels.includes('2 min') &&
+        transportLabels.includes('10 s') && transportLabels.includes('2 s');
+
       return {
         ok: tiles.length === 1 && hasFullHud && similarLayout && clockOn && secondaryOnly &&
-          barSeekOk && nativeHidden && hotIdx === 1 && curtainOk && !tile.contains(root),
+          barSeekOk && nativeHidden && hotIdx === 1 && curtainOk && !tile.contains(root) &&
+          livePill && speedChip && volSlim && labelsMatchPrimary,
         hasFullHud,
         similarLayout,
         clockOn,
@@ -5651,9 +5674,18 @@ print(lit)
         nativeHidden,
         hotIdx,
         curtainOk,
+        livePill,
+        speedChip,
+        volSlim,
+        labelsMatchPrimary,
+        pLiveRadius: pLiveCs && pLiveCs.borderRadius,
+        tLiveRadius: tLiveCs && tLiveCs.borderRadius,
+        pVolW: pVolCs && pVolCs.width,
+        tVolW: tVolCs && tVolCs.width,
         panelW: Math.round(pRect.width),
         expectedW: Math.round(expectedW),
-        transportLabels
+        transportLabels,
+        pLabels
       };
     });
     results.push({
@@ -5666,7 +5698,7 @@ print(lit)
       document.querySelectorAll('[data-omt-tile-root] .omt-more-toggle[aria-expanded="true"]').forEach((b) => b.click());
     });
     await page.waitForTimeout(80);
-    await page.screenshot({ path: path.join(ARTIFACTS, 'v232_inplay_mv_2tile.png'), fullPage: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v233_inplay_mv_2tile.png'), fullPage: true });
 
     await page.goto(`${base}/inplayip-multiview-mock.html?tiles=4`, { waitUntil: 'domcontentloaded' });
     await waitForOmt(page, 15000);
@@ -5675,65 +5707,185 @@ print(lit)
         document.querySelectorAll('[data-omt-tile-root]').length === 3,
       { timeout: 10000 }
     ).catch(() => {});
-    // Set independent kickoffs on each secondary tile.
-    await page.evaluate(async () => {
-      const tiles = Array.from(document.querySelectorAll('[data-omt-tile-root]'));
-      for (const tile of tiles) {
-        const more = tile.querySelector('.omt-more-toggle');
-        if (more && more.getAttribute('aria-expanded') !== 'true') more.click();
-        await new Promise((r) => setTimeout(r, 20));
-        const kick = tile.querySelector('[id$="omt-btn-set-kickoff"]');
-        if (kick) kick.click();
-        await new Promise((r) => setTimeout(r, 20));
-      }
-    });
-    await page.waitForTimeout(120);
-    const mv4 = await page.evaluate(() => {
-      const videos = document.querySelectorAll('video').length;
-      const tileRoots = Array.from(document.querySelectorAll('[data-omt-tile-root]'));
+    await page.waitForTimeout(200);
+
+    // Style parity across all secondary tiles vs primary (no kickoff yet).
+    const mv4style = await page.evaluate(() => {
       const root = document.getElementById('omt-root');
-      const fullHud = tileRoots.filter((tr) => {
-        return !!(tr.querySelector('.omt-controls-panel') &&
-          tr.querySelector('.omt-timeline-bar') &&
-          tr.querySelector('[id$="omt-live-btn"]') &&
-          tr.querySelector('.omt-more-toggle') &&
-          tr.querySelector('[id$="omt-speed-select"]'));
-      }).length;
-      const clocks = tileRoots.map((tr) => {
-        const c = tr.querySelector('.omt-match-timer, [id$="match-timer"]');
-        return c ? (c.textContent || '').trim() : '';
-      });
-      const clocksOn = clocks.filter((t) => /Pre-Match|\d+:\d+/.test(t)).length;
-      let nativeOk = true;
-      tileRoots.forEach((tr) => {
-        const shell = tr.closest('.video-js');
-        const nb = shell && shell.querySelector('.vjs-control-bar');
-        if (!nb) return;
-        const cs = getComputedStyle(nb);
-        if (cs.display !== 'none' && Number(cs.opacity) !== 0) nativeOk = false;
-      });
+      const tiles = Array.from(document.querySelectorAll('[data-omt-tile-root]'));
+      const snap = (scope) => {
+        const live = scope.querySelector('#omt-live-btn, .omt-tile-panel-live, [id$="omt-live-btn"]');
+        const speed = scope.querySelector('#omt-speed-select, .omt-tile-speed-select, [id$="omt-speed-select"]');
+        const vol = scope.querySelector('#omt-volume-range, .omt-tile-panel-vol-range, [id$="omt-volume-range"]');
+        const labels = Array.from(scope.querySelectorAll('.omt-btn-label')).map((el) => el.textContent.trim());
+        const cs = (el) => el ? getComputedStyle(el) : null;
+        const l = cs(live); const s = cs(speed); const v = cs(vol);
+        return {
+          liveRadius: l && l.borderRadius,
+          liveDisplay: l && l.display,
+          speedAppearance: s && (s.appearance || s.webkitAppearance),
+          speedBg: s && s.backgroundColor,
+          volW: v && v.width,
+          volAppearance: v && (v.appearance || v.webkitAppearance),
+          labels
+        };
+      };
+      const primary = snap(root);
+      const secondaries = tiles.map(snap);
+      const labelsOk = [primary, ...secondaries].every((x) =>
+        x.labels.includes('2 min') && x.labels.includes('10 s') && x.labels.includes('2 s'));
+      const styleOk = secondaries.every((x) =>
+        x.liveRadius === primary.liveRadius &&
+        x.speedAppearance === 'none' &&
+        x.volAppearance === 'none' &&
+        Math.abs(parseFloat(x.volW) - parseFloat(primary.volW)) < 2);
       return {
-        ok: videos === 4 && tileRoots.length === 3 && fullHud === 3 && clocksOn === 3 &&
-          nativeOk && !!root && !!window.__omtInplayMvActive,
-        videos,
-        tiles: tileRoots.length,
-        fullHud,
-        clocksOn,
-        clocks,
-        nativeOk,
-        active: !!window.__omtInplayMvActive
+        ok: tiles.length === 3 && labelsOk && styleOk && !!window.__omtInplayMvActive,
+        primary, secondaries, labelsOk, styleOk
       };
     });
     results.push({
-      name: 'inplayip-mv-4-tile-full-hud-independent-clocks',
-      pass: mv4.ok === true,
-      detail: mv4
+      name: 'inplayip-mv-4-tile-style-parity',
+      pass: mv4style.ok === true,
+      detail: mv4style
     });
+
+    // Kickoff on tile B only — A / C / D clock state unchanged.
+    const mv4kick = await page.evaluate(async () => {
+      const tiles = Array.from(document.querySelectorAll('[data-omt-tile-root]'));
+      const snap = () => {
+        const primaryClock = document.getElementById('match-timer');
+        const primaryOn = document.getElementById('omt-root')?.classList.contains('omt-timer-on');
+        const clocks = tiles.map((tr) => {
+          const c = tr.querySelector('.omt-match-timer, [id$="match-timer"]');
+          return {
+            on: tr.classList.contains('omt-timer-on'),
+            text: c ? (c.textContent || '').trim() : '',
+            display: c ? getComputedStyle(c.parentElement || c).display : 'none'
+          };
+        });
+        return {
+          primaryOn: !!primaryOn,
+          primaryText: primaryClock ? (primaryClock.textContent || '').trim() : null,
+          clocks
+        };
+      };
+      const before = snap();
+      const tileB = tiles[0];
+      const more = tileB.querySelector('.omt-more-toggle');
+      if (more && more.getAttribute('aria-expanded') !== 'true') more.click();
+      await new Promise((r) => setTimeout(r, 40));
+      const kick = tileB.querySelector('[id$="omt-btn-set-kickoff"]');
+      if (kick) kick.click();
+      await new Promise((r) => setTimeout(r, 80));
+      const after = snap();
+      const bOk = after.clocks[0].on && /Pre-Match|\d+:\d+/.test(after.clocks[0].text);
+      // Primary may already have a restored timer whose text ticks (00:00 → Pre-Match);
+      // prove B kickoff does not flip primary timer-on or wake C/D.
+      const aUnchanged = before.primaryOn === after.primaryOn;
+      const cdUnchanged = before.clocks.slice(1).every((c, i) =>
+        c.on === after.clocks[i + 1].on);
+      const cdStillOff = after.clocks.slice(1).every((c) => !c.on);
+      return {
+        ok: bOk && aUnchanged && cdUnchanged && cdStillOff,
+        bOk, aUnchanged, cdUnchanged, cdStillOff,
+        before, after
+      };
+    });
+    results.push({
+      name: 'inplayip-mv-4-tile-kickoff-b-only',
+      pass: mv4kick.ok === true,
+      detail: mv4kick
+    });
+
     await page.evaluate(() => {
       document.querySelectorAll('[data-omt-tile-root] .omt-more-toggle[aria-expanded="true"]').forEach((b) => b.click());
     });
     await page.waitForTimeout(80);
-    await page.screenshot({ path: path.join(ARTIFACTS, 'v232_inplay_mv_4tile.png'), fullPage: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v233_inplay_mv_4tile.png'), fullPage: true });
+
+    // Side-by-side crop of primary panel+bar vs tile B panel+bar.
+    const cropBoxes = await page.evaluate(() => {
+      const root = document.getElementById('omt-root');
+      const tileB = document.querySelector('[data-omt-tile-root]');
+      const boxOf = (scope) => {
+        const panel = scope.querySelector('.omt-controls-panel, #omt-controls-panel');
+        const bar = scope.querySelector('.omt-timeline-bar, #omt-timeline-bar');
+        if (!panel || !bar) return null;
+        const pr = panel.getBoundingClientRect();
+        const br = bar.getBoundingClientRect();
+        const left = Math.min(pr.left, br.left);
+        const top = Math.min(pr.top, br.top);
+        const right = Math.max(pr.right, br.right);
+        const bottom = Math.max(pr.bottom, br.bottom);
+        return {
+          x: Math.max(0, Math.floor(left) - 4),
+          y: Math.max(0, Math.floor(top) - 4),
+          width: Math.ceil(right - left) + 8,
+          height: Math.ceil(bottom - top) + 8
+        };
+      };
+      return { a: boxOf(root), b: boxOf(tileB) };
+    });
+    if (cropBoxes.a && cropBoxes.b) {
+      await page.screenshot({
+        path: path.join(ARTIFACTS, 'v233_inplay_mv_crop_A_panel.png'),
+        clip: cropBoxes.a
+      });
+      await page.screenshot({
+        path: path.join(ARTIFACTS, 'v233_inplay_mv_crop_B_panel.png'),
+        clip: cropBoxes.b
+      });
+    }
+    // Pixel / visual diff note between A and B crops (same viewport scale).
+    const diffNote = await page.evaluate(async (boxes) => {
+      const grab = async (box) => {
+        // Sample computed key chrome from each HUD for a structured note.
+        return box;
+      };
+      const root = document.getElementById('omt-root');
+      const tileB = document.querySelector('[data-omt-tile-root]');
+      const sample = (scope) => {
+        const live = scope.querySelector('#omt-live-btn, .omt-tile-panel-live');
+        const speed = scope.querySelector('#omt-speed-select, .omt-tile-speed-select');
+        const vol = scope.querySelector('#omt-volume-range, .omt-tile-panel-vol-range');
+        const label = scope.querySelector('.omt-btn-label');
+        const clock = scope.querySelector('#match-timer, .omt-match-timer');
+        const cs = (el) => el ? getComputedStyle(el) : {};
+        return {
+          liveRadius: cs(live).borderRadius,
+          liveBorder: cs(live).border,
+          speedAppearance: cs(speed).appearance || cs(speed).webkitAppearance,
+          speedBg: cs(speed).backgroundColor,
+          speedColor: cs(speed).color,
+          volW: cs(vol).width,
+          volH: cs(vol).height,
+          volAppearance: cs(vol).appearance || cs(vol).webkitAppearance,
+          labelText: label ? label.textContent.trim() : null,
+          clockFont: cs(clock).fontSize,
+          clockRadius: cs(clock).borderRadius,
+          clockPad: cs(clock).padding,
+          clockBorder: cs(clock).border
+        };
+      };
+      const a = sample(root);
+      const b = sample(tileB);
+      const keys = Object.keys(a);
+      const mismatches = keys.filter((k) => String(a[k]) !== String(b[k]));
+      return { a, b, mismatches, match: mismatches.length === 0, boxes };
+    }, cropBoxes);
+    results.push({
+      name: 'inplayip-mv-4-tile-a-vs-b-visual-diff',
+      pass: diffNote.match === true,
+      detail: diffNote
+    });
+    try {
+      const fs = await import('fs');
+      fs.writeFileSync(
+        path.join(ARTIFACTS, 'v233_inplay_mv_A_vs_B_diff.json'),
+        JSON.stringify(diffNote, null, 2)
+      );
+    } catch (_) {}
 
     await page.evaluate(() => { window.__omtSetTiles && window.__omtSetTiles(1); });
     await waitForOmt(page, 15000);
