@@ -293,7 +293,9 @@ html.omt-host-examino.omt-hud-on .setting-holder.omt-examino-native-hidden.omt-s
 #omt-root .btn-sync,
 #omt-root #omt-btn-set-kickoff,
 #omt-root #omt-kickoff-bar .btn-sync,
-#omt-root #omt-kickoff-bar .btn-sync.kickoff-set {
+#omt-root #omt-kickoff-bar .btn-sync.kickoff-set,
+#omt-root .omt-kickoff-bar .btn-sync,
+#omt-root .omt-kickoff-bar .btn-sync.kickoff-set {
     background: #F5831F !important;
     background-color: #F5831F !important;
     background-image: none !important;
@@ -304,7 +306,8 @@ html.omt-host-examino.omt-hud-on .setting-holder.omt-examino-native-hidden.omt-s
 }
 #omt-root .btn-sync:hover,
 #omt-root #omt-btn-set-kickoff:hover,
-#omt-root #omt-kickoff-bar .btn-sync:hover {
+#omt-root #omt-kickoff-bar .btn-sync:hover,
+#omt-root .omt-kickoff-bar .btn-sync:hover {
     filter: brightness(1.05) !important;
     background: #F5831F !important;
     background-color: #F5831F !important;
@@ -367,6 +370,7 @@ html.omt-host-examino.omt-hud-on .setting-holder.omt-examino-native-hidden.omt-s
 #omt-root #match-timer,
 #omt-root #omt-more-panel,
 #omt-root #omt-kickoff-bar,
+#omt-root .omt-kickoff-bar,
 #omt-root #omt-examino-settings {
     pointer-events: auto;
 }
@@ -1682,7 +1686,9 @@ html.omt-host-examino.omt-hud-on .setting-holder.omt-examino-native-hidden.omt-s
     text-transform: uppercase;
     letter-spacing: 0.04em;
 }
+/* Class twin (.omt-kickoff-bar) covers InPlay MV prefixed tile ids (v2.3.9). */
 #omt-kickoff-bar select,
+.omt-kickoff-bar select,
 #omt-examino-settings select,
 .omt-more-panel select {
     background: rgba(0, 0, 0, 0.4);
@@ -1694,12 +1700,14 @@ html.omt-host-examino.omt-hud-on .setting-holder.omt-examino-native-hidden.omt-s
     padding: 4px 6px;
     font-family: var(--omt-font);
 }
-#omt-kickoff-bar .omt-custom-minute {
+#omt-kickoff-bar .omt-custom-minute,
+.omt-kickoff-bar .omt-custom-minute {
     display: none;
     align-items: center;
     gap: 4px;
 }
-#omt-kickoff-bar .omt-custom-minute input {
+#omt-kickoff-bar .omt-custom-minute input,
+.omt-kickoff-bar .omt-custom-minute input {
     width: 64px;
     padding: 4px 6px;
     background: rgba(0, 0, 0, 0.4);
@@ -1708,16 +1716,20 @@ html.omt-host-examino.omt-hud-on .setting-holder.omt-examino-native-hidden.omt-s
     border-radius: 4px;
     font-size: 11px;
 }
-#omt-kickoff-bar .btn-sync {
+/* Compact Kick-off / X — not the giant flex:1 setup-panel .btn-sync. */
+#omt-kickoff-bar .btn-sync,
+.omt-kickoff-bar .btn-sync {
     flex: 0 0 auto;
     padding: 6px 10px;
     font-size: 11px;
 }
-#omt-kickoff-bar .btn-sync.kickoff-set {
+#omt-kickoff-bar .btn-sync.kickoff-set,
+.omt-kickoff-bar .btn-sync.kickoff-set {
     background: var(--omt-orange);
     color: #111;
 }
-#omt-kickoff-bar .btn-clear-timer {
+#omt-kickoff-bar .btn-clear-timer,
+.omt-kickoff-bar .btn-clear-timer {
     padding: 6px;
 }
 #omt-examino-settings {
@@ -2392,12 +2404,14 @@ html.omt-host-xeatre.omt-hud-on .video-js.vjs-fluid {
     filter: none !important;
     opacity: 1 !important;
     -webkit-filter: none !important;
+    /* Match #omt-root button font (Kick-off / X / nudge in More). */
+    font-size: 11px !important;
+    line-height: 1.25 !important;
 }
+/* Speed/top selects only — Period select uses shared .omt-kickoff-bar rules. */
 .omt-tile-root .top-select,
-.omt-tile-root select.omt-tip,
 .omt-tile-root .omt-tile-speed-select,
-.omt-tile-root [id$="omt-speed-select"],
-.omt-tile-root [id$="omt-half-select"] {
+.omt-tile-root [id$="omt-speed-select"] {
     -webkit-appearance: none !important;
     appearance: none !important;
     background: rgba(0, 0, 0, 0.45) !important;
@@ -2412,6 +2426,22 @@ html.omt-host-xeatre.omt-hud-on .video-js.vjs-fluid {
     font-weight: 600 !important;
     font-family: var(--omt-font) !important;
     max-width: 84px;
+}
+/* Beat host resets on Period select while keeping primary More padding/size. */
+.omt-tile-root .omt-kickoff-bar select {
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    background: rgba(0, 0, 0, 0.4) !important;
+    border: 1px solid var(--omt-border) !important;
+    color: var(--omt-text) !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    padding: 4px 6px !important;
+    border-radius: 4px !important;
+    outline: none !important;
+    cursor: pointer !important;
+    font-family: var(--omt-font) !important;
+    line-height: 1.25 !important;
 }
 .omt-tile-root .top-select:focus-visible,
 .omt-tile-root .omt-tile-speed-select:focus-visible {
@@ -2503,21 +2533,9 @@ html.omt-host-xeatre.omt-hud-on .video-js.vjs-fluid {
     top: auto;
 }
 
-/* v2.3.8: More controls on MV S+Compact — full kickoff row, not clipped,
-   stays inside the tile panel (JS also nudges bottom when needed). */
-.omt-tile-root .omt-controls-panel.omt-panel-size-small .omt-more-panel.is-open,
-.omt-tile-root .omt-controls-panel.omt-panel-compact .omt-more-panel.is-open {
-    max-height: none;
-    overflow: visible;
-    margin: 6px 8px 0;
-    padding: 6px;
-}
-.omt-tile-root .omt-controls-panel.omt-panel-size-small .omt-more-label,
-.omt-tile-root .omt-controls-panel.omt-panel-size-small .omt-more-block,
-.omt-tile-root .omt-controls-panel.omt-panel-compact .omt-more-label,
-.omt-tile-root .omt-controls-panel.omt-panel-compact .omt-more-block {
-    font-size: 11px;
-}
+/* v2.3.9: More open uses the same S rules as primary
+   (.omt-controls-panel.omt-panel-size-small .omt-more-panel.is-open).
+   Removed 2.3.8 tile-only max-height:none / enlarged padding. */
 /* Host shells often use overflow:hidden; keep HUD/more visible in MV tiles. */
 .video-js:has(> .omt-tile-root),
 .vjs-player:has(> .omt-tile-root),

@@ -1382,7 +1382,7 @@
     </div>
 
     <div id="${id('omt-more-panel')}" class="omt-more-panel" aria-hidden="true">
-        <div id="${id('omt-kickoff-bar')}" class="omt-more-block">
+        <div id="${id('omt-kickoff-bar')}" class="omt-more-block omt-kickoff-bar">
             <label class="omt-more-label" for="${id('omt-half-select')}">Period</label>
             <select id="${id('omt-half-select')}" class="omt-tip omt-tile-half" title="Match period"${tip('Period')}>
                 <option value="1">1st Half</option>
@@ -9381,7 +9381,7 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         console.log('[OMT] Local player file/dnd installed.');
     }
 
-/* InPlay multi-view (v2.3.8): full primary-identical HUD per secondary tile.
+/* InPlay multi-view (v2.3.9): full primary-identical HUD per secondary tile.
  *
  * Scope: UI layer only. Player/seek/playback helpers stay untouched —
  * tile actions briefly swap global `vid` via omtInplayMvWithVideo().
@@ -9888,21 +9888,39 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         }
     }
 
+    /** True when the tile panel is still CSS-centered (bottom + left:50%),
+     *  not user-dragged to top/left. Never rewrite dragged geometry. */
+    function omtInplayMvPanelAtDefaultPos(panel) {
+        if (!panel) return false;
+        try {
+            if (panel.dataset && panel.dataset.omtUserDragged === '1') return false;
+        } catch (_) {}
+        const top = panel.style.top;
+        const bottom = panel.style.bottom;
+        // Dragged tiles use left/top with bottom:auto (see drag.js).
+        if (top && top !== 'auto' && (bottom === 'auto' || bottom === '')) return false;
+        if (top && top !== 'auto') return false;
+        return true;
+    }
+
     function omtInplayMvFitMoreInTile(rec) {
         if (!rec || !rec.root) return;
         const panel = omtInplayMvQ(rec, 'omt-controls-panel');
         const more = omtInplayMvQ(rec, 'omt-more-panel');
         if (!panel || !more) return;
-        // Default MV S panel clearance above the timeline bar.
+        // User-dragged (top/left) panels: leave position alone.
+        if (!omtInplayMvPanelAtDefaultPos(panel)) return;
+        // Default MV S panel clearance above the timeline bar (CSS also 100px).
         const defaultBottom = 100;
         if (!more.classList.contains('is-open')) {
-            panel.style.bottom = defaultBottom + 'px';
+            // Drop any prior nudge so CSS bottom:100px applies again.
+            try { panel.style.removeProperty('bottom'); } catch (_) {}
             return;
         }
         const tileH = rec.root.clientHeight || 0;
         if (tileH < 8) return;
-        // Measure with default bottom first, then nudge up so the open more
-        // panel stays inside the tile (not clipped by .video-js overflow).
+        // Measure with default bottom first, then nudge so open more stays
+        // inside the tile (not clipped by .video-js overflow).
         panel.style.bottom = defaultBottom + 'px';
         const pr = panel.getBoundingClientRect();
         const tr = rec.root.getBoundingClientRect();
