@@ -1991,6 +1991,11 @@
         if (controlsPanel) {
             const handle = q('controls-handle');
             if (handle) fazerArrastavel(controlsPanel, handle);
+            // Edge text-select block on the bottom bar too (v2.3.6).
+            const timelineBar = omtRoot && omtRoot.querySelector('#omt-timeline-bar');
+            if (timelineBar && typeof omtInstallPanelNoTextSelect === 'function') {
+                omtInstallPanelNoTextSelect(timelineBar);
+            }
         }
 
         // --- Auto-hide controls: mouse move + clicks/keys/wheel on our UI ---
@@ -4341,16 +4346,33 @@
         if (typeof syncSpeedChips === 'function') syncSpeedChips();
     }
 
-/* Draggable glass panels + viewport clamp (v2.3.5). */
+/* Draggable glass panels + viewport clamp (v2.3.5/2.3.6). */
     /* =========================================================
        15. PANEL DRAG SYSTEM
        ========================================================= */
+
+    /** Top safe inset so panels stay below native hover/blocking chrome. */
+    function omtPanelTopSafeMargin(rootEl) {
+        try {
+            const id = site && site.id;
+            if (id === 'inplayip') {
+                // Field header-container is 60px; stay just below it.
+                return 56;
+            }
+            if (id === 'examino') {
+                // Invisible native top layer blocks clicks near the top edge.
+                return 56;
+            }
+        } catch (_) {}
+        return 8;
+    }
 
     /**
      * Clamp a floating panel fully inside its container. Keeps the user's
      * position when it already fits; otherwise pins to the nearest edge.
      * Uses unscaled offsetWidth/Height (same as Xeatre v2.2.20) so scaled
      * getBoundingClientRect never mixes with layout left/bottom.
+     * v2.3.6: also respects a top safe margin (InPlay / Examino native chrome).
      * Returns true when style was adjusted.
      */
     function omtClampPanelInContainer(panel, rootEl) {
@@ -4363,6 +4385,8 @@
             if (panelW < 4 || panelH < 4 || rootRect.width < 4 || rootRect.height < 4) {
                 return false;
             }
+
+            const topSafe = omtPanelTopSafeMargin(rootEl);
 
             const parsePx = (v) => {
                 if (!v || v === 'auto') return null;
@@ -4382,7 +4406,7 @@
             const rect = panel.getBoundingClientRect();
             const overflow =
                 rect.left < rootRect.left - 1 ||
-                rect.top < rootRect.top - 1 ||
+                rect.top < rootRect.top + topSafe - 1 ||
                 rect.right > rootRect.right + 1 ||
                 rect.bottom > rootRect.bottom + 1;
             // CSS-centered default that still fits — leave alone (Xeatre shrink-in-place).
@@ -4406,7 +4430,10 @@
             }
 
             const maxLeft = Math.max(0, rootRect.width - panelW);
-            const maxBottom = Math.max(0, rootRect.height - panelH);
+            // Cap bottom so panel top stays >= topSafe:
+            // top = rootH - bottom - panelH >= topSafe
+            // => bottom <= rootH - panelH - topSafe
+            const maxBottom = Math.max(0, rootRect.height - panelH - topSafe);
             const nextLeft = Math.max(0, Math.min(left, maxLeft));
             const nextBottom = Math.max(0, Math.min(bottom, maxBottom));
 
@@ -4457,6 +4484,33 @@
     try { window.__omtClampAllPanels = omtClampAllPanels; } catch (_) {}
     try { window.__omtSchedulePanelClamp = omtSchedulePanelClamp; } catch (_) {}
 
+    /** True when the pointer is within `margin` px of the panel's border/corner. */
+    function omtPanelEdgeGrabHit(e, panel, margin) {
+        const r = panel.getBoundingClientRect();
+        const x = e.clientX - r.left;
+        const y = e.clientY - r.top;
+        const m = margin == null ? 8 : margin;
+        if (x < 0 || y < 0 || x > r.width || y > r.height) return false;
+        return x < m || y < m || x > r.width - m || y > r.height - m;
+    }
+
+    /** Block Edge text-selection mini-menu on panel/bar dblclick (inputs stay editable). */
+    function omtInstallPanelNoTextSelect(panel) {
+        if (!panel || panel.dataset.omtNoSelectWired === '1') return;
+        try { panel.dataset.omtNoSelectWired = '1'; } catch (_) {}
+        panel.addEventListener('dblclick', (e) => {
+            if (e.target && e.target.closest &&
+                e.target.closest('input, textarea, select, [contenteditable="true"], #timer-edit-input, .is-editing')) {
+                return;
+            }
+            e.preventDefault();
+            try {
+                const sel = window.getSelection && window.getSelection();
+                if (sel && sel.removeAllRanges) sel.removeAllRanges();
+            } catch (_) {}
+        }, true);
+    }
+
     function fazerArrastavel(panel, handle, rootEl) {
         let grabOffsetX = 0;
         let grabOffsetY = 0;
@@ -4485,13 +4539,15 @@
             const rootRect = dragRootRect();
             const panelW = panel.offsetWidth || 0;
             const panelH = panel.offsetHeight || 0;
+            const topSafe = omtPanelTopSafeMargin(rootEl || omtRoot);
             const maxLeft = Math.max(0, rootRect.width - panelW);
-            const maxTop = Math.max(0, rootRect.height - panelH);
+            const minTop = topSafe;
+            const maxTop = Math.max(minTop, rootRect.height - panelH);
 
             let newLeft = e.clientX - rootRect.left - grabOffsetX;
             let newTop = e.clientY - rootRect.top - grabOffsetY;
             newLeft = Math.max(0, Math.min(newLeft, maxLeft));
-            newTop = Math.max(0, Math.min(newTop, maxTop));
+            newTop = Math.max(minTop, Math.min(newTop, maxTop));
 
             panel.style.left = newLeft + 'px';
             panel.style.top = newTop + 'px';
@@ -4529,10 +4585,12 @@
 
         function startDrag(e) {
             // Ignore clicks on interactive child elements
-            if (e.target.closest && e.target.closest('button, select, input')) return;
+            if (e.target.closest && e.target.closest('button, select, input, textarea, a, label')) return;
             // Only primary button / touch.
             if (e.button != null && e.button !== 0) return;
+            if (dragging) return;
             e.preventDefault();
+            try { e.stopPropagation(); } catch (_) {}
 
             const rootRect = dragRootRect();
             const rect = panel.getBoundingClientRect();
@@ -4564,18 +4622,40 @@
             document.addEventListener('visibilitychange', onVisibilityStop, true);
 
             try {
-                if (e.pointerId != null && handle.setPointerCapture) {
+                if (e.pointerId != null && handle && handle.setPointerCapture) {
                     handle.setPointerCapture(e.pointerId);
+                } else if (e.pointerId != null && panel.setPointerCapture) {
+                    panel.setPointerCapture(e.pointerId);
                 }
             } catch (_) {}
         }
 
-        handle.addEventListener('pointerdown', startDrag);
-        // Older paths / synthetic tests may only fire mousedown.
-        handle.addEventListener('mousedown', function (e) {
-            if (e.pointerType) return; // pointerdown already handled
+        /** Handle drag OR ~8px edge/corner grab (v2.3.6). Buttons stay clickable. */
+        function maybeStartFromPanel(e) {
+            if (e.target.closest && e.target.closest('button, select, input, textarea, a, label')) return;
+            const onHandle = !!(handle && e.target.closest && (
+                e.target === handle || handle.contains(e.target) ||
+                e.target.closest('.drag-handle, .drag-center-grip, [data-omt-tile-handle]')
+            ));
+            if (!onHandle && !omtPanelEdgeGrabHit(e, panel, 8)) return;
             startDrag(e);
+        }
+
+        if (handle) {
+            handle.addEventListener('pointerdown', startDrag);
+            // Older paths / synthetic tests may only fire mousedown.
+            handle.addEventListener('mousedown', function (e) {
+                if (e.pointerType) return; // pointerdown already handled
+                startDrag(e);
+            });
+        }
+        // Edge/corner grab on the panel itself (in addition to the handle).
+        panel.addEventListener('pointerdown', maybeStartFromPanel);
+        panel.addEventListener('mousedown', function (e) {
+            if (e.pointerType) return;
+            maybeStartFromPanel(e);
         });
+        omtInstallPanelNoTextSelect(panel);
     }
 
 /* Show / hide the legacy setup panel (unused in-video; kept null-safe). */
@@ -5385,8 +5465,17 @@
     function omtApplyPanelAppearance() {
         if (!controlsPanel) return;
         const prefs = omtReadPanelPrefs();
-        controlsPanel.classList.toggle('omt-panel-size-small', prefs.size === 'small');
-        controlsPanel.classList.toggle('omt-panel-compact', !!prefs.compact);
+        // v2.3.6: while InPlay multi-view is active, keep S forced (ignore user size).
+        const mvForced = !!(typeof window !== 'undefined' && window.__omtInplayMvActive);
+        controlsPanel.classList.toggle('omt-panel-size-small', mvForced || prefs.size === 'small');
+        controlsPanel.classList.toggle('omt-panel-compact', !mvForced && !!prefs.compact);
+        if (mvForced) {
+            try {
+                document.querySelectorAll('[data-omt-tile-root] .omt-controls-panel').forEach((p) => {
+                    p.classList.add('omt-panel-size-small');
+                });
+            } catch (_) {}
+        }
         omtApplySkipButtonLabels();
         if (typeof omtAnchorControlsPanelBottom === 'function') {
             try { omtAnchorControlsPanelBottom(); } catch (_) {}
@@ -9140,7 +9229,7 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         console.log('[OMT] Local player file/dnd installed.');
     }
 
-/* InPlay multi-view (v2.3.4): full primary-identical HUD per secondary tile.
+/* InPlay multi-view (v2.3.6): full primary-identical HUD per secondary tile.
  *
  * Scope: UI layer only. Player/seek/playback helpers stay untouched —
  * tile actions briefly swap global `vid` via omtInplayMvWithVideo().
@@ -9302,13 +9391,17 @@ var OMT_SYNC_FEATURE_ENABLED = false;
                 }
             }
         } catch (_) {}
-        // Panel size / compact prefs (same as primary).
+        // Panel size: while multi-view is active force S; otherwise user prefs.
         try {
             const panel = omtInplayMvQ(rec, 'omt-controls-panel');
-            if (panel && typeof omtReadPanelPrefs === 'function') {
-                const prefs = omtReadPanelPrefs();
-                panel.classList.toggle('omt-panel-size-small', prefs.size === 'small');
-                panel.classList.toggle('omt-panel-compact', !!prefs.compact);
+            if (panel) {
+                if (inplayMvActive || (typeof window !== 'undefined' && window.__omtInplayMvActive)) {
+                    panel.classList.add('omt-panel-size-small');
+                } else if (typeof omtReadPanelPrefs === 'function') {
+                    const prefs = omtReadPanelPrefs();
+                    panel.classList.toggle('omt-panel-size-small', prefs.size === 'small');
+                    panel.classList.toggle('omt-panel-compact', !!prefs.compact);
+                }
             }
         } catch (_) {}
         // Clock chrome classes from primary wrap (size / style / pos).
@@ -9913,6 +10006,24 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         inplayMvPointerHooked = true;
     }
 
+    /** Force S-size panels while multi-view is on; restore user prefs on exit. */
+    function omtInplayMvApplyMvPanelSize(forceSmall) {
+        try {
+            if (forceSmall) {
+                if (controlsPanel) controlsPanel.classList.add('omt-panel-size-small');
+                document.querySelectorAll('[data-omt-tile-root] .omt-controls-panel').forEach((p) => {
+                    p.classList.add('omt-panel-size-small');
+                });
+            } else if (typeof omtApplyPanelAppearance === 'function') {
+                omtApplyPanelAppearance();
+            } else if (controlsPanel && typeof omtReadPanelPrefs === 'function') {
+                const prefs = omtReadPanelPrefs();
+                controlsPanel.classList.toggle('omt-panel-size-small', prefs.size === 'small');
+                controlsPanel.classList.toggle('omt-panel-compact', !!prefs.compact);
+            }
+        } catch (_) {}
+    }
+
     function omtInplayMvDeactivate() {
         if (!inplayMvActive && !inplayMvTiles.size) {
             inplayMvHotkeyVid = null;
@@ -9929,6 +10040,8 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             window.__omtInplayMvActive = false;
             window.__omtInplayMvHotkeyIndex = -1;
         } catch (_) {}
+        // Revert primary panel to the user's normal size (single-video path).
+        omtInplayMvApplyMvPanelSize(false);
     }
 
     function omtInplayMvSync() {
@@ -9946,6 +10059,8 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         inplayMvActive = true;
         try { window.__omtInplayMvActive = true; } catch (_) {}
         omtInplayMvHookPointer();
+        // v2.3.6: every tile + primary use S while multi-view is active.
+        omtInplayMvApplyMvPanelSize(true);
 
         const live = new Set(videos);
         const gridChanged = videos.length !== inplayMvLastVideoCount;
@@ -9960,6 +10075,8 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             omtInplayMvMountTile(v);
             mounted++;
         }
+        // Re-assert S after mounts (mount applies chrome from prefs first).
+        omtInplayMvApplyMvPanelSize(true);
         if (gridChanged) {
             inplayMvTiles.forEach((rec) => {
                 const p = omtInplayMvQ(rec, 'omt-controls-panel');

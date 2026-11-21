@@ -374,6 +374,8 @@ html.omt-host-examino.omt-hud-on .setting-holder.omt-examino-native-hidden.omt-s
    steal idle auto-hide; interactive children re-enable hits. */
 #omt-root #omt-timeline-bar {
     pointer-events: none;
+    -webkit-user-select: none;
+    user-select: none;
 }
 #omt-root #omt-timeline-bar .omt-timeline-track,
 #omt-root #omt-timeline-bar .omt-timeline-chrome-row,
@@ -678,6 +680,9 @@ html.omt-host-examino.omt-hud-on .setting-holder.omt-examino-native-hidden.omt-s
     /* visible so top-row data-tip tooltips are not clipped by the card edge */
     overflow: visible;
     height: fit-content;
+    /* Edge: block dblclick text-select mini-menu on panel chrome (v2.3.6). */
+    -webkit-user-select: none;
+    user-select: none;
 }
 
 .glass-panel.playing-state {
@@ -1066,6 +1071,8 @@ html.omt-host-examino.omt-hud-on .setting-holder.omt-examino-native-hidden.omt-s
     flex-direction: column;
     transition: opacity 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
     z-index: 50;
+    -webkit-user-select: none;
+    user-select: none;
 }
 /* Bottom-anchored: when more opens, card grows UP (transport stays put). */
 #omt-controls-panel.omt-more-open,
@@ -2131,6 +2138,8 @@ html.omt-host-examino.omt-hud-on .setting-holder.omt-examino-native-hidden.omt-s
     font-family: var(--omt-font);
     cursor: pointer;
     transition: background 0.12s ease, color 0.12s ease;
+    -webkit-user-select: none;
+    user-select: none;
 }
 .omt-speed-chip:last-child {
     border-right: none;
@@ -2672,4 +2681,41 @@ html.omt-host-xeatre.omt-hud-on .video-js.vjs-fluid {
 .omt-tile-root .omt-match-timer-wrap.omt-clock-pos-top-right { top: 14px; right: 14px; left: auto; bottom: auto; transform: none; }
 .omt-tile-root .omt-osd-message {
     display: none;
+}
+
+/* ---- v2.3.6: Edge dblclick must not select panel/bar/chip/label text ---- */
+#omt-controls-panel,
+.omt-controls-panel,
+#omt-timeline-bar,
+.omt-timeline-bar,
+.omt-speed-chip,
+.omt-btn-label,
+.omt-more-label,
+.omt-timeline-times,
+.omt-timeline-live-delay,
+.omt-timeline-video-range,
+.omt-timeline-post-times,
+.omt-period-tick-label,
+.drag-handle,
+.drag-center-grip,
+.omt-kickoff-bar,
+#omt-kickoff-bar {
+    -webkit-user-select: none;
+    user-select: none;
+}
+/* Clock edit + form fields stay selectable / editable. */
+#omt-controls-panel input,
+#omt-controls-panel textarea,
+#omt-controls-panel select,
+.omt-controls-panel input,
+.omt-controls-panel textarea,
+.omt-controls-panel select,
+#match-timer.is-editing,
+.omt-match-timer.is-editing,
+#timer-edit-input,
+[id$="timer-edit-input"],
+#omt-controls-panel #timer-edit-input,
+.omt-controls-panel [id$="timer-edit-input"] {
+    -webkit-user-select: text;
+    user-select: text;
 }

@@ -1,4 +1,4 @@
-/* InPlay multi-view (v2.3.4): full primary-identical HUD per secondary tile.
+/* InPlay multi-view (v2.3.6): full primary-identical HUD per secondary tile.
  *
  * Scope: UI layer only. Player/seek/playback helpers stay untouched —
  * tile actions briefly swap global `vid` via omtInplayMvWithVideo().
@@ -160,13 +160,17 @@
                 }
             }
         } catch (_) {}
-        // Panel size / compact prefs (same as primary).
+        // Panel size: while multi-view is active force S; otherwise user prefs.
         try {
             const panel = omtInplayMvQ(rec, 'omt-controls-panel');
-            if (panel && typeof omtReadPanelPrefs === 'function') {
-                const prefs = omtReadPanelPrefs();
-                panel.classList.toggle('omt-panel-size-small', prefs.size === 'small');
-                panel.classList.toggle('omt-panel-compact', !!prefs.compact);
+            if (panel) {
+                if (inplayMvActive || (typeof window !== 'undefined' && window.__omtInplayMvActive)) {
+                    panel.classList.add('omt-panel-size-small');
+                } else if (typeof omtReadPanelPrefs === 'function') {
+                    const prefs = omtReadPanelPrefs();
+                    panel.classList.toggle('omt-panel-size-small', prefs.size === 'small');
+                    panel.classList.toggle('omt-panel-compact', !!prefs.compact);
+                }
             }
         } catch (_) {}
         // Clock chrome classes from primary wrap (size / style / pos).
@@ -771,6 +775,24 @@
         inplayMvPointerHooked = true;
     }
 
+    /** Force S-size panels while multi-view is on; restore user prefs on exit. */
+    function omtInplayMvApplyMvPanelSize(forceSmall) {
+        try {
+            if (forceSmall) {
+                if (controlsPanel) controlsPanel.classList.add('omt-panel-size-small');
+                document.querySelectorAll('[data-omt-tile-root] .omt-controls-panel').forEach((p) => {
+                    p.classList.add('omt-panel-size-small');
+                });
+            } else if (typeof omtApplyPanelAppearance === 'function') {
+                omtApplyPanelAppearance();
+            } else if (controlsPanel && typeof omtReadPanelPrefs === 'function') {
+                const prefs = omtReadPanelPrefs();
+                controlsPanel.classList.toggle('omt-panel-size-small', prefs.size === 'small');
+                controlsPanel.classList.toggle('omt-panel-compact', !!prefs.compact);
+            }
+        } catch (_) {}
+    }
+
     function omtInplayMvDeactivate() {
         if (!inplayMvActive && !inplayMvTiles.size) {
             inplayMvHotkeyVid = null;
@@ -787,6 +809,8 @@
             window.__omtInplayMvActive = false;
             window.__omtInplayMvHotkeyIndex = -1;
         } catch (_) {}
+        // Revert primary panel to the user's normal size (single-video path).
+        omtInplayMvApplyMvPanelSize(false);
     }
 
     function omtInplayMvSync() {
@@ -804,6 +828,8 @@
         inplayMvActive = true;
         try { window.__omtInplayMvActive = true; } catch (_) {}
         omtInplayMvHookPointer();
+        // v2.3.6: every tile + primary use S while multi-view is active.
+        omtInplayMvApplyMvPanelSize(true);
 
         const live = new Set(videos);
         const gridChanged = videos.length !== inplayMvLastVideoCount;
@@ -818,6 +844,8 @@
             omtInplayMvMountTile(v);
             mounted++;
         }
+        // Re-assert S after mounts (mount applies chrome from prefs first).
+        omtInplayMvApplyMvPanelSize(true);
         if (gridChanged) {
             inplayMvTiles.forEach((rec) => {
                 const p = omtInplayMvQ(rec, 'omt-controls-panel');

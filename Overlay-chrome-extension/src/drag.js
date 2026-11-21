@@ -1,13 +1,30 @@
-/* Draggable glass panels + viewport clamp (v2.3.5). */
+/* Draggable glass panels + viewport clamp (v2.3.5/2.3.6). */
     /* =========================================================
        15. PANEL DRAG SYSTEM
        ========================================================= */
+
+    /** Top safe inset so panels stay below native hover/blocking chrome. */
+    function omtPanelTopSafeMargin(rootEl) {
+        try {
+            const id = site && site.id;
+            if (id === 'inplayip') {
+                // Field header-container is 60px; stay just below it.
+                return 56;
+            }
+            if (id === 'examino') {
+                // Invisible native top layer blocks clicks near the top edge.
+                return 56;
+            }
+        } catch (_) {}
+        return 8;
+    }
 
     /**
      * Clamp a floating panel fully inside its container. Keeps the user's
      * position when it already fits; otherwise pins to the nearest edge.
      * Uses unscaled offsetWidth/Height (same as Xeatre v2.2.20) so scaled
      * getBoundingClientRect never mixes with layout left/bottom.
+     * v2.3.6: also respects a top safe margin (InPlay / Examino native chrome).
      * Returns true when style was adjusted.
      */
     function omtClampPanelInContainer(panel, rootEl) {
@@ -20,6 +37,8 @@
             if (panelW < 4 || panelH < 4 || rootRect.width < 4 || rootRect.height < 4) {
                 return false;
             }
+
+            const topSafe = omtPanelTopSafeMargin(rootEl);
 
             const parsePx = (v) => {
                 if (!v || v === 'auto') return null;
@@ -39,7 +58,7 @@
             const rect = panel.getBoundingClientRect();
             const overflow =
                 rect.left < rootRect.left - 1 ||
-                rect.top < rootRect.top - 1 ||
+                rect.top < rootRect.top + topSafe - 1 ||
                 rect.right > rootRect.right + 1 ||
                 rect.bottom > rootRect.bottom + 1;
             // CSS-centered default that still fits — leave alone (Xeatre shrink-in-place).
@@ -63,7 +82,10 @@
             }
 
             const maxLeft = Math.max(0, rootRect.width - panelW);
-            const maxBottom = Math.max(0, rootRect.height - panelH);
+            // Cap bottom so panel top stays >= topSafe:
+            // top = rootH - bottom - panelH >= topSafe
+            // => bottom <= rootH - panelH - topSafe
+            const maxBottom = Math.max(0, rootRect.height - panelH - topSafe);
             const nextLeft = Math.max(0, Math.min(left, maxLeft));
             const nextBottom = Math.max(0, Math.min(bottom, maxBottom));
 
@@ -114,6 +136,33 @@
     try { window.__omtClampAllPanels = omtClampAllPanels; } catch (_) {}
     try { window.__omtSchedulePanelClamp = omtSchedulePanelClamp; } catch (_) {}
 
+    /** True when the pointer is within `margin` px of the panel's border/corner. */
+    function omtPanelEdgeGrabHit(e, panel, margin) {
+        const r = panel.getBoundingClientRect();
+        const x = e.clientX - r.left;
+        const y = e.clientY - r.top;
+        const m = margin == null ? 8 : margin;
+        if (x < 0 || y < 0 || x > r.width || y > r.height) return false;
+        return x < m || y < m || x > r.width - m || y > r.height - m;
+    }
+
+    /** Block Edge text-selection mini-menu on panel/bar dblclick (inputs stay editable). */
+    function omtInstallPanelNoTextSelect(panel) {
+        if (!panel || panel.dataset.omtNoSelectWired === '1') return;
+        try { panel.dataset.omtNoSelectWired = '1'; } catch (_) {}
+        panel.addEventListener('dblclick', (e) => {
+            if (e.target && e.target.closest &&
+                e.target.closest('input, textarea, select, [contenteditable="true"], #timer-edit-input, .is-editing')) {
+                return;
+            }
+            e.preventDefault();
+            try {
+                const sel = window.getSelection && window.getSelection();
+                if (sel && sel.removeAllRanges) sel.removeAllRanges();
+            } catch (_) {}
+        }, true);
+    }
+
     function fazerArrastavel(panel, handle, rootEl) {
         let grabOffsetX = 0;
         let grabOffsetY = 0;
@@ -142,13 +191,15 @@
             const rootRect = dragRootRect();
             const panelW = panel.offsetWidth || 0;
             const panelH = panel.offsetHeight || 0;
+            const topSafe = omtPanelTopSafeMargin(rootEl || omtRoot);
             const maxLeft = Math.max(0, rootRect.width - panelW);
-            const maxTop = Math.max(0, rootRect.height - panelH);
+            const minTop = topSafe;
+            const maxTop = Math.max(minTop, rootRect.height - panelH);
 
             let newLeft = e.clientX - rootRect.left - grabOffsetX;
             let newTop = e.clientY - rootRect.top - grabOffsetY;
             newLeft = Math.max(0, Math.min(newLeft, maxLeft));
-            newTop = Math.max(0, Math.min(newTop, maxTop));
+            newTop = Math.max(minTop, Math.min(newTop, maxTop));
 
             panel.style.left = newLeft + 'px';
             panel.style.top = newTop + 'px';
@@ -186,10 +237,12 @@
 
         function startDrag(e) {
             // Ignore clicks on interactive child elements
-            if (e.target.closest && e.target.closest('button, select, input')) return;
+            if (e.target.closest && e.target.closest('button, select, input, textarea, a, label')) return;
             // Only primary button / touch.
             if (e.button != null && e.button !== 0) return;
+            if (dragging) return;
             e.preventDefault();
+            try { e.stopPropagation(); } catch (_) {}
 
             const rootRect = dragRootRect();
             const rect = panel.getBoundingClientRect();
@@ -221,16 +274,38 @@
             document.addEventListener('visibilitychange', onVisibilityStop, true);
 
             try {
-                if (e.pointerId != null && handle.setPointerCapture) {
+                if (e.pointerId != null && handle && handle.setPointerCapture) {
                     handle.setPointerCapture(e.pointerId);
+                } else if (e.pointerId != null && panel.setPointerCapture) {
+                    panel.setPointerCapture(e.pointerId);
                 }
             } catch (_) {}
         }
 
-        handle.addEventListener('pointerdown', startDrag);
-        // Older paths / synthetic tests may only fire mousedown.
-        handle.addEventListener('mousedown', function (e) {
-            if (e.pointerType) return; // pointerdown already handled
+        /** Handle drag OR ~8px edge/corner grab (v2.3.6). Buttons stay clickable. */
+        function maybeStartFromPanel(e) {
+            if (e.target.closest && e.target.closest('button, select, input, textarea, a, label')) return;
+            const onHandle = !!(handle && e.target.closest && (
+                e.target === handle || handle.contains(e.target) ||
+                e.target.closest('.drag-handle, .drag-center-grip, [data-omt-tile-handle]')
+            ));
+            if (!onHandle && !omtPanelEdgeGrabHit(e, panel, 8)) return;
             startDrag(e);
+        }
+
+        if (handle) {
+            handle.addEventListener('pointerdown', startDrag);
+            // Older paths / synthetic tests may only fire mousedown.
+            handle.addEventListener('mousedown', function (e) {
+                if (e.pointerType) return; // pointerdown already handled
+                startDrag(e);
+            });
+        }
+        // Edge/corner grab on the panel itself (in addition to the handle).
+        panel.addEventListener('pointerdown', maybeStartFromPanel);
+        panel.addEventListener('mousedown', function (e) {
+            if (e.pointerType) return;
+            maybeStartFromPanel(e);
         });
+        omtInstallPanelNoTextSelect(panel);
     }
