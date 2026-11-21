@@ -2265,3 +2265,48 @@ html.omt-host-xeatre.omt-hud-on .video-js.vjs-fluid {
     padding: 4px 5px;
     min-width: 28px;
 }
+
+/* ---- INPLAY MULTI-VIEW TILE PANELS (v2.3.0) ----
+   Compact transport/speed HUD per secondary tile. Primary keeps #omt-root.
+   Root is pointer-events:none (curtain / host UI stay clickable); panel restores
+   pointer-events. isolation on the tile shell keeps z-index inside the player. */
+.omt-tile-root {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    pointer-events: none !important;
+    z-index: 2147483645;
+    overflow: visible;
+}
+.omt-tile-root .omt-tile-panel {
+    pointer-events: auto !important;
+    position: absolute;
+    left: 50%;
+    bottom: 32px;
+    top: auto;
+    transform: translateX(-50%);
+    width: min(360px, calc(100% - 12px));
+    max-height: calc(100% - 16px);
+    display: flex;
+    flex-direction: column;
+    z-index: 50;
+    opacity: 1;
+    overflow: hidden;
+}
+.omt-tile-root .omt-tile-panel .drag-handle {
+    padding: 4px 6px;
+    justify-content: center;
+}
+.omt-tile-root .omt-tile-panel .controls-content {
+    padding: 4px 6px 6px;
+    gap: 4px;
+}
+.omt-tile-root .omt-tile-panel .ctrl-btn {
+    padding: 4px 5px;
+    min-width: 28px;
+}
+.omt-tile-root .omt-tile-panel .omt-speed-chip {
+    padding: 2px 4px;
+    font-size: 10px;
+}

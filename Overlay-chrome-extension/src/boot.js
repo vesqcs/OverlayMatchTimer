@@ -47,6 +47,9 @@
         if (typeof stopXeatreViewportFit === 'function') {
             try { stopXeatreViewportFit(); } catch (_) {}
         }
+        if (typeof omtInplayMvTeardown === 'function') {
+            try { omtInplayMvTeardown(); } catch (_) {}
+        }
         if (examinoSettingsRefreshTimer) {
             clearTimeout(examinoSettingsRefreshTimer);
             examinoSettingsRefreshTimer = null;
@@ -328,6 +331,9 @@
         }
         if (site.id === 'local') {
             installLocalPlayerFeatures();
+        }
+        if (site.id === 'inplayip' && typeof omtInplayMvOnHudReady === 'function') {
+            try { omtInplayMvOnHudReady(); } catch (_) {}
         }
         console.log('[OMT] Overlay MatchTimer active — ' + (site.id === 'local' ? 'local player' : 'Review/DVR') + ' mode.');
     }

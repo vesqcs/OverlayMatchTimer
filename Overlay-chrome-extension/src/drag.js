@@ -2,11 +2,18 @@
     /* =========================================================
        15. PANEL DRAG SYSTEM
        ========================================================= */
-    function fazerArrastavel(panel, handle) {
+    function fazerArrastavel(panel, handle, rootEl) {
         let grabOffsetX = 0;
         let grabOffsetY = 0;
         let dragging = false;
         let activePointerId = null;
+
+        function dragRootRect() {
+            const root = rootEl || omtRoot;
+            return root
+                ? root.getBoundingClientRect()
+                : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+        }
 
         function drag(e) {
             if (!dragging) return;
@@ -19,9 +26,8 @@
             // Unscaled size + pointer grab offset (v2.2.20). Never mix scaled
             // getBoundingClientRect with layout left/bottom — that drifted to
             // the corner on Xeatre. Same path Examino uses: left/top in px.
-            const rootRect = omtRoot
-                ? omtRoot.getBoundingClientRect()
-                : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+            // Optional rootEl: InPlay multi-view tile panels (v2.3.0).
+            const rootRect = dragRootRect();
             const panelW = panel.offsetWidth || 0;
             const panelH = panel.offsetHeight || 0;
             const maxLeft = Math.max(0, rootRect.width - panelW);
@@ -70,9 +76,7 @@
             if (e.button != null && e.button !== 0) return;
             e.preventDefault();
 
-            const rootRect = omtRoot
-                ? omtRoot.getBoundingClientRect()
-                : { left: 0, top: 0 };
+            const rootRect = dragRootRect();
             const rect = panel.getBoundingClientRect();
 
             // Convert whatever CSS (bottom / left:50% / transform) into left+top px
