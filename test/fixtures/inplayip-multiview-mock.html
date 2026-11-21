@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en" data-omt-site="inplayip">
+<head>
+  <meta charset="UTF-8" />
+  <title>InPlay multi-view mock (v2.3.0)</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0b1218; color: #ccc; font-family: "Segoe UI", sans-serif; }
+    #chrome-bar {
+      height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 12px;
+      background: #15202b; border-bottom: 1px solid #243040;
+    }
+    #chrome-bar button { cursor: pointer; }
+    .players-container {
+      display: grid;
+      gap: 8px;
+      padding: 8px;
+      box-sizing: border-box;
+      height: calc(100% - 36px);
+    }
+    .players-container.tiles-1 { grid-template-columns: 1fr; }
+    .players-container.tiles-2 { grid-template-columns: 1fr 1fr; }
+    .players-container.tiles-4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+    .video-js {
+      position: relative;
+      background: #000;
+      overflow: hidden;
+      min-height: 160px;
+    }
+    video.vjs-tech { width: 100%; height: 100%; object-fit: contain; background: #000; }
+    .vjs-control-bar {
+      position: absolute; left: 0; right: 0; bottom: 0; height: 28px;
+      background: rgba(0, 120, 255, 0.35); z-index: 3;
+      display: flex; align-items: center; justify-content: center; font-size: 11px;
+    }
+    #curtain-arrow {
+      position: fixed; top: 8px; right: 12px; z-index: 4;
+      width: 28px; height: 28px; border-radius: 50%; border: 0;
+      background: #1e2a38; color: #9ec9ff; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div id="chrome-bar">
+    <button type="button" id="set-tiles-1">1 tile</button>
+    <button type="button" id="set-tiles-2">2 tiles</button>
+    <button type="button" id="set-tiles-4">4 tiles</button>
+    <span id="status">InPlay multi-view mock</span>
+  </div>
+  <button type="button" id="curtain-arrow" title="Curtain">▼</button>
+  <div class="players-container tiles-1" id="players-container"></div>
+  <script>
+    (function () {
+      const host = document.getElementById('players-container');
+      const status = document.getElementById('status');
+      const COLORS = ['#1a3350', '#50301a', '#1a5030', '#401a50'];
+      const LABELS = ['A', 'B', 'C', 'D'];
+
+      function wireVideo(video, color, label, duration) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 640;
+        canvas.height = 360;
+        const ctx = canvas.getContext('2d');
+        const t0 = performance.now();
+        function draw() {
+          const t = (performance.now() - t0) / 1000;
+          ctx.fillStyle = color;
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.fillStyle = '#e8f0ff';
+          ctx.font = 'bold 36px sans-serif';
+          ctx.fillText('TILE ' + label + ' t=' + t.toFixed(1), 24, 64);
+          // Bright band so screenshots prove real frames.
+          ctx.fillStyle = '#ffcc33';
+          ctx.fillRect(24, 100, 200 + (t % 5) * 40, 24);
+          requestAnimationFrame(draw);
+        }
+        draw();
+        video.srcObject = canvas.captureStream(20);
+        Object.defineProperty(video, 'duration', { configurable: true, get: () => duration });
+        const seekable = { length: 1, start: () => 0, end: () => duration };
+        Object.defineProperty(video, 'seekable', { configurable: true, get: () => seekable });
+        let _ct = 10 + LABELS.indexOf(label) * 5;
+        Object.defineProperty(video, 'currentTime', {
+          configurable: true,
+          get: () => _ct,
+          set: (v) => { _ct = Math.max(0, Math.min(duration, Number(v) || 0)); }
+        });
+        video.play().catch(() => {});
+      }
+
+      function buildTile(i) {
+        const shell = document.createElement('div');
+        shell.className = 'video-js vjs-player';
+        shell.id = 'tile-' + LABELS[i];
+        shell.innerHTML =
+          '<video class="vjs-tech" muted playsinline id="tech-' + LABELS[i] + '"></video>' +
+          '<div class="vjs-control-bar"><div class="vjs-progress-control">Review ' + LABELS[i] + '</div></div>';
+        const video = shell.querySelector('video');
+        wireVideo(video, COLORS[i], LABELS[i], 1200);
+        return shell;
+      }
+
+      function setTiles(n) {
+        n = Math.max(1, Math.min(4, n | 0));
+        host.className = 'players-container tiles-' + n;
+        // Grow/shrink without wiping the primary shell — clearing all videos
+        // trips OMT's InPlay close-X quiet window (4s) and drops #omt-root.
+        while (host.querySelectorAll(':scope > .video-js').length > n) {
+          host.removeChild(host.lastElementChild);
+        }
+        while (host.querySelectorAll(':scope > .video-js').length < n) {
+          const i = host.querySelectorAll(':scope > .video-js').length;
+          host.appendChild(buildTile(i));
+        }
+        status.textContent = 'tiles=' + n;
+        try { window.__omtMockTileCount = n; } catch (_) {}
+      }
+
+      document.getElementById('set-tiles-1').onclick = () => setTiles(1);
+      document.getElementById('set-tiles-2').onclick = () => setTiles(2);
+      document.getElementById('set-tiles-4').onclick = () => setTiles(4);
+      document.getElementById('curtain-arrow').onclick = () => {
+        status.textContent = 'curtain-clicked';
+      };
+
+      const params = new URLSearchParams(location.search);
+      const initial = parseInt(params.get('tiles') || '1', 10);
+      setTiles(initial);
+      try { window.__omtSetTiles = setTiles; } catch (_) {}
+    })();
+  </script>
+</body>
+</html>

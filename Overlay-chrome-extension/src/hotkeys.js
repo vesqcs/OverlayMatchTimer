@@ -15,6 +15,18 @@
     }
 
     function runHotkeyAction(actionId) {
+        // InPlay multi-view (v2.3.0): shortcuts apply to the last-clicked tile.
+        // Inactive / single-video → returns false immediately (no divert).
+        if (typeof omtInplayMvRunOnHotkeyTarget === 'function') {
+            const diverted = omtInplayMvRunOnHotkeyTarget(function () {
+                runHotkeyActionBody(actionId);
+            });
+            if (diverted) return;
+        }
+        runHotkeyActionBody(actionId);
+    }
+
+    function runHotkeyActionBody(actionId) {
         if (!ensureLiveVideo()) return;
         switch (actionId) {
             case 'skipFwd2': saltarVideo(omtGetSkipForAction('skipFwd2')); break;

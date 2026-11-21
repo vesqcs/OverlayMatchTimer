@@ -35,5 +35,6 @@
   "src/examino-features.js",
   "src/xeatre-features.js",
   "src/local-features.js",
+  "src/inplay-multiview.js",
   "src/entry.js"
 ]
