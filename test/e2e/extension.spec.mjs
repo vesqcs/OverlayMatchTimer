@@ -5940,6 +5940,207 @@ print(lit)
       detail: mvBack
     });
 
+    // ---------- v2.3.5: panel clamp after shrink / FS-exit emulation ----------
+    async function placePanelTopRightThenShrink(label, opts = {}) {
+      const large = opts.large || { width: 1280, height: 800 };
+      const small = opts.small || { width: 720, height: 480 };
+      await page.setViewportSize(large);
+      await page.waitForTimeout(120);
+      const placed = await page.evaluate(() => {
+        const root = document.getElementById('omt-root');
+        const panel = document.getElementById('omt-controls-panel');
+        if (!root || !panel) return { ok: false, reason: 'missing' };
+        panel.style.opacity = '1';
+        panel.style.pointerEvents = 'auto';
+        const rw = root.clientWidth || root.getBoundingClientRect().width;
+        const rh = root.clientHeight || root.getBoundingClientRect().height;
+        const pw = panel.offsetWidth || 400;
+        const ph = panel.offsetHeight || 120;
+        const left = Math.max(0, rw - pw - 8);
+        const top = 8;
+        panel.style.left = left + 'px';
+        panel.style.top = top + 'px';
+        panel.style.bottom = 'auto';
+        panel.style.right = 'auto';
+        panel.style.transform = 'none';
+        return { ok: true, left, top, rw, rh, pw, ph };
+      });
+      await page.screenshot({
+        path: path.join(ARTIFACTS, `v235_panel_clamp_${label}_large.png`),
+        fullPage: true
+      });
+      await page.setViewportSize(small);
+      await page.waitForTimeout(80);
+      // Emulate fullscreen exit layout settle: fire resize + optional clamp.
+      await page.evaluate(() => {
+        window.dispatchEvent(new Event('resize'));
+        document.dispatchEvent(new Event('fullscreenchange'));
+        if (typeof window.__omtSchedulePanelClamp === 'function') {
+          window.__omtSchedulePanelClamp();
+        } else if (typeof window.__omtClampAllPanels === 'function') {
+          window.__omtClampAllPanels();
+        }
+      });
+      await page.waitForTimeout(120);
+      const after = await page.evaluate(() => {
+        const root = document.getElementById('omt-root');
+        const panel = document.getElementById('omt-controls-panel');
+        if (!root || !panel) return { ok: false, reason: 'missing' };
+        const rr = root.getBoundingClientRect();
+        const pr = panel.getBoundingClientRect();
+        const eps = 2;
+        const inside =
+          pr.left >= rr.left - eps &&
+          pr.top >= rr.top - eps &&
+          pr.right <= rr.right + eps &&
+          pr.bottom <= rr.bottom + eps;
+        const visible = pr.width > 20 && pr.height > 20 &&
+          getComputedStyle(panel).opacity !== '0' &&
+          getComputedStyle(panel).display !== 'none';
+        return {
+          ok: inside && visible,
+          inside,
+          visible,
+          panel: {
+            left: Math.round(pr.left - rr.left),
+            top: Math.round(pr.top - rr.top),
+            right: Math.round(rr.right - pr.right),
+            bottom: Math.round(rr.bottom - pr.bottom),
+            w: Math.round(pr.width),
+            h: Math.round(pr.height)
+          },
+          root: { w: Math.round(rr.width), h: Math.round(rr.height) }
+        };
+      });
+      await page.screenshot({
+        path: path.join(ARTIFACTS, `v235_panel_clamp_${label}_small.png`),
+        fullPage: true
+      });
+      return { placed, after };
+    }
+
+    // InPlay single-video
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`${base}/inplayip-schedule-mock.html`, { waitUntil: 'domcontentloaded' });
+    await waitForOmt(page, 15000);
+    await page.waitForTimeout(200);
+    const clampInplay = await placePanelTopRightThenShrink('inplay');
+    results.push({
+      name: 'panel-clamp-inplay-shrink',
+      pass: clampInplay.placed.ok === true && clampInplay.after.ok === true,
+      detail: clampInplay
+    });
+
+    // InPlay multi-view — clamp primary + tile B panel
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`${base}/inplayip-multiview-mock.html?tiles=2`, { waitUntil: 'domcontentloaded' });
+    await waitForOmt(page, 15000);
+    await page.waitForFunction(
+      () => window.__omtInplayMvActive === true &&
+        document.querySelectorAll('[data-omt-tile-root]').length >= 1,
+      { timeout: 10000 }
+    ).catch(() => {});
+    await page.waitForTimeout(200);
+    await page.evaluate(() => {
+      const root = document.getElementById('omt-root');
+      const panel = document.getElementById('omt-controls-panel');
+      const tile = document.querySelector('[data-omt-tile-root]');
+      const tPanel = tile && tile.querySelector('.omt-controls-panel');
+      if (panel && root) {
+        const rw = root.clientWidth;
+        const pw = panel.offsetWidth || 400;
+        panel.style.opacity = '1';
+        panel.style.left = Math.max(0, rw - pw - 8) + 'px';
+        panel.style.top = '8px';
+        panel.style.bottom = 'auto';
+        panel.style.right = 'auto';
+        panel.style.transform = 'none';
+      }
+      if (tPanel && tile) {
+        const tw = tile.clientWidth;
+        const pw = tPanel.offsetWidth || 300;
+        tPanel.style.opacity = '1';
+        tPanel.style.left = Math.max(0, tw - pw - 8) + 'px';
+        tPanel.style.top = '8px';
+        tPanel.style.bottom = 'auto';
+        tPanel.style.right = 'auto';
+        tPanel.style.transform = 'none';
+      }
+    });
+    await page.screenshot({
+      path: path.join(ARTIFACTS, 'v235_panel_clamp_inplay_mv_large.png'),
+      fullPage: true
+    });
+    await page.setViewportSize({ width: 720, height: 480 });
+    await page.waitForTimeout(80);
+    await page.evaluate(() => {
+      window.dispatchEvent(new Event('resize'));
+      if (typeof window.__omtSchedulePanelClamp === 'function') window.__omtSchedulePanelClamp();
+      else if (typeof window.__omtClampAllPanels === 'function') window.__omtClampAllPanels();
+    });
+    await page.waitForTimeout(120);
+    const clampMv = await page.evaluate(() => {
+      const check = (panel, root) => {
+        if (!panel || !root) return { ok: false };
+        const rr = root.getBoundingClientRect();
+        const pr = panel.getBoundingClientRect();
+        const eps = 2;
+        const inside =
+          pr.left >= rr.left - eps && pr.top >= rr.top - eps &&
+          pr.right <= rr.right + eps && pr.bottom <= rr.bottom + eps;
+        return {
+          ok: inside && pr.width > 20 && pr.height > 20,
+          left: Math.round(pr.left - rr.left),
+          top: Math.round(pr.top - rr.top),
+          right: Math.round(rr.right - pr.right),
+          bottom: Math.round(rr.bottom - pr.bottom)
+        };
+      };
+      const root = document.getElementById('omt-root');
+      const panel = document.getElementById('omt-controls-panel');
+      const tile = document.querySelector('[data-omt-tile-root]');
+      const tPanel = tile && tile.querySelector('.omt-controls-panel');
+      const primary = check(panel, root);
+      const secondary = check(tPanel, tile);
+      return { ok: primary.ok && secondary.ok, primary, secondary };
+    });
+    await page.screenshot({
+      path: path.join(ARTIFACTS, 'v235_panel_clamp_inplay_mv_small.png'),
+      fullPage: true
+    });
+    results.push({
+      name: 'panel-clamp-inplay-mv-shrink',
+      pass: clampMv.ok === true,
+      detail: clampMv
+    });
+
+    // Examino
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`${base}/examino-mock.html`, { waitUntil: 'domcontentloaded' });
+    await waitForOmt(page, 15000);
+    await page.waitForTimeout(250);
+    const clampExamino = await placePanelTopRightThenShrink('examino');
+    results.push({
+      name: 'panel-clamp-examino-shrink',
+      pass: clampExamino.placed.ok === true && clampExamino.after.ok === true,
+      detail: clampExamino
+    });
+
+    // Xeatre DVR — keep shrink-in-place when centered; clamp when user-positioned
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`${base}/xeatre-dvr-mock.html`, { waitUntil: 'domcontentloaded' });
+    await waitForOmt(page, 15000);
+    await page.waitForTimeout(300);
+    const clampXeatre = await placePanelTopRightThenShrink('xeatre', {
+      large: { width: 1100, height: 720 },
+      small: { width: 779, height: 520 }
+    });
+    results.push({
+      name: 'panel-clamp-xeatre-shrink',
+      pass: clampXeatre.placed.ok === true && clampXeatre.after.ok === true,
+      detail: clampXeatre
+    });
+
     // ---- Nested .op-ui wrapping <video>: must NOT hide media (v2.0.2 field fix) ----
     await page.goto(`${base}/examino-nested-op-ui-mock.html`, { waitUntil: 'domcontentloaded' });
     await waitForOmt(page, 15000);

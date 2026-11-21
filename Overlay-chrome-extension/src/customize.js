@@ -151,6 +151,12 @@
         omtApplySkipButtonLabels();
         if (typeof omtAnchorControlsPanelBottom === 'function') {
             try { omtAnchorControlsPanelBottom(); } catch (_) {}
+        } else if (typeof omtClampPanelInContainer === 'function' && omtRoot) {
+            try { omtClampPanelInContainer(controlsPanel, omtRoot); } catch (_) {}
+        }
+        // Clamp restored / resized positions into the visible container (v2.3.5).
+        if (typeof omtClampAllPanels === 'function') {
+            try { omtClampAllPanels(); } catch (_) {}
         }
     }
 

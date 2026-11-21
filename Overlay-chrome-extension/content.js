@@ -1272,8 +1272,13 @@
                 }
             }
             if (typeof omtUpdateClockPictureInset === 'function') omtUpdateClockPictureInset();
+            // After FS exit / enter, clamp panels whose left/top no longer fit (v2.3.5).
+            if (typeof omtSchedulePanelClamp === 'function') omtSchedulePanelClamp();
         });
-        window.addEventListener('resize', () => updateCompactLayout());
+        window.addEventListener('resize', () => {
+            updateCompactLayout();
+            if (typeof omtSchedulePanelClamp === 'function') omtSchedulePanelClamp();
+        });
     }
 
     function tip(text) {
@@ -1520,7 +1525,15 @@
             liveLeft = Math.max(0, Math.min(liveLeft, maxLeft));
             controlsPanel.style.left = liveLeft + 'px';
         }
+        // Shared clamp (v2.3.5) — also covers restore / size changes.
+        if (typeof omtClampPanelInContainer === 'function') {
+            omtClampPanelInContainer(controlsPanel, omtRoot);
+        }
         updateControlsTipFlip();
+    }
+    // Alias for customize.js / restore callers.
+    function omtAnchorControlsPanelBottom(preserveBottomPx) {
+        return anchorControlsPanelBottom(preserveBottomPx);
     }
 
     /** Flip top-row tips below the controls when the card sits near the player top. */
@@ -4328,10 +4341,122 @@
         if (typeof syncSpeedChips === 'function') syncSpeedChips();
     }
 
-/* Draggable glass panels. */
+/* Draggable glass panels + viewport clamp (v2.3.5). */
     /* =========================================================
        15. PANEL DRAG SYSTEM
        ========================================================= */
+
+    /**
+     * Clamp a floating panel fully inside its container. Keeps the user's
+     * position when it already fits; otherwise pins to the nearest edge.
+     * Uses unscaled offsetWidth/Height (same as Xeatre v2.2.20) so scaled
+     * getBoundingClientRect never mixes with layout left/bottom.
+     * Returns true when style was adjusted.
+     */
+    function omtClampPanelInContainer(panel, rootEl) {
+        if (!panel || !rootEl || !panel.style) return false;
+        let changed = false;
+        try {
+            const rootRect = rootEl.getBoundingClientRect();
+            const panelW = panel.offsetWidth || 0;
+            const panelH = panel.offsetHeight || 0;
+            if (panelW < 4 || panelH < 4 || rootRect.width < 4 || rootRect.height < 4) {
+                return false;
+            }
+
+            const parsePx = (v) => {
+                if (!v || v === 'auto') return null;
+                if (!/px$/i.test(v)) return null;
+                const n = parseFloat(v);
+                return Number.isFinite(n) ? n : null;
+            };
+            const styleLeft = parsePx(panel.style.left);
+            const styleBottom = parsePx(panel.style.bottom);
+            const styleTop = parsePx(panel.style.top);
+            const hasUserPos =
+                panel.style.transform === 'none' ||
+                styleLeft != null ||
+                styleTop != null ||
+                styleBottom != null;
+
+            const rect = panel.getBoundingClientRect();
+            const overflow =
+                rect.left < rootRect.left - 1 ||
+                rect.top < rootRect.top - 1 ||
+                rect.right > rootRect.right + 1 ||
+                rect.bottom > rootRect.bottom + 1;
+            // CSS-centered default that still fits — leave alone (Xeatre shrink-in-place).
+            if (!hasUserPos && !overflow) return false;
+
+            let left;
+            let bottom;
+            const useBottom =
+                styleBottom != null &&
+                (panel.style.top === 'auto' || panel.style.top === '' || styleTop == null);
+
+            if (useBottom && styleLeft != null) {
+                left = styleLeft;
+                bottom = styleBottom;
+            } else if (styleLeft != null && styleTop != null) {
+                left = styleLeft;
+                bottom = Math.max(0, rootRect.height - styleTop - panelH);
+            } else {
+                left = rect.left - rootRect.left;
+                bottom = rootRect.bottom - rect.bottom;
+            }
+
+            const maxLeft = Math.max(0, rootRect.width - panelW);
+            const maxBottom = Math.max(0, rootRect.height - panelH);
+            const nextLeft = Math.max(0, Math.min(left, maxLeft));
+            const nextBottom = Math.max(0, Math.min(bottom, maxBottom));
+
+            if (Math.abs(nextLeft - left) > 0.5 || Math.abs(nextBottom - bottom) > 0.5 ||
+                panel.style.top !== 'auto' || panel.style.transform !== 'none') {
+                panel.style.left = nextLeft + 'px';
+                panel.style.bottom = nextBottom + 'px';
+                panel.style.top = 'auto';
+                panel.style.right = 'auto';
+                panel.style.transform = 'none';
+                changed = true;
+            }
+        } catch (_) {}
+        return changed;
+    }
+
+    /** Clamp primary + every InPlay multi-view tile panel into its own root. */
+    function omtClampAllPanels() {
+        try {
+            if (typeof controlsPanel !== 'undefined' && controlsPanel &&
+                typeof omtRoot !== 'undefined' && omtRoot) {
+                omtClampPanelInContainer(controlsPanel, omtRoot);
+                if (typeof updateControlsTipFlip === 'function') {
+                    try { updateControlsTipFlip(); } catch (_) {}
+                }
+            }
+        } catch (_) {}
+        try {
+            document.querySelectorAll('[data-omt-tile-root]').forEach((tile) => {
+                const panel = tile.querySelector('.omt-controls-panel');
+                if (panel) omtClampPanelInContainer(panel, tile);
+            });
+        } catch (_) {}
+    }
+
+    let omtPanelClampTimer = 0;
+    /** Debounced clamp — resize / fullscreen only (no polling, no rAF loop). */
+    function omtSchedulePanelClamp() {
+        if (omtPanelClampTimer) {
+            try { clearTimeout(omtPanelClampTimer); } catch (_) {}
+        }
+        omtPanelClampTimer = setTimeout(() => {
+            omtPanelClampTimer = 0;
+            omtClampAllPanels();
+        }, 50);
+    }
+
+    try { window.__omtClampAllPanels = omtClampAllPanels; } catch (_) {}
+    try { window.__omtSchedulePanelClamp = omtSchedulePanelClamp; } catch (_) {}
+
     function fazerArrastavel(panel, handle, rootEl) {
         let grabOffsetX = 0;
         let grabOffsetY = 0;
@@ -4389,6 +4514,9 @@
             // Store as bottom-anchored so a later more-panel expand grows UP.
             if (panel === controlsPanel && typeof anchorControlsPanelBottom === 'function') {
                 anchorControlsPanelBottom();
+            } else if (typeof omtClampPanelInContainer === 'function') {
+                // Tile panels stay left/top during drag — clamp into tile root.
+                omtClampPanelInContainer(panel, rootEl || omtRoot);
             }
             if (panel === controlsPanel && typeof updateControlsTipFlip === 'function') {
                 updateControlsTipFlip();
@@ -5262,6 +5390,12 @@
         omtApplySkipButtonLabels();
         if (typeof omtAnchorControlsPanelBottom === 'function') {
             try { omtAnchorControlsPanelBottom(); } catch (_) {}
+        } else if (typeof omtClampPanelInContainer === 'function' && omtRoot) {
+            try { omtClampPanelInContainer(controlsPanel, omtRoot); } catch (_) {}
+        }
+        // Clamp restored / resized positions into the visible container (v2.3.5).
+        if (typeof omtClampAllPanels === 'function') {
+            try { omtClampAllPanels(); } catch (_) {}
         }
     }
 
@@ -8574,7 +8708,15 @@ var OMT_SYNC_FEATURE_ENABLED = false;
                 if (wasMicro !== micro) {
                     omtXeatreClearPanelInlineFit();
                 }
-                omtXeatreClampPanelInRoot();
+                // Prefer shared clamp (v2.3.5) — same unscaled soft-pin as
+                // omtXeatreClampPanelInRoot; keeps shrink-in-place when centered.
+                if (typeof omtClampPanelInContainer === 'function' && omtRoot) {
+                    const panel = document.getElementById('omt-controls-panel');
+                    if (panel) omtClampPanelInContainer(panel, omtRoot);
+                    else omtXeatreClampPanelInRoot();
+                } else {
+                    omtXeatreClampPanelInRoot();
+                }
             } catch (_) {}
         }
 
