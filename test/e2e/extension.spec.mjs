@@ -5695,6 +5695,50 @@ print(lit)
       pass: mv2.ok === true,
       detail: mv2
     });
+    // v2.3.8: More controls open on S+Compact tile — inside tile, not clipped, closes.
+    const mv2more = await page.evaluate(async () => {
+      const tile = document.querySelector('[data-omt-tile-root]');
+      if (!tile) return { ok: false, reason: 'no-tile' };
+      const btn = tile.querySelector('.omt-more-toggle');
+      const more = tile.querySelector('.omt-more-panel');
+      const panel = tile.querySelector('.omt-controls-panel');
+      if (!btn || !more || !panel) return { ok: false, reason: 'missing-ui' };
+      // Ensure closed first.
+      if (more.classList.contains('is-open')) btn.click();
+      await new Promise((r) => setTimeout(r, 40));
+      btn.click();
+      await new Promise((r) => setTimeout(r, 80));
+      const tr = tile.getBoundingClientRect();
+      const pr = panel.getBoundingClientRect();
+      const mr = more.getBoundingClientRect();
+      const openOk = more.classList.contains('is-open') &&
+        btn.getAttribute('aria-expanded') === 'true' &&
+        panel.classList.contains('omt-more-open');
+      const inside = pr.left >= tr.left - 2 && pr.right <= tr.right + 2 &&
+        pr.top >= tr.top - 2 && pr.bottom <= tr.bottom + 2 &&
+        mr.left >= tr.left - 2 && mr.right <= tr.right + 2 &&
+        mr.top >= tr.top - 2 && mr.bottom <= tr.bottom + 2;
+      const kick = more.querySelector('[id$="omt-btn-set-kickoff"]');
+      const kickVisible = !!(kick && getComputedStyle(kick).display !== 'none' &&
+        kick.getBoundingClientRect().height > 0);
+      btn.click();
+      await new Promise((r) => setTimeout(r, 60));
+      const closedOk = !more.classList.contains('is-open') &&
+        btn.getAttribute('aria-expanded') === 'false';
+      return {
+        ok: openOk && inside && kickVisible && closedOk && mr.height > 20,
+        openOk, inside, kickVisible, closedOk,
+        moreH: Math.round(mr.height),
+        panelTop: Math.round(pr.top - tr.top),
+        tileH: Math.round(tr.height)
+      };
+    });
+    results.push({
+      name: 'inplayip-mv-2-tile-more-controls-fit',
+      pass: mv2more.ok === true,
+      detail: mv2more
+    });
+
     // Collapse more panels so screenshot matches primary (kickoff row hidden).
     await page.evaluate(() => {
       document.querySelectorAll('[data-omt-tile-root] .omt-more-toggle[aria-expanded="true"]').forEach((b) => b.click());
@@ -5711,7 +5755,7 @@ print(lit)
     ).catch(() => {});
     await page.waitForTimeout(200);
 
-    // Style parity + always-visible clocks + bar layout vs primary.
+    // Style parity + no fresh clock chips + bar layout vs primary.
     const mv4style = await page.evaluate(() => {
       const root = document.getElementById('omt-root');
       const tiles = Array.from(document.querySelectorAll('[data-omt-tile-root]'));
@@ -5750,16 +5794,18 @@ print(lit)
         x.speedAppearance === 'none' &&
         x.volAppearance === 'none' &&
         Math.abs(parseFloat(x.volW) - parseFloat(primary.volW)) < 2);
-      const clocksVisible = secondaries.every((x) => x.clockVisible && /Pre-Match|\d+:\d+/.test(x.clockText));
+      // v2.3.8: fresh secondaries have NO clock chip until kickoff is set.
+      const clocksHidden = secondaries.every((x) => !x.clockVisible);
+      const primaryClockHidden = !primary.clockVisible;
       // Live chrome: delay left, position/duration on right video-range; post-times hidden.
       const barLayoutOk = secondaries.every((x) =>
         x.postHidden === true &&
         !!x.liveDelayText && /^-/.test(x.liveDelayText) &&
         !!x.videoRangeText && /\//.test(x.videoRangeText));
       return {
-        ok: tiles.length === 3 && labelsOk && styleOk && clocksVisible && barLayoutOk &&
-          !!window.__omtInplayMvActive,
-        primary, secondaries, labelsOk, styleOk, clocksVisible, barLayoutOk
+        ok: tiles.length === 3 && labelsOk && styleOk && clocksHidden && primaryClockHidden &&
+          barLayoutOk && !!window.__omtInplayMvActive,
+        primary, secondaries, labelsOk, styleOk, clocksHidden, primaryClockHidden, barLayoutOk
       };
     });
     results.push({
@@ -5767,10 +5813,10 @@ print(lit)
       pass: mv4style.ok === true,
       detail: mv4style
     });
-    // All tiles show Pre-Match clocks + primary-identical bar layout (before kickoff).
+    // Fresh MV: no Pre-Match chips anywhere + primary-identical bar layout.
     await page.screenshot({ path: path.join(ARTIFACTS, 'v234_inplay_mv_4tile.png'), fullPage: true });
 
-    // Kickoff on tile B only — A / C / D clock state unchanged.
+    // Kickoff on tile B only — C/D stay hidden (no chip); clear B → hidden again.
     const mv4kick = await page.evaluate(async () => {
       const tiles = Array.from(document.querySelectorAll('[data-omt-tile-root]'));
       const snap = () => {
@@ -5778,10 +5824,13 @@ print(lit)
         const primaryOn = document.getElementById('omt-root')?.classList.contains('omt-timer-on');
         const clocks = tiles.map((tr) => {
           const c = tr.querySelector('.omt-match-timer, [id$="match-timer"]');
+          const wrap = tr.querySelector('.omt-match-timer-wrap, [id$="match-timer-wrap"]');
+          const disp = wrap ? getComputedStyle(wrap).display : 'none';
           return {
             on: tr.classList.contains('omt-timer-on'),
             text: c ? (c.textContent || '').trim() : '',
-            display: c ? getComputedStyle(c.parentElement || c).display : 'none'
+            display: disp,
+            visible: !!(wrap && disp !== 'none' && disp !== '')
           };
         });
         return {
@@ -5806,17 +5855,24 @@ print(lit)
       }
       await new Promise((r) => setTimeout(r, 100));
       const after = snap();
-      const bRunning = after.clocks[0].on && /^\d+:\d+$/.test(after.clocks[0].text) &&
-        after.clocks[0].text !== '00:00';
+      const bRunning = after.clocks[0].on && after.clocks[0].visible &&
+        /^\d+:\d+$/.test(after.clocks[0].text) && after.clocks[0].text !== '00:00';
       // Primary timer-on flag unchanged by B kickoff.
       const aUnchanged = before.primaryOn === after.primaryOn;
-      // C/D stay Pre-Match (visible, not kicked).
-      const cdPreMatch = after.clocks.slice(1).every((c) =>
-        c.on && c.text === 'Pre-Match');
+      // C/D stay hidden (no Pre-Match chip) until their own kickoff.
+      const cdHidden = after.clocks.slice(1).every((c) => !c.visible && !c.on);
+
+      // Clear B with X → chip gone again.
+      const clearBtn = tileB.querySelector('[id$="omt-btn-clear-timer"]');
+      if (clearBtn) clearBtn.click();
+      await new Promise((r) => setTimeout(r, 60));
+      const cleared = snap();
+      const bCleared = !cleared.clocks[0].visible && !cleared.clocks[0].on;
+
       return {
-        ok: bRunning && aUnchanged && cdPreMatch,
-        bRunning, aUnchanged, cdPreMatch,
-        before, after
+        ok: bRunning && aUnchanged && cdHidden && bCleared,
+        bRunning, aUnchanged, cdHidden, bCleared,
+        before, after, cleared
       };
     });
     results.push({
@@ -5824,10 +5880,15 @@ print(lit)
       pass: mv4kick.ok === true,
       detail: mv4kick
     });
-    // Advance B so the match clock is visibly running vs A/C/D Pre-Match.
+    // Re-kick B so the match clock is visibly running vs C/D hidden (post-clear).
     await page.evaluate(async () => {
       const tiles = Array.from(document.querySelectorAll('[data-omt-tile-root]'));
       const tileB = tiles[0];
+      const more = tileB && tileB.querySelector('.omt-more-toggle');
+      if (more && more.getAttribute('aria-expanded') !== 'true') more.click();
+      await new Promise((r) => setTimeout(r, 40));
+      const kick = tileB && tileB.querySelector('[id$="omt-btn-set-kickoff"]');
+      if (kick) kick.click();
       const videoB = document.querySelectorAll('video')[1];
       if (videoB) {
         videoB.currentTime = Math.min((videoB.currentTime || 0) + 8, (videoB.duration || 20) - 1);
