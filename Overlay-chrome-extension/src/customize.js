@@ -146,8 +146,17 @@
     function omtApplyPanelAppearance() {
         if (!controlsPanel) return;
         const prefs = omtReadPanelPrefs();
-        controlsPanel.classList.toggle('omt-panel-size-small', prefs.size === 'small');
-        controlsPanel.classList.toggle('omt-panel-compact', !!prefs.compact);
+        // v2.3.6: while InPlay multi-view is active, keep S forced (ignore user size).
+        const mvForced = !!(typeof window !== 'undefined' && window.__omtInplayMvActive);
+        controlsPanel.classList.toggle('omt-panel-size-small', mvForced || prefs.size === 'small');
+        controlsPanel.classList.toggle('omt-panel-compact', !mvForced && !!prefs.compact);
+        if (mvForced) {
+            try {
+                document.querySelectorAll('[data-omt-tile-root] .omt-controls-panel').forEach((p) => {
+                    p.classList.add('omt-panel-size-small');
+                });
+            } catch (_) {}
+        }
         omtApplySkipButtonLabels();
         if (typeof omtAnchorControlsPanelBottom === 'function') {
             try { omtAnchorControlsPanelBottom(); } catch (_) {}

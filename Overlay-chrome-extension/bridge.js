@@ -15,6 +15,16 @@
   const SYNC_FEATURE = (typeof OMT_SYNC_FEATURE_ENABLED !== 'undefined') && !!OMT_SYNC_FEATURE_ENABLED;
   const OMT_BUS_EVENT = 'omt-bridge-bus';
 
+  // InPlay multi-view debug flags live on MAIN-world window (content.js).
+  // DevTools context "Overlay MatchTimer" is this ISOLATED world (bridge.js),
+  // which cannot see MAIN globals — so mirror them here for console reads.
+  // Init immediately at document_start (before MAIN content.js at idle).
+  try {
+    globalThis.__omtInplayMvActive = false;
+    globalThis.__omtInplayMvSyncCount = 0;
+    globalThis.__omtInplayMvArmInstalled = false;
+  } catch (_) {}
+
   const KEY_AUTO_VOD = 'omtAutoSwitchVod';
   const KEY_SHUTTLE = 'shuttleXpressEnabled';
   const KEY_AUTO_PAUSE_LEGACY = 'omtAutoPauseOnBlur';
@@ -138,6 +148,16 @@
 
   function onPageMessage(data) {
     if (!data || data.source !== 'omt-page') return;
+
+    // Mirror MAIN InPlay MV debug flags into this ISOLATED world (console).
+    if (data.type === 'OMT_MV_DEBUG') {
+      try {
+        if ('active' in data) globalThis.__omtInplayMvActive = !!data.active;
+        if ('syncCount' in data) globalThis.__omtInplayMvSyncCount = data.syncCount | 0;
+        if ('armInstalled' in data) globalThis.__omtInplayMvArmInstalled = !!data.armInstalled;
+      } catch (_) {}
+      return;
+    }
 
     if (data.type === 'OMT_STORAGE_SET') {
       const payload = {};

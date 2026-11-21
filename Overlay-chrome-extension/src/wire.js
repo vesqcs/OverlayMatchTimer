@@ -256,6 +256,11 @@
         if (controlsPanel) {
             const handle = q('controls-handle');
             if (handle) fazerArrastavel(controlsPanel, handle);
+            // Edge text-select block on the bottom bar too (v2.3.6).
+            const timelineBar = omtRoot && omtRoot.querySelector('#omt-timeline-bar');
+            if (timelineBar && typeof omtInstallPanelNoTextSelect === 'function') {
+                omtInstallPanelNoTextSelect(timelineBar);
+            }
         }
 
         // --- Auto-hide controls: mouse move + clicks/keys/wheel on our UI ---

@@ -1,4 +1,4 @@
-/* InPlay multi-view (v2.3.4): full primary-identical HUD per secondary tile.
+/* InPlay multi-view (v2.3.6): full primary-identical HUD per secondary tile.
  *
  * Scope: UI layer only. Player/seek/playback helpers stay untouched —
  * tile actions briefly swap global `vid` via omtInplayMvWithVideo().
@@ -21,15 +21,43 @@
     let inplayMvTileSeq = 0;
     /** videoEl → tile record */
     const inplayMvTiles = new Map();
+
+    /**
+     * Publish MV debug flags to MAIN window + ISOLATED bridge (DevTools).
+     * content.js is MAIN-only; bridge.js mirrors via omt-bridge-bus so the
+     * "Overlay MatchTimer" console context can read the same names.
+     * No timers / rAF — only runs when a flag actually changes.
+     */
+    function omtInplayMvPublishDebug(patch) {
+        try {
+            if (patch && typeof patch === 'object') {
+                if ('active' in patch) window.__omtInplayMvActive = !!patch.active;
+                if ('syncCount' in patch) window.__omtInplayMvSyncCount = patch.syncCount | 0;
+                if ('armInstalled' in patch) window.__omtInplayMvArmInstalled = !!patch.armInstalled;
+            }
+        } catch (_) {}
+        try {
+            if (typeof omtBusPost === 'function') {
+                omtBusPost({
+                    source: 'omt-page',
+                    type: 'OMT_MV_DEBUG',
+                    active: !!window.__omtInplayMvActive,
+                    syncCount: window.__omtInplayMvSyncCount | 0,
+                    armInstalled: !!window.__omtInplayMvArmInstalled
+                });
+            }
+        } catch (_) {}
+    }
+
     try {
-        window.__omtInplayMvSyncCount = 0;
-        window.__omtInplayMvActive = false;
-        window.__omtInplayMvArmInstalled = false;
+        omtInplayMvPublishDebug({ syncCount: 0, active: false, armInstalled: false });
     } catch (_) {}
 
     function omtInplayMvBumpSync() {
         try {
-            window.__omtInplayMvSyncCount = (window.__omtInplayMvSyncCount || 0) + 1;
+            omtInplayMvPublishDebug({
+                syncCount: (window.__omtInplayMvSyncCount || 0) + 1
+            });
         } catch (_) {}
     }
 
@@ -160,13 +188,17 @@
                 }
             }
         } catch (_) {}
-        // Panel size / compact prefs (same as primary).
+        // Panel size: while multi-view is active force S; otherwise user prefs.
         try {
             const panel = omtInplayMvQ(rec, 'omt-controls-panel');
-            if (panel && typeof omtReadPanelPrefs === 'function') {
-                const prefs = omtReadPanelPrefs();
-                panel.classList.toggle('omt-panel-size-small', prefs.size === 'small');
-                panel.classList.toggle('omt-panel-compact', !!prefs.compact);
+            if (panel) {
+                if (inplayMvActive || (typeof window !== 'undefined' && window.__omtInplayMvActive)) {
+                    panel.classList.add('omt-panel-size-small');
+                } else if (typeof omtReadPanelPrefs === 'function') {
+                    const prefs = omtReadPanelPrefs();
+                    panel.classList.toggle('omt-panel-size-small', prefs.size === 'small');
+                    panel.classList.toggle('omt-panel-compact', !!prefs.compact);
+                }
             }
         } catch (_) {}
         // Clock chrome classes from primary wrap (size / style / pos).
@@ -771,10 +803,28 @@
         inplayMvPointerHooked = true;
     }
 
+    /** Force S-size panels while multi-view is on; restore user prefs on exit. */
+    function omtInplayMvApplyMvPanelSize(forceSmall) {
+        try {
+            if (forceSmall) {
+                if (controlsPanel) controlsPanel.classList.add('omt-panel-size-small');
+                document.querySelectorAll('[data-omt-tile-root] .omt-controls-panel').forEach((p) => {
+                    p.classList.add('omt-panel-size-small');
+                });
+            } else if (typeof omtApplyPanelAppearance === 'function') {
+                omtApplyPanelAppearance();
+            } else if (controlsPanel && typeof omtReadPanelPrefs === 'function') {
+                const prefs = omtReadPanelPrefs();
+                controlsPanel.classList.toggle('omt-panel-size-small', prefs.size === 'small');
+                controlsPanel.classList.toggle('omt-panel-compact', !!prefs.compact);
+            }
+        } catch (_) {}
+    }
+
     function omtInplayMvDeactivate() {
         if (!inplayMvActive && !inplayMvTiles.size) {
             inplayMvHotkeyVid = null;
-            try { window.__omtInplayMvActive = false; } catch (_) {}
+            try { omtInplayMvPublishDebug({ active: false }); } catch (_) {}
             return;
         }
         omtInplayMvBumpSync();
@@ -784,9 +834,11 @@
         inplayMvHotkeyVid = null;
         inplayMvLastVideoCount = 0;
         try {
-            window.__omtInplayMvActive = false;
+            omtInplayMvPublishDebug({ active: false });
             window.__omtInplayMvHotkeyIndex = -1;
         } catch (_) {}
+        // Revert primary panel to the user's normal size (single-video path).
+        omtInplayMvApplyMvPanelSize(false);
     }
 
     function omtInplayMvSync() {
@@ -802,8 +854,10 @@
 
         omtInplayMvBumpSync();
         inplayMvActive = true;
-        try { window.__omtInplayMvActive = true; } catch (_) {}
+        try { omtInplayMvPublishDebug({ active: true }); } catch (_) {}
         omtInplayMvHookPointer();
+        // v2.3.6: every tile + primary use S while multi-view is active.
+        omtInplayMvApplyMvPanelSize(true);
 
         const live = new Set(videos);
         const gridChanged = videos.length !== inplayMvLastVideoCount;
@@ -818,6 +872,8 @@
             omtInplayMvMountTile(v);
             mounted++;
         }
+        // Re-assert S after mounts (mount applies chrome from prefs first).
+        omtInplayMvApplyMvPanelSize(true);
         if (gridChanged) {
             inplayMvTiles.forEach((rec) => {
                 const p = omtInplayMvQ(rec, 'omt-controls-panel');
@@ -856,7 +912,7 @@
             inplayMvArmMo = null;
         }
         inplayMvArmHost = null;
-        try { window.__omtInplayMvArmInstalled = false; } catch (_) {}
+        try { omtInplayMvPublishDebug({ armInstalled: false }); } catch (_) {}
     }
 
     function omtInplayMvArm(host) {
@@ -883,7 +939,7 @@
         });
         try {
             inplayMvArmMo.observe(host, { childList: true, subtree: true });
-            try { window.__omtInplayMvArmInstalled = true; } catch (_) {}
+            try { omtInplayMvPublishDebug({ armInstalled: true }); } catch (_) {}
         } catch (_) {
             inplayMvArmMo = null;
             inplayMvArmHost = null;

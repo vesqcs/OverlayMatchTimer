@@ -414,36 +414,51 @@
             ? preserveBottomPx
             : Math.max(0, rootRect.bottom - before.bottom);
 
+        // v2.3.6: default CSS-centered panels stay centered — never write
+        // left/top/transform. Only user-dragged panels get a saved position.
+        const userDragged = (typeof omtPanelIsUserPositioned === 'function')
+            ? omtPanelIsUserPositioned(controlsPanel)
+            : !!(controlsPanel.dataset && controlsPanel.dataset.omtUserDragged === '1');
+
+        if (!userDragged) {
+            // May set bottom so more-panel expand grows UP, but keep left:50%
+            // + translateX(-50%) from CSS (do not touch left/transform).
+            controlsPanel.style.bottom = bottomPx + 'px';
+            controlsPanel.style.top = 'auto';
+            controlsPanel.style.right = 'auto';
+            updateControlsTipFlip();
+            return;
+        }
+
         // Convert any drag `top` into `bottom` so expand/collapse never pushes transport down.
         let leftPx = before.left - rootRect.left;
         controlsPanel.style.bottom = bottomPx + 'px';
         controlsPanel.style.top = 'auto';
         controlsPanel.style.right = 'auto';
         // Preserve horizontal place after a drag (clear centering transform).
-        if (controlsPanel.style.transform === 'none' || controlsPanel.style.left) {
-            // Clamp so a shrink cannot leave the card hanging past the right edge
-            // (Xeatre narrow-window right-pin — v2.2.19).
-            const maxLeft = Math.max(0, rootRect.width - before.width);
-            leftPx = Math.max(0, Math.min(leftPx, maxLeft));
-            controlsPanel.style.left = leftPx + 'px';
-            controlsPanel.style.transform = 'none';
-        }
+        // Clamp so a shrink cannot leave the card hanging past the right edge
+        // (Xeatre narrow-window right-pin — v2.2.19).
+        const maxLeft = Math.max(0, rootRect.width - before.width);
+        leftPx = Math.max(0, Math.min(leftPx, maxLeft));
+        controlsPanel.style.left = leftPx + 'px';
+        controlsPanel.style.transform = 'none';
 
         const after = controlsPanel.getBoundingClientRect();
-        if (after.top < rootRect.top) {
-            const overflow = rootRect.top - after.top;
+        const topSafe = (typeof omtPanelTopSafeMargin === 'function')
+            ? omtPanelTopSafeMargin(omtRoot)
+            : 8;
+        if (after.top < rootRect.top + topSafe) {
+            const overflow = (rootRect.top + topSafe) - after.top;
             bottomPx = Math.max(0, bottomPx - overflow);
             controlsPanel.style.bottom = bottomPx + 'px';
         }
         // Re-clamp left after width may have changed (compact / min() shrink).
-        if (controlsPanel.style.transform === 'none' || controlsPanel.style.left) {
-            const live = controlsPanel.getBoundingClientRect();
-            const maxLeft = Math.max(0, rootRect.width - live.width);
-            let liveLeft = live.left - rootRect.left;
-            liveLeft = Math.max(0, Math.min(liveLeft, maxLeft));
-            controlsPanel.style.left = liveLeft + 'px';
-        }
-        // Shared clamp (v2.3.5) — also covers restore / size changes.
+        const live = controlsPanel.getBoundingClientRect();
+        const maxLeft2 = Math.max(0, rootRect.width - live.width);
+        let liveLeft = live.left - rootRect.left;
+        liveLeft = Math.max(0, Math.min(liveLeft, maxLeft2));
+        controlsPanel.style.left = liveLeft + 'px';
+        // Shared clamp (v2.3.5/2.3.6) — user-dragged only; top-safe for handle.
         if (typeof omtClampPanelInContainer === 'function') {
             omtClampPanelInContainer(controlsPanel, omtRoot);
         }
