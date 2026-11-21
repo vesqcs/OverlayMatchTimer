@@ -6275,16 +6275,27 @@ print(lit)
       const primary = document.getElementById('omt-controls-panel');
       const tiles = Array.from(document.querySelectorAll('[data-omt-tile-root] .omt-controls-panel'));
       const all = [primary, ...tiles].filter(Boolean);
-      const allSmall = all.length >= 4 && all.every((p) => p.classList.contains('omt-panel-size-small'));
-      const chipH = (p) => {
-        const c = p.querySelector('.omt-speed-chip');
-        return c ? Math.round(c.getBoundingClientRect().height) : 0;
-      };
+      const allEqualS = all.length >= 4 && all.every((p) =>
+        p.classList.contains('omt-panel-size-small') &&
+        p.classList.contains('omt-panel-compact')
+      );
+      const speedHidden = all.every((p) => {
+        const row = p.querySelector('.omt-speed-row');
+        if (!row) return true;
+        return getComputedStyle(row).display === 'none';
+      });
+      const widths = all.map((p) => Math.round(p.getBoundingClientRect().width));
+      const sameW = widths.length > 1 &&
+        Math.max(...widths) - Math.min(...widths) < 8;
       return {
-        ok: allSmall,
+        ok: allEqualS && speedHidden,
         count: all.length,
+        allEqualS,
+        speedHidden,
+        sameW,
+        widths,
         smallFlags: all.map((p) => p.classList.contains('omt-panel-size-small')),
-        chipHeights: all.map(chipH),
+        compactFlags: all.map((p) => p.classList.contains('omt-panel-compact')),
         active: !!window.__omtInplayMvActive
       };
     });
@@ -6293,16 +6304,16 @@ print(lit)
     });
     await page.waitForTimeout(60);
     await page.screenshot({
-      path: path.join(ARTIFACTS, 'v236_inplay_mv_4tile_compact.png'),
+      path: path.join(ARTIFACTS, 'v237_inplay_mv_4tile_real_s.png'),
       fullPage: true
     });
     results.push({
-      name: 'inplayip-mv-4-tile-forced-compact-s',
+      name: 'inplayip-mv-4-tile-forced-s-compact-no-speed',
       pass: mvCompact.ok === true,
       detail: mvCompact
     });
 
-    // Back to 1 tile → S removed (user medium).
+    // Back to 1 tile → S+Compact removed (user medium, speed row back).
     await page.evaluate(() => { window.__omtSetTiles && window.__omtSetTiles(1); });
     await page.waitForFunction(
       () => !window.__omtInplayMvActive &&
@@ -6312,19 +6323,20 @@ print(lit)
     await page.waitForTimeout(150);
     const mvSingleSize = await page.evaluate(() => {
       const panel = document.getElementById('omt-controls-panel');
+      const row = panel && panel.querySelector('.omt-speed-row');
+      const speedVisible = !!(row && getComputedStyle(row).display !== 'none');
       return {
         ok: !!panel && !panel.classList.contains('omt-panel-size-small') &&
-          !window.__omtInplayMvActive,
+          !panel.classList.contains('omt-panel-compact') &&
+          speedVisible && !window.__omtInplayMvActive,
         hasSmall: !!(panel && panel.classList.contains('omt-panel-size-small')),
-        active: !!window.__omtInplayMvActive,
-        chipH: (() => {
-          const c = panel && panel.querySelector('.omt-speed-chip');
-          return c ? Math.round(c.getBoundingClientRect().height) : 0;
-        })()
+        hasCompact: !!(panel && panel.classList.contains('omt-panel-compact')),
+        speedVisible,
+        active: !!window.__omtInplayMvActive
       };
     });
     await page.screenshot({
-      path: path.join(ARTIFACTS, 'v236_inplay_single_normal_size.png'),
+      path: path.join(ARTIFACTS, 'v237_inplay_single_restored.png'),
       fullPage: true
     });
     results.push({

@@ -2489,7 +2489,14 @@ html.omt-host-xeatre.omt-hud-on .video-js.vjs-fluid {
     z-index: 50;
     opacity: 1;
 }
+/* v2.3.7: tile S must match primary S (this selector beats the 600px rule). */
+.omt-tile-root .omt-controls-panel.omt-panel-size-small {
+    width: min(480px, calc(100% - 24px));
+}
 .omt-tile-root.omt-compact .omt-controls-panel {
+    width: min(480px, calc(100% - 16px));
+}
+.omt-tile-root.omt-compact .omt-controls-panel.omt-panel-size-small {
     width: min(480px, calc(100% - 16px));
 }
 .omt-tile-root .omt-controls-panel.omt-more-open {
