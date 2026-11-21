@@ -9,6 +9,7 @@ import {
   runExaminoFieldScenario,
   runInplayScheduleScenario,
   EXAMINO_BUS_MOCK_PATH,
+  EXAMINO_VCENTER_PROBE_PATH,
   XEATRE_DVR_PATH,
   XEATRE_NANOPLAYER_PATH
 } from './host-scenarios.mjs';
@@ -873,24 +874,29 @@ async function run() {
       detail: examinoPanelDrag
     });
 
-    // v2.2.16: viewport-fixed HUD — bar in black area below player (narrow tab).
+    // v2.2.16 / v2.2.23: viewport-fixed HUD — player translateY-centred, bar at tab bottom.
     await page.setViewportSize({ width: 874, height: 886 });
     await page.evaluate(() => {
-      // Field-like geometry: player strip on top, empty tab below (no OpenPlayer resize by OMT).
       document.documentElement.style.height = '100%';
-      document.body.style.cssText = 'margin:0;height:100%;overflow:hidden;background:#000;';
+      document.body.style.cssText = 'margin:0;height:100%;background:#000;';
       const pageEl = document.querySelector('.page');
       if (pageEl) {
+        // Fixed-height player strip (host size unchanged); vcenter shifts it.
         pageEl.style.cssText =
-          'position:fixed;left:0;top:0;width:100%;height:492px;margin:0;display:block;background:#000;';
+          'width:100%;height:492px;margin:0;display:block;background:#000;overflow:visible;';
       }
       const main = document.getElementById('main-container') || document.querySelector('.main-container');
-      if (main) main.style.cssText = 'position:absolute;inset:0;height:100%;';
+      if (main) {
+        main.style.cssText = 'position:relative;width:100%;height:492px;overflow:visible;';
+      }
+      const top = document.querySelector('.top');
+      if (top) top.style.cssText = 'position:relative;width:100%;height:492px;';
       const player = document.getElementById('op-player') || document.querySelector('.op-player');
       if (player) player.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;';
       const bottom = document.getElementById('bottom-controls');
       if (bottom) bottom.style.display = 'none';
       window.dispatchEvent(new Event('resize'));
+      if (typeof window.__omtExaminoCenterPlayer === 'function') window.__omtExaminoCenterPlayer();
       if (typeof window.__omtUpdateClockPictureInset === 'function') {
         window.__omtUpdateClockPictureInset();
       }
@@ -912,12 +918,13 @@ async function run() {
       const barAtTabBottom = Math.abs(br.bottom - vh) < 6;
       const barBelowVideo = br.top >= vr.bottom - 2;
       const peNone = cs.pointerEvents === 'none';
+      const vertCentered = Math.abs(vr.top - (vh - vr.bottom)) <= 12;
       return {
-        ok: fixed && coversTab && barAtTabBottom && barBelowVideo && peNone,
-        fixed, coversTab, barAtTabBottom, barBelowVideo, peNone,
+        ok: fixed && coversTab && barAtTabBottom && barBelowVideo && peNone && vertCentered,
+        fixed, coversTab, barAtTabBottom, barBelowVideo, peNone, vertCentered,
         root: { w: Math.round(rr.width), h: Math.round(rr.height), pos: cs.position },
         bar: { top: Math.round(br.top), bottom: Math.round(br.bottom) },
-        video: { bottom: Math.round(vr.bottom), h: Math.round(vr.height) },
+        video: { top: Math.round(vr.top), bottom: Math.round(vr.bottom), h: Math.round(vr.height) },
         viewport: { w: vw, h: vh }
       };
     });
@@ -947,6 +954,9 @@ async function run() {
         root.classList.add('omt-timer-on');
         wrap.style.display = 'block';
         wrap.style.opacity = '1';
+        if (typeof window.__omtExaminoCenterPlayer === 'function') {
+          window.__omtExaminoCenterPlayer();
+        }
         if (typeof window.__omtUpdateClockPictureInset === 'function') {
           window.__omtUpdateClockPictureInset();
         } else {
@@ -1000,6 +1010,7 @@ async function run() {
         return { ok: false, reason: 'fs-denied', err: String(e && e.message || e) };
       }
       await new Promise((r) => setTimeout(r, 120));
+      if (typeof window.__omtExaminoCenterPlayer === 'function') window.__omtExaminoCenterPlayer();
       if (typeof window.__omtUpdateClockPictureInset === 'function') {
         window.__omtUpdateClockPictureInset();
       }
@@ -1029,6 +1040,7 @@ async function run() {
       };
       try { await document.exitFullscreen(); } catch (_) {}
       await new Promise((r) => setTimeout(r, 80));
+      if (typeof window.__omtExaminoCenterPlayer === 'function') window.__omtExaminoCenterPlayer();
       if (typeof window.__omtUpdateClockPictureInset === 'function') {
         window.__omtUpdateClockPictureInset();
       }
@@ -1040,6 +1052,27 @@ async function run() {
       detail: examinoClockFs
     });
     await page.screenshot({ path: path.join(ARTIFACTS, 'v220_examino_clock_in_video.png'), fullPage: true });
+
+    // Panel-in-black drag (same examino-mock page — do not remount before Source tests).
+    await page.setViewportSize({ width: 874, height: 886 });
+    await page.evaluate(() => {
+      document.documentElement.style.height = '100%';
+      document.body.style.cssText = 'margin:0;height:100%;background:#000;';
+      const pageEl = document.querySelector('.page');
+      if (pageEl) {
+        pageEl.style.cssText =
+          'width:100%;height:492px;margin:0;display:block;background:#000;overflow:visible;';
+      }
+      const main = document.getElementById('main-container') || document.querySelector('.main-container');
+      if (main) main.style.cssText = 'position:relative;width:100%;height:492px;overflow:visible;';
+      const top = document.querySelector('.top');
+      if (top) top.style.cssText = 'position:relative;width:100%;height:492px;';
+      const player = document.getElementById('op-player') || document.querySelector('.op-player');
+      if (player) player.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;';
+      if (typeof window.__omtExaminoCenterPlayer === 'function') window.__omtExaminoCenterPlayer();
+      window.dispatchEvent(new Event('resize'));
+    });
+    await page.waitForTimeout(100);
 
     const examinoDragIntoBlack = await page.evaluate(async () => {
       const panel = document.getElementById('omt-controls-panel');
@@ -1081,6 +1114,10 @@ async function run() {
       pass: examinoDragIntoBlack.ok === true,
       detail: examinoDragIntoBlack
     });
+
+    // Restore default viewport after narrow/centre probes (later clip screenshots).
+    await page.setViewportSize({ width: 1100, height: 900 });
+    await page.waitForTimeout(80);
 
     // Empty root must not steal hits (pointer-events:none) — click through to host.
     const examinoRootPassthrough = await page.evaluate(() => {
@@ -4111,16 +4148,18 @@ async function run() {
       detail: atRest
     });
     const trackBox = await page.locator('.omt-timeline-track').boundingBox();
-    if (trackBox) {
-      await page.screenshot({
-        path: path.join(ARTIFACTS, 'v177_timeline_rest.png'),
-        clip: {
-          x: Math.max(0, trackBox.x - 16),
-          y: Math.max(0, trackBox.y - 40),
-          width: Math.min(920, trackBox.width + 32),
-          height: 90
-        }
-      });
+    if (trackBox && trackBox.width > 4 && trackBox.height > 2) {
+      const clip = {
+        x: Math.max(0, trackBox.x - 16),
+        y: Math.max(0, trackBox.y - 40),
+        width: Math.min(920, trackBox.width + 32),
+        height: 90
+      };
+      if (clip.width > 4 && clip.height > 4) {
+        try {
+          await page.screenshot({ path: path.join(ARTIFACTS, 'v177_timeline_rest.png'), clip });
+        } catch (_) {}
+      }
     }
     await page.screenshot({
       path: path.join(ARTIFACTS, 'v175_timeline_at_rest_2nd_half.png'),
@@ -4817,6 +4856,178 @@ async function run() {
       pass: examinoSourceLiveSmoke.ok === true,
       detail: examinoSourceLiveSmoke
     });
+
+    // v2.2.23: real-frame field chain — translateY centre (after Source tests).
+    await page.goto(`${base}${EXAMINO_VCENTER_PROBE_PATH}`, { waitUntil: 'domcontentloaded' });
+    await waitForOmt(page, 15000);
+    await page.waitForFunction(() => {
+      const v = document.querySelector('video');
+      return !!(v && v.readyState >= 2 &&
+        document.documentElement.classList.contains('omt-host-examino'));
+    }, { timeout: 15000 }).catch(() => {});
+
+    function shotHasLitPixels(shotPath) {
+      try {
+        const py = `
+from PIL import Image
+im = Image.open(${JSON.stringify(shotPath)}).convert('RGB')
+w, h = im.size
+# Sample the vertical middle band where the centred player should sit.
+y0, y1 = int(h * 0.25), int(h * 0.75)
+x0, x1 = int(w * 0.1), int(w * 0.9)
+lit = 0
+step = 8
+for y in range(y0, y1, step):
+  for x in range(x0, x1, step):
+    r, g, b = im.getpixel((x, y))
+    if r + g + b > 40: lit += 1
+print(lit)
+`;
+        const r = spawnSync('python3', ['-c', py], { encoding: 'utf8' });
+        return parseInt((r.stdout || '').trim(), 10) > 20;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    async function assertExaminoVCenter(label, shotName) {
+      await page.evaluate(() => {
+        const v = document.querySelector('video');
+        if (v) {
+          try { v.currentTime = Math.min(1.5, (v.duration || 2) * 0.2); } catch (_) {}
+          try { v.muted = true; v.play(); } catch (_) {}
+        }
+        if (typeof window.__omtExaminoCenterPlayer === 'function') {
+          window.__omtExaminoCenterPlayer();
+        }
+        if (typeof window.__omtUpdateClockPictureInset === 'function') {
+          window.__omtUpdateClockPictureInset();
+        }
+        const root = document.getElementById('omt-root');
+        const wrap = document.getElementById('match-timer-wrap');
+        if (wrap && root) {
+          wrap.classList.add('omt-clock-pos-top-left', 'is-visible');
+          root.classList.add('omt-timer-on');
+          wrap.style.display = 'block';
+          wrap.style.opacity = '1';
+        }
+      });
+      await page.waitForTimeout(280);
+      const shotPath = path.join(ARTIFACTS, shotName);
+      await page.screenshot({ path: shotPath, fullPage: true });
+      const hasVisibleFrames = shotHasLitPixels(shotPath);
+      const detail = await page.evaluate((label) => {
+        const root = document.getElementById('omt-root');
+        const wrap = document.getElementById('match-timer-wrap');
+        const v = document.querySelector('video');
+        const box = v || document.querySelector('.op-media-element-container');
+        if (!root || !wrap || !v || !box) return { ok: false, reason: 'missing', label };
+        const vr = v.getBoundingClientRect();
+        const br = box.getBoundingClientRect();
+        const cr = wrap.getBoundingClientRect();
+        const vh = window.innerHeight;
+        const topGap = br.top;
+        const bottomGap = vh - br.bottom;
+        const vertCentered = Math.abs(topGap - bottomGap) <= 10;
+        const notStretched = br.height <= 420 && br.height >= 200;
+        const clockOnVideo =
+          cr.left >= vr.left - 2 && cr.right <= vr.right + 2 &&
+          cr.top >= vr.top - 2 && cr.bottom <= vr.bottom + 2;
+        const grow = document.querySelector('.grow');
+        const main = document.querySelector('.main-container');
+        const hostSizesOk = !!(grow && main &&
+          getComputedStyle(grow).display !== 'flex' &&
+          Math.round(grow.getBoundingClientRect().height) <= 420);
+        return {
+          ok: vertCentered && notStretched && clockOnVideo && hostSizesOk,
+          label,
+          vertCentered,
+          notStretched,
+          clockOnVideo,
+          hostSizesOk,
+          topGap: Math.round(topGap),
+          bottomGap: Math.round(bottomGap),
+          player: { h: Math.round(br.height), top: Math.round(br.top) },
+          clock: { left: Math.round(cr.left), top: Math.round(cr.top) },
+          videoReady: v.readyState
+        };
+      }, label);
+      detail.hasVisibleFrames = hasVisibleFrames;
+      detail.ok = detail.ok === true && hasVisibleFrames;
+      detail.shotPath = shotPath;
+      return detail;
+    }
+
+    await page.setViewportSize({ width: 688, height: 795 });
+    await page.waitForTimeout(150);
+    const vcenterNarrow = await assertExaminoVCenter('688x795', 'v223_examino_vcenter_688x795.png');
+    results.push({
+      name: 'examino-vcenter-translateY-688x795-real-frames',
+      pass: vcenterNarrow.ok === true,
+      detail: vcenterNarrow
+    });
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.waitForTimeout(150);
+    const vcenterNormal = await assertExaminoVCenter('1280x900', 'v223_examino_vcenter_1280x900.png');
+    results.push({
+      name: 'examino-vcenter-translateY-1280x900-real-frames',
+      pass: vcenterNormal.ok === true,
+      detail: vcenterNormal
+    });
+
+    const vcenterFs = await page.evaluate(async () => {
+      const root = document.getElementById('omt-root');
+      const wrap = document.getElementById('match-timer-wrap');
+      const v = document.querySelector('video');
+      const fsTarget = document.getElementById('op-player') ||
+        document.getElementById('video-player') || v;
+      if (!root || !wrap || !v || !fsTarget) return { ok: false, reason: 'missing' };
+      try {
+        if (fsTarget.requestFullscreen) await fsTarget.requestFullscreen();
+      } catch (e) {
+        return { ok: false, reason: 'fs-denied', err: String(e && e.message || e) };
+      }
+      await new Promise((r) => setTimeout(r, 150));
+      if (typeof window.__omtExaminoCenterPlayer === 'function') window.__omtExaminoCenterPlayer();
+      if (typeof window.__omtUpdateClockPictureInset === 'function') {
+        window.__omtUpdateClockPictureInset();
+      }
+      wrap.classList.add('omt-clock-pos-top-left', 'is-visible');
+      root.classList.add('omt-timer-on');
+      wrap.style.display = 'block';
+      const vr = v.getBoundingClientRect();
+      const cr = wrap.getBoundingClientRect();
+      const vh = window.innerHeight;
+      const topGap = vr.top;
+      const bottomGap = vh - vr.bottom;
+      const vertCentered = Math.abs(topGap - bottomGap) <= 8;
+      const clockOnVideo =
+        cr.left >= vr.left - 2 && cr.right <= vr.right + 2 &&
+        cr.top >= vr.top - 2 && cr.bottom <= vr.bottom + 2;
+      const shiftedCleared = !document.documentElement.classList.contains('omt-examino-vcenter');
+      const out = {
+        ok: !!document.fullscreenElement && vertCentered && clockOnVideo && shiftedCleared,
+        vertCentered,
+        clockOnVideo,
+        shiftedCleared,
+        hasFs: !!document.fullscreenElement,
+        topGap: Math.round(topGap),
+        bottomGap: Math.round(bottomGap),
+        clock: { left: Math.round(cr.left), top: Math.round(cr.top) }
+      };
+      try { await document.exitFullscreen(); } catch (_) {}
+      await new Promise((r) => setTimeout(r, 80));
+      if (typeof window.__omtExaminoCenterPlayer === 'function') window.__omtExaminoCenterPlayer();
+      return out;
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, 'v223_examino_vcenter_fullscreen.png'), fullPage: true });
+    results.push({
+      name: 'examino-vcenter-translateY-fullscreen-real-frames',
+      pass: vcenterFs.ok === true || vcenterFs.reason === 'fs-denied',
+      detail: vcenterFs
+    });
+    await page.setViewportSize({ width: 1100, height: 900 });
 
     // ---------- InplayIP: auto-hide activity + regression ----------
     await page.goto(`${base}/inplayip-mock.html`, { waitUntil: 'domcontentloaded' });

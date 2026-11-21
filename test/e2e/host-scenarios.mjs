@@ -8,6 +8,7 @@ import path from 'node:path';
 const ROUTES = [
   // More-specific bus mock before the generic field DVR route.
   { re: /^\/examino\/play\/dvr\/bus-mock/, file: 'examino-ovenplayer-bus-mock.html' },
+  { re: /^\/examino\/play\/dvr\/vcenter-probe/, file: 'examino-field-vcenter-mock.html' },
   { re: /^\/examino\/play\/dvr\//, file: 'examino-field-mock.html' },
   { re: /^\/xeatre\/dvrplayer\.html/, file: 'xeatre-dvr-mock.html' },
   // Field live ULL: nanoplayer.html?StreamID=… (nanoStream H5Live, not Video.js).
@@ -17,6 +18,7 @@ const ROUTES = [
 
 export const EXAMINO_FIELD_PATH = '/examino/play/dvr/match-123';
 export const EXAMINO_BUS_MOCK_PATH = '/examino/play/dvr/bus-mock';
+export const EXAMINO_VCENTER_PROBE_PATH = '/examino/play/dvr/vcenter-probe';
 export const XEATRE_DVR_PATH = '/xeatre/dvrplayer.html';
 export const XEATRE_NANOPLAYER_PATH =
   '/xeatre/nanoplayer.html?StreamID=mock&StreamEnd=1&TimerId=1&WStart=0';
