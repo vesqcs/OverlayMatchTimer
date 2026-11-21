@@ -652,7 +652,15 @@
                 if (wasMicro !== micro) {
                     omtXeatreClearPanelInlineFit();
                 }
-                omtXeatreClampPanelInRoot();
+                // Prefer shared clamp (v2.3.5) — same unscaled soft-pin as
+                // omtXeatreClampPanelInRoot; keeps shrink-in-place when centered.
+                if (typeof omtClampPanelInContainer === 'function' && omtRoot) {
+                    const panel = document.getElementById('omt-controls-panel');
+                    if (panel) omtClampPanelInContainer(panel, omtRoot);
+                    else omtXeatreClampPanelInRoot();
+                } else {
+                    omtXeatreClampPanelInRoot();
+                }
             } catch (_) {}
         }
 

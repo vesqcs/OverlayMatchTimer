@@ -190,8 +190,13 @@
                 }
             }
             if (typeof omtUpdateClockPictureInset === 'function') omtUpdateClockPictureInset();
+            // After FS exit / enter, clamp panels whose left/top no longer fit (v2.3.5).
+            if (typeof omtSchedulePanelClamp === 'function') omtSchedulePanelClamp();
         });
-        window.addEventListener('resize', () => updateCompactLayout());
+        window.addEventListener('resize', () => {
+            updateCompactLayout();
+            if (typeof omtSchedulePanelClamp === 'function') omtSchedulePanelClamp();
+        });
     }
 
     function tip(text) {
@@ -438,7 +443,15 @@
             liveLeft = Math.max(0, Math.min(liveLeft, maxLeft));
             controlsPanel.style.left = liveLeft + 'px';
         }
+        // Shared clamp (v2.3.5) — also covers restore / size changes.
+        if (typeof omtClampPanelInContainer === 'function') {
+            omtClampPanelInContainer(controlsPanel, omtRoot);
+        }
         updateControlsTipFlip();
+    }
+    // Alias for customize.js / restore callers.
+    function omtAnchorControlsPanelBottom(preserveBottomPx) {
+        return anchorControlsPanelBottom(preserveBottomPx);
     }
 
     /** Flip top-row tips below the controls when the card sits near the player top. */
