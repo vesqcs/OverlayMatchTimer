@@ -2273,10 +2273,9 @@ html.omt-host-xeatre.omt-hud-on .video-js.vjs-fluid {
     min-width: 28px;
 }
 
-/* ---- INPLAY MULTI-VIEW TILE PANELS (v2.3.0) ----
-   Compact transport/speed HUD per secondary tile. Primary keeps #omt-root.
-   Root is pointer-events:none (curtain / host UI stay clickable); panel restores
-   pointer-events. isolation on the tile shell keeps z-index inside the player. */
+/* ---- INPLAY MULTI-VIEW FULL HUD (v2.3.2) ----
+   Secondary tiles reuse buildHTML(prefix) — same panel + bar + clock as primary.
+   Root is pointer-events:none; interactive children restore pointer-events. */
 .omt-tile-root {
     position: absolute !important;
     inset: 0 !important;
@@ -2285,98 +2284,82 @@ html.omt-host-xeatre.omt-hud-on .video-js.vjs-fluid {
     pointer-events: none !important;
     z-index: 2147483645;
     overflow: visible;
+    font-size: 16px;
 }
-.omt-tile-root .omt-tile-panel {
-    pointer-events: auto !important;
-    position: absolute;
-    left: 50%;
-    /* Sit above the v2.3.1 tile bottom bar. */
-    bottom: 72px;
-    top: auto;
-    transform: translateX(-50%);
-    width: min(360px, calc(100% - 12px));
-    max-height: calc(100% - 88px);
-    display: flex;
-    flex-direction: column;
-    z-index: 50;
-    opacity: 1;
-    overflow: hidden;
-}
-.omt-tile-root .omt-tile-panel .drag-handle {
-    padding: 4px 6px;
-    justify-content: center;
-}
-.omt-tile-root .omt-tile-panel .controls-content {
-    padding: 4px 6px 6px;
-    gap: 4px;
-}
-.omt-tile-root .omt-tile-panel .ctrl-btn {
-    padding: 4px 5px;
-    min-width: 28px;
-}
-.omt-tile-root .omt-tile-panel .omt-speed-chip {
-    padding: 2px 4px;
-    font-size: 10px;
-}
-
-/* v2.3.1: compact OMT bottom bar per secondary tile (same look as primary, tighter). */
-.omt-tile-root .omt-tile-bar {
-    pointer-events: none;
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 48;
-    padding: 16px 8px 4px;
-    gap: 1px;
-}
-.omt-tile-root .omt-tile-bar .omt-timeline-track,
-.omt-tile-root .omt-tile-bar .omt-timeline-chrome-row,
-.omt-tile-root .omt-tile-bar .omt-timeline-play-btn,
-.omt-tile-root .omt-tile-bar .omt-timeline-vol-btn,
-.omt-tile-root .omt-tile-bar .omt-timeline-vol-range,
-.omt-tile-root .omt-tile-bar .omt-timeline-live-indicator,
-.omt-tile-root .omt-tile-bar .omt-timeline-fs-btn,
-.omt-tile-root .omt-tile-bar .timeline-slider {
+.omt-tile-root .omt-controls-panel,
+.omt-tile-root .omt-timeline-bar,
+.omt-tile-root .omt-match-timer-wrap,
+.omt-tile-root .omt-control-tip,
+.omt-tile-root button,
+.omt-tile-root input,
+.omt-tile-root select {
     pointer-events: auto;
 }
-.omt-tile-root .omt-tile-bar .omt-timeline-chrome-row {
-    min-height: 24px;
-    gap: 6px;
+/* Same floating panel geometry as #omt-controls-panel. */
+.omt-tile-root .omt-controls-panel {
+    position: absolute;
+    bottom: 100px;
+    top: auto;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(600px, calc(100% - 24px));
+    display: flex;
+    flex-direction: column;
+    transition: opacity 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+    z-index: 50;
+    opacity: 1;
 }
-.omt-tile-root .omt-tile-bar .omt-timeline-chrome-left {
-    gap: 6px;
+.omt-tile-root.omt-compact .omt-controls-panel {
+    width: min(480px, calc(100% - 16px));
 }
-.omt-tile-root .omt-tile-bar .omt-timeline-play-btn,
-.omt-tile-root .omt-tile-bar .omt-timeline-vol-btn,
-.omt-tile-root .omt-tile-bar .omt-timeline-fs-btn {
-    width: 24px;
-    height: 24px;
-    color: #f1f1f1;
-    background: transparent;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
+.omt-tile-root .omt-controls-panel.omt-more-open {
+    top: auto;
+}
+/* Same bottom bar as primary .omt-timeline-bar (already class-styled). */
+.omt-tile-root .omt-timeline-bar {
+    pointer-events: none;
+}
+.omt-tile-root .omt-timeline-bar .omt-timeline-track,
+.omt-tile-root .omt-timeline-bar .omt-timeline-chrome-row,
+.omt-tile-root .omt-timeline-bar .omt-timeline-play-btn,
+.omt-tile-root .omt-timeline-bar .omt-timeline-vol-btn,
+.omt-tile-root .omt-timeline-bar .omt-timeline-vol-range,
+.omt-tile-root .omt-timeline-bar .omt-timeline-live-indicator,
+.omt-tile-root .omt-timeline-bar .omt-timeline-fs-btn,
+.omt-tile-root .omt-timeline-bar .timeline-slider {
+    pointer-events: auto;
+}
+.omt-tile-root .omt-timeline-play-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: #f1f1f1;
+    cursor: pointer;
 }
-.omt-tile-root .omt-tile-bar .omt-timeline-play-btn.playing {
+.omt-tile-root .omt-timeline-play-btn.playing {
     color: #f5831f;
 }
-.omt-tile-root .omt-tile-bar .omt-timeline-vol-range {
-    width: 56px;
-    max-width: 20vw;
+.omt-tile-root .omt-timeline-vol-btn,
+.omt-tile-root .omt-timeline-fs-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: #f1f1f1;
+    cursor: pointer;
 }
-.omt-tile-root .omt-tile-bar .omt-time-text,
-.omt-tile-root .omt-tile-bar .omt-timeline-live-delay,
-.omt-tile-root .omt-tile-bar .omt-timeline-live-chip {
-    font-size: 10px !important;
-    font-variant-numeric: tabular-nums;
-    color: #c8c8c8;
-}
-.omt-tile-root .omt-tile-bar .omt-timeline-live-indicator {
+.omt-tile-root .omt-timeline-live-indicator {
     display: inline-flex;
     align-items: center;
     gap: 4px;
@@ -2386,21 +2369,48 @@ html.omt-host-xeatre.omt-hud-on .video-js.vjs-fluid {
     cursor: pointer;
     padding: 0;
 }
-.omt-tile-root .omt-tile-bar .omt-timeline-live-chip {
+.omt-tile-root .omt-timeline-live-indicator[hidden],
+.omt-tile-root .omt-timeline-post-times[hidden],
+.omt-tile-root .omt-timeline-live-chip[hidden] {
+    display: none !important;
+}
+.omt-tile-root .omt-timeline-live-chip {
     color: #ff3b30;
     font-weight: 700;
 }
-.omt-tile-root .omt-tile-bar.omt-at-live .omt-timeline-live-chip {
-    display: inline;
-}
-.omt-tile-root .omt-tile-bar .omt-timeline-post-times {
+.omt-tile-root .omt-timeline-post-times {
     display: inline-flex;
     align-items: center;
     gap: 3px;
 }
-.omt-tile-root .omt-tile-bar .omt-timeline-post-times[hidden] {
-    display: none !important;
+.omt-tile-root .omt-time-text,
+.omt-tile-root .omt-timeline-live-delay {
+    font-variant-numeric: tabular-nums;
+    color: #c8c8c8;
+    font-size: 11px;
 }
-.omt-tile-root .omt-tile-bar .omt-timeline-live-indicator[hidden] {
-    display: none !important;
+/* Match clock — same look as primary #match-timer-wrap. */
+.omt-tile-root .omt-match-timer-wrap {
+    position: absolute;
+    top: 14px;
+    left: 14px;
+    z-index: 60;
+    display: none;
+    pointer-events: auto;
+}
+.omt-tile-root.omt-timer-on .omt-match-timer-wrap {
+    display: flex;
+}
+.omt-tile-root .omt-match-timer {
+    font-family: var(--omt-mono, ui-monospace, monospace);
+    font-size: 22px;
+    font-weight: 700;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.55);
+    padding: 6px 10px;
+    border-radius: 6px;
+    letter-spacing: 0.04em;
+}
+.omt-tile-root .omt-osd-message {
+    display: none;
 }

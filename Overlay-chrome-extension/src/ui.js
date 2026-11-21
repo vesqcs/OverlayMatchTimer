@@ -198,78 +198,79 @@
         return ' data-tip="' + String(text).replace(/"/g, '&quot;') + '"';
     }
 
-    function buildHTML() {
+    /** Build HUD markup. Optional idPrefix namespaces every id (InPlay multi-view
+     *  tiles reuse this builder so secondary HUDs match primary layout). */
+    function buildHTML(idPrefix) {
+        const p = idPrefix ? String(idPrefix) : '';
+        const id = (name) => p + name;
         return `
-<div id="match-timer-wrap">
-    <div id="match-timer">00:00</div>
+<div id="${id('match-timer-wrap')}" class="omt-match-timer-wrap">
+    <div id="${id('match-timer')}" class="omt-match-timer">00:00</div>
 </div>
-<div id="osd-message">MatchTimer</div>
+<div id="${id('osd-message')}" class="omt-osd-message">MatchTimer</div>
 
 <!-- Hidden whistle-time fields: kept for iniciarTimer / restore (no visible UI) -->
-<div id="omt-hidden-sync" hidden aria-hidden="true">
-    <input type="number" id="omt-sync-hr" value="">
-    <input type="number" id="omt-sync-min" value="">
-    <input type="number" id="omt-sync-sec" value="">
+<div id="${id('omt-hidden-sync')}" hidden aria-hidden="true">
+    <input type="number" id="${id('omt-sync-hr')}" value="">
+    <input type="number" id="${id('omt-sync-min')}" value="">
+    <input type="number" id="${id('omt-sync-sec')}" value="">
 </div>
 
 <!-- Legacy ids kept for null-guards / restore -->
-<div id="setup-panel" class="glass-panel" style="display:none;" hidden></div>
-<div id="omt-shuttle-cheatsheet" style="display:none;" hidden></div>
+<div id="${id('setup-panel')}" class="glass-panel" style="display:none;" hidden></div>
+<div id="${id('omt-shuttle-cheatsheet')}" style="display:none;" hidden></div>
 
 <!-- Kick-off jump targets stay in DOM for wire/markers; no visible chip row -->
-<div id="omt-kickoff-jumps" hidden aria-hidden="true">
-    <button id="omt-jump-k1" type="button" style="display:none;"></button>
-    <button id="omt-jump-k2" type="button" style="display:none;"></button>
-    <button id="omt-jump-kc1" type="button" style="display:none;"></button>
-    <button id="omt-jump-kc2" type="button" style="display:none;"></button>
+<div id="${id('omt-kickoff-jumps')}" hidden aria-hidden="true">
+    <button id="${id('omt-jump-k1')}" type="button" style="display:none;"></button>
+    <button id="${id('omt-jump-k2')}" type="button" style="display:none;"></button>
+    <button id="${id('omt-jump-kc1')}" type="button" style="display:none;"></button>
+    <button id="${id('omt-jump-kc2')}" type="button" style="display:none;"></button>
 </div>
 
 <!-- Timeline: full-width scrubber on top; chrome row (time left / fullscreen right) below. -->
-<div id="omt-timeline-bar" class="omt-timeline-bar">
+<div id="${id('omt-timeline-bar')}" class="omt-timeline-bar" data-omt-tile-bar="${p ? '1' : ''}">
     <div class="omt-timeline-track">
-        <div id="omt-timeline-period-ticks" class="omt-timeline-period-ticks" aria-hidden="true"></div>
-        <input type="range" id="omt-timeline-slider" class="timeline-slider" min="0" max="100" value="0" step="0.01" aria-label="Timeline">
-        <div id="omt-timeline-markers" aria-hidden="true"></div>
+        <div id="${id('omt-timeline-period-ticks')}" class="omt-timeline-period-ticks" aria-hidden="true"></div>
+        <input type="range" id="${id('omt-timeline-slider')}" class="timeline-slider omt-tile-slider" min="0" max="100" value="0" step="0.01" aria-label="Timeline">
+        <div id="${id('omt-timeline-markers')}" aria-hidden="true"></div>
     </div>
-    <div id="omt-timeline-hover-tip" class="omt-timeline-hover-tip" hidden></div>
+    <div id="${id('omt-timeline-hover-tip')}" class="omt-timeline-hover-tip" hidden></div>
     <div class="omt-timeline-chrome-row">
         <div class="omt-timeline-chrome-left">
-            <button type="button" class="omt-timeline-play-btn" id="omt-timeline-play-btn" aria-label="Play" aria-pressed="false">${omtIcon('play', 16)}</button>
-            <button type="button" class="omt-timeline-vol-btn" id="omt-timeline-vol-btn" aria-label="Mute">${omtIcon('volume-2', 16)}</button>
-            <input type="range" id="omt-timeline-vol-range" class="omt-timeline-vol-range" min="0" max="1" step="0.05" value="1" aria-label="Volume">
+            <button type="button" class="omt-timeline-play-btn omt-tile-bar-play" id="${id('omt-timeline-play-btn')}" aria-label="Play" aria-pressed="false">${omtIcon('play', 16)}</button>
+            <button type="button" class="omt-timeline-vol-btn omt-tile-vol-btn" id="${id('omt-timeline-vol-btn')}" aria-label="Mute">${omtIcon('volume-2', 16)}</button>
+            <input type="range" id="${id('omt-timeline-vol-range')}" class="omt-timeline-vol-range omt-tile-vol-range" min="0" max="1" step="0.05" value="1" aria-label="Volume">
             <div class="omt-timeline-times" data-omt-time-mode="post">
-                <button type="button" id="omt-timeline-live-indicator" class="omt-timeline-live-indicator" hidden aria-label="Go to live">
-                    <span id="omt-timeline-live-delay" class="omt-timeline-live-delay">-0:00</span>
-                    <span id="omt-timeline-live-chip" class="omt-timeline-live-chip" hidden>LIVE</span>
+                <button type="button" id="${id('omt-timeline-live-indicator')}" class="omt-timeline-live-indicator omt-tile-live-btn" hidden aria-label="Go to live">
+                    <span id="${id('omt-timeline-live-delay')}" class="omt-timeline-live-delay omt-tile-live-delay">-0:00</span>
+                    <span id="${id('omt-timeline-live-chip')}" class="omt-timeline-live-chip omt-tile-live-chip" hidden>LIVE</span>
                 </button>
-                <div id="omt-timeline-post-times" class="omt-timeline-post-times">
-                    <span id="omt-v-time-current" class="omt-time-text">0:00</span>
+                <div id="${id('omt-timeline-post-times')}" class="omt-timeline-post-times omt-tile-post-times">
+                    <span id="${id('omt-v-time-current')}" class="omt-time-text omt-tile-time-cur">0:00</span>
                     <span class="omt-time-sep" aria-hidden="true">/</span>
-                    <span id="omt-v-time-duration" class="omt-time-text">0:00</span>
+                    <span id="${id('omt-v-time-duration')}" class="omt-time-text omt-tile-time-dur">0:00</span>
                 </div>
-                <span id="omt-timeline-match-clock" class="omt-timeline-match-clock" hidden>00:00</span>
+                <span id="${id('omt-timeline-match-clock')}" class="omt-timeline-match-clock" hidden>00:00</span>
             </div>
         </div>
         <div class="omt-timeline-chrome-right">
-            <!-- Live/DVR only: playhead / furthest reachable (seekable edge). -->
-            <span id="omt-timeline-video-range" class="omt-timeline-video-range" hidden aria-label="Video position / live edge">0:00 / 0:00</span>
-            <button type="button" class="omt-timeline-fs-btn" id="omt-btn-fullscreen" aria-label="Enter fullscreen" aria-pressed="false">${omtIcon('maximize', 16)}</button>
+            <span id="${id('omt-timeline-video-range')}" class="omt-timeline-video-range" hidden aria-label="Video position / live edge">0:00 / 0:00</span>
+            <button type="button" class="omt-timeline-fs-btn omt-tile-fs-btn" id="${id('omt-btn-fullscreen')}" aria-label="Enter fullscreen" aria-pressed="false">${omtIcon('maximize', 16)}</button>
         </div>
     </div>
 </div>
 
-<!-- Portal tip lives outside .glass-panel so backdrop-filter cannot make it translucent. -->
-<div id="omt-control-tip" class="omt-control-tip" hidden></div>
+<div id="${id('omt-control-tip')}" class="omt-control-tip" hidden></div>
 
-<!-- Floating control card (v1.7.2 layout): handle → more (middle) → transport/speeds. Grows UP via bottom anchor. -->
-<div id="omt-controls-panel" class="glass-panel">
-    <div class="drag-handle" id="controls-handle">
+<div id="${id('omt-controls-panel')}" class="glass-panel omt-controls-panel" data-omt-tile-panel="${p ? '1' : ''}">
+    <div class="drag-handle omt-tile-handle" id="${id('controls-handle')}" data-omt-tile-handle="${p ? '1' : ''}">
         <div class="drag-side-left">
-            <button type="button" id="omt-more-toggle" class="omt-more-toggle handle-btn omt-tip" aria-expanded="false"${tip('More controls')}>
+            <button type="button" id="${id('omt-more-toggle')}" class="omt-more-toggle handle-btn omt-tip" aria-expanded="false"${tip('More controls')}>
                 <span class="omt-more-icon-collapsed">${omtIcon('chevrons-up', 16)}</span>
                 <span class="omt-more-icon-expanded" hidden>${omtIcon('chevrons-down', 16)}</span>
             </button>
-            <select id="omt-speed-select" class="top-select omt-tip"${tip('Speed (Z / C / X)')}>
+            <select id="${id('omt-speed-select')}" class="top-select omt-tip omt-tile-speed-select"${tip('Speed (Z / C / X)')}>
                 <option value="0.25">0.25x</option>
                 <option value="0.5">0.50x</option>
                 <option value="0.75">0.75x</option>
@@ -278,58 +279,58 @@
                 <option value="1.5">1.50x</option>
                 <option value="2.0">2.00x</option>
             </select>
-            <button type="button" id="omt-hide-panel" class="handle-btn omt-tip is-auto-hide-on" aria-pressed="true"${tip('Auto hide: on')}>
+            <button type="button" id="${id('omt-hide-panel')}" class="handle-btn omt-tip is-auto-hide-on omt-tile-hide" aria-pressed="true"${tip('Auto hide: on')}>
                 ${omtIcon('eye-off', 16)}
             </button>
         </div>
         <div class="drag-center-grip" aria-hidden="true">${omtIcon('grip-horizontal', 16)}</div>
         <div class="drag-side-right">
-            <button id="omt-live-btn" class="omt-tip" type="button"${tip('Go to live (L)')}>
+            <button id="${id('omt-live-btn')}" class="omt-tip omt-tile-panel-live" type="button"${tip('Go to live (L)')}>
                 <span class="live-dot"></span><span class="live-label">LIVE</span>
             </button>
             <span class="omt-live-spacer" aria-hidden="true"></span>
-            <button class="handle-btn omt-tip" id="omt-volume-icon-btn" type="button"${tip('Mute / Unmute')}>${omtIcon('volume-2', 16)}</button>
-            <input type="range" id="omt-volume-range" class="omt-tip" min="0" max="1" step="0.05" value="1"${tip('Volume')}>
+            <button class="handle-btn omt-tip omt-tile-panel-vol-btn" id="${id('omt-volume-icon-btn')}" type="button"${tip('Mute / Unmute')}>${omtIcon('volume-2', 16)}</button>
+            <input type="range" id="${id('omt-volume-range')}" class="omt-tip omt-tile-panel-vol-range" min="0" max="1" step="0.05" value="1"${tip('Volume')}>
         </div>
     </div>
 
-    <div id="omt-more-panel" class="omt-more-panel" aria-hidden="true">
-        <div id="omt-kickoff-bar" class="omt-more-block">
-            <label class="omt-more-label" for="omt-half-select">Period</label>
-            <select id="omt-half-select" class="omt-tip" title="Match period"${tip('Period')}>
+    <div id="${id('omt-more-panel')}" class="omt-more-panel" aria-hidden="true">
+        <div id="${id('omt-kickoff-bar')}" class="omt-more-block">
+            <label class="omt-more-label" for="${id('omt-half-select')}">Period</label>
+            <select id="${id('omt-half-select')}" class="omt-tip omt-tile-half" title="Match period"${tip('Period')}>
                 <option value="1">1st Half</option>
                 <option value="2">2nd Half</option>
                 <option value="custom1">Custom 1</option>
                 <option value="custom2">Custom 2</option>
             </select>
-            <div id="omt-custom-c1" class="omt-custom-minute" style="display:none;">
-                <label class="omt-more-label" for="omt-custom-minute-c1">Start min</label>
-                <input type="number" id="omt-custom-minute-c1" class="omt-tip" placeholder="e.g. 90" min="0"${tip('Custom 1 start')}>
+            <div id="${id('omt-custom-c1')}" class="omt-custom-minute" style="display:none;">
+                <label class="omt-more-label" for="${id('omt-custom-minute-c1')}">Start min</label>
+                <input type="number" id="${id('omt-custom-minute-c1')}" class="omt-tip" placeholder="e.g. 90" min="0"${tip('Custom 1 start')}>
             </div>
-            <div id="omt-custom-c2" class="omt-custom-minute" style="display:none;">
-                <label class="omt-more-label" for="omt-custom-minute-c2">Start min</label>
-                <input type="number" id="omt-custom-minute-c2" class="omt-tip" placeholder="e.g. 105" min="0"${tip('Custom 2 start')}>
+            <div id="${id('omt-custom-c2')}" class="omt-custom-minute" style="display:none;">
+                <label class="omt-more-label" for="${id('omt-custom-minute-c2')}">Start min</label>
+                <input type="number" id="${id('omt-custom-minute-c2')}" class="omt-tip" placeholder="e.g. 105" min="0"${tip('Custom 2 start')}>
             </div>
-            <button type="button" class="btn-sync omt-tip" id="omt-btn-set-kickoff"${tip('Set kick-off (K)')}>Kick-off</button>
-            <button type="button" id="omt-btn-clear-timer" class="btn-clear-timer omt-tip"${tip('Clear timer')}>${omtIcon('x', 13)}</button>
+            <button type="button" class="btn-sync omt-tip omt-tile-kickoff" id="${id('omt-btn-set-kickoff')}"${tip('Set kick-off (K)')}>Kick-off</button>
+            <button type="button" id="${id('omt-btn-clear-timer')}" class="btn-clear-timer omt-tip omt-tile-clear-timer"${tip('Clear timer')}>${omtIcon('x', 13)}</button>
             <div class="omt-offset-nudge" aria-label="Kick-off offset">
-                <button type="button" class="omt-offset-btn omt-tip" id="omt-offset-m5"${tip('Offset −5s')}>${omtIcon('chevrons-left', 12)}5</button>
-                <button type="button" class="omt-offset-btn omt-tip" id="omt-offset-m1"${tip('Offset −1s')}>−1</button>
-                <button type="button" class="omt-offset-btn omt-tip" id="omt-offset-p1"${tip('Offset +1s')}>+1</button>
-                <button type="button" class="omt-offset-btn omt-tip" id="omt-offset-p5"${tip('Offset +5s')}>5${omtIcon('chevrons-right', 12)}</button>
+                <button type="button" class="omt-offset-btn omt-tip omt-tile-nudge" data-nudge="-5" id="${id('omt-offset-m5')}"${tip('Offset −5s')}>${omtIcon('chevrons-left', 12)}5</button>
+                <button type="button" class="omt-offset-btn omt-tip omt-tile-nudge" data-nudge="-1" id="${id('omt-offset-m1')}"${tip('Offset −1s')}>−1</button>
+                <button type="button" class="omt-offset-btn omt-tip omt-tile-nudge" data-nudge="1" id="${id('omt-offset-p1')}"${tip('Offset +1s')}>+1</button>
+                <button type="button" class="omt-offset-btn omt-tip omt-tile-nudge" data-nudge="5" id="${id('omt-offset-p5')}"${tip('Offset +5s')}>5${omtIcon('chevrons-right', 12)}</button>
             </div>
         </div>
 
-        <div id="omt-examino-settings" class="omt-more-block omt-source-block" style="display:none;">
-            <label class="omt-more-label" for="omt-examino-source">Source</label>
-            <select id="omt-examino-source" class="omt-tip"${tip('Stream source')}>
+        <div id="${id('omt-examino-settings')}" class="omt-more-block omt-source-block" style="display:none;">
+            <label class="omt-more-label" for="${id('omt-examino-source')}">Source</label>
+            <select id="${id('omt-examino-source')}" class="omt-tip"${tip('Stream source')}>
                 <option value="DVR">DVR</option>
                 <option value="VOD">VOD</option>
             </select>
             <div class="omt-toggle-row omt-tip"${tip('Auto-switch to VOD')}>
                 <span>Auto VOD</span>
-                <label class="omt-switch" for="omt-examino-auto-vod">
-                    <input type="checkbox" id="omt-examino-auto-vod" checked>
+                <label class="omt-switch" for="${id('omt-examino-auto-vod')}">
+                    <input type="checkbox" id="${id('omt-examino-auto-vod')}" checked>
                     <span class="omt-switch-slider"></span>
                 </label>
             </div>
@@ -338,8 +339,8 @@
         <div class="omt-more-block omt-shuttle-block">
             <div class="omt-toggle-row omt-tip"${tip('ShuttleXpress on this browser')}>
                 <span>ShuttleXpress</span>
-                <label class="omt-switch" for="omt-shuttle-enable-toggle">
-                    <input type="checkbox" id="omt-shuttle-enable-toggle">
+                <label class="omt-switch" for="${id('omt-shuttle-enable-toggle')}">
+                    <input type="checkbox" id="${id('omt-shuttle-enable-toggle')}">
                     <span class="omt-switch-slider"></span>
                 </label>
             </div>
@@ -348,26 +349,26 @@
 
     <div class="controls-content">
         <div class="omt-transport-seg" role="group" aria-label="Playback transport">
-            <button class="ctrl-btn" id="omt-m120" type="button">${omtIcon('rewind', 18)}<span class="omt-btn-label">2m</span></button>
-            <button class="ctrl-btn" id="omt-m10" type="button">${omtIcon('skip-back', 18)}<span class="omt-btn-label">10s</span></button>
-            <button class="ctrl-btn" id="omt-m2" type="button">${omtIcon('skip-back', 17)}<span class="omt-btn-label">2s</span></button>
+            <button class="ctrl-btn omt-tile-skip" data-skip="-120" id="${id('omt-m120')}" type="button">${omtIcon('rewind', 18)}<span class="omt-btn-label">2m</span></button>
+            <button class="ctrl-btn omt-tile-skip" data-skip="-10" id="${id('omt-m10')}" type="button">${omtIcon('skip-back', 18)}<span class="omt-btn-label">10s</span></button>
+            <button class="ctrl-btn omt-tile-skip" data-skip="-2" id="${id('omt-m2')}" type="button">${omtIcon('skip-back', 17)}<span class="omt-btn-label">2s</span></button>
             <span class="omt-seg-divider" aria-hidden="true"></span>
-            <button class="ctrl-btn btn-frame omt-tip" id="omt-prev-frame" type="button"${tip('Previous frame (↓)')}>${omtIcon('step-back', 18)}</button>
-            <button class="ctrl-btn btn-play" id="omt-btn-play" type="button">${omtIcon('play', 22)}</button>
-            <button class="ctrl-btn btn-frame omt-tip" id="omt-next-frame" type="button"${tip('Next frame (↑)')}>${omtIcon('step-forward', 18)}</button>
+            <button class="ctrl-btn btn-frame omt-tip omt-tile-frame" data-frame="-1" id="${id('omt-prev-frame')}" type="button"${tip('Previous frame (↓)')}>${omtIcon('step-back', 18)}</button>
+            <button class="ctrl-btn btn-play omt-tile-play" id="${id('omt-btn-play')}" type="button">${omtIcon('play', 22)}</button>
+            <button class="ctrl-btn btn-frame omt-tip omt-tile-frame" data-frame="1" id="${id('omt-next-frame')}" type="button"${tip('Next frame (↑)')}>${omtIcon('step-forward', 18)}</button>
             <span class="omt-seg-divider" aria-hidden="true"></span>
-            <button class="ctrl-btn" id="omt-p2" type="button"><span class="omt-btn-label">2s</span>${omtIcon('skip-forward', 16)}</button>
-            <button class="ctrl-btn" id="omt-p10" type="button"><span class="omt-btn-label">10s</span>${omtIcon('skip-forward', 16)}</button>
-            <button class="ctrl-btn" id="omt-p120" type="button"><span class="omt-btn-label">2m</span>${omtIcon('fast-forward', 16)}</button>
+            <button class="ctrl-btn omt-tile-skip" data-skip="2" id="${id('omt-p2')}" type="button"><span class="omt-btn-label">2s</span>${omtIcon('skip-forward', 16)}</button>
+            <button class="ctrl-btn omt-tile-skip" data-skip="10" id="${id('omt-p10')}" type="button"><span class="omt-btn-label">10s</span>${omtIcon('skip-forward', 16)}</button>
+            <button class="ctrl-btn omt-tile-skip" data-skip="120" id="${id('omt-p120')}" type="button"><span class="omt-btn-label">2m</span>${omtIcon('fast-forward', 16)}</button>
         </div>
         <div class="omt-speed-row" role="group" aria-label="Playback speed">
-            <button type="button" class="omt-speed-chip" data-speed="0.25">0.25x</button>
-            <button type="button" class="omt-speed-chip" data-speed="0.5">0.5x</button>
-            <button type="button" class="omt-speed-chip" data-speed="0.75">0.75x</button>
-            <button type="button" class="omt-speed-chip is-active" data-speed="1.0">1x</button>
-            <button type="button" class="omt-speed-chip" data-speed="1.25">1.25x</button>
-            <button type="button" class="omt-speed-chip" data-speed="1.5">1.5x</button>
-            <button type="button" class="omt-speed-chip" data-speed="2.0">2x</button>
+            <button type="button" class="omt-speed-chip omt-tile-speed" data-speed="0.25">0.25x</button>
+            <button type="button" class="omt-speed-chip omt-tile-speed" data-speed="0.5">0.5x</button>
+            <button type="button" class="omt-speed-chip omt-tile-speed" data-speed="0.75">0.75x</button>
+            <button type="button" class="omt-speed-chip omt-tile-speed is-active" data-speed="1.0">1x</button>
+            <button type="button" class="omt-speed-chip omt-tile-speed" data-speed="1.25">1.25x</button>
+            <button type="button" class="omt-speed-chip omt-tile-speed" data-speed="1.5">1.5x</button>
+            <button type="button" class="omt-speed-chip omt-tile-speed" data-speed="2.0">2x</button>
         </div>
     </div>
 </div>`;

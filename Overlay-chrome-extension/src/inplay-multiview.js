@@ -1,15 +1,15 @@
-/* InPlay multi-view (v2.3.0 panels + v2.3.1 bottom bars).
+/* InPlay multi-view (v2.3.2): full primary-identical HUD per secondary tile.
  *
  * Scope: UI layer only. Player/seek/playback helpers stay untouched —
  * tile actions briefly swap global `vid` via omtInplayMvWithVideo().
- * v2.3.1: each secondary tile also gets an OMT bottom bar (scrubber,
- * mute/volume, LIVE, time readout) bound to that tile's video via
- * timeupdate (no rAF). NO per-tile clock/kickoff (deferred to 2.3.2).
+ * Each secondary tile reuses buildHTML(prefix) so the panel + bottom bar
+ * match the primary tile. Independent match clock + kickoff state per tile
+ * (video-time offsets; no shared kickoff1 globals).
  *
  * Single-video path: identical to 2.2.23 — no MutationObserver, no
  * tile roots, no hotkey divert. Multi-view arms only when
- * `.players-container` exists (or ≥2 videos already present), and
- * sync/teardown runs only when the video count crosses 2↔1.
+ * `.players-container` exists (or ≥2 videos already present).
+ * Clock/bar updates: timeupdate only while multi-view active (no rAF).
  */
     let inplayMvActive = false;
     let inplayMvArmMo = null;
@@ -18,7 +18,8 @@
     let inplayMvHotkeyVid = null;
     let inplayMvPointerHooked = false;
     let inplayMvLastVideoCount = 0;
-    /** videoEl → { root, panel, ac, playBtn } */
+    let inplayMvTileSeq = 0;
+    /** videoEl → tile record */
     const inplayMvTiles = new Map();
     try {
         window.__omtInplayMvSyncCount = 0;
@@ -48,7 +49,6 @@
         const seen = new Set();
         const push = (v) => {
             if (!v || v.tagName !== 'VIDEO' || !v.isConnected || seen.has(v)) return;
-            // Skip tiny / hidden placeholders.
             try {
                 if ((v.offsetWidth || 0) < 8 || (v.offsetHeight || 0) < 8) return;
             } catch (_) { return; }
@@ -83,9 +83,6 @@
         try { window.__omtInplayMvHotkeyIndex = omtInplayMvListVideos().indexOf(videoEl); } catch (_) {}
     }
 
-    /** Hotkeys: when multi-view is active and a last-clicked tile exists,
-     *  run `fn` with that video as `vid`. Returns true if diverted.
-     *  Single-video / inactive → false (zero side effects). */
     function omtInplayMvRunOnHotkeyTarget(fn) {
         if (!inplayMvActive) return false;
         const target = inplayMvHotkeyVid;
@@ -95,85 +92,15 @@
         return true;
     }
 
-    function omtInplayMvBuildPanelHtml() {
-        // Compact transport + speed + bottom bar — no clock/kickoff/Source.
-        return '' +
-            '<div class="omt-tile-panel glass-panel omt-panel-size-small" data-omt-tile-panel="1">' +
-            '  <div class="drag-handle omt-tile-handle" data-omt-tile-handle="1">' +
-            '    <div class="drag-center-grip" aria-hidden="true">' + omtIcon('grip-horizontal', 14) + '</div>' +
-            '  </div>' +
-            '  <div class="controls-content">' +
-            '    <div class="omt-transport-seg" role="group" aria-label="Tile transport">' +
-            '      <button type="button" class="ctrl-btn omt-tile-skip" data-skip="-120">' +
-            omtIcon('rewind', 16) + '<span class="omt-btn-label">2m</span></button>' +
-            '      <button type="button" class="ctrl-btn omt-tile-skip" data-skip="-10">' +
-            omtIcon('skip-back', 16) + '<span class="omt-btn-label">10s</span></button>' +
-            '      <button type="button" class="ctrl-btn omt-tile-skip" data-skip="-2">' +
-            omtIcon('skip-back', 15) + '<span class="omt-btn-label">2s</span></button>' +
-            '      <span class="omt-seg-divider" aria-hidden="true"></span>' +
-            '      <button type="button" class="ctrl-btn btn-frame omt-tile-frame" data-frame="-1">' +
-            omtIcon('step-back', 16) + '</button>' +
-            '      <button type="button" class="ctrl-btn btn-play omt-tile-play">' +
-            omtIcon('play', 20) + '</button>' +
-            '      <button type="button" class="ctrl-btn btn-frame omt-tile-frame" data-frame="1">' +
-            omtIcon('step-forward', 16) + '</button>' +
-            '      <span class="omt-seg-divider" aria-hidden="true"></span>' +
-            '      <button type="button" class="ctrl-btn omt-tile-skip" data-skip="2">' +
-            '<span class="omt-btn-label">2s</span>' + omtIcon('skip-forward', 14) + '</button>' +
-            '      <button type="button" class="ctrl-btn omt-tile-skip" data-skip="10">' +
-            '<span class="omt-btn-label">10s</span>' + omtIcon('skip-forward', 14) + '</button>' +
-            '      <button type="button" class="ctrl-btn omt-tile-skip" data-skip="120">' +
-            '<span class="omt-btn-label">2m</span>' + omtIcon('fast-forward', 14) + '</button>' +
-            '    </div>' +
-            '    <div class="omt-speed-row" role="group" aria-label="Tile speed">' +
-            '      <button type="button" class="omt-speed-chip omt-tile-speed" data-speed="0.25">0.25x</button>' +
-            '      <button type="button" class="omt-speed-chip omt-tile-speed" data-speed="0.5">0.5x</button>' +
-            '      <button type="button" class="omt-speed-chip omt-tile-speed" data-speed="0.75">0.75x</button>' +
-            '      <button type="button" class="omt-speed-chip omt-tile-speed is-active" data-speed="1.0">1x</button>' +
-            '      <button type="button" class="omt-speed-chip omt-tile-speed" data-speed="1.25">1.25x</button>' +
-            '      <button type="button" class="omt-speed-chip omt-tile-speed" data-speed="1.5">1.5x</button>' +
-            '      <button type="button" class="omt-speed-chip omt-tile-speed" data-speed="2.0">2x</button>' +
-            '    </div>' +
-            '  </div>' +
-            '</div>' +
-            // v2.3.1 bottom bar — classes only (no duplicate ids).
-            '<div class="omt-timeline-bar omt-tile-bar" data-omt-tile-bar="1">' +
-            '  <div class="omt-timeline-track">' +
-            '    <input type="range" class="timeline-slider omt-tile-slider" min="0" max="100" value="0" step="0.01" aria-label="Tile timeline">' +
-            '  </div>' +
-            '  <div class="omt-timeline-chrome-row">' +
-            '    <div class="omt-timeline-chrome-left">' +
-            '      <button type="button" class="omt-timeline-play-btn omt-tile-bar-play" aria-label="Play" aria-pressed="false">' +
-            omtIcon('play', 16) + '</button>' +
-            '      <button type="button" class="omt-timeline-vol-btn omt-tile-vol-btn" aria-label="Mute">' +
-            omtIcon('volume-2', 16) + '</button>' +
-            '      <input type="range" class="omt-timeline-vol-range omt-tile-vol-range" min="0" max="1" step="0.05" value="1" aria-label="Volume">' +
-            '      <div class="omt-timeline-times" data-omt-time-mode="post">' +
-            '        <button type="button" class="omt-timeline-live-indicator omt-tile-live-btn" hidden aria-label="Go to live">' +
-            '          <span class="omt-timeline-live-delay omt-tile-live-delay">-0:00</span>' +
-            '          <span class="omt-timeline-live-chip omt-tile-live-chip" hidden>LIVE</span>' +
-            '        </button>' +
-            '        <div class="omt-timeline-post-times omt-tile-post-times">' +
-            '          <span class="omt-time-text omt-tile-time-cur">0:00</span>' +
-            '          <span class="omt-time-sep" aria-hidden="true">/</span>' +
-            '          <span class="omt-time-text omt-tile-time-dur">0:00</span>' +
-            '        </div>' +
-            '      </div>' +
-            '    </div>' +
-            '    <div class="omt-timeline-chrome-right">' +
-            '      <button type="button" class="omt-timeline-fs-btn omt-tile-fs-btn" aria-label="Enter fullscreen" aria-pressed="false">' +
-            omtIcon('maximize', 16) + '</button>' +
-            '    </div>' +
-            '  </div>' +
-            '</div>';
+    function omtInplayMvQ(rec, name) {
+        if (!rec || !rec.root) return null;
+        return rec.root.querySelector('#' + rec.prefix + name);
     }
 
     function omtInplayMvFmtTime(sec) {
         if (typeof formatarTempoCompacto === 'function') return formatarTempoCompacto(sec);
         const t = Math.max(0, Math.floor(Number(sec) || 0));
-        const m = Math.floor(t / 60);
-        const s = t % 60;
-        return m + ':' + String(s).padStart(2, '0');
+        return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0');
     }
 
     function omtInplayMvFmtDelay(sec) {
@@ -192,25 +119,147 @@
         return 0;
     }
 
-    function omtInplayMvPaintBar(rec, videoEl, force) {
-        if (!rec || !videoEl) return;
-        const slider = rec.slider;
-        const curEl = rec.timeCur;
-        const durEl = rec.timeDur;
-        const liveBtn = rec.liveBtn;
-        const liveDelay = rec.liveDelay;
-        const liveChip = rec.liveChip;
-        const postTimes = rec.postTimes;
-        const bar = rec.bar;
+    function omtInplayMvSeekLive(videoEl) {
+        if (!videoEl) return;
+        const margin = (typeof OMT_LIVE_SAFE_MARGIN_S === 'number' && OMT_LIVE_SAFE_MARGIN_S > 0)
+            ? OMT_LIVE_SAFE_MARGIN_S : 10;
+        const edge = omtInplayMvEdgeSec(videoEl);
+        if (!(edge > 0)) return;
+        omtInplayMvWithVideo(videoEl, () => seekTo(Math.max(0, edge - margin)));
+    }
+
+    /* ---- Independent per-tile clock / kickoff (video-time, not PDT) ---- */
+    function omtInplayMvPaintClock(rec) {
+        if (!rec || !rec.timerAtivo || !rec.video) return;
+        const timerUI = omtInplayMvQ(rec, 'match-timer');
+        if (!timerUI) return;
+        const tAtual = rec.video.currentTime || 0;
+        const k1 = rec.kickoff1;
+        const k2 = rec.kickoff2;
+        const kC1 = rec.kickoffC1;
+        const kC2 = rec.kickoffC2;
+        let kickoffUsar = rec.offsetEmSegundos || 0;
+        let baseUsar = rec.tempoBase || 0;
+        if (kC2 != null && tAtual >= kC2) {
+            kickoffUsar = kC2;
+            baseUsar = (rec.customMinC2 || 105) * 60;
+        } else if (kC1 != null && tAtual >= kC1) {
+            kickoffUsar = kC1;
+            baseUsar = (rec.customMinC1 || 90) * 60;
+        } else if (k2 != null && tAtual >= k2) {
+            kickoffUsar = k2;
+            baseUsar = 45 * 60;
+        } else if (k1 != null) {
+            kickoffUsar = k1;
+            baseUsar = 0;
+        }
+        if (k1 != null && tAtual < k1) {
+            timerUI.innerText = 'Pre-Match';
+            timerUI.style.color = '#ffcc00';
+            return;
+        }
+        const totalSeconds = (tAtual - kickoffUsar) + baseUsar;
+        timerUI.style.color = 'white';
+        timerUI.innerText =
+            String(Math.floor(totalSeconds / 60)).padStart(2, '0') + ':' +
+            String(Math.floor(totalSeconds % 60)).padStart(2, '0');
+    }
+
+    function omtInplayMvSetKickoff(rec) {
+        if (!rec || !rec.video) return;
+        const halfEl = omtInplayMvQ(rec, 'omt-half-select');
+        const parte = (halfEl && halfEl.value) || '1';
+        let tempoBase = 0;
+        if (parte === '2') tempoBase = 45 * 60;
+        else if (parte === 'custom1') {
+            const el = omtInplayMvQ(rec, 'omt-custom-minute-c1');
+            tempoBase = (parseInt(el && el.value, 10) || 0) * 60;
+            rec.customMinC1 = parseInt(el && el.value, 10) || 0;
+        } else if (parte === 'custom2') {
+            const el = omtInplayMvQ(rec, 'omt-custom-minute-c2');
+            tempoBase = (parseInt(el && el.value, 10) || 0) * 60;
+            rec.customMinC2 = parseInt(el && el.value, 10) || 0;
+        }
+        const offset = rec.video.currentTime || 0;
+        rec.offsetEmSegundos = offset;
+        rec.tempoBase = tempoBase;
+        rec.timerAtivo = true;
+        rec.previousHalf = parte;
+        if (parte === '1') rec.kickoff1 = offset;
+        else if (parte === '2') rec.kickoff2 = offset;
+        else if (parte === 'custom1') rec.kickoffC1 = offset;
+        else if (parte === 'custom2') rec.kickoffC2 = offset;
+
+        const wrap = omtInplayMvQ(rec, 'match-timer-wrap');
+        const timerUI = omtInplayMvQ(rec, 'match-timer');
+        if (wrap) wrap.style.display = 'flex';
+        if (timerUI) timerUI.style.display = 'block';
+        try { rec.root.classList.add('omt-timer-on'); } catch (_) {}
+        const kickBtn = omtInplayMvQ(rec, 'omt-btn-set-kickoff');
+        if (kickBtn) kickBtn.classList.add('kickoff-set');
+        omtInplayMvPaintClock(rec);
+        if (typeof mostrarOSD === 'function') {
+            omtInplayMvWithVideo(rec.video, () => mostrarOSD('Timer Synced'));
+        }
+    }
+
+    function omtInplayMvClearKickoff(rec) {
+        if (!rec) return;
+        rec.timerAtivo = false;
+        rec.offsetEmSegundos = 0;
+        rec.tempoBase = 0;
+        rec.kickoff1 = rec.kickoff2 = rec.kickoffC1 = rec.kickoffC2 = null;
+        rec.previousHalf = '1';
+        const wrap = omtInplayMvQ(rec, 'match-timer-wrap');
+        const timerUI = omtInplayMvQ(rec, 'match-timer');
+        if (wrap) wrap.style.display = 'none';
+        if (timerUI) {
+            timerUI.style.display = 'none';
+            timerUI.innerText = '00:00';
+        }
+        try { rec.root.classList.remove('omt-timer-on'); } catch (_) {}
+        const kickBtn = omtInplayMvQ(rec, 'omt-btn-set-kickoff');
+        if (kickBtn) kickBtn.classList.remove('kickoff-set');
+        const half = omtInplayMvQ(rec, 'omt-half-select');
+        if (half) half.value = '1';
+        const c1 = omtInplayMvQ(rec, 'omt-custom-c1');
+        const c2 = omtInplayMvQ(rec, 'omt-custom-c2');
+        if (c1) c1.style.display = 'none';
+        if (c2) c2.style.display = 'none';
+    }
+
+    function omtInplayMvNudgeKickoff(rec, deltaSec) {
+        if (!rec || !rec.timerAtivo || !deltaSec) return;
+        const apply = (v) => (v == null ? v : Number(v) + deltaSec);
+        const parte = rec.previousHalf || '1';
+        if (parte === '1') rec.kickoff1 = apply(rec.kickoff1);
+        else if (parte === '2') rec.kickoff2 = apply(rec.kickoff2);
+        else if (parte === 'custom1') rec.kickoffC1 = apply(rec.kickoffC1);
+        else if (parte === 'custom2') rec.kickoffC2 = apply(rec.kickoffC2);
+        rec.offsetEmSegundos = apply(rec.offsetEmSegundos);
+        omtInplayMvPaintClock(rec);
+    }
+
+    function omtInplayMvPaintBar(rec, force) {
+        if (!rec || !rec.video) return;
+        const videoEl = rec.video;
+        const slider = omtInplayMvQ(rec, 'omt-timeline-slider');
+        const curEl = omtInplayMvQ(rec, 'omt-v-time-current');
+        const durEl = omtInplayMvQ(rec, 'omt-v-time-duration');
+        const liveBtn = omtInplayMvQ(rec, 'omt-timeline-live-indicator');
+        const liveDelay = omtInplayMvQ(rec, 'omt-timeline-live-delay');
+        const liveChip = omtInplayMvQ(rec, 'omt-timeline-live-chip');
+        const postTimes = omtInplayMvQ(rec, 'omt-timeline-post-times');
+        const bar = omtInplayMvQ(rec, 'omt-timeline-bar');
+        const barPlay = omtInplayMvQ(rec, 'omt-timeline-play-btn');
+        const panelLive = omtInplayMvQ(rec, 'omt-live-btn');
         const edge = omtInplayMvEdgeSec(videoEl);
         const playhead = videoEl.currentTime || 0;
         if (slider && !rec.dragging) {
             if (edge > 0) {
-                if (parseFloat(slider.max) !== edge) {
-                    slider.min = '0';
-                    slider.max = String(edge);
-                    slider.disabled = false;
-                }
+                slider.min = '0';
+                slider.max = String(edge);
+                slider.disabled = false;
                 slider.value = String(Math.max(0, Math.min(edge, playhead)));
             }
             const min = parseFloat(slider.min) || 0;
@@ -226,12 +275,12 @@
         if (curEl) curEl.textContent = omtInplayMvFmtTime(playhead);
         if (durEl) durEl.textContent = omtInplayMvFmtTime(edge > 0 ? edge : (videoEl.duration || 0));
 
-        // LIVE vs POST chrome — cheap threshold, no primary-panel side effects.
         const margin = (typeof OMT_LIVE_SAFE_MARGIN_S === 'number' && OMT_LIVE_SAFE_MARGIN_S > 0)
             ? OMT_LIVE_SAFE_MARGIN_S : 10;
         const delay = edge > 0 ? Math.max(0, edge - playhead) : 0;
         const atLive = edge > 0 && delay <= margin + 5;
         if (bar) bar.classList.toggle('omt-at-live', atLive);
+        if (panelLive) panelLive.classList.toggle('is-live', atLive);
         if (liveBtn) {
             if (edge > 0 && delay > 0.5) {
                 liveBtn.hidden = false;
@@ -243,62 +292,71 @@
                 if (postTimes) postTimes.hidden = false;
             }
         }
-        if (rec.barPlay) {
-            const on = !videoEl.paused && !videoEl.ended;
-            try {
-                rec.barPlay.innerHTML = on ? omtIcon('pause', 16) : omtIcon('play', 16);
-                rec.barPlay.classList.toggle('playing', on);
-                rec.barPlay.setAttribute('aria-pressed', on ? 'true' : 'false');
-            } catch (_) {}
-        }
-    }
-
-    function omtInplayMvSyncTileVol(rec, videoEl) {
-        if (!rec || !videoEl) return;
-        const muted = !!(videoEl.muted || videoEl.volume === 0);
-        const vol = muted ? 0 : (videoEl.volume || 0);
-        if (rec.volRange) rec.volRange.value = String(vol);
-        if (rec.volBtn) {
-            const name = vol === 0 ? 'volume-x' : vol < 0.5 ? 'volume-1' : 'volume-2';
-            try {
-                rec.volBtn.innerHTML = omtIcon(name, 16);
-                rec.volBtn.setAttribute('aria-label', vol === 0 ? 'Unmute' : 'Mute');
-                rec.volBtn.setAttribute('aria-pressed', vol === 0 ? 'true' : 'false');
-            } catch (_) {}
-        }
-    }
-
-    function omtInplayMvSeekLive(videoEl) {
-        if (!videoEl) return;
-        const margin = (typeof OMT_LIVE_SAFE_MARGIN_S === 'number' && OMT_LIVE_SAFE_MARGIN_S > 0)
-            ? OMT_LIVE_SAFE_MARGIN_S : 10;
-        const edge = omtInplayMvEdgeSec(videoEl);
-        if (!(edge > 0)) return;
-        const target = Math.max(0, edge - margin);
-        omtInplayMvWithVideo(videoEl, () => seekTo(target));
-    }
-
-    function omtInplayMvSyncPlayBtn(playBtn, videoEl) {
-        if (!playBtn || !videoEl) return;
         const on = !videoEl.paused && !videoEl.ended;
-        try {
-            playBtn.innerHTML = on ? omtIcon('pause', 20) : omtIcon('play', 20);
-            playBtn.classList.toggle('playing', on);
-            playBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
-        } catch (_) {}
+        const playBtn = omtInplayMvQ(rec, 'omt-btn-play');
+        [playBtn, barPlay].forEach((btn) => {
+            if (!btn) return;
+            try {
+                const size = btn === barPlay ? 16 : 22;
+                btn.innerHTML = on ? omtIcon('pause', size) : omtIcon('play', size);
+                btn.classList.toggle('playing', on);
+                btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+            } catch (_) {}
+        });
+        omtInplayMvPaintClock(rec);
     }
 
-    function omtInplayMvSyncSpeedChips(root, videoEl) {
-        if (!root || !videoEl) return;
+    function omtInplayMvSyncSpeed(rec) {
+        if (!rec || !rec.video) return;
         const rate = (typeof closestSpeedRate === 'function')
-            ? closestSpeedRate(videoEl.playbackRate || 1)
-            : (videoEl.playbackRate || 1);
-        root.querySelectorAll('.omt-tile-speed').forEach((chip) => {
+            ? closestSpeedRate(rec.video.playbackRate || 1)
+            : (rec.video.playbackRate || 1);
+        rec.root.querySelectorAll('.omt-tile-speed').forEach((chip) => {
             const chipRate = parseFloat(chip.getAttribute('data-speed'));
             const active = Math.abs(chipRate - rate) < 0.05;
             chip.classList.toggle('is-active', active);
             chip.setAttribute('aria-pressed', active ? 'true' : 'false');
         });
+        const sel = omtInplayMvQ(rec, 'omt-speed-select');
+        if (sel && typeof OMT_SPEED_SELECT_VALUES !== 'undefined') {
+            sel.value = OMT_SPEED_SELECT_VALUES[rate] || String(rate);
+        } else if (sel) {
+            sel.value = String(rate);
+        }
+    }
+
+    function omtInplayMvSyncVol(rec) {
+        if (!rec || !rec.video) return;
+        const muted = !!(rec.video.muted || rec.video.volume === 0);
+        const vol = muted ? 0 : (rec.video.volume || 0);
+        const panelRange = omtInplayMvQ(rec, 'omt-volume-range');
+        const barRange = omtInplayMvQ(rec, 'omt-timeline-vol-range');
+        if (panelRange) panelRange.value = String(vol);
+        if (barRange) barRange.value = String(vol);
+        const name = vol === 0 ? 'volume-x' : vol < 0.5 ? 'volume-1' : 'volume-2';
+        const panelBtn = omtInplayMvQ(rec, 'omt-volume-icon-btn');
+        const barBtn = omtInplayMvQ(rec, 'omt-timeline-vol-btn');
+        if (panelBtn) panelBtn.innerHTML = omtIcon(name, 15);
+        if (barBtn) {
+            barBtn.innerHTML = omtIcon(name, 16);
+            barBtn.setAttribute('aria-label', vol === 0 ? 'Unmute' : 'Mute');
+        }
+    }
+
+    function omtInplayMvToggleMore(rec) {
+        const more = omtInplayMvQ(rec, 'omt-more-panel');
+        const btn = omtInplayMvQ(rec, 'omt-more-toggle');
+        const panel = omtInplayMvQ(rec, 'omt-controls-panel');
+        if (!more || !btn) return;
+        const open = !more.classList.contains('is-open');
+        more.classList.toggle('is-open', open);
+        more.setAttribute('aria-hidden', open ? 'false' : 'true');
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        if (panel) panel.classList.toggle('omt-more-open', open);
+        const coll = btn.querySelector('.omt-more-icon-collapsed');
+        const exp = btn.querySelector('.omt-more-icon-expanded');
+        if (coll) coll.hidden = open;
+        if (exp) exp.hidden = !open;
     }
 
     function omtInplayMvRemoveTile(videoEl) {
@@ -313,7 +371,8 @@
 
     function omtInplayMvMountTile(videoEl) {
         if (!videoEl || inplayMvTiles.has(videoEl)) return;
-        if (omtInplayMvIsPrimary(videoEl)) return; // primary keeps full #omt-root
+        if (omtInplayMvIsPrimary(videoEl)) return;
+        if (typeof buildHTML !== 'function') return;
         const shell = omtInplayMvFindShell(videoEl);
         if (!shell) return;
 
@@ -323,34 +382,31 @@
         }
         try { shell.style.setProperty('isolation', 'isolate'); } catch (_) {}
 
+        inplayMvTileSeq += 1;
+        const prefix = 'omt-t' + inplayMvTileSeq + '-';
         const root = document.createElement('div');
         root.className = 'omt-tile-root omt-inplayip';
         root.setAttribute('data-omt-tile-root', '1');
-        root.innerHTML = omtInplayMvBuildPanelHtml();
+        root.innerHTML = buildHTML(prefix);
+        // Hide Examino/Shuttle blocks on InPlay tiles (same as primary InPlay).
+        const examino = root.querySelector('#' + prefix + 'omt-examino-settings');
+        if (examino) examino.style.display = 'none';
         shell.appendChild(root);
 
-        const panel = root.querySelector('[data-omt-tile-panel]');
-        const handle = root.querySelector('[data-omt-tile-handle]');
-        const playBtn = root.querySelector('.omt-tile-play');
-        const bar = root.querySelector('[data-omt-tile-bar]');
-        const slider = root.querySelector('.omt-tile-slider');
-        const barPlay = root.querySelector('.omt-tile-bar-play');
-        const volBtn = root.querySelector('.omt-tile-vol-btn');
-        const volRange = root.querySelector('.omt-tile-vol-range');
-        const liveBtn = root.querySelector('.omt-tile-live-btn');
-        const liveDelay = root.querySelector('.omt-tile-live-delay');
-        const liveChip = root.querySelector('.omt-tile-live-chip');
-        const postTimes = root.querySelector('.omt-tile-post-times');
-        const timeCur = root.querySelector('.omt-tile-time-cur');
-        const timeDur = root.querySelector('.omt-tile-time-dur');
-        const fsBtn = root.querySelector('.omt-tile-fs-btn');
+        // InPlay primary never uses omt-compact (Examino-only). Shrink only when
+        // the tile is genuinely tiny — otherwise min(600, 100%-24) matches primary.
+        const sw = shell.clientWidth || 0;
+        const sh = shell.clientHeight || 0;
+        if (sw < 520 || sh < 300) root.classList.add('omt-compact');
+
         const ac = typeof AbortController === 'function' ? new AbortController() : null;
         const sig = ac ? { signal: ac.signal } : undefined;
-
         const rec = {
-            root, panel, playBtn, ac, bar, slider, barPlay, volBtn, volRange,
-            liveBtn, liveDelay, liveChip, postTimes, timeCur, timeDur, fsBtn,
-            dragging: false, _progPct: null, _lastVol: 1
+            root, prefix, video: videoEl, ac,
+            dragging: false, _progPct: null, _lastVol: 1,
+            timerAtivo: false, offsetEmSegundos: 0, tempoBase: 0,
+            kickoff1: null, kickoff2: null, kickoffC1: null, kickoffC2: null,
+            previousHalf: '1', customMinC1: 90, customMinC2: 105
         };
 
         const run = (fn) => {
@@ -358,6 +414,7 @@
             omtInplayMvWithVideo(videoEl, fn);
         };
 
+        // Transport / frames / play / speed (same controls as primary).
         root.querySelectorAll('.omt-tile-skip').forEach((btn) => {
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
@@ -375,35 +432,83 @@
                 run(() => { if (dir < 0) retrocederFrame(); else avancarFrame(); });
             }, sig);
         });
-        if (playBtn) {
-            playBtn.addEventListener('click', (e) => {
+        const playBtn = omtInplayMvQ(rec, 'omt-btn-play');
+        const barPlay = omtInplayMvQ(rec, 'omt-timeline-play-btn');
+        [playBtn, barPlay].forEach((btn) => {
+            if (!btn) return;
+            btn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 run(() => togglePlay());
-                omtInplayMvSyncPlayBtn(playBtn, videoEl);
-                omtInplayMvPaintBar(rec, videoEl, true);
+                omtInplayMvPaintBar(rec, true);
             }, sig);
-        }
+        });
         root.querySelectorAll('.omt-tile-speed').forEach((chip) => {
             chip.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                const rate = chip.getAttribute('data-speed');
-                run(() => applyPlaybackSpeed(rate));
-                omtInplayMvSyncSpeedChips(root, videoEl);
+                run(() => applyPlaybackSpeed(chip.getAttribute('data-speed')));
+                omtInplayMvSyncSpeed(rec);
+            }, sig);
+        });
+        const speedSel = omtInplayMvQ(rec, 'omt-speed-select');
+        if (speedSel) {
+            speedSel.addEventListener('change', () => {
+                run(() => applyPlaybackSpeed(speedSel.value));
+                omtInplayMvSyncSpeed(rec);
+                try { speedSel.blur(); } catch (_) {}
+            }, sig);
+        }
+
+        // LIVE (panel + bar)
+        const panelLive = omtInplayMvQ(rec, 'omt-live-btn');
+        const barLive = omtInplayMvQ(rec, 'omt-timeline-live-indicator');
+        [panelLive, barLive].forEach((btn) => {
+            if (!btn) return;
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                omtInplayMvSetHotkeyTarget(videoEl);
+                omtInplayMvSeekLive(videoEl);
+                omtInplayMvPaintBar(rec, true);
             }, sig);
         });
 
-        // ---- v2.3.1 bottom bar (this tile only) ----
-        if (barPlay) {
-            barPlay.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                run(() => togglePlay());
-                omtInplayMvSyncPlayBtn(playBtn, videoEl);
-                omtInplayMvPaintBar(rec, videoEl, true);
-            }, sig);
-        }
+        // Volume (panel + bar) — tile-local, no primary syncVolume side effects.
+        const applyVol = (raw) => {
+            const v = Math.max(0, Math.min(1, parseFloat(raw)));
+            if (!isFinite(v)) return;
+            videoEl.volume = v;
+            videoEl.muted = v <= 0;
+            if (v > 0) rec._lastVol = v;
+            omtInplayMvSyncVol(rec);
+        };
+        const panelVol = omtInplayMvQ(rec, 'omt-volume-range');
+        const barVol = omtInplayMvQ(rec, 'omt-timeline-vol-range');
+        if (panelVol) panelVol.addEventListener('input', () => applyVol(panelVol.value), sig);
+        if (barVol) barVol.addEventListener('input', () => applyVol(barVol.value), sig);
+        const toggleVol = () => {
+            if (videoEl.volume > 0 && !videoEl.muted) {
+                rec._lastVol = videoEl.volume || 1;
+                videoEl.volume = 0;
+                videoEl.muted = true;
+            } else {
+                videoEl.volume = rec._lastVol > 0 ? rec._lastVol : 1;
+                videoEl.muted = false;
+            }
+            omtInplayMvSyncVol(rec);
+        };
+        const panelVolBtn = omtInplayMvQ(rec, 'omt-volume-icon-btn');
+        const barVolBtn = omtInplayMvQ(rec, 'omt-timeline-vol-btn');
+        if (panelVolBtn) panelVolBtn.addEventListener('click', (e) => {
+            e.preventDefault(); e.stopPropagation(); toggleVol();
+        }, sig);
+        if (barVolBtn) barVolBtn.addEventListener('click', (e) => {
+            e.preventDefault(); e.stopPropagation(); toggleVol();
+        }, sig);
+
+        // Scrubber
+        const slider = omtInplayMvQ(rec, 'omt-timeline-slider');
         if (slider) {
             slider.addEventListener('input', () => {
                 rec.dragging = true;
@@ -412,59 +517,64 @@
                 const val = parseFloat(slider.value) || 0;
                 const pct = max > min ? ((val - min) / (max - min)) * 100 : 0;
                 slider.style.setProperty('--omt-progress', Math.max(0, Math.min(100, pct)) + '%');
-                if (timeCur) timeCur.textContent = omtInplayMvFmtTime(val);
+                const cur = omtInplayMvQ(rec, 'omt-v-time-current');
+                if (cur) cur.textContent = omtInplayMvFmtTime(val);
             }, sig);
             slider.addEventListener('change', () => {
                 const t = parseFloat(slider.value);
                 rec.dragging = false;
                 if (isFinite(t)) run(() => seekTo(t));
                 try { slider.blur(); } catch (_) {}
-                omtInplayMvPaintBar(rec, videoEl, true);
+                omtInplayMvPaintBar(rec, true);
             }, sig);
         }
-        if (volRange) {
-            volRange.addEventListener('input', () => {
-                const v = Math.max(0, Math.min(1, parseFloat(volRange.value)));
-                if (!isFinite(v)) return;
-                videoEl.volume = v;
-                videoEl.muted = v <= 0;
-                if (v > 0) rec._lastVol = v;
-                omtInplayMvSyncTileVol(rec, videoEl);
+
+        // Kickoff / clear / nudge / half / more
+        const kickBtn = omtInplayMvQ(rec, 'omt-btn-set-kickoff');
+        if (kickBtn) kickBtn.addEventListener('click', (e) => {
+            e.preventDefault(); e.stopPropagation();
+            omtInplayMvSetHotkeyTarget(videoEl);
+            omtInplayMvSetKickoff(rec);
+        }, sig);
+        const clearBtn = omtInplayMvQ(rec, 'omt-btn-clear-timer');
+        if (clearBtn) clearBtn.addEventListener('click', (e) => {
+            e.preventDefault(); e.stopPropagation();
+            omtInplayMvClearKickoff(rec);
+        }, sig);
+        root.querySelectorAll('.omt-tile-nudge').forEach((btn) => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault(); e.stopPropagation();
+                const d = parseFloat(btn.getAttribute('data-nudge'));
+                if (isFinite(d)) omtInplayMvNudgeKickoff(rec, d);
+            }, sig);
+        });
+        const half = omtInplayMvQ(rec, 'omt-half-select');
+        if (half) {
+            half.addEventListener('change', () => {
+                const v = half.value;
+                const c1 = omtInplayMvQ(rec, 'omt-custom-c1');
+                const c2 = omtInplayMvQ(rec, 'omt-custom-c2');
+                if (c1) c1.style.display = (v === 'custom1') ? 'inline-flex' : 'none';
+                if (c2) c2.style.display = (v === 'custom2') ? 'inline-flex' : 'none';
+                rec.previousHalf = v;
+                try { half.blur(); } catch (_) {}
             }, sig);
         }
-        if (volBtn) {
-            volBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                if (videoEl.volume > 0 && !videoEl.muted) {
-                    rec._lastVol = videoEl.volume || 1;
-                    videoEl.volume = 0;
-                    videoEl.muted = true;
-                } else {
-                    videoEl.volume = rec._lastVol > 0 ? rec._lastVol : 1;
-                    videoEl.muted = false;
-                }
-                omtInplayMvSyncTileVol(rec, videoEl);
-            }, sig);
-        }
-        if (liveBtn) {
-            liveBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                omtInplayMvSetHotkeyTarget(videoEl);
-                omtInplayMvSeekLive(videoEl);
-                omtInplayMvPaintBar(rec, videoEl, true);
-            }, sig);
-        }
+        const moreBtn = omtInplayMvQ(rec, 'omt-more-toggle');
+        if (moreBtn) moreBtn.addEventListener('click', (e) => {
+            e.preventDefault(); e.stopPropagation();
+            omtInplayMvToggleMore(rec);
+        }, sig);
+
+        const fsBtn = omtInplayMvQ(rec, 'omt-btn-fullscreen');
         if (fsBtn && typeof toggleFullScreen === 'function') {
             fsBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
+                e.preventDefault(); e.stopPropagation();
                 run(() => toggleFullScreen());
             }, sig);
         }
 
-        // Click on this tile's video: control THIS video; set hotkey target.
+        // Video surface click → this tile only.
         videoEl.addEventListener('click', (e) => {
             if (e.target !== videoEl) return;
             if (!videoEl.src && !videoEl.currentSrc && !videoEl.srcObject) return;
@@ -473,46 +583,36 @@
             e.stopImmediatePropagation();
             omtInplayMvSetHotkeyTarget(videoEl);
             omtInplayMvWithVideo(videoEl, () => togglePlay());
-            omtInplayMvSyncPlayBtn(playBtn, videoEl);
-            omtInplayMvPaintBar(rec, videoEl, true);
+            omtInplayMvPaintBar(rec, true);
         }, { capture: true, signal: ac ? ac.signal : undefined });
 
-        videoEl.addEventListener('play', () => {
-            omtInplayMvSyncPlayBtn(playBtn, videoEl);
-            omtInplayMvPaintBar(rec, videoEl, false);
-        }, sig);
-        videoEl.addEventListener('pause', () => {
-            omtInplayMvSyncPlayBtn(playBtn, videoEl);
-            omtInplayMvPaintBar(rec, videoEl, false);
-        }, sig);
-        videoEl.addEventListener('ratechange', () => omtInplayMvSyncSpeedChips(root, videoEl), sig);
-        // Cheap bar updates — timeupdate only (no rAF / no polling).
-        videoEl.addEventListener('timeupdate', () => omtInplayMvPaintBar(rec, videoEl, false), sig);
-        videoEl.addEventListener('loadedmetadata', () => omtInplayMvPaintBar(rec, videoEl, true), sig);
-        videoEl.addEventListener('durationchange', () => omtInplayMvPaintBar(rec, videoEl, true), sig);
-        videoEl.addEventListener('volumechange', () => omtInplayMvSyncTileVol(rec, videoEl), sig);
-        videoEl.addEventListener('seeked', () => omtInplayMvPaintBar(rec, videoEl, true), sig);
+        videoEl.addEventListener('play', () => omtInplayMvPaintBar(rec, false), sig);
+        videoEl.addEventListener('pause', () => omtInplayMvPaintBar(rec, false), sig);
+        videoEl.addEventListener('ratechange', () => omtInplayMvSyncSpeed(rec), sig);
+        videoEl.addEventListener('timeupdate', () => omtInplayMvPaintBar(rec, false), sig);
+        videoEl.addEventListener('loadedmetadata', () => omtInplayMvPaintBar(rec, true), sig);
+        videoEl.addEventListener('durationchange', () => omtInplayMvPaintBar(rec, true), sig);
+        videoEl.addEventListener('volumechange', () => omtInplayMvSyncVol(rec), sig);
+        videoEl.addEventListener('seeked', () => omtInplayMvPaintBar(rec, true), sig);
 
-        // Swallow host leak on tile panel + bar (same as primary HUD).
         ['click', 'dblclick'].forEach((type) => {
             root.addEventListener(type, (e) => {
                 if (e.target && e.target.closest &&
-                    e.target.closest('button, input, select, .omt-tile-panel, .omt-tile-bar')) {
+                    e.target.closest('button, input, select, .omt-controls-panel, .omt-timeline-bar, .omt-match-timer-wrap')) {
                     e.stopPropagation();
                 }
             }, false);
         });
 
+        const panel = omtInplayMvQ(rec, 'omt-controls-panel');
+        const handle = omtInplayMvQ(rec, 'controls-handle');
         if (panel && handle && typeof fazerArrastavel === 'function') {
-            // Pass tile root so drag math stays inside this tile; mouseup on window
-            // still ends the gesture (same release path as primary).
             fazerArrastavel(panel, handle, root);
         }
 
-        omtInplayMvSyncPlayBtn(playBtn, videoEl);
-        omtInplayMvSyncSpeedChips(root, videoEl);
-        omtInplayMvSyncTileVol(rec, videoEl);
-        omtInplayMvPaintBar(rec, videoEl, true);
+        omtInplayMvSyncSpeed(rec);
+        omtInplayMvSyncVol(rec);
+        omtInplayMvPaintBar(rec, true);
         inplayMvTiles.set(videoEl, rec);
     }
 
@@ -530,7 +630,6 @@
         if (!inplayMvActive) return;
         const t = e.target;
         if (!t || !t.closest) return;
-        // Prefer an explicit tile video under the pointer.
         const tileRoot = t.closest('[data-omt-tile-root]');
         if (tileRoot) {
             for (const [v, rec] of inplayMvTiles) {
@@ -545,7 +644,6 @@
             omtInplayMvSetHotkeyTarget(v);
             return;
         }
-        // Primary HUD click → primary video.
         if (omtRoot && omtRoot.contains(t) && vid) {
             omtInplayMvSetHotkeyTarget(vid);
         }
@@ -594,11 +692,9 @@
         const live = new Set(videos);
         const gridChanged = videos.length !== inplayMvLastVideoCount;
         inplayMvLastVideoCount = videos.length;
-        // Drop tiles whose video vanished.
         Array.from(inplayMvTiles.keys()).forEach((v) => {
             if (!live.has(v) || omtInplayMvIsPrimary(v)) omtInplayMvRemoveTile(v);
         });
-        // Mount missing secondary tiles (cap 4 total videos → ≤3 secondaries).
         let mounted = 0;
         for (const v of videos) {
             if (omtInplayMvIsPrimary(v)) continue;
@@ -606,11 +702,9 @@
             omtInplayMvMountTile(v);
             mounted++;
         }
-        // Grid size changed (2↔4): clear dragged left/top so panels stay visible
-        // inside the new tile box (no per-frame work — only on count change).
         if (gridChanged) {
             inplayMvTiles.forEach((rec) => {
-                const p = rec && rec.panel;
+                const p = omtInplayMvQ(rec, 'omt-controls-panel');
                 if (!p || !p.style) return;
                 try {
                     p.style.removeProperty('left');
@@ -619,6 +713,12 @@
                     p.style.removeProperty('bottom');
                     p.style.removeProperty('transform');
                 } catch (_) {}
+                const shell = rec.root && rec.root.parentElement;
+                if (shell) {
+                    const sw = shell.clientWidth || 0;
+                    const sh = shell.clientHeight || 0;
+                    rec.root.classList.toggle('omt-compact', sw < 520 || sh < 300);
+                }
             });
         }
         if (!inplayMvHotkeyVid || !inplayMvHotkeyVid.isConnected) {
@@ -647,13 +747,10 @@
         if (inplayMvArmMo || !host) return;
         inplayMvArmHost = host;
         inplayMvArmMo = new MutationObserver((mutations) => {
-            // When already multi-view: resync on tile add/remove.
             if (inplayMvActive) {
                 omtInplayMvScheduleSync();
                 return;
             }
-            // Inactive single-video: only wake when a VIDEO node is added.
-            // Ignores VJS control-bar thrash so one-tile pages stay quiet.
             for (let i = 0; i < mutations.length; i++) {
                 const nodes = mutations[i].addedNodes;
                 if (!nodes || !nodes.length) continue;
@@ -668,8 +765,6 @@
                 }
             }
         });
-        // Subtree: true so nested tile shells are seen; the VIDEO-add gate
-        // above keeps single-tile control-bar mutations from scheduling work.
         try {
             inplayMvArmMo.observe(host, { childList: true, subtree: true });
             try { window.__omtInplayMvArmInstalled = true; } catch (_) {}
@@ -679,8 +774,6 @@
         }
     }
 
-    /** Called once after InPlay HUD mounts. Single-video pages without a
-     *  multi-view host install nothing. */
     function omtInplayMvOnHudReady() {
         if (!(site && site.id === 'inplayip') || !omtRoot) return;
         const videos = omtInplayMvListVideos();
@@ -692,8 +785,6 @@
             omtInplayMvArm(host);
             return;
         }
-        // Arm only when the known multi-view shell exists. Plain single-player
-        // mocks (no .players-container) stay at zero extra observers.
         const host = document.querySelector('.players-container');
         if (host) omtInplayMvArm(host);
     }
