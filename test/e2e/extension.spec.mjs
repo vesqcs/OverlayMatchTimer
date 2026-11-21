@@ -5661,6 +5661,11 @@ print(lit)
       pass: mv2.ok === true,
       detail: mv2
     });
+    // Collapse more panels so screenshot matches primary (kickoff row hidden).
+    await page.evaluate(() => {
+      document.querySelectorAll('[data-omt-tile-root] .omt-more-toggle[aria-expanded="true"]').forEach((b) => b.click());
+    });
+    await page.waitForTimeout(80);
     await page.screenshot({ path: path.join(ARTIFACTS, 'v232_inplay_mv_2tile.png'), fullPage: true });
 
     await page.goto(`${base}/inplayip-multiview-mock.html?tiles=4`, { waitUntil: 'domcontentloaded' });
@@ -5724,6 +5729,10 @@ print(lit)
       pass: mv4.ok === true,
       detail: mv4
     });
+    await page.evaluate(() => {
+      document.querySelectorAll('[data-omt-tile-root] .omt-more-toggle[aria-expanded="true"]').forEach((b) => b.click());
+    });
+    await page.waitForTimeout(80);
     await page.screenshot({ path: path.join(ARTIFACTS, 'v232_inplay_mv_4tile.png'), fullPage: true });
 
     await page.evaluate(() => { window.__omtSetTiles && window.__omtSetTiles(1); });
