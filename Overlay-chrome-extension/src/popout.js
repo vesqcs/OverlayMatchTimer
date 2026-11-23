@@ -1,26 +1,22 @@
-/* Document Picture-in-Picture pop-out (v2.4.4) — additive only.
+/* Document Picture-in-Picture pop-out (v2.4.5) — additive only.
  *
  * Full-bleed video + OMT match timer (full MM:SS, never abbreviated) +
- * hover-only chrome:
- *   - narrow (< OMT_PIP_CONTROLS_MIN_W, or short height): real timeline +
- *     slim icon-only transport + video time readout + hover tooltips
- *   - wide: real timeline at bottom + COMPACT small OMT control panel
- *     (no speed row, no transform scale — hits stay accurate)
+ * hover-only chrome (video never shrinks — chrome overlays the stage):
+ *   - narrow (< ~800px): timeline ON TOP, then icon row + video time below
+ *     (2.4.3 layout Vasco liked) + hover tooltips
+ *   - wide (≥ ~800px): COMPACT small OMT control panel ABOVE timeline;
+ *     timeline at the bottom (no speed-row chips, no transform scale)
  *
- * Field fixes vs 2.4.3: raise large-mode threshold, compact panel, hide LIVE
- * on local, timeline under panel, scrubber progress, panel buttons, PiP-local
- * drag, PiP keydown focus, icon-row tips, black/orange placeholder, hide
- * pop-out button inside the PiP panel.
+ * v2.4.5: restore icon-mode order (timeline → icons). Threshold ~800.
  *
  * No Return button — Chrome's PiP title bar is enough.
  * Unsupported → hide button; failures silent. Does not change player hooks,
  * seek/PDT math, adapters, or host media logic.
  */
     /**
-     * Below this width → icon row. Tuned so a medium window (~640×400) stays
-     * on the icon row; large mode only when the PiP is genuinely big.
+     * Below this width → icon row. ~640×400 stays icon; ~800+ uses compact panel.
      */
-    const OMT_PIP_CONTROLS_MIN_W = 720;
+    const OMT_PIP_CONTROLS_MIN_W = 800;
     /**
      * Soft height floor: only force icon-row when the window is both short AND
      * not wide. Default 800×450 still opens large; ~640×400 stays icon-row via width.
@@ -142,22 +138,25 @@
             'border:1px solid rgba(255,255,255,0.12)!important;',
             'white-space:nowrap!important;overflow:visible!important;max-width:none!important;',
             'text-overflow:clip!important;box-sizing:border-box!important;}',
-            /* Hover chrome — overlay only. Column: controls then timeline at bottom. */
+            /* Hover chrome — overlay only (video stays full-bleed; never shrinks). */
             '.omt-pip-chrome{position:absolute;left:0;right:0;bottom:0;z-index:7;pointer-events:none;',
             'opacity:0;transform:translateY(6px);transition:opacity .18s ease,transform .18s ease;',
             'padding:36px 10px 10px;box-sizing:border-box;',
             'background:linear-gradient(to top,rgba(0,0,0,0.78) 0%,rgba(0,0,0,0.32) 55%,rgba(0,0,0,0) 100%);',
             'display:flex;flex-direction:column;gap:8px;align-items:stretch;}',
             '.omt-pip-root.omt-pip-chrome-on .omt-pip-chrome{opacity:1;transform:none;pointer-events:auto;}',
-            /* Real timeline — last in flex = anchored under the control panel. */
+            /* Timeline base positioning — flex order set per mode below. */
             '.omt-pip-chrome .omt-timeline-bar,.omt-pip-chrome #omt-timeline-bar{',
             'position:relative!important;left:auto!important;right:auto!important;bottom:auto!important;',
             'inset:auto!important;width:100%!important;padding:0!important;margin:0!important;',
-            'background:transparent!important;pointer-events:auto!important;z-index:1!important;',
-            'order:3;}',
+            'background:transparent!important;pointer-events:auto!important;z-index:1!important;}',
             '.omt-pip-chrome .omt-timeline-chrome-row{display:none!important;}',
             '.omt-pip-chrome .omt-timeline-track{pointer-events:auto!important;}',
             '.omt-pip-chrome .omt-timeline-hover-tip{position:fixed!important;}',
+            /* Period ticks/labels: hidden at rest; only on timeline hover (same as main). */
+            '.omt-pip-chrome .omt-timeline-period-ticks{opacity:0!important;transition:opacity 140ms ease;}',
+            '.omt-pip-chrome .omt-timeline-bar.is-timeline-hover .omt-timeline-period-ticks,',
+            '.omt-pip-chrome .omt-timeline-bar:hover .omt-timeline-period-ticks{opacity:1!important;}',
             /* Scrubber: light fill = played up to playhead; dark ahead; thumb at playhead. */
             '.omt-pip-chrome .timeline-slider,.omt-pip-chrome #omt-timeline-slider{',
             'background:linear-gradient(to right,var(--omt-scrub) 0%,var(--omt-scrub) var(--omt-progress,0%),',
@@ -167,7 +166,9 @@
             '.omt-pip-chrome .timeline-slider:active::-webkit-slider-thumb{opacity:1!important;}',
             '.omt-pip-root.omt-pip-chrome-on .omt-pip-chrome .timeline-slider::-moz-range-thumb,',
             '.omt-pip-chrome .omt-timeline-bar:hover .timeline-slider::-moz-range-thumb{opacity:1!important;}',
-            /* Narrow: icon-only slim row + time on the right */
+            /* Narrow (2.4.3 layout): timeline ON TOP, icon row + videotime BELOW. */
+            '.omt-pip-root.omt-pip-narrow .omt-pip-chrome .omt-timeline-bar,',
+            '.omt-pip-root.omt-pip-narrow .omt-pip-chrome #omt-timeline-bar{order:1;}',
             '.omt-pip-icon-row{display:none;align-items:center;gap:8px;width:100%;pointer-events:auto;',
             'min-height:28px;box-sizing:border-box;order:2;}',
             '.omt-pip-root.omt-pip-narrow .omt-pip-icon-row{display:flex;}',
@@ -183,11 +184,13 @@
             '.omt-pip-icons button.omt-pip-skip-long .omt-icon{width:17px;height:17px;}',
             '.omt-pip-videotime{margin-left:auto;font:600 11px/1 var(--omt-mono);',
             'font-variant-numeric:tabular-nums;color:#c8c8c8;white-space:nowrap;flex-shrink:0;}',
-            /* Wide: compact small control panel — NO transform scale (breaks hit-testing). */
+            /* Wide: compact panel ABOVE timeline (timeline at bottom). */
             '.omt-pip-panel-slot{display:none;width:100%;justify-content:center;pointer-events:auto;',
             'order:1;position:relative;min-height:0;}',
             '.omt-pip-root:not(.omt-pip-narrow) .omt-pip-panel-slot{display:flex;}',
             '.omt-pip-root.omt-pip-narrow .omt-pip-panel-slot{display:none!important;}',
+            '.omt-pip-root:not(.omt-pip-narrow) .omt-pip-chrome .omt-timeline-bar,',
+            '.omt-pip-root:not(.omt-pip-narrow) .omt-pip-chrome #omt-timeline-bar{order:2;}',
             '.omt-pip-panel-slot .omt-controls-panel,.omt-pip-panel-slot #omt-controls-panel,',
             '.omt-pip-root > .omt-controls-panel.omt-pip-panel-floating{',
             'position:relative!important;left:auto!important;right:auto!important;top:auto!important;bottom:auto!important;',
@@ -1425,7 +1428,11 @@
             } catch (_) {}
         }
 
-        /* Order: panel slot + icon row first, timeline LAST (bottom-anchored). */
+        /*
+         * DOM append order is secondary — CSS flex `order` owns layout:
+         *   narrow: timeline (1) → icon row (2)
+         *   wide:   panel slot (1) → timeline (2)
+         */
         chrome.appendChild(panelSlot);
         chrome.appendChild(iconRow);
 
@@ -1636,4 +1643,9 @@
         window.__omtPopoutClose = () => omtPopoutClose();
         window.__omtPipControlsMinW = OMT_PIP_CONTROLS_MIN_W;
         window.__omtPipControlsMinH = OMT_PIP_CONTROLS_MIN_H;
+        window.__omtPopoutRefreshTicks = () => {
+            if (omtPipState && omtPipState.timelineBar) {
+                omtPopoutRefreshPeriodTicks(omtPipState.timelineBar);
+            }
+        };
     } catch (_) {}
