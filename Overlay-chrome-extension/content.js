@@ -9381,13 +9381,16 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         console.log('[OMT] Local player file/dnd installed.');
     }
 
-/* InPlay multi-view (v2.3.7): full primary-identical HUD per secondary tile.
+/* InPlay multi-view (v2.3.8): full primary-identical HUD per secondary tile.
  *
  * Scope: UI layer only. Player/seek/playback helpers stay untouched —
  * tile actions briefly swap global `vid` via omtInplayMvWithVideo().
  * Each secondary tile reuses buildHTML(prefix) so the panel + bottom bar
  * match the primary tile. Independent match clock + kickoff state per tile
  * (video-time offsets; no shared kickoff1 globals).
+ *
+ * Clock chip: only after that tile's own kickoff is set. Fresh tiles and
+ * post-clear (X) show nothing — no Pre-Match chip (v2.3.8).
  *
  * Single-video path: identical to 2.2.23 — no MutationObserver, no
  * tile roots, no hotkey divert. Multi-view arms only when
@@ -9615,27 +9618,45 @@ var OMT_SYNC_FEATURE_ENABLED = false;
     }
 
     /* ---- Independent per-tile clock / kickoff (video-time, not PDT) ----
-     * Clock wrap stays visible on every secondary tile (like primary when
-     * timer chrome is on): Pre-Match until that tile's own kickoff. */
+     * Chip only when this tile has an active kickoff (timerAtivo). Fresh /
+     * cleared tiles show nothing — matches primary limparTimer hide. */
     function omtInplayMvEnsureClockVisible(rec) {
         if (!rec) return;
         const wrap = omtInplayMvQ(rec, 'match-timer-wrap');
         const timerUI = omtInplayMvQ(rec, 'match-timer');
-        if (wrap) wrap.style.display = 'block';
+        if (wrap) {
+            wrap.style.display = 'block';
+            wrap.classList.add('is-visible');
+        }
         if (timerUI) timerUI.style.display = 'block';
         try { rec.root.classList.add('omt-timer-on'); } catch (_) {}
+    }
+
+    function omtInplayMvHideClock(rec) {
+        if (!rec) return;
+        const wrap = omtInplayMvQ(rec, 'match-timer-wrap');
+        const timerUI = omtInplayMvQ(rec, 'match-timer');
+        if (wrap) {
+            wrap.style.display = 'none';
+            wrap.classList.remove('is-visible');
+        }
+        if (timerUI) {
+            timerUI.style.display = 'none';
+            timerUI.innerText = '';
+        }
+        try { rec.root.classList.remove('omt-timer-on'); } catch (_) {}
     }
 
     function omtInplayMvPaintClock(rec) {
         if (!rec || !rec.video) return;
         const timerUI = omtInplayMvQ(rec, 'match-timer');
         if (!timerUI) return;
-        omtInplayMvEnsureClockVisible(rec);
+        // No kickoff / after X clear → nothing on this tile.
         if (!rec.timerAtivo) {
-            timerUI.innerText = 'Pre-Match';
-            timerUI.style.color = '#ffcc00';
+            omtInplayMvHideClock(rec);
             return;
         }
+        omtInplayMvEnsureClockVisible(rec);
         const tAtual = rec.video.currentTime || 0;
         const k1 = rec.kickoff1;
         const k2 = rec.kickoff2;
@@ -9656,6 +9677,7 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             kickoffUsar = k1;
             baseUsar = 0;
         }
+        // Kickoff set but playhead still before it → Pre-Match is correct.
         if (k1 != null && tAtual < k1) {
             timerUI.innerText = 'Pre-Match';
             timerUI.style.color = '#ffcc00';
@@ -9717,8 +9739,8 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         const c2 = omtInplayMvQ(rec, 'omt-custom-c2');
         if (c1) c1.style.display = 'none';
         if (c2) c2.style.display = 'none';
-        // Keep clock visible — independent Pre-Match, not hidden.
-        omtInplayMvPaintClock(rec);
+        // Clear/X: hide chip entirely (no Pre-Match leftover).
+        omtInplayMvHideClock(rec);
     }
 
     function omtInplayMvNudgeKickoff(rec, deltaSec) {
@@ -9866,6 +9888,31 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         }
     }
 
+    function omtInplayMvFitMoreInTile(rec) {
+        if (!rec || !rec.root) return;
+        const panel = omtInplayMvQ(rec, 'omt-controls-panel');
+        const more = omtInplayMvQ(rec, 'omt-more-panel');
+        if (!panel || !more) return;
+        // Default MV S panel clearance above the timeline bar.
+        const defaultBottom = 100;
+        if (!more.classList.contains('is-open')) {
+            panel.style.bottom = defaultBottom + 'px';
+            return;
+        }
+        const tileH = rec.root.clientHeight || 0;
+        if (tileH < 8) return;
+        // Measure with default bottom first, then nudge up so the open more
+        // panel stays inside the tile (not clipped by .video-js overflow).
+        panel.style.bottom = defaultBottom + 'px';
+        const pr = panel.getBoundingClientRect();
+        const tr = rec.root.getBoundingClientRect();
+        const overflowTop = tr.top - pr.top;
+        if (overflowTop > 1) {
+            const next = Math.max(8, defaultBottom - Math.ceil(overflowTop) - 4);
+            panel.style.bottom = next + 'px';
+        }
+    }
+
     function omtInplayMvToggleMore(rec) {
         const more = omtInplayMvQ(rec, 'omt-more-panel');
         const btn = omtInplayMvQ(rec, 'omt-more-toggle');
@@ -9875,17 +9922,27 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         more.classList.toggle('is-open', open);
         more.setAttribute('aria-hidden', open ? 'false' : 'true');
         btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        btn.classList.toggle('is-open', open);
+        try {
+            btn.setAttribute('data-tip', open ? 'Less controls' : 'More controls');
+        } catch (_) {}
         if (panel) panel.classList.toggle('omt-more-open', open);
         const coll = btn.querySelector('.omt-more-icon-collapsed');
         const exp = btn.querySelector('.omt-more-icon-expanded');
         if (coll) coll.hidden = open;
         if (exp) exp.hidden = !open;
+        omtInplayMvFitMoreInTile(rec);
     }
 
     function omtInplayMvRemoveTile(videoEl) {
         const rec = inplayMvTiles.get(videoEl);
         if (!rec) return;
         try { if (rec.ac) rec.ac.abort(); } catch (_) {}
+        try {
+            if (rec._shell && rec._shellOverflow != null) {
+                rec._shell.style.overflow = rec._shellOverflow;
+            }
+        } catch (_) {}
         try {
             if (rec.root && rec.root.parentNode) rec.root.parentNode.removeChild(rec.root);
         } catch (_) {}
@@ -9922,18 +9979,26 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         const sh = shell.clientHeight || 0;
         if (sw < 520 || sh < 300) root.classList.add('omt-compact');
 
+        // Allow More controls to expand inside the tile without .video-js clipping.
+        let shellOverflow = '';
+        try {
+            shellOverflow = shell.style.overflow || '';
+            shell.style.setProperty('overflow', 'visible', 'important');
+        } catch (_) {}
+
         const ac = typeof AbortController === 'function' ? new AbortController() : null;
         const sig = ac ? { signal: ac.signal } : undefined;
         const rec = {
             root, prefix, video: videoEl, ac,
+            _shell: shell, _shellOverflow: shellOverflow,
             dragging: false, _progPct: null, _lastVol: 1,
             timerAtivo: false, offsetEmSegundos: 0, tempoBase: 0,
             kickoff1: null, kickoff2: null, kickoffC1: null, kickoffC2: null,
             previousHalf: '1', customMinC1: 90, customMinC2: 105
         };
         omtInplayMvApplyPrimaryChrome(rec);
-        // Show independent Pre-Match clock immediately (every tile, like primary chrome).
-        omtInplayMvPaintClock(rec);
+        // Fresh tile: no kickoff → no clock chip (v2.3.8).
+        omtInplayMvHideClock(rec);
 
         const run = (fn) => {
             omtInplayMvSetHotkeyTarget(videoEl);

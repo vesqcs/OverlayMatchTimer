@@ -2503,6 +2503,28 @@ html.omt-host-xeatre.omt-hud-on .video-js.vjs-fluid {
     top: auto;
 }
 
+/* v2.3.8: More controls on MV S+Compact — full kickoff row, not clipped,
+   stays inside the tile panel (JS also nudges bottom when needed). */
+.omt-tile-root .omt-controls-panel.omt-panel-size-small .omt-more-panel.is-open,
+.omt-tile-root .omt-controls-panel.omt-panel-compact .omt-more-panel.is-open {
+    max-height: none;
+    overflow: visible;
+    margin: 6px 8px 0;
+    padding: 6px;
+}
+.omt-tile-root .omt-controls-panel.omt-panel-size-small .omt-more-label,
+.omt-tile-root .omt-controls-panel.omt-panel-size-small .omt-more-block,
+.omt-tile-root .omt-controls-panel.omt-panel-compact .omt-more-label,
+.omt-tile-root .omt-controls-panel.omt-panel-compact .omt-more-block {
+    font-size: 11px;
+}
+/* Host shells often use overflow:hidden; keep HUD/more visible in MV tiles. */
+.video-js:has(> .omt-tile-root),
+.vjs-player:has(> .omt-tile-root),
+.player-container:has(> .omt-tile-root) {
+    overflow: visible !important;
+}
+
 /* Bottom bar — class styles already shared; restore #omt-root-scoped vol slider. */
 .omt-tile-root .omt-timeline-bar {
     pointer-events: none;
