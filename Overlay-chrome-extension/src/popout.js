@@ -1,16 +1,19 @@
-/* Document Picture-in-Picture pop-out (v2.4.6) — additive only.
+/* Document Picture-in-Picture pop-out (v2.4.8) — additive only.
  *
  * Full-bleed video + OMT match timer (full MM:SS, never abbreviated) +
  * hover-only chrome (video never shrinks — chrome overlays the stage):
  *   - narrow (< ~800px): timeline ON TOP, then icon row + video time below
  *   - wide (≥ ~800px): COMPACT small OMT control panel ABOVE timeline
  *
- * v2.4.6 (real Document PiP field fixes):
- *   - Drive timer/scrubber/panel chrome from the PiP window's rAF so opener
- *     background throttling cannot freeze the chip while video plays.
- *   - Rebind cached UI refs to the live PiP nodes after reparent.
- *   - Fix panel drag (no left:auto !important on floating; PiP coords).
- *   - Mute / volume / eye sync against PiP DOM; remove More chevron in PiP.
+ * v2.4.6: PiP-window paint + rebind; drag CSS; mute/vol/eye; drop More.
+ * v2.4.8 (real Chrome field fixes):
+ *   - Timer chip: PiP setInterval + skip SPA teardown while PiP is open
+ *     (moved <video> made findVideo() null → teardown wiped timerAtivo /
+ *     keydown within ~1.5s — the real frozen-chip cause).
+ *   - Panel play/pause: orange .playing was #omt-root-scoped — mirror under
+ *     .omt-pip-root; sync icons from live PiP nodes every tick.
+ *   - Icon-row play: toggle the PiP video element directly; skip opener
+ *     auto-pause-on-hide while Document PiP is open.
  *
  * No Return button — Chrome's PiP title bar is enough.
  * Unsupported → hide button; failures silent. Does not change player hooks,
@@ -211,6 +214,18 @@
             '.omt-pip-root .omt-tile-popout{display:none!important;}',
             '.omt-pip-root #omt-more-toggle,.omt-pip-root .omt-more-toggle{display:none!important;}',
             '.omt-pip-root #omt-more-panel,.omt-pip-root .omt-more-panel{display:none!important;}',
+            /* Play/pause orange — content.css scopes .playing under #omt-root;
+               panel is reparented into .omt-pip-root so those rules miss it. */
+            '.omt-pip-root #omt-btn-play,.omt-pip-root .ctrl-btn.btn-play,',
+            '.omt-pip-root .omt-transport-seg .ctrl-btn.btn-play{',
+            'color:#e8e8e8!important;background:transparent!important;filter:none!important;}',
+            '.omt-pip-root #omt-btn-play.playing,.omt-pip-root #omt-btn-play.playing:hover,',
+            '.omt-pip-root .ctrl-btn.btn-play.playing,.omt-pip-root .ctrl-btn.btn-play.playing:hover,',
+            '.omt-pip-root .omt-transport-seg .ctrl-btn.btn-play.playing{',
+            'color:#F5831F!important;background:transparent!important;filter:none!important;}',
+            '.omt-pip-root #omt-btn-play.playing:hover,.omt-pip-root .ctrl-btn.btn-play.playing:hover{',
+            'background:rgba(245,131,31,0.12)!important;}',
+            '.omt-pip-root .omt-timeline-play-btn.playing{color:#F5831F!important;}',
             /* Icon-row tooltips (OMT tip style). */
             '.omt-pip-icon-tip{position:fixed;z-index:2147483646;pointer-events:none;',
             'background:#141414;color:#f0f0f0;border:1px solid rgba(255,255,255,0.14);',
@@ -290,6 +305,115 @@
         }
         playBtn.setAttribute('aria-label', on ? 'Pause' : 'Play');
         playBtn.classList.toggle('playing', on);
+    }
+
+    /** Toggle the live PiP video element (not opener-cached vid) and refresh icons. */
+    function omtPopoutToggleVideoPlayback(state) {
+        if (!state || !state.video) return;
+        const videoEl = state.video;
+        const wantPlay = videoEl.paused || videoEl.ended;
+        try {
+            if (typeof clearAutoPauseFlag === 'function') clearAutoPauseFlag();
+            if (typeof clearExaminoHostResumeIntent === 'function') clearExaminoHostResumeIntent();
+        } catch (_) {}
+        if (wantPlay) {
+            try {
+                const p = videoEl.play();
+                if (p && typeof p.then === 'function') {
+                    p.then(() => omtPopoutSyncAllPlayUi(state))
+                        .catch(() => omtPopoutSyncAllPlayUi(state));
+                }
+            } catch (_) {}
+            try { if (typeof mostrarOSD === 'function') mostrarOSD('Play'); } catch (_) {}
+        } else {
+            try { videoEl.pause(); } catch (_) {}
+            try { if (typeof mostrarOSD === 'function') mostrarOSD('Pause'); } catch (_) {}
+        }
+        omtPopoutSyncAllPlayUi(state);
+    }
+
+    /**
+     * Update panel + timeline + icon-row play/pause chrome from the live PiP
+     * video — query PiP nodes directly (cached btnMainPlay can go stale).
+     */
+    function omtPopoutSyncAllPlayUi(state) {
+        if (!state || !state.video) return;
+        const videoEl = state.video;
+        const on = !videoEl.paused && !videoEl.ended;
+        try {
+            if (state.controlsPanel) {
+                const btn = state.controlsPanel.querySelector(
+                    '#omt-btn-play, .btn-play, .omt-tile-play'
+                );
+                if (btn) {
+                    if (typeof omtIcon === 'function') {
+                        btn.innerHTML = omtIcon(on ? 'pause' : 'play', 22);
+                    }
+                    btn.classList.toggle('playing', on);
+                    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+                    btn.setAttribute('aria-label', on ? 'Pause' : 'Play');
+                }
+                state.controlsPanel.classList.toggle('playing-state', on);
+            }
+        } catch (_) {}
+        try {
+            if (state.timelineBar) {
+                const tb = state.timelineBar.querySelector(
+                    '#omt-timeline-play-btn, .omt-timeline-play-btn, .omt-tile-bar-play'
+                );
+                if (tb) {
+                    if (typeof omtIcon === 'function') {
+                        tb.innerHTML = omtIcon(on ? 'pause' : 'play', 16);
+                    }
+                    tb.classList.toggle('playing', on);
+                    tb.setAttribute('aria-pressed', on ? 'true' : 'false');
+                    tb.setAttribute('aria-label', on ? 'Pause' : 'Play');
+                }
+            }
+        } catch (_) {}
+        try {
+            if (state.iconRow) omtPopoutSyncPlayIcon(state.iconRow, videoEl);
+        } catch (_) {}
+        /* Keep opener-cached refs honest for any shared sync helpers. */
+        try {
+            if (state.controlsPanel) {
+                const play = state.controlsPanel.querySelector('#omt-btn-play, .btn-play');
+                if (play) btnMainPlay = play;
+            }
+            if (state.timelineBar) {
+                const tb = state.timelineBar.querySelector('#omt-timeline-play-btn, .omt-timeline-play-btn');
+                if (tb) btnTimelinePlay = tb;
+            }
+        } catch (_) {}
+    }
+
+    /**
+     * Paint the match-timer chip that lives in the PiP document.
+     * Bind vid/timerUI to the live PiP nodes for this tick so atualizarRelogio
+     * cannot write the opener (or a stale ref) while the tab is backgrounded.
+     */
+    function omtPopoutPaintTimerChip(state) {
+        if (!state || !state.timerWrap || !state.video) return null;
+        const chip = state.timerWrap.querySelector(
+            '#match-timer, .omt-match-timer, [id$="match-timer"]'
+        );
+        if (!chip) return null;
+        const prevVid = vid;
+        const prevTimer = timerUI;
+        try {
+            vid = state.video;
+            timerUI = chip;
+            if (typeof atualizarRelogio === 'function') atualizarRelogio();
+        } catch (_) {
+        } finally {
+            /* Keep bindings on PiP targets for the duration of the pop-out. */
+            try { timerUI = chip; } catch (_) {}
+            try { vid = state.video; } catch (_) {
+                try { vid = prevVid; } catch (_) {}
+            }
+            void prevTimer;
+        }
+        return chip.textContent || '';
     }
 
     function omtPopoutPaintVideoTime(iconRow, videoEl) {
@@ -378,12 +502,23 @@
             playBtn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                run(() => {
-                    if (typeof togglePlay === 'function') togglePlay();
-                    else if (videoEl.paused) videoEl.play().catch(() => {});
-                    else videoEl.pause();
-                });
-                omtPopoutSyncPlayIcon(iconRow, videoEl);
+                e.stopImmediatePropagation();
+                if (omtPipState && omtPipState.video === videoEl) {
+                    omtPopoutToggleVideoPlayback(omtPipState);
+                } else {
+                    run(() => {
+                        if (videoEl.paused || videoEl.ended) {
+                            try {
+                                const p = videoEl.play();
+                                if (p && typeof p.catch === 'function') p.catch(() => {});
+                            } catch (_) {}
+                        } else {
+                            try { videoEl.pause(); } catch (_) {}
+                        }
+                    });
+                    omtPopoutSyncPlayIcon(iconRow, videoEl);
+                }
+                if (omtPipState && omtPipState._chromeShow) omtPipState._chromeShow();
             });
         }
         iconRow.addEventListener('click', (e) => e.stopPropagation());
@@ -849,11 +984,15 @@
 
             if (id === 'omt-btn-play' || t.classList.contains('btn-play') || t.classList.contains('omt-tile-play')) {
                 handled = true;
-                run(() => {
-                    if (typeof togglePlay === 'function') togglePlay();
-                    else if (videoEl.paused) videoEl.play().catch(() => {});
-                    else videoEl.pause();
-                });
+                if (omtPipState && omtPipState.video === videoEl) {
+                    omtPopoutToggleVideoPlayback(omtPipState);
+                } else {
+                    run(() => {
+                        if (typeof togglePlay === 'function') togglePlay();
+                        else if (videoEl.paused) videoEl.play().catch(() => {});
+                        else videoEl.pause();
+                    });
+                }
             } else if (id === 'omt-prev-frame' || (t.hasAttribute('data-frame') && t.getAttribute('data-frame') === '-1')) {
                 handled = true;
                 run(() => { if (typeof retrocederFrame === 'function') retrocederFrame(); });
@@ -925,7 +1064,7 @@
                 e.stopPropagation();
                 e.stopImmediatePropagation();
                 if (omtPipState) {
-                    omtPopoutSyncPlayIcon(omtPipState.iconRow, videoEl);
+                    omtPopoutSyncAllPlayUi(omtPipState);
                     omtPopoutPaintVideoTime(omtPipState.iconRow, videoEl);
                     omtPopoutSyncTimelineProgress(omtPipState);
                     if (omtPipState._chromeShow) omtPipState._chromeShow();
@@ -1027,6 +1166,12 @@
                 const sl = state.timelineBar.querySelector('.timeline-slider, #omt-timeline-slider');
                 if (sl) timelineSlider = sl;
             } catch (_) {}
+            try {
+                const tb = state.timelineBar.querySelector(
+                    '#omt-timeline-play-btn, .omt-timeline-play-btn'
+                );
+                if (tb) btnTimelinePlay = tb;
+            } catch (_) {}
         }
     }
 
@@ -1039,14 +1184,15 @@
             if (videoEl && typeof atualizarIconeVolume === 'function') {
                 const vol = videoEl.muted ? 0 : (videoEl.volume || 0);
                 const vr = panel.querySelector('#omt-volume-range');
-                if (vr && document.activeElement !== vr) {
+                const activeDoc = (state.win && state.win.document) || document;
+                if (vr && activeDoc.activeElement !== vr) {
                     try { vr.value = String(vol); } catch (_) {}
                 }
                 atualizarIconeVolume(vol);
             }
         } catch (_) {}
         try {
-            if (typeof syncPlayButtonFromVideo === 'function') syncPlayButtonFromVideo();
+            omtPopoutSyncAllPlayUi(state);
         } catch (_) {}
         try {
             const eye = panel.querySelector('#omt-hide-panel, .omt-tile-hide');
@@ -1068,53 +1214,57 @@
     }
 
     /**
-     * PiP-window rAF loop — opener rAF/timeupdate paints freeze when the tab is
-     * backgrounded behind Document PiP. Drive all visible chrome from here.
+     * PiP paint loop — opener rAF/timeupdate freeze when the tab is behind
+     * Document PiP. Prefer setInterval on the PiP window (survives opener
+     * backgrounding); keep a light rAF as a secondary pump.
      */
     function omtPopoutStartPipPaintLoop(state) {
         if (!state || !state.win) return;
         const win = state.win;
         let raf = 0;
+        let intervalId = 0;
         let lastClock = '';
         const tick = () => {
             if (!omtPipState || omtPipState !== state) return;
             try {
-                if (typeof atualizarRelogio === 'function') atualizarRelogio();
+                const text = omtPopoutPaintTimerChip(state);
+                if (text && text !== lastClock) lastClock = text;
                 omtPopoutSyncTimelineProgress(state);
                 if (state.iconRow && state.video) {
                     omtPopoutSyncPlayIcon(state.iconRow, state.video);
                     omtPopoutPaintVideoTime(state.iconRow, state.video);
                 }
-                /* Light chrome sync ~4 Hz to keep mute/eye/play icons honest. */
                 const now = Date.now();
-                if (!state._lastChromeSync || now - state._lastChromeSync > 250) {
+                if (!state._lastChromeSync || now - state._lastChromeSync > 200) {
                     state._lastChromeSync = now;
                     omtPopoutSyncPipPanelChrome(state);
                 }
-                if (state.timerWrap) {
-                    const chip = state.timerWrap.querySelector(
-                        '#match-timer, .omt-match-timer, [id$="match-timer"]'
-                    );
-                    if (chip) {
-                        const t = chip.textContent || '';
-                        if (t && t !== lastClock) lastClock = t;
-                    }
-                }
             } catch (_) {}
+        };
+        const rafPump = () => {
+            if (!omtPipState || omtPipState !== state) return;
+            tick();
             try {
-                raf = win.requestAnimationFrame(tick);
+                raf = win.requestAnimationFrame(rafPump);
             } catch (_) {
-                try { raf = win.setTimeout(tick, 50); } catch (_) {}
+                raf = 0;
             }
         };
         try {
-            raf = win.requestAnimationFrame(tick);
+            intervalId = win.setInterval(tick, 100);
         } catch (_) {
-            try { raf = win.setTimeout(tick, 50); } catch (_) {}
+            try { intervalId = setInterval(tick, 100); } catch (_) { intervalId = 0; }
         }
+        try {
+            raf = win.requestAnimationFrame(rafPump);
+        } catch (_) {
+            raf = 0;
+        }
+        tick();
         state._pipPaintStop = () => {
-            try { win.cancelAnimationFrame(raf); } catch (_) {}
-            try { win.clearTimeout(raf); } catch (_) {}
+            try { if (raf) win.cancelAnimationFrame(raf); } catch (_) {}
+            try { if (intervalId) win.clearInterval(intervalId); } catch (_) {}
+            try { if (intervalId) clearInterval(intervalId); } catch (_) {}
             state._pipPaintStop = null;
         };
     }
@@ -1651,12 +1801,7 @@
             if (e.target && e.target.closest &&
                 e.target.closest('.omt-pip-chrome, .omt-pip-timer-host, .omt-controls-panel')) return;
             if (!(e.target === stage || (e.target && e.target.tagName === 'VIDEO'))) return;
-            omtPopoutWithTargetVideo(videoEl, () => {
-                if (typeof togglePlay === 'function') togglePlay();
-                else if (videoEl.paused) videoEl.play().catch(() => {});
-                else videoEl.pause();
-            });
-            omtPopoutSyncPlayIcon(iconRow, videoEl);
+            omtPopoutToggleVideoPlayback(state);
             if (state._chromeShow) state._chromeShow();
         });
 
@@ -1690,8 +1835,9 @@
         try { root.focus({ preventScroll: true }); } catch (_) {}
         if (state._chromeShow) state._chromeShow();
         try {
-            if (typeof atualizarRelogio === 'function') atualizarRelogio();
+            omtPopoutPaintTimerChip(state);
             omtPopoutSyncPipPanelChrome(state);
+            omtPopoutSyncAllPlayUi(state);
         } catch (_) {}
     }
 

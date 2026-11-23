@@ -56,6 +56,11 @@
     }
 
     function shouldSkipHidePause() {
+        // Document PiP: opener goes visibilityState=hidden when the pop-out is
+        // focused. Pausing would freeze the moved video + match-timer chip.
+        try {
+            if (typeof omtPipState !== 'undefined' && omtPipState) return true;
+        } catch (_) {}
         if (storageKeepPlayingOnAltTab()) return true;
         if (typeof storageGetShuttleEnabled === 'function' && storageGetShuttleEnabled()) {
             return true;
