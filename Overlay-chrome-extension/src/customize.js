@@ -13,6 +13,8 @@
         speedUp:     { key: 'c', label: 'Speed up' },
         speedReset:  { key: 'x', label: 'Speed 1.0×' },
         kickoff:     { key: 'k', label: 'Mark kick-off' },
+        kickoff1:    { key: '1', label: 'Kick-off 1st Half' },
+        kickoff2:    { key: '2', label: 'Kick-off 2nd Half' },
         live:        { key: 'l', label: 'Go to Live' },
         hide:        { key: 'h', label: 'Hide/Show Controls' }
     };
@@ -20,7 +22,8 @@
     const OMT_HOTKEY_ORDER = [
         'playPause', 'skipBack2', 'skipFwd2', 'skipBack10', 'skipFwd10',
         'skipBack2m', 'skipFwd2m', 'frameBack', 'frameFwd',
-        'speedDown', 'speedReset', 'speedUp', 'kickoff', 'live', 'hide'
+        'speedDown', 'speedReset', 'speedUp', 'kickoff', 'kickoff1', 'kickoff2',
+        'live', 'hide'
     ];
 
     const OMT_SKIP_ACTION_DEFAULTS = {

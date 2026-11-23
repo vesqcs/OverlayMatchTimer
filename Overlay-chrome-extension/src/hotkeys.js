@@ -61,6 +61,12 @@
             case 'kickoff':
                 iniciarTimer();
                 break;
+            case 'kickoff1':
+                iniciarTimer('1');
+                break;
+            case 'kickoff2':
+                iniciarTimer('2');
+                break;
             case 'live':
                 irParaLive();
                 break;

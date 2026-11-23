@@ -2,7 +2,29 @@
     /* =========================================================
        10. TIMER / CLOCK LOGIC
        ========================================================= */
-    function iniciarTimer() {
+    /**
+     * Set kick-off for the selected period (K / Kick-off button).
+     * Optional parteOverride ('1' | '2' | 'custom1' | 'custom2') forces that
+     * period regardless of the More dropdown — used by hotkeys 1 / 2.
+     * Same storage, markers, OSD, and sync publish path either way.
+     */
+    function iniciarTimer(parteOverride) {
+        const halfSelect = q('omt-half-select');
+        if (parteOverride === '1' || parteOverride === '2' ||
+            parteOverride === 'custom1' || parteOverride === 'custom2') {
+            // Silent assign — do not fire the half-select change handler
+            // (it would restore a prior whistle and skip current-time capture).
+            if (halfSelect) halfSelect.value = parteOverride;
+            const c1 = q('omt-custom-c1');
+            const c2 = q('omt-custom-c2');
+            if (c1) c1.style.display = (parteOverride === 'custom1') ? 'inline-flex' : 'none';
+            if (c2) c2.style.display = (parteOverride === 'custom2') ? 'inline-flex' : 'none';
+            // Fixed-period hotkeys always mark at the current video time.
+            q('omt-sync-hr').value = '';
+            q('omt-sync-min').value = '';
+            q('omt-sync-sec').value = '';
+        }
+
         let hInput = q('omt-sync-hr').value;
         let mInput = q('omt-sync-min').value;
         let sInput = q('omt-sync-sec').value;
@@ -22,7 +44,7 @@
         const h = parseInt(hInput) || 0;
         const m = parseInt(mInput) || 0;
         const s = parseInt(sInput) || 0;
-        const parte = q('omt-half-select').value;
+        const parte = (halfSelect && halfSelect.value) || '1';
 
         if (parte === '2') { tempoBase = 45 * 60; }
         else if (parte === 'custom1') { tempoBase = (parseInt(q('omt-custom-minute-c1').value) || 0) * 60; }
