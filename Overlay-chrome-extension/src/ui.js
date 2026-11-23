@@ -287,6 +287,9 @@
             <button type="button" id="${id('omt-hide-panel')}" class="handle-btn omt-tip is-auto-hide-on omt-tile-hide" aria-pressed="true"${tip('Auto hide: on')}>
                 ${omtIcon('eye-off', 16)}
             </button>
+            <button type="button" id="${id('omt-popout-btn')}" class="handle-btn omt-tip omt-popout-btn omt-tile-popout" hidden aria-label="Pop out"${tip('Pop out')}>
+                ${omtIcon('picture-in-picture-2', 16)}
+            </button>
         </div>
         <div class="drag-center-grip" aria-hidden="true">${omtIcon('grip-horizontal', 16)}</div>
         <div class="drag-side-right">
