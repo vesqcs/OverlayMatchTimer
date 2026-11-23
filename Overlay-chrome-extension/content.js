@@ -10469,19 +10469,23 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         };
     } catch (_) {}
 
-/* Document Picture-in-Picture pop-out (v2.4.2) — additive only.
+/* Document Picture-in-Picture pop-out (v2.4.3) — additive only.
  *
- * Full-bleed video + OMT match timer + hover-only chrome that reuses the
- * real main-overlay timeline (neutral scrub, period ticks, hover tip) and
- * a small transport row matching the panel (2m / 10s / frame / play / …).
+ * Full-bleed video + OMT match timer (full MM:SS, never abbreviated) +
+ * hover-only chrome:
+ *   - narrow (< OMT_PIP_CONTROLS_MIN_W): real timeline + slim icon-only
+ *     transport + video time readout
+ *   - wide: real timeline + real OMT control panel (scaled)
+ *
  * No Return button — Chrome's PiP title bar is enough.
- *
  * Unsupported → hide button; failures silent. Does not change player hooks,
  * seek/PDT math, adapters, or host media logic.
  */
-    /** Below this width, hover chrome shows timeline only (no transport row). */
+    /** Below this width: icon row; at/above: real control panel. */
     const OMT_PIP_CONTROLS_MIN_W = 480;
     const OMT_PIP_IDLE_MS = 1600;
+    /** Match-timer font floor so MM:SS stays readable when the window shrinks. */
+    const OMT_PIP_TIMER_MIN_PX = 16;
 
     let omtPipState = null;
 
@@ -10527,7 +10531,6 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         } catch (_) {}
     }
 
-    /** Copy opener stylesheets into the PiP document so OMT timeline CSS applies. */
     function omtPopoutCopyStyles(pipDoc) {
         if (!pipDoc || !pipDoc.head) return;
         try {
@@ -10545,9 +10548,7 @@ var OMT_SYNC_FEATURE_ENABLED = false;
                     const style = pipDoc.createElement('style');
                     style.textContent = Array.from(rules).map((r) => r.cssText).join('\n');
                     pipDoc.head.appendChild(style);
-                } catch (_) {
-                    /* cross-origin sheet — ignore */
-                }
+                } catch (_) {}
             });
         } catch (_) {}
         Array.from(document.querySelectorAll('style')).forEach((el) => {
@@ -10563,31 +10564,45 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         return [
             'html,body{margin:0;height:100%;background:#0a0a0a;overflow:hidden;color:#f1f1f1;',
             'font-family:var(--omt-font,"Segoe UI",system-ui,sans-serif);}',
-            ':root{--omt-pip-scale:1;--omt-scrub:#b0b0b0;--omt-orange:#F5831F;--omt-text:#e8e8e8;}',
+            ':root{--omt-pip-timer-size:26px;--omt-pip-panel-scale:0.72;',
+            '--omt-scrub:#b0b0b0;--omt-orange:#F5831F;--omt-text:#e8e8e8;',
+            '--omt-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;',
+            '--omt-font:"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;}',
             '.omt-pip-root{position:relative;width:100%;height:100%;background:#0a0a0a;',
             'background-image:radial-gradient(ellipse at 50% 18%,rgba(245,131,31,0.08),transparent 55%);}',
             '.omt-pip-stage{position:absolute;inset:0;background:#000;}',
             '.omt-pip-stage>video{position:absolute;inset:0;width:100%;height:100%;',
             'object-fit:contain;background:#000;display:block;cursor:pointer;}',
             '.omt-pip-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;',
-            'color:#9aa3ad;font:600 13px/1.4 sans-serif;padding:16px;text-align:center;pointer-events:none;}',
+            'color:#9aa3ad;font:600 13px/1.4 var(--omt-font);padding:16px;text-align:center;pointer-events:none;}',
+            /* Timer: full MM:SS always; scale font only — never clip/abbreviate. */
             '.omt-pip-timer-host{position:absolute;top:max(8px,1.4%);left:max(8px,1.4%);z-index:6;',
-            'pointer-events:auto;transform-origin:top left;transform:scale(var(--omt-pip-scale));}',
-            '.omt-pip-timer-host .omt-match-timer-wrap,.omt-pip-timer-host [id$="match-timer-wrap"]{',
-            'position:static!important;display:block!important;transform:none!important;top:auto!important;left:auto!important;}',
-            '.omt-pip-timer-host .omt-match-timer,.omt-pip-timer-host [id$="match-timer"]{',
-            'display:block!important;background:rgba(0,0,0,0.72);color:#fff;',
-            'font:700 clamp(14px,calc(11px + 1.6vw),26px)/1.1 var(--omt-font,"Segoe UI",system-ui,sans-serif);',
-            'font-variant-numeric:tabular-nums;padding:6px 10px;border-radius:8px;letter-spacing:0.04em;',
-            'border:1px solid rgba(245,131,31,0.22);}',
-            /* Overlay chrome — never reflows video */
+            'pointer-events:auto;overflow:visible;}',
+            /* ID selectors beat page #match-timer-wrap { display:none } rules. */
+            '.omt-pip-timer-host #match-timer-wrap,.omt-pip-timer-host .omt-match-timer-wrap,',
+            '.omt-pip-timer-host [id$="match-timer-wrap"]{',
+            'position:static!important;display:block!important;visibility:visible!important;',
+            'transform:none!important;top:auto!important;left:auto!important;right:auto!important;bottom:auto!important;',
+            'overflow:visible!important;max-width:none!important;opacity:1!important;}',
+            '.omt-pip-timer-host #match-timer,.omt-pip-timer-host .omt-match-timer,',
+            '.omt-pip-timer-host [id$="match-timer"]{',
+            'display:inline-block!important;visibility:visible!important;opacity:1!important;',
+            'background:rgba(0,0,0,0.62)!important;color:#f3f3f3!important;',
+            'font-family:var(--omt-mono)!important;font-weight:650!important;',
+            'font-size:var(--omt-pip-timer-size)!important;line-height:1.15!important;',
+            'font-variant-numeric:tabular-nums!important;letter-spacing:0.03em!important;',
+            'padding:7px 12px!important;border-radius:3px!important;',
+            'border:1px solid rgba(255,255,255,0.12)!important;',
+            'white-space:nowrap!important;overflow:visible!important;max-width:none!important;',
+            'text-overflow:clip!important;box-sizing:border-box!important;}',
+            /* Hover chrome — overlay only */
             '.omt-pip-chrome{position:absolute;left:0;right:0;bottom:0;z-index:7;pointer-events:none;',
             'opacity:0;transform:translateY(6px);transition:opacity .18s ease,transform .18s ease;',
-            'padding:32px 10px 8px;box-sizing:border-box;',
-            'background:linear-gradient(to top,rgba(0,0,0,0.72) 0%,rgba(0,0,0,0.28) 55%,rgba(0,0,0,0) 100%);',
-            'display:flex;flex-direction:column;gap:6px;align-items:stretch;}',
+            'padding:36px 10px 10px;box-sizing:border-box;',
+            'background:linear-gradient(to top,rgba(0,0,0,0.78) 0%,rgba(0,0,0,0.32) 55%,rgba(0,0,0,0) 100%);',
+            'display:flex;flex-direction:column;gap:8px;align-items:stretch;}',
             '.omt-pip-root.omt-pip-chrome-on .omt-pip-chrome{opacity:1;transform:none;pointer-events:auto;}',
-            /* Real timeline bar sits here — strip its page positioning / chrome row */
+            /* Real timeline */
             '.omt-pip-chrome .omt-timeline-bar,.omt-pip-chrome #omt-timeline-bar{',
             'position:relative!important;left:auto!important;right:auto!important;bottom:auto!important;',
             'inset:auto!important;width:100%!important;padding:0!important;margin:0!important;',
@@ -10595,44 +10610,75 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             '.omt-pip-chrome .omt-timeline-chrome-row{display:none!important;}',
             '.omt-pip-chrome .omt-timeline-track{pointer-events:auto!important;}',
             '.omt-pip-chrome .omt-timeline-hover-tip{position:fixed!important;}',
-            /* Small transport row — same icons/style as panel, compact */
-            '.omt-pip-transport.omt-transport-seg{',
-            'width:100%;max-width:100%;min-height:0;border-radius:6px;pointer-events:auto;}',
-            '.omt-pip-transport .ctrl-btn{',
-            'min-height:32px;padding:6px 4px;gap:3px;font-size:11px;}',
-            '.omt-pip-transport .ctrl-btn .omt-btn-label{font-size:10px;}',
-            '.omt-pip-transport .ctrl-btn .omt-icon{width:14px;height:14px;}',
-            '.omt-pip-transport .ctrl-btn.btn-play{min-width:40px;padding:6px 8px;}',
-            '.omt-pip-transport .ctrl-btn.btn-play .omt-icon{width:16px;height:16px;}',
-            '.omt-pip-root.omt-pip-narrow .omt-pip-transport{display:none!important;}'
+            /* Narrow: icon-only slim row + time on the right */
+            '.omt-pip-icon-row{display:none;align-items:center;gap:8px;width:100%;pointer-events:auto;',
+            'min-height:28px;box-sizing:border-box;}',
+            '.omt-pip-root.omt-pip-narrow .omt-pip-icon-row{display:flex;}',
+            '.omt-pip-root:not(.omt-pip-narrow) .omt-pip-icon-row{display:none!important;}',
+            '.omt-pip-icons{display:inline-flex;align-items:center;gap:2px;flex:0 0 auto;}',
+            '.omt-pip-icons button{appearance:none;-webkit-appearance:none;border:none;background:transparent;',
+            'color:#e8e8e8;width:28px;height:28px;padding:0;margin:0;border-radius:4px;cursor:pointer;',
+            'display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}',
+            '.omt-pip-icons button:hover{background:rgba(255,255,255,0.12);color:#fff;}',
+            '.omt-pip-icons button.omt-pip-play{color:var(--omt-orange);width:32px;}',
+            '.omt-pip-icons button.omt-pip-play.playing{color:var(--omt-orange);}',
+            '.omt-pip-icons button .omt-icon{width:16px;height:16px;display:block;}',
+            '.omt-pip-icons button.omt-pip-skip-long .omt-icon{width:17px;height:17px;}',
+            '.omt-pip-videotime{margin-left:auto;font:600 11px/1 var(--omt-mono);',
+            'font-variant-numeric:tabular-nums;color:#c8c8c8;white-space:nowrap;flex-shrink:0;}',
+            /* Wide: real control panel, scaled */
+            '.omt-pip-panel-slot{display:none;width:100%;justify-content:center;pointer-events:auto;',
+            'transform-origin:bottom center;}',
+            '.omt-pip-root:not(.omt-pip-narrow) .omt-pip-panel-slot{display:flex;}',
+            '.omt-pip-root.omt-pip-narrow .omt-pip-panel-slot{display:none!important;}',
+            '.omt-pip-panel-slot .omt-controls-panel,.omt-pip-panel-slot #omt-controls-panel{',
+            'position:relative!important;left:auto!important;right:auto!important;top:auto!important;bottom:auto!important;',
+            'transform:scale(var(--omt-pip-panel-scale))!important;transform-origin:bottom center!important;',
+            'margin:0 auto!important;pointer-events:auto!important;max-width:100%;',
+            'opacity:1!important;visibility:visible!important;}'
         ].join('');
     }
 
-    function omtPopoutBuildTransport(doc) {
+    /**
+     * Icon-only transport for analysts:
+     * 2m = double-chevron (chevrons-*), 10s = skip (triangle+bar), frame = step (bar+triangle).
+     */
+    function omtPopoutBuildIconRow(doc) {
         const row = doc.createElement('div');
-        row.className = 'omt-transport-seg omt-pip-transport';
-        row.setAttribute('role', 'group');
-        row.setAttribute('aria-label', 'Playback transport');
+        row.className = 'omt-pip-icon-row';
         const ic = (name, size) => (typeof omtIcon === 'function' ? omtIcon(name, size) : '');
-        /* Same order as panel minus 2s skips and speed; no omt-tip tooltips. */
         row.innerHTML =
-            '<button class="ctrl-btn" data-omt-pip-act="skip" data-skip-dir="back" data-skip-slot="2" type="button">' +
-            ic('rewind', 14) + '<span class="omt-btn-label">2m</span></button>' +
-            '<button class="ctrl-btn" data-omt-pip-act="skip" data-skip-dir="back" data-skip-slot="1" type="button">' +
-            ic('skip-back', 14) + '<span class="omt-btn-label">10s</span></button>' +
-            '<span class="omt-seg-divider" aria-hidden="true"></span>' +
-            '<button class="ctrl-btn btn-frame" data-omt-pip-act="frame" data-frame="-1" type="button">' +
-            ic('step-back', 14) + '</button>' +
-            '<button class="ctrl-btn btn-play" data-omt-pip-act="play" type="button" aria-label="Play">' +
+            '<div class="omt-pip-icons" role="group" aria-label="Playback transport">' +
+            '<button type="button" class="omt-pip-skip-long" data-omt-pip-act="skip" data-skip-dir="back" data-skip-slot="2" aria-label="Back 2 minutes">' +
+            ic('chevrons-left', 17) + '</button>' +
+            '<button type="button" data-omt-pip-act="skip" data-skip-dir="back" data-skip-slot="1" aria-label="Back 10 seconds">' +
+            ic('skip-back', 16) + '</button>' +
+            '<button type="button" data-omt-pip-act="frame" data-frame="-1" aria-label="Previous frame">' +
+            ic('step-back', 16) + '</button>' +
+            '<button type="button" class="omt-pip-play" data-omt-pip-act="play" aria-label="Play">' +
             ic('play', 16) + '</button>' +
-            '<button class="ctrl-btn btn-frame" data-omt-pip-act="frame" data-frame="1" type="button">' +
-            ic('step-forward', 14) + '</button>' +
-            '<span class="omt-seg-divider" aria-hidden="true"></span>' +
-            '<button class="ctrl-btn" data-omt-pip-act="skip" data-skip-dir="fwd" data-skip-slot="1" type="button">' +
-            '<span class="omt-btn-label">10s</span>' + ic('skip-forward', 14) + '</button>' +
-            '<button class="ctrl-btn" data-omt-pip-act="skip" data-skip-dir="fwd" data-skip-slot="2" type="button">' +
-            '<span class="omt-btn-label">2m</span>' + ic('fast-forward', 14) + '</button>';
+            '<button type="button" data-omt-pip-act="frame" data-frame="1" aria-label="Next frame">' +
+            ic('step-forward', 16) + '</button>' +
+            '<button type="button" data-omt-pip-act="skip" data-skip-dir="fwd" data-skip-slot="1" aria-label="Forward 10 seconds">' +
+            ic('skip-forward', 16) + '</button>' +
+            '<button type="button" class="omt-pip-skip-long" data-omt-pip-act="skip" data-skip-dir="fwd" data-skip-slot="2" aria-label="Forward 2 minutes">' +
+            ic('chevrons-right', 17) + '</button>' +
+            '</div>' +
+            '<span class="omt-pip-videotime">0:00 / 0:00</span>';
         return row;
+    }
+
+    function omtPopoutFmtTime(sec) {
+        if (typeof formatarTempoVideo === 'function') {
+            try { return formatarTempoVideo(sec); } catch (_) {}
+        }
+        if (!isFinite(sec) || sec < 0) sec = 0;
+        const s = Math.floor(sec % 60);
+        const m = Math.floor(sec / 60) % 60;
+        const h = Math.floor(sec / 3600);
+        const pad = (n) => (n < 10 ? '0' + n : String(n));
+        if (h > 0) return h + ':' + pad(m) + ':' + pad(s);
+        return m + ':' + pad(s);
     }
 
     function omtPopoutWithTargetVideo(videoEl, fn) {
@@ -10652,9 +10698,9 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         }
     }
 
-    function omtPopoutSyncPlayIcon(transport, videoEl) {
-        if (!transport || !videoEl) return;
-        const playBtn = transport.querySelector('[data-omt-pip-act="play"]');
+    function omtPopoutSyncPlayIcon(rootEl, videoEl) {
+        if (!rootEl || !videoEl) return;
+        const playBtn = rootEl.querySelector('[data-omt-pip-act="play"]');
         if (!playBtn) return;
         const on = !videoEl.paused && !videoEl.ended;
         if (typeof omtIcon === 'function') {
@@ -10664,10 +10710,26 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         playBtn.classList.toggle('playing', on);
     }
 
-    function omtPopoutWireTransport(transport, videoEl) {
-        if (!transport || !videoEl) return;
+    function omtPopoutPaintVideoTime(iconRow, videoEl) {
+        if (!iconRow || !videoEl) return;
+        const el = iconRow.querySelector('.omt-pip-videotime');
+        if (!el) return;
+        let dur = 0;
+        try {
+            if (videoEl.seekable && videoEl.seekable.length > 0) {
+                dur = videoEl.seekable.end(videoEl.seekable.length - 1);
+            } else if (isFinite(videoEl.duration) && videoEl.duration > 0) {
+                dur = videoEl.duration;
+            }
+        } catch (_) {}
+        const cur = videoEl.currentTime || 0;
+        el.textContent = omtPopoutFmtTime(cur) + ' / ' + omtPopoutFmtTime(dur);
+    }
+
+    function omtPopoutWireIconRow(iconRow, videoEl) {
+        if (!iconRow || !videoEl) return;
         const run = (fn) => omtPopoutWithTargetVideo(videoEl, fn);
-        transport.querySelectorAll('[data-omt-pip-act="skip"]').forEach((btn) => {
+        iconRow.querySelectorAll('[data-omt-pip-act="skip"]').forEach((btn) => {
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -10687,9 +10749,10 @@ var OMT_SYNC_FEATURE_ENABLED = false;
                         videoEl.currentTime = Math.max(0, (videoEl.currentTime || 0) + sec);
                     }
                 });
+                omtPopoutPaintVideoTime(iconRow, videoEl);
             });
         });
-        transport.querySelectorAll('[data-omt-pip-act="frame"]').forEach((btn) => {
+        iconRow.querySelectorAll('[data-omt-pip-act="frame"]').forEach((btn) => {
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -10698,9 +10761,10 @@ var OMT_SYNC_FEATURE_ENABLED = false;
                     if (d < 0 && typeof retrocederFrame === 'function') retrocederFrame();
                     else if (d > 0 && typeof avancarFrame === 'function') avancarFrame();
                 });
+                omtPopoutPaintVideoTime(iconRow, videoEl);
             });
         });
-        const playBtn = transport.querySelector('[data-omt-pip-act="play"]');
+        const playBtn = iconRow.querySelector('[data-omt-pip-act="play"]');
         if (playBtn) {
             playBtn.addEventListener('click', (e) => {
                 e.preventDefault();
@@ -10710,18 +10774,25 @@ var OMT_SYNC_FEATURE_ENABLED = false;
                     else if (videoEl.paused) videoEl.play().catch(() => {});
                     else videoEl.pause();
                 });
-                omtPopoutSyncPlayIcon(transport, videoEl);
+                omtPopoutSyncPlayIcon(iconRow, videoEl);
             });
         }
-        transport.addEventListener('click', (e) => e.stopPropagation());
-        const onPlayState = () => omtPopoutSyncPlayIcon(transport, videoEl);
+        iconRow.addEventListener('click', (e) => e.stopPropagation());
+        const onPlayState = () => omtPopoutSyncPlayIcon(iconRow, videoEl);
+        const onTime = () => omtPopoutPaintVideoTime(iconRow, videoEl);
         videoEl.addEventListener('play', onPlayState);
         videoEl.addEventListener('pause', onPlayState);
-        omtPopoutSyncPlayIcon(transport, videoEl);
-        if (omtPipState) omtPipState._playStateHandler = onPlayState;
+        videoEl.addEventListener('timeupdate', onTime);
+        videoEl.addEventListener('seeked', onTime);
+        videoEl.addEventListener('durationchange', onTime);
+        omtPopoutSyncPlayIcon(iconRow, videoEl);
+        omtPopoutPaintVideoTime(iconRow, videoEl);
+        if (omtPipState) {
+            omtPipState._playStateHandler = onPlayState;
+            omtPipState._timeHandler = onTime;
+        }
     }
 
-    /** Period ticks into the moved timeline (q() cannot see PiP document). */
     function omtPopoutRefreshPeriodTicks(bar) {
         if (!bar || typeof collectPeriodAnchors !== 'function') return;
         const tickContainer = bar.querySelector('.omt-timeline-period-ticks, #omt-timeline-period-ticks');
@@ -10752,7 +10823,6 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         tickContainer.setAttribute('aria-hidden', anchors.length ? 'false' : 'true');
     }
 
-    /** Hover tip for the moved timeline (same content as main overlay tip). */
     function omtPopoutWireTimelineTips(bar) {
         if (!bar) return;
         const track = bar.querySelector('.omt-timeline-track');
@@ -10881,12 +10951,48 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         return el;
     }
 
-    function omtPopoutUpdateLayout(root, win) {
+    function omtPopoutRestoreNode(node, parent, next) {
+        if (!node || !parent) return;
+        try {
+            if (next && next.parentNode === parent) parent.insertBefore(node, next);
+            else parent.appendChild(node);
+        } catch (_) {}
+    }
+
+    /** Attach / detach the real control panel based on narrow vs wide. */
+    function omtPopoutSyncPanelMode(state) {
+        if (!state || !state.root) return;
+        const narrow = state.root.classList.contains('omt-pip-narrow');
+        const panel = state.controlsPanel;
+        const slot = state.panelSlot;
+        if (!panel || !slot) return;
+        if (narrow) {
+            if (panel.parentNode === slot) {
+                omtPopoutRestoreNode(panel, state.panelParent, state.panelNext);
+            }
+        } else {
+            if (panel.parentNode !== slot) {
+                if (!state.panelParent) {
+                    state.panelParent = panel.parentNode;
+                    state.panelNext = panel.nextSibling;
+                }
+                try { slot.appendChild(panel); } catch (_) {}
+            }
+        }
+    }
+
+    function omtPopoutUpdateLayout(root, win, state) {
         if (!root || !win) return;
         const w = win.innerWidth || 0;
         root.classList.toggle('omt-pip-narrow', w > 0 && w < OMT_PIP_CONTROLS_MIN_W);
-        const scale = w <= 0 ? 1 : Math.max(0.85, Math.min(1.15, w / 640));
-        try { root.style.setProperty('--omt-pip-scale', String(scale)); } catch (_) {}
+        /* Timer size: scale with width, never below readable MM:SS floor. */
+        const timerPx = w <= 0
+            ? 26
+            : Math.max(OMT_PIP_TIMER_MIN_PX, Math.min(26, Math.round(11 + w * 0.022)));
+        try { root.style.setProperty('--omt-pip-timer-size', timerPx + 'px'); } catch (_) {}
+        const panelScale = w <= 0 ? 0.72 : Math.max(0.58, Math.min(0.92, w / 900));
+        try { root.style.setProperty('--omt-pip-panel-scale', String(panelScale)); } catch (_) {}
+        if (state) omtPopoutSyncPanelMode(state);
     }
 
     function omtPopoutArmChromeReveal(root, state) {
@@ -10894,6 +11000,7 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         const show = () => {
             root.classList.add('omt-pip-chrome-on');
             if (state.timelineBar) omtPopoutRefreshPeriodTicks(state.timelineBar);
+            if (state.iconRow && state.video) omtPopoutPaintVideoTime(state.iconRow, state.video);
             if (state._idleTimer) {
                 try { clearTimeout(state._idleTimer); } catch (_) {}
             }
@@ -10995,6 +11102,22 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         return document.getElementById('omt-timeline-bar');
     }
 
+    function omtPopoutResolveControlsPanel(tileRoot) {
+        try {
+            if (tileRoot) {
+                const p = tileRoot.querySelector('.omt-controls-panel, [id$="omt-controls-panel"]');
+                if (p) return p;
+            }
+        } catch (_) {}
+        try {
+            if (typeof q === 'function') {
+                const p = q('omt-controls-panel');
+                if (p) return p;
+            }
+        } catch (_) {}
+        return document.getElementById('omt-controls-panel');
+    }
+
     function omtPopoutInstallFocusInput(pipWin, videoEl, tileRoot) {
         if (!pipWin || !pipWin.document) return null;
         const onKey = (e) => {
@@ -11052,7 +11175,9 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         timerHost.className = 'omt-pip-timer-host';
         const chrome = doc.createElement('div');
         chrome.className = 'omt-pip-chrome';
-        const transport = omtPopoutBuildTransport(doc);
+        const iconRow = omtPopoutBuildIconRow(doc);
+        const panelSlot = doc.createElement('div');
+        panelSlot.className = 'omt-pip-panel-slot';
         stage.appendChild(timerHost);
         root.appendChild(stage);
         root.appendChild(chrome);
@@ -11073,13 +11198,18 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             timelineBar: null,
             timelineParent: null,
             timelineNext: null,
+            controlsPanel: null,
+            panelParent: null,
+            panelNext: null,
+            panelSlot,
+            iconRow,
             placeholder: null,
             placeholderHost: null,
             chrome,
-            transport,
             root,
             tileRoot: resolved.tileRoot,
             _playStateHandler: null,
+            _timeHandler: null,
             _keyHandler: null,
             _idleTimer: null
         };
@@ -11136,10 +11266,23 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             state.timerWrap = timerWrap;
             state.timerParent = timerWrap.parentNode;
             state.timerNext = timerWrap.nextSibling;
-            try { timerHost.appendChild(timerWrap); } catch (_) {}
+            try {
+                timerHost.appendChild(timerWrap);
+                timerWrap.style.display = 'block';
+                timerWrap.style.visibility = 'visible';
+                timerWrap.classList.add('is-visible');
+                const chip = timerWrap.querySelector('#match-timer, .omt-match-timer, [id$="match-timer"]');
+                if (chip) {
+                    chip.style.display = 'inline-block';
+                    chip.style.visibility = 'visible';
+                }
+                /* Full MM:SS paint after move — never leave a stale abbreviated string. */
+                if (typeof atualizarRelogio === 'function') {
+                    try { atualizarRelogio(); } catch (_) {}
+                }
+            } catch (_) {}
         }
 
-        /* Move the real main timeline into PiP chrome (same component). */
         const timelineBar = omtPopoutResolveTimelineBar(resolved.tileRoot);
         if (timelineBar && timelineBar.parentNode) {
             state.timelineBar = timelineBar;
@@ -11147,18 +11290,25 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             state.timelineNext = timelineBar.nextSibling;
             try {
                 chrome.appendChild(timelineBar);
-                chrome.appendChild(transport);
                 omtPopoutRefreshPeriodTicks(timelineBar);
                 omtPopoutWireTimelineTips(timelineBar);
                 if (typeof paintTimelineScrubberProgress === 'function') {
                     try { paintTimelineScrubberProgress(true); } catch (_) {}
                 }
-            } catch (_) {
-                try { chrome.appendChild(transport); } catch (_2) {}
-            }
-        } else {
-            chrome.appendChild(transport);
+            } catch (_) {}
         }
+
+        chrome.appendChild(iconRow);
+        chrome.appendChild(panelSlot);
+
+        const controlsPanel = omtPopoutResolveControlsPanel(resolved.tileRoot);
+        if (controlsPanel) {
+            state.controlsPanel = controlsPanel;
+            state.panelParent = controlsPanel.parentNode;
+            state.panelNext = controlsPanel.nextSibling;
+        }
+
+        omtPopoutWireIconRow(iconRow, videoEl);
 
         stage.addEventListener('click', (e) => {
             if (e.target && e.target.closest &&
@@ -11169,16 +11319,15 @@ var OMT_SYNC_FEATURE_ENABLED = false;
                 else if (videoEl.paused) videoEl.play().catch(() => {});
                 else videoEl.pause();
             });
-            omtPopoutSyncPlayIcon(transport, videoEl);
+            omtPopoutSyncPlayIcon(iconRow, videoEl);
             if (state._chromeShow) state._chromeShow();
         });
 
-        omtPopoutWireTransport(transport, videoEl);
-        omtPopoutUpdateLayout(root, pipWin);
+        omtPopoutUpdateLayout(root, pipWin, state);
         omtPopoutArmChromeReveal(root, state);
 
         const onResize = () => {
-            omtPopoutUpdateLayout(root, pipWin);
+            omtPopoutUpdateLayout(root, pipWin, state);
             if (state.timelineBar) omtPopoutRefreshPeriodTicks(state.timelineBar);
         };
         try { pipWin.addEventListener('resize', onResize); } catch (_) {}
@@ -11196,14 +11345,6 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         } catch (_) {}
 
         try { pipWin.focus(); } catch (_) {}
-    }
-
-    function omtPopoutRestoreNode(node, parent, next) {
-        if (!node || !parent) return;
-        try {
-            if (next && next.parentNode === parent) parent.insertBefore(node, next);
-            else parent.appendChild(node);
-        } catch (_) {}
     }
 
     function omtPopoutClose(opts) {
@@ -11233,6 +11374,11 @@ var OMT_SYNC_FEATURE_ENABLED = false;
                 state.video.removeEventListener('play', state._playStateHandler);
                 state.video.removeEventListener('pause', state._playStateHandler);
             }
+            if (state.video && state._timeHandler) {
+                state.video.removeEventListener('timeupdate', state._timeHandler);
+                state.video.removeEventListener('seeked', state._timeHandler);
+                state.video.removeEventListener('durationchange', state._timeHandler);
+            }
         } catch (_) {}
 
         try {
@@ -11242,6 +11388,8 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             }
         } catch (_) {}
 
+        /* Restore panel before timeline so page layout settles cleanly. */
+        omtPopoutRestoreNode(state.controlsPanel, state.panelParent, state.panelNext);
         omtPopoutRestoreNode(state.timelineBar, state.timelineParent, state.timelineNext);
         omtPopoutRestoreNode(state.timerWrap, state.timerParent, state.timerNext);
 
@@ -11270,6 +11418,7 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         try {
             if (typeof atualizarMarcadores === 'function') atualizarMarcadores();
             if (typeof paintTimelineScrubberProgress === 'function') paintTimelineScrubberProgress(true);
+            if (typeof atualizarRelogio === 'function') atualizarRelogio();
         } catch (_) {}
 
         try {
