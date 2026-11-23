@@ -10469,16 +10469,19 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         };
     } catch (_) {}
 
-/* Document Picture-in-Picture pop-out (v2.4.5) — additive only.
+/* Document Picture-in-Picture pop-out (v2.4.6) — additive only.
  *
  * Full-bleed video + OMT match timer (full MM:SS, never abbreviated) +
  * hover-only chrome (video never shrinks — chrome overlays the stage):
  *   - narrow (< ~800px): timeline ON TOP, then icon row + video time below
- *     (2.4.3 layout Vasco liked) + hover tooltips
- *   - wide (≥ ~800px): COMPACT small OMT control panel ABOVE timeline;
- *     timeline at the bottom (no speed-row chips, no transform scale)
+ *   - wide (≥ ~800px): COMPACT small OMT control panel ABOVE timeline
  *
- * v2.4.5: restore icon-mode order (timeline → icons). Threshold ~800.
+ * v2.4.6 (real Document PiP field fixes):
+ *   - Drive timer/scrubber/panel chrome from the PiP window's rAF so opener
+ *     background throttling cannot freeze the chip while video plays.
+ *   - Rebind cached UI refs to the live PiP nodes after reparent.
+ *   - Fix panel drag (no left:auto !important on floating; PiP coords).
+ *   - Mute / volume / eye sync against PiP DOM; remove More chevron in PiP.
  *
  * No Return button — Chrome's PiP title bar is enough.
  * Unsupported → hide button; failures silent. Does not change player hooks,
@@ -10662,18 +10665,23 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             '.omt-pip-root.omt-pip-narrow .omt-pip-panel-slot{display:none!important;}',
             '.omt-pip-root:not(.omt-pip-narrow) .omt-pip-chrome .omt-timeline-bar,',
             '.omt-pip-root:not(.omt-pip-narrow) .omt-pip-chrome #omt-timeline-bar{order:2;}',
-            '.omt-pip-panel-slot .omt-controls-panel,.omt-pip-panel-slot #omt-controls-panel,',
-            '.omt-pip-root > .omt-controls-panel.omt-pip-panel-floating{',
+            /* Slot-centred panel (pre-drag). Do NOT force left/top auto on floating. */
+            '.omt-pip-panel-slot .omt-controls-panel,.omt-pip-panel-slot #omt-controls-panel{',
             'position:relative!important;left:auto!important;right:auto!important;top:auto!important;bottom:auto!important;',
             'transform:none!important;margin:0 auto!important;pointer-events:auto!important;max-width:100%;',
             'opacity:1!important;visibility:visible!important;z-index:8;}',
+            /* Freely dragged panel — fixed in the PiP viewport; left/top from JS. */
             '.omt-pip-root > .omt-controls-panel.omt-pip-panel-floating{',
-            'position:fixed!important;margin:0!important;}',
-            /* Local: hide LIVE (same as main local player). Always hide pop-out in PiP panel. */
+            'position:fixed!important;right:auto!important;bottom:auto!important;',
+            'transform:none!important;margin:0!important;pointer-events:auto!important;',
+            'opacity:1!important;visibility:visible!important;z-index:20!important;}',
+            /* Local: hide LIVE. Always hide pop-out + More chevron inside PiP. */
             '.omt-pip-root.omt-pip-local #omt-live-btn,.omt-pip-root.omt-pip-local .omt-live-spacer,',
             '.omt-pip-root.omt-pip-local [id$="omt-live-btn"]{display:none!important;}',
             '.omt-pip-root #omt-popout-btn,.omt-pip-root [id$="omt-popout-btn"],',
             '.omt-pip-root .omt-tile-popout{display:none!important;}',
+            '.omt-pip-root #omt-more-toggle,.omt-pip-root .omt-more-toggle{display:none!important;}',
+            '.omt-pip-root #omt-more-panel,.omt-pip-root .omt-more-panel{display:none!important;}',
             /* Icon-row tooltips (OMT tip style). */
             '.omt-pip-icon-tip{position:fixed;z-index:2147483646;pointer-events:none;',
             'background:#141414;color:#f0f0f0;border:1px solid rgba(255,255,255,0.14);',
@@ -11153,6 +11161,17 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             } catch (_) {}
         };
 
+        const placeFixed = (left, top) => {
+            panel.style.setProperty('position', 'fixed', 'important');
+            panel.style.setProperty('left', Math.round(left) + 'px', 'important');
+            panel.style.setProperty('top', Math.round(top) + 'px', 'important');
+            panel.style.setProperty('right', 'auto', 'important');
+            panel.style.setProperty('bottom', 'auto', 'important');
+            panel.style.setProperty('transform', 'none', 'important');
+            panel.style.setProperty('margin', '0', 'important');
+            panel.style.setProperty('z-index', '20', 'important');
+        };
+
         const drag = (e) => {
             if (!dragging) return;
             if (e.pointerId != null && activePointerId != null && e.pointerId !== activePointerId) return;
@@ -11165,8 +11184,7 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             let newTop = e.clientY - grabOffsetY;
             newLeft = Math.max(0, Math.min(newLeft, maxLeft));
             newTop = Math.max(0, Math.min(newTop, maxTop));
-            panel.style.left = newLeft + 'px';
-            panel.style.top = newTop + 'px';
+            placeFixed(newLeft, newTop);
         };
 
         const startDrag = (e) => {
@@ -11178,24 +11196,17 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             try { e.stopImmediatePropagation(); } catch (_) {}
 
             try { panel.dataset.omtUserDragged = '1'; } catch (_) {}
+            /* Measure BEFORE reparent so we keep the visual position. */
+            const rectBefore = panel.getBoundingClientRect();
+            grabOffsetX = e.clientX - rectBefore.left;
+            grabOffsetY = e.clientY - rectBefore.top;
+
             panel.classList.add('omt-pip-panel-floating');
-            /* Reparent onto root so fixed positioning is free of the chrome flex. */
             try {
                 if (panel.parentNode !== root) root.appendChild(panel);
             } catch (_) {}
+            placeFixed(rectBefore.left, rectBefore.top);
 
-            const rect = panel.getBoundingClientRect();
-            panel.style.position = 'fixed';
-            panel.style.left = rect.left + 'px';
-            panel.style.top = rect.top + 'px';
-            panel.style.bottom = 'auto';
-            panel.style.right = 'auto';
-            panel.style.transform = 'none';
-            panel.style.margin = '0';
-            panel.style.zIndex = '20';
-
-            grabOffsetX = e.clientX - rect.left;
-            grabOffsetY = e.clientY - rect.top;
             dragging = true;
             activePointerId = e.pointerId != null ? e.pointerId : null;
 
@@ -11368,8 +11379,12 @@ var OMT_SYNC_FEATURE_ENABLED = false;
                     handled = true;
                     run(() => {
                         if (typeof toggleMute === 'function') toggleMute();
-                        else videoEl.muted = !videoEl.muted;
+                        else {
+                            videoEl.muted = !videoEl.muted;
+                            if (typeof syncVolumeControlsFromVideo === 'function') syncVolumeControlsFromVideo();
+                        }
                     });
+                    if (omtPipState) omtPopoutSyncPipPanelChrome(omtPipState);
                 } else if (id === 'omt-live-btn' || t.classList.contains('omt-tile-panel-live')) {
                     handled = true;
                     run(() => { if (typeof irParaLive === 'function') irParaLive(); });
@@ -11397,10 +11412,13 @@ var OMT_SYNC_FEATURE_ENABLED = false;
                 const val = parseFloat(t.value);
                 run(() => {
                     if (!isFinite(val)) return;
-                    videoEl.volume = Math.max(0, Math.min(1, val));
-                    videoEl.muted = val <= 0;
-                    if (typeof atualizarIconeVolume === 'function') {
-                        try { atualizarIconeVolume(); } catch (_) {}
+                    const v = Math.max(0, Math.min(1, val));
+                    videoEl.volume = v;
+                    videoEl.muted = v <= 0;
+                    if (typeof syncVolumeControlsFromVideo === 'function') {
+                        try { syncVolumeControlsFromVideo(); } catch (_) {}
+                    } else if (typeof atualizarIconeVolume === 'function') {
+                        try { atualizarIconeVolume(v); } catch (_) {}
                     }
                 });
             }
@@ -11435,7 +11453,144 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         };
     }
 
-    /** Force compact small panel; hide LIVE on local; hide pop-out; install PiP drag. */
+    /**
+     * Point cached opener UI refs at the live nodes now inside the PiP document.
+     * q()/omtRoot lookups miss them after reparent — mute/eye/play/timer paints break.
+     */
+    function omtPopoutRebindUiRefs(state) {
+        if (!state) return;
+        try {
+            if (state.timerWrap) {
+                const chip = state.timerWrap.querySelector(
+                    '#match-timer, .omt-match-timer, [id$="match-timer"]'
+                );
+                if (chip) {
+                    try { timerUI = chip; } catch (_) {}
+                }
+            }
+        } catch (_) {}
+        const panel = state.controlsPanel;
+        if (panel) {
+            try { controlsPanel = panel; } catch (_) {}
+            try {
+                const play = panel.querySelector('#omt-btn-play, .btn-play');
+                if (play) btnMainPlay = play;
+            } catch (_) {}
+            try {
+                const vr = panel.querySelector('#omt-volume-range');
+                if (vr) volumeRange = vr;
+            } catch (_) {}
+            try {
+                const vi = panel.querySelector('#omt-volume-icon-btn');
+                if (vi) volumeIconBtn = vi;
+            } catch (_) {}
+            try {
+                const ss = panel.querySelector('#omt-speed-select');
+                if (ss) speedSelect = ss;
+            } catch (_) {}
+            try {
+                const live = panel.querySelector('#omt-live-btn');
+                if (live) liveBtn = live;
+            } catch (_) {}
+        }
+        if (state.timelineBar) {
+            try {
+                const sl = state.timelineBar.querySelector('.timeline-slider, #omt-timeline-slider');
+                if (sl) timelineSlider = sl;
+            } catch (_) {}
+        }
+    }
+
+    /** Paint mute/eye/play/speed chrome from live video + storage onto PiP nodes. */
+    function omtPopoutSyncPipPanelChrome(state) {
+        if (!state || !state.controlsPanel) return;
+        const panel = state.controlsPanel;
+        const videoEl = state.video;
+        try {
+            if (videoEl && typeof atualizarIconeVolume === 'function') {
+                const vol = videoEl.muted ? 0 : (videoEl.volume || 0);
+                const vr = panel.querySelector('#omt-volume-range');
+                if (vr && document.activeElement !== vr) {
+                    try { vr.value = String(vol); } catch (_) {}
+                }
+                atualizarIconeVolume(vol);
+            }
+        } catch (_) {}
+        try {
+            if (typeof syncPlayButtonFromVideo === 'function') syncPlayButtonFromVideo();
+        } catch (_) {}
+        try {
+            const eye = panel.querySelector('#omt-hide-panel, .omt-tile-hide');
+            if (eye) {
+                const on = typeof storageGetAutoHideChrome === 'function'
+                    ? storageGetAutoHideChrome() : true;
+                eye.classList.toggle('is-auto-hide-on', on);
+                eye.classList.toggle('is-auto-hide-off', !on);
+                eye.setAttribute('aria-pressed', on ? 'true' : 'false');
+                eye.setAttribute('data-tip', on ? 'Auto hide: on' : 'Auto hide: off');
+                if (typeof omtIcon === 'function') {
+                    eye.innerHTML = omtIcon(on ? 'eye-off' : 'eye', 16);
+                }
+            }
+        } catch (_) {}
+        try {
+            if (typeof syncSpeedSelect === 'function') syncSpeedSelect();
+        } catch (_) {}
+    }
+
+    /**
+     * PiP-window rAF loop — opener rAF/timeupdate paints freeze when the tab is
+     * backgrounded behind Document PiP. Drive all visible chrome from here.
+     */
+    function omtPopoutStartPipPaintLoop(state) {
+        if (!state || !state.win) return;
+        const win = state.win;
+        let raf = 0;
+        let lastClock = '';
+        const tick = () => {
+            if (!omtPipState || omtPipState !== state) return;
+            try {
+                if (typeof atualizarRelogio === 'function') atualizarRelogio();
+                omtPopoutSyncTimelineProgress(state);
+                if (state.iconRow && state.video) {
+                    omtPopoutSyncPlayIcon(state.iconRow, state.video);
+                    omtPopoutPaintVideoTime(state.iconRow, state.video);
+                }
+                /* Light chrome sync ~4 Hz to keep mute/eye/play icons honest. */
+                const now = Date.now();
+                if (!state._lastChromeSync || now - state._lastChromeSync > 250) {
+                    state._lastChromeSync = now;
+                    omtPopoutSyncPipPanelChrome(state);
+                }
+                if (state.timerWrap) {
+                    const chip = state.timerWrap.querySelector(
+                        '#match-timer, .omt-match-timer, [id$="match-timer"]'
+                    );
+                    if (chip) {
+                        const t = chip.textContent || '';
+                        if (t && t !== lastClock) lastClock = t;
+                    }
+                }
+            } catch (_) {}
+            try {
+                raf = win.requestAnimationFrame(tick);
+            } catch (_) {
+                try { raf = win.setTimeout(tick, 50); } catch (_) {}
+            }
+        };
+        try {
+            raf = win.requestAnimationFrame(tick);
+        } catch (_) {
+            try { raf = win.setTimeout(tick, 50); } catch (_) {}
+        }
+        state._pipPaintStop = () => {
+            try { win.cancelAnimationFrame(raf); } catch (_) {}
+            try { win.clearTimeout(raf); } catch (_) {}
+            state._pipPaintStop = null;
+        };
+    }
+
+    /** Force compact small panel; hide LIVE/popout/More; install PiP drag + bridge. */
     function omtPopoutPreparePanelForPip(state) {
         const panel = state && state.controlsPanel;
         if (!panel) return;
@@ -11455,6 +11610,23 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             popBtn.style.display = 'none';
         }
 
+        /* Vasco: remove More controls chevron from the PiP panel entirely. */
+        const moreBtn = panel.querySelector('#omt-more-toggle, .omt-more-toggle');
+        if (moreBtn) {
+            state._moreBtn = moreBtn;
+            state._moreBtnWasHidden = moreBtn.hidden;
+            moreBtn.hidden = true;
+            moreBtn.style.display = 'none';
+        }
+        const morePanel = panel.querySelector('#omt-more-panel, .omt-more-panel');
+        if (morePanel) {
+            state._morePanel = morePanel;
+            morePanel.classList.remove('is-open');
+            morePanel.setAttribute('aria-hidden', 'true');
+            morePanel.style.display = 'none';
+            panel.classList.remove('omt-more-open');
+        }
+
         if (omtPopoutIsLocal()) {
             const live = panel.querySelector('#omt-live-btn, [id$="omt-live-btn"]');
             if (live) {
@@ -11470,7 +11642,6 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             }
         }
 
-        /* Clear page auto-hide / positioning so the slot centers a clickable panel. */
         try {
             panel.style.opacity = '1';
             panel.style.pointerEvents = 'auto';
@@ -11486,6 +11657,8 @@ var OMT_SYNC_FEATURE_ENABLED = false;
                 panel.style.position = '';
             } catch (_) {}
         }
+
+        omtPopoutRebindUiRefs(state);
 
         if (!state._pipDragTeardown && state.win && state.root) {
             state._pipDragTeardown = omtPopoutInstallPipDrag(panel, state.win, state.root);
@@ -11521,6 +11694,15 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             state._popBtn.style.display = '';
             state._popBtn = null;
         }
+        if (state._moreBtn) {
+            state._moreBtn.hidden = !!state._moreBtnWasHidden;
+            state._moreBtn.style.display = '';
+            state._moreBtn = null;
+        }
+        if (state._morePanel) {
+            state._morePanel.style.display = '';
+            state._morePanel = null;
+        }
         if (state._liveBtn) {
             state._liveBtn.hidden = !!state._liveBtnWasHidden;
             state._liveBtn.style.display = '';
@@ -11533,6 +11715,9 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         try {
             panel.style.zIndex = '';
             panel.style.margin = '';
+            panel.style.removeProperty('left');
+            panel.style.removeProperty('top');
+            panel.style.removeProperty('position');
         } catch (_) {}
     }
 
@@ -11898,6 +12083,8 @@ var OMT_SYNC_FEATURE_ENABLED = false;
                 }
             } catch (_) {}
         }
+        /* Re-point timerUI at the chip now living in the PiP document. */
+        omtPopoutRebindUiRefs(state);
 
         /*
          * DOM append order is secondary — CSS flex `order` owns layout:
@@ -11946,6 +12133,8 @@ var OMT_SYNC_FEATURE_ENABLED = false;
 
         omtPopoutUpdateLayout(root, pipWin, state);
         omtPopoutArmChromeReveal(root, state);
+        omtPopoutRebindUiRefs(state);
+        omtPopoutStartPipPaintLoop(state);
 
         const onResize = () => {
             omtPopoutUpdateLayout(root, pipWin, state);
@@ -11971,6 +12160,10 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         try { pipWin.focus(); } catch (_) {}
         try { root.focus({ preventScroll: true }); } catch (_) {}
         if (state._chromeShow) state._chromeShow();
+        try {
+            if (typeof atualizarRelogio === 'function') atualizarRelogio();
+            omtPopoutSyncPipPanelChrome(state);
+        } catch (_) {}
     }
 
     function omtPopoutClose(opts) {
@@ -11981,6 +12174,9 @@ var OMT_SYNC_FEATURE_ENABLED = false;
 
         try {
             if (state._idleTimer) clearTimeout(state._idleTimer);
+        } catch (_) {}
+        try {
+            if (state._pipPaintStop) state._pipPaintStop();
         } catch (_) {}
 
         try {
@@ -12040,6 +12236,11 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         omtPopoutRestoreNode(state.controlsPanel, state.panelParent, state.panelNext);
         omtPopoutRestoreNode(state.timelineBar, state.timelineParent, state.timelineNext);
         omtPopoutRestoreNode(state.timerWrap, state.timerParent, state.timerNext);
+
+        /* Re-cache opener-document refs now that nodes are back under omtRoot. */
+        try {
+            if (typeof cacheUIRefs === 'function') cacheUIRefs();
+        } catch (_) {}
 
         try {
             if (state.mode === 'move' && state.video && state.parent) {
