@@ -92,6 +92,11 @@
             syncAutoHideChromeButton();
         }
 
+        // --- Document PiP pop-out (v2.4.0; hidden when unsupported) ---
+        if (typeof omtPopoutWirePrimary === 'function') {
+            try { omtPopoutWirePrimary(); } catch (_) {}
+        }
+
         // --- Live button ---
         liveBtn.addEventListener('click', irParaLive);
         const liveIndicator = omtRoot.querySelector('#omt-timeline-live-indicator');

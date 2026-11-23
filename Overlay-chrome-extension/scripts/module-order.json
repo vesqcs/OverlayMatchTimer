@@ -36,5 +36,6 @@
   "src/xeatre-features.js",
   "src/local-features.js",
   "src/inplay-multiview.js",
+  "src/popout.js",
   "src/entry.js"
 ]
