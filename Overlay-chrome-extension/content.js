@@ -10547,24 +10547,18 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         };
     } catch (_) {}
 
-/* Document Picture-in-Picture pop-out (v2.4.9) — additive only.
+/* Document Picture-in-Picture pop-out (v2.4.10) — additive only.
  *
  * Full-bleed video + OMT match timer (full MM:SS, never abbreviated) +
  * hover-only chrome (video never shrinks — chrome overlays the stage):
  *   - narrow (< ~800px): timeline ON TOP, then icon row + video time below
  *   - wide (≥ ~800px): COMPACT small OMT control panel ABOVE timeline
  *
- * v2.4.6: PiP-window paint + rebind; drag CSS; mute/vol/eye; drop More.
- * v2.4.8: SPA teardown skip; PiP setInterval chip paint; play orange CSS;
- *   icon-row direct toggle; auto-pause skip while PiP open.
- * v2.4.9 (Vasco field):
- *   - Kickoff set inside PiP never moved the timer wrap into the PiP (only
- *     adopted when already active at open). Always host the wrap in PiP and
- *     reveal it when timerAtivo becomes true.
- *   - Resize across ~800px restored the panel into the opener (ghost / dual
- *     panel). Keep the single panel inside the PiP document for the whole
- *     session; CSS hides the slot when narrow.
- *   - Icon-row play/pause: always toggle state.video (no identity mismatch).
+ * v2.4.6–2.4.9: live paint, kickoff-in-PiP chip, single panel on resize,
+ *   icon-row / panel play sync, SPA teardown skip.
+ * v2.4.10 (Vasco): clicks on SVG icon centres were inert (event target was
+ *   svg/path, and paint-loop innerHTML swaps could drop the click). Force
+ *   pointer-events:none on icon children; delegate via closest('button').
  *
  * No Return button — Chrome's PiP title bar is enough.
  * Unsupported → hide button; failures silent. Does not change player hooks,
@@ -10745,6 +10739,11 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             '.omt-pip-icons button.omt-pip-play.playing{color:var(--omt-orange);}',
             '.omt-pip-icons button .omt-icon{width:16px;height:16px;display:block;}',
             '.omt-pip-icons button.omt-pip-skip-long .omt-icon{width:17px;height:17px;}',
+            /* Icon glyphs must not be the event target — clicks on the SVG
+             * centre were missed (and mid-click innerHTML swaps dropped them). */
+            '.omt-pip-root button .omt-icon,.omt-pip-root button svg,',
+            '.omt-pip-root button svg *,.omt-pip-root button .omt-btn-label,',
+            '.omt-pip-root button .omt-icon-label{pointer-events:none!important;}',
             '.omt-pip-videotime{margin-left:auto;font:600 11px/1 var(--omt-mono);',
             'font-variant-numeric:tabular-nums;color:#c8c8c8;white-space:nowrap;flex-shrink:0;}',
             /* Wide: compact panel ABOVE timeline (timeline at bottom). */
@@ -10857,10 +10856,18 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         const playBtn = rootEl.querySelector('[data-omt-pip-act="play"]');
         if (!playBtn) return;
         const on = !videoEl.paused && !videoEl.ended;
+        const wantLabel = on ? 'Pause' : 'Play';
+        /* Skip innerHTML replace when already correct — avoids disconnecting
+         * the SVG under an in-flight centre-click. */
+        if (playBtn.getAttribute('aria-label') === wantLabel &&
+            playBtn.classList.contains('playing') === on &&
+            playBtn.querySelector('svg')) {
+            return;
+        }
         if (typeof omtIcon === 'function') {
             playBtn.innerHTML = omtIcon(on ? 'pause' : 'play', 16);
         }
-        playBtn.setAttribute('aria-label', on ? 'Pause' : 'Play');
+        playBtn.setAttribute('aria-label', wantLabel);
         playBtn.classList.toggle('playing', on);
     }
 
@@ -10924,12 +10931,16 @@ var OMT_SYNC_FEATURE_ENABLED = false;
                     '#omt-btn-play, .btn-play, .omt-tile-play'
                 );
                 if (btn) {
-                    if (typeof omtIcon === 'function') {
+                    const wantLabel = on ? 'Pause' : 'Play';
+                    const same = btn.getAttribute('aria-label') === wantLabel &&
+                        btn.classList.contains('playing') === on &&
+                        !!btn.querySelector('svg');
+                    if (!same && typeof omtIcon === 'function') {
                         btn.innerHTML = omtIcon(on ? 'pause' : 'play', 22);
                     }
                     btn.classList.toggle('playing', on);
                     btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-                    btn.setAttribute('aria-label', on ? 'Pause' : 'Play');
+                    btn.setAttribute('aria-label', wantLabel);
                 }
                 state.controlsPanel.classList.toggle('playing-state', on);
             }
@@ -10940,12 +10951,16 @@ var OMT_SYNC_FEATURE_ENABLED = false;
                     '#omt-timeline-play-btn, .omt-timeline-play-btn, .omt-tile-bar-play'
                 );
                 if (tb) {
-                    if (typeof omtIcon === 'function') {
+                    const wantLabel = on ? 'Pause' : 'Play';
+                    const same = tb.getAttribute('aria-label') === wantLabel &&
+                        tb.classList.contains('playing') === on &&
+                        !!tb.querySelector('svg');
+                    if (!same && typeof omtIcon === 'function') {
                         tb.innerHTML = omtIcon(on ? 'pause' : 'play', 16);
                     }
                     tb.classList.toggle('playing', on);
                     tb.setAttribute('aria-pressed', on ? 'true' : 'false');
-                    tb.setAttribute('aria-label', on ? 'Pause' : 'Play');
+                    tb.setAttribute('aria-label', wantLabel);
                 }
             }
         } catch (_) {}
@@ -11116,49 +11131,21 @@ var OMT_SYNC_FEATURE_ENABLED = false;
     function omtPopoutWireIconRow(iconRow, videoEl) {
         if (!iconRow || !videoEl) return;
         const run = (fn) => omtPopoutWithTargetVideo(videoEl, fn);
-        iconRow.querySelectorAll('[data-omt-pip-act="skip"]').forEach((btn) => {
-            btn.addEventListener('click', (e) => {
-                e.preventDefault();
+        /* Single delegated handler: resolve the button via closest() so clicks
+         * that land on svg/path/label still drive the action (even before CSS
+         * pointer-events:none on glyphs). */
+        const onIconClick = (e) => {
+            const btn = e.target && e.target.closest &&
+                e.target.closest('button[data-omt-pip-act]');
+            if (!btn || !iconRow.contains(btn)) {
                 e.stopPropagation();
-                const dir = btn.getAttribute('data-skip-dir');
-                const slot = parseInt(btn.getAttribute('data-skip-slot'), 10);
-                let sec = (dir === 'back') ? -10 : 10;
-                if (typeof omtPanelSkipSeconds === 'function' && isFinite(slot)) {
-                    sec = omtPanelSkipSeconds(dir === 'back' ? 'back' : 'fwd', slot);
-                    if (dir === 'back') sec = -Math.abs(sec);
-                    else sec = Math.abs(sec);
-                } else if (slot === 2) {
-                    sec = dir === 'back' ? -120 : 120;
-                }
-                run(() => {
-                    if (typeof saltarVideo === 'function') saltarVideo(sec);
-                    else if (isFinite(videoEl.currentTime)) {
-                        videoEl.currentTime = Math.max(0, (videoEl.currentTime || 0) + sec);
-                    }
-                });
-                omtPopoutPaintVideoTime(iconRow, videoEl);
-                if (omtPipState) omtPopoutSyncTimelineProgress(omtPipState);
-            });
-        });
-        iconRow.querySelectorAll('[data-omt-pip-act="frame"]').forEach((btn) => {
-            btn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const d = parseInt(btn.getAttribute('data-frame'), 10);
-                run(() => {
-                    if (d < 0 && typeof retrocederFrame === 'function') retrocederFrame();
-                    else if (d > 0 && typeof avancarFrame === 'function') avancarFrame();
-                });
-                omtPopoutPaintVideoTime(iconRow, videoEl);
-                if (omtPipState) omtPopoutSyncTimelineProgress(omtPipState);
-            });
-        });
-        const playBtn = iconRow.querySelector('[data-omt-pip-act="play"]');
-        if (playBtn) {
-            playBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                e.stopImmediatePropagation();
+                return;
+            }
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            const act = btn.getAttribute('data-omt-pip-act');
+            if (act === 'play') {
                 const st = omtPipState;
                 if (st && st.video) {
                     omtPopoutToggleVideoPlayback(st);
@@ -11176,9 +11163,37 @@ var OMT_SYNC_FEATURE_ENABLED = false;
                     omtPopoutSyncPlayIcon(iconRow, videoEl);
                 }
                 if (st && st._chromeShow) st._chromeShow();
-            }, true);
-        }
-        iconRow.addEventListener('click', (e) => e.stopPropagation());
+                return;
+            }
+            if (act === 'skip') {
+                const dir = btn.getAttribute('data-skip-dir');
+                const slot = parseInt(btn.getAttribute('data-skip-slot'), 10);
+                let sec = (dir === 'back') ? -10 : 10;
+                if (typeof omtPanelSkipSeconds === 'function' && isFinite(slot)) {
+                    sec = omtPanelSkipSeconds(dir === 'back' ? 'back' : 'fwd', slot);
+                    if (dir === 'back') sec = -Math.abs(sec);
+                    else sec = Math.abs(sec);
+                } else if (slot === 2) {
+                    sec = dir === 'back' ? -120 : 120;
+                }
+                run(() => {
+                    if (typeof saltarVideo === 'function') saltarVideo(sec);
+                    else if (isFinite(videoEl.currentTime)) {
+                        videoEl.currentTime = Math.max(0, (videoEl.currentTime || 0) + sec);
+                    }
+                });
+            } else if (act === 'frame') {
+                const d = parseInt(btn.getAttribute('data-frame'), 10);
+                run(() => {
+                    if (d < 0 && typeof retrocederFrame === 'function') retrocederFrame();
+                    else if (d > 0 && typeof avancarFrame === 'function') avancarFrame();
+                });
+            }
+            omtPopoutPaintVideoTime(iconRow, videoEl);
+            if (omtPipState) omtPopoutSyncTimelineProgress(omtPipState);
+            if (omtPipState && omtPipState._chromeShow) omtPipState._chromeShow();
+        };
+        iconRow.addEventListener('click', onIconClick, true);
         const onPlayState = () => omtPopoutSyncPlayIcon(iconRow, videoEl);
         const onTime = () => {
             omtPopoutPaintVideoTime(iconRow, videoEl);
@@ -11617,6 +11632,7 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         };
 
         const onClick = (e) => {
+            /* closest() so svg/path centres still map to the owning button. */
             const t = e.target && e.target.closest && e.target.closest('button, select');
             if (!t || !panel.contains(t)) return;
             /* Never handle pop-out from inside PiP. */
@@ -11861,12 +11877,19 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             if (eye) {
                 const on = typeof storageGetAutoHideChrome === 'function'
                     ? storageGetAutoHideChrome() : true;
+                const tip = on ? 'Auto hide: on' : 'Auto hide: off';
                 eye.classList.toggle('is-auto-hide-on', on);
                 eye.classList.toggle('is-auto-hide-off', !on);
                 eye.setAttribute('aria-pressed', on ? 'true' : 'false');
-                eye.setAttribute('data-tip', on ? 'Auto hide: on' : 'Auto hide: off');
-                if (typeof omtIcon === 'function') {
-                    eye.innerHTML = omtIcon(on ? 'eye-off' : 'eye', 16);
+                eye.setAttribute('data-tip', tip);
+                /* Avoid mid-click SVG disconnect when state unchanged. */
+                if (typeof omtIcon === 'function' && eye.getAttribute('data-tip') === tip) {
+                    const want = on ? 'eye-off' : 'eye';
+                    const cur = eye.getAttribute('data-omt-eye-icon');
+                    if (cur !== want) {
+                        eye.innerHTML = omtIcon(want, 16);
+                        eye.setAttribute('data-omt-eye-icon', want);
+                    }
                 }
             }
         } catch (_) {}
