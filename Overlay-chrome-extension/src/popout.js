@@ -1,14 +1,14 @@
-/* Document Picture-in-Picture pop-out (v2.4.1) — additive only.
+/* Document Picture-in-Picture pop-out (v2.4.2) — additive only.
  *
- * Always-on-top Chromium Document PiP with full-bleed video, OMT match
- * timer, and a hover-only thin timeline bar. No Return button or header
- * chrome of ours — Chrome's PiP title bar is enough.
+ * Full-bleed video + OMT match timer + hover-only chrome that reuses the
+ * real main-overlay timeline (neutral scrub, period ticks, hover tip) and
+ * a small transport row matching the panel (2m / 10s / frame / play / …).
+ * No Return button — Chrome's PiP title bar is enough.
  *
- * Unsupported browsers hide the button; failures are silent (2.3.9 behaviour).
- * Does not change player hooks, seek/PDT math, adapters, or host media logic.
- * Multi-view: pops the tile whose panel button was clicked.
+ * Unsupported → hide button; failures silent. Does not change player hooks,
+ * seek/PDT math, adapters, or host media logic.
  */
-    /** Below this width, hover bar shows timeline only (no side buttons). */
+    /** Below this width, hover chrome shows timeline only (no transport row). */
     const OMT_PIP_CONTROLS_MIN_W = 480;
     const OMT_PIP_IDLE_MS = 1600;
 
@@ -38,11 +38,6 @@
         return '';
     }
 
-    /**
-     * Prefer reparenting the real <video> when safe (local / InPlay).
-     * Examino / Xeatre often break if the element leaves their tree —
-     * try captureStream first there, fall back to move.
-     */
     function omtPopoutPreferMove() {
         const id = omtPopoutSiteId();
         return id === 'local' || id === 'inplayip' || id === '';
@@ -61,99 +56,112 @@
         } catch (_) {}
     }
 
-    function omtPopoutPipCss() {
-        /* Match local player page: #0a0a0a / #000 + Stats Perform orange #F5831F. */
+    /** Copy opener stylesheets into the PiP document so OMT timeline CSS applies. */
+    function omtPopoutCopyStyles(pipDoc) {
+        if (!pipDoc || !pipDoc.head) return;
+        try {
+            Array.from(document.styleSheets || []).forEach((sheet) => {
+                try {
+                    if (sheet.href) {
+                        const link = pipDoc.createElement('link');
+                        link.rel = 'stylesheet';
+                        link.href = sheet.href;
+                        pipDoc.head.appendChild(link);
+                        return;
+                    }
+                    const rules = sheet.cssRules || sheet.rules;
+                    if (!rules) return;
+                    const style = pipDoc.createElement('style');
+                    style.textContent = Array.from(rules).map((r) => r.cssText).join('\n');
+                    pipDoc.head.appendChild(style);
+                } catch (_) {
+                    /* cross-origin sheet — ignore */
+                }
+            });
+        } catch (_) {}
+        Array.from(document.querySelectorAll('style')).forEach((el) => {
+            try {
+                const style = pipDoc.createElement('style');
+                style.textContent = el.textContent || '';
+                pipDoc.head.appendChild(style);
+            } catch (_) {}
+        });
+    }
+
+    function omtPopoutPipShellCss() {
         return [
-            ':root{color-scheme:dark;--omt-orange:#F5831F;--omt-orange-dim:rgba(245,131,31,0.18);',
-            '--omt-font:"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;',
-            '--omt-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;',
-            '--omt-scrub:#F5831F;--omt-progress:0%;--omt-pip-scale:1;}',
-            'html,body{margin:0;height:100%;background:#0a0a0a;font-family:var(--omt-font);overflow:hidden;color:#f1f1f1;}',
-            /* Full-bleed stage — video NEVER shrinks when chrome appears. */
+            'html,body{margin:0;height:100%;background:#0a0a0a;overflow:hidden;color:#f1f1f1;',
+            'font-family:var(--omt-font,"Segoe UI",system-ui,sans-serif);}',
+            ':root{--omt-pip-scale:1;--omt-scrub:#b0b0b0;--omt-orange:#F5831F;--omt-text:#e8e8e8;}',
             '.omt-pip-root{position:relative;width:100%;height:100%;background:#0a0a0a;',
-            'background-image:radial-gradient(ellipse at 50% 18%,rgba(245,131,31,0.08),transparent 55%);} ',
+            'background-image:radial-gradient(ellipse at 50% 18%,rgba(245,131,31,0.08),transparent 55%);}',
             '.omt-pip-stage{position:absolute;inset:0;background:#000;}',
             '.omt-pip-stage>video{position:absolute;inset:0;width:100%;height:100%;',
             'object-fit:contain;background:#000;display:block;cursor:pointer;}',
             '.omt-pip-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;',
-            'color:#9aa3ad;font:600 13px/1.4 var(--omt-font);padding:16px;text-align:center;pointer-events:none;}',
-            /* Timer scales with window; min stays readable. */
+            'color:#9aa3ad;font:600 13px/1.4 sans-serif;padding:16px;text-align:center;pointer-events:none;}',
             '.omt-pip-timer-host{position:absolute;top:max(8px,1.4%);left:max(8px,1.4%);z-index:6;',
             'pointer-events:auto;transform-origin:top left;transform:scale(var(--omt-pip-scale));}',
             '.omt-pip-timer-host .omt-match-timer-wrap,.omt-pip-timer-host [id$="match-timer-wrap"]{',
             'position:static!important;display:block!important;transform:none!important;top:auto!important;left:auto!important;}',
             '.omt-pip-timer-host .omt-match-timer,.omt-pip-timer-host [id$="match-timer"]{',
             'display:block!important;background:rgba(0,0,0,0.72);color:#fff;',
-            'font:700 clamp(14px,calc(11px + 1.6vw),26px)/1.1 var(--omt-font);',
+            'font:700 clamp(14px,calc(11px + 1.6vw),26px)/1.1 var(--omt-font,"Segoe UI",system-ui,sans-serif);',
             'font-variant-numeric:tabular-nums;padding:6px 10px;border-radius:8px;letter-spacing:0.04em;',
             'border:1px solid rgba(245,131,31,0.22);}',
-            /* Hover chrome: overlay only — does not reflow video. */
+            /* Overlay chrome — never reflows video */
             '.omt-pip-chrome{position:absolute;left:0;right:0;bottom:0;z-index:7;pointer-events:none;',
             'opacity:0;transform:translateY(6px);transition:opacity .18s ease,transform .18s ease;',
-            'padding:28px 10px 8px;box-sizing:border-box;',
+            'padding:32px 10px 8px;box-sizing:border-box;',
             'background:linear-gradient(to top,rgba(0,0,0,0.72) 0%,rgba(0,0,0,0.28) 55%,rgba(0,0,0,0) 100%);',
-            'display:flex;flex-direction:column;gap:4px;align-items:stretch;}',
+            'display:flex;flex-direction:column;gap:6px;align-items:stretch;}',
             '.omt-pip-root.omt-pip-chrome-on .omt-pip-chrome{opacity:1;transform:none;pointer-events:auto;}',
-            '.omt-pip-track{position:relative;width:100%;height:14px;display:flex;align-items:center;pointer-events:auto;}',
-            '.omt-pip-slider{-webkit-appearance:none;appearance:none;width:100%;height:4px;margin:0;padding:0;',
-            'border:none;border-radius:2px;outline:none;cursor:pointer;background:transparent;',
-            'background-image:linear-gradient(to right,var(--omt-scrub) var(--omt-progress),rgba(255,255,255,0.22) var(--omt-progress));}',
-            '.omt-pip-slider::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:transparent;}',
-            '.omt-pip-slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:12px;height:12px;',
-            'border-radius:50%;background:#fff;border:none;margin-top:-4px;box-shadow:0 0 0 1px rgba(0,0,0,0.35);}',
-            '.omt-pip-slider::-moz-range-track{height:4px;border-radius:2px;background:rgba(255,255,255,0.22);}',
-            '.omt-pip-slider::-moz-range-progress{height:4px;border-radius:2px;background:var(--omt-scrub);}',
-            '.omt-pip-slider::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:#fff;border:none;}',
-            '.omt-pip-row{display:flex;align-items:center;gap:4px;min-height:28px;pointer-events:auto;}',
-            '.omt-pip-row .omt-pip-time{font:600 11px/1 var(--omt-mono);font-variant-numeric:tabular-nums;',
-            'color:#c8c8c8;margin-left:auto;white-space:nowrap;}',
-            '.omt-pip-btns{display:inline-flex;align-items:center;gap:2px;}',
-            '.omt-pip-root.omt-pip-narrow .omt-pip-btns{display:none!important;}',
-            '.omt-pip-btns button,.omt-pip-btns select{appearance:none;-webkit-appearance:none;border:none;',
-            'background:transparent;color:#f1f1f1;font:700 11px/1 var(--omt-font);',
-            'padding:4px 6px;border-radius:4px;cursor:pointer;min-width:28px;min-height:28px;}',
-            '.omt-pip-btns button:hover{background:rgba(255,255,255,0.12);}',
-            '.omt-pip-btns .omt-pip-play{color:var(--omt-orange);}',
-            '.omt-pip-btns .omt-pip-play .omt-icon{width:16px;height:16px;display:block;}',
-            '.omt-pip-btns select{border:1px solid rgba(255,255,255,0.2);background:rgba(0,0,0,0.35);',
-            'color:#ddd;padding:4px 5px;min-width:0;}'
+            /* Real timeline bar sits here — strip its page positioning / chrome row */
+            '.omt-pip-chrome .omt-timeline-bar,.omt-pip-chrome #omt-timeline-bar{',
+            'position:relative!important;left:auto!important;right:auto!important;bottom:auto!important;',
+            'inset:auto!important;width:100%!important;padding:0!important;margin:0!important;',
+            'background:transparent!important;pointer-events:auto!important;z-index:1!important;}',
+            '.omt-pip-chrome .omt-timeline-chrome-row{display:none!important;}',
+            '.omt-pip-chrome .omt-timeline-track{pointer-events:auto!important;}',
+            '.omt-pip-chrome .omt-timeline-hover-tip{position:fixed!important;}',
+            /* Small transport row — same icons/style as panel, compact */
+            '.omt-pip-transport.omt-transport-seg{',
+            'width:100%;max-width:100%;min-height:0;border-radius:6px;pointer-events:auto;}',
+            '.omt-pip-transport .ctrl-btn{',
+            'min-height:32px;padding:6px 4px;gap:3px;font-size:11px;}',
+            '.omt-pip-transport .ctrl-btn .omt-btn-label{font-size:10px;}',
+            '.omt-pip-transport .ctrl-btn .omt-icon{width:14px;height:14px;}',
+            '.omt-pip-transport .ctrl-btn.btn-play{min-width:40px;padding:6px 8px;}',
+            '.omt-pip-transport .ctrl-btn.btn-play .omt-icon{width:16px;height:16px;}',
+            '.omt-pip-root.omt-pip-narrow .omt-pip-transport{display:none!important;}'
         ].join('');
     }
 
-    function omtPopoutBuildChrome(doc) {
-        const chrome = doc.createElement('div');
-        chrome.className = 'omt-pip-chrome';
-        chrome.innerHTML =
-            '<div class="omt-pip-track">' +
-            '<input type="range" class="omt-pip-slider" min="0" max="100" value="0" step="0.01" aria-label="Timeline">' +
-            '</div>' +
-            '<div class="omt-pip-row">' +
-            '<div class="omt-pip-btns">' +
-            '<button type="button" class="omt-pip-skip" data-skip="-10" title="−10 s" aria-label="Back 10 seconds">' +
-            (typeof omtIcon === 'function' ? omtIcon('skip-back', 14) : '«') + '</button>' +
-            '<button type="button" class="omt-pip-play" title="Play / Pause" aria-label="Play">' +
-            (typeof omtIcon === 'function' ? omtIcon('play', 16) : '▶') + '</button>' +
-            '<button type="button" class="omt-pip-skip" data-skip="10" title="+10 s" aria-label="Forward 10 seconds">' +
-            (typeof omtIcon === 'function' ? omtIcon('skip-forward', 14) : '»') + '</button>' +
-            '<select class="omt-pip-speed" title="Speed" aria-label="Speed">' +
-            '<option value="0.25">0.25x</option><option value="0.5">0.50x</option>' +
-            '<option value="0.75">0.75x</option><option value="1" selected>1.00x</option>' +
-            '<option value="1.25">1.25x</option><option value="1.5">1.50x</option>' +
-            '<option value="2">2.00x</option></select>' +
-            '</div>' +
-            '<span class="omt-pip-time">0:00 / 0:00</span>' +
-            '</div>';
-        return chrome;
-    }
-
-    function omtPopoutFmtTime(sec) {
-        if (!isFinite(sec) || sec < 0) sec = 0;
-        const s = Math.floor(sec % 60);
-        const m = Math.floor(sec / 60) % 60;
-        const h = Math.floor(sec / 3600);
-        const pad = (n) => (n < 10 ? '0' + n : String(n));
-        if (h > 0) return h + ':' + pad(m) + ':' + pad(s);
-        return m + ':' + pad(s);
+    function omtPopoutBuildTransport(doc) {
+        const row = doc.createElement('div');
+        row.className = 'omt-transport-seg omt-pip-transport';
+        row.setAttribute('role', 'group');
+        row.setAttribute('aria-label', 'Playback transport');
+        const ic = (name, size) => (typeof omtIcon === 'function' ? omtIcon(name, size) : '');
+        /* Same order as panel minus 2s skips and speed; no omt-tip tooltips. */
+        row.innerHTML =
+            '<button class="ctrl-btn" data-omt-pip-act="skip" data-skip-dir="back" data-skip-slot="2" type="button">' +
+            ic('rewind', 14) + '<span class="omt-btn-label">2m</span></button>' +
+            '<button class="ctrl-btn" data-omt-pip-act="skip" data-skip-dir="back" data-skip-slot="1" type="button">' +
+            ic('skip-back', 14) + '<span class="omt-btn-label">10s</span></button>' +
+            '<span class="omt-seg-divider" aria-hidden="true"></span>' +
+            '<button class="ctrl-btn btn-frame" data-omt-pip-act="frame" data-frame="-1" type="button">' +
+            ic('step-back', 14) + '</button>' +
+            '<button class="ctrl-btn btn-play" data-omt-pip-act="play" type="button" aria-label="Play">' +
+            ic('play', 16) + '</button>' +
+            '<button class="ctrl-btn btn-frame" data-omt-pip-act="frame" data-frame="1" type="button">' +
+            ic('step-forward', 14) + '</button>' +
+            '<span class="omt-seg-divider" aria-hidden="true"></span>' +
+            '<button class="ctrl-btn" data-omt-pip-act="skip" data-skip-dir="fwd" data-skip-slot="1" type="button">' +
+            '<span class="omt-btn-label">10s</span>' + ic('skip-forward', 14) + '</button>' +
+            '<button class="ctrl-btn" data-omt-pip-act="skip" data-skip-dir="fwd" data-skip-slot="2" type="button">' +
+            '<span class="omt-btn-label">2m</span>' + ic('fast-forward', 14) + '</button>';
+        return row;
     }
 
     function omtPopoutWithTargetVideo(videoEl, fn) {
@@ -173,84 +181,55 @@
         }
     }
 
-    function omtPopoutSyncPlayIcon(chrome, videoEl) {
-        if (!chrome || !videoEl) return;
-        const playBtn = chrome.querySelector('.omt-pip-play');
+    function omtPopoutSyncPlayIcon(transport, videoEl) {
+        if (!transport || !videoEl) return;
+        const playBtn = transport.querySelector('[data-omt-pip-act="play"]');
         if (!playBtn) return;
         const on = !videoEl.paused && !videoEl.ended;
         if (typeof omtIcon === 'function') {
             playBtn.innerHTML = omtIcon(on ? 'pause' : 'play', 16);
-        } else {
-            playBtn.textContent = on ? '⏸' : '▶';
         }
         playBtn.setAttribute('aria-label', on ? 'Pause' : 'Play');
         playBtn.classList.toggle('playing', on);
     }
 
-    function omtPopoutPaintTimeline(chrome, videoEl) {
-        if (!chrome || !videoEl) return;
-        const slider = chrome.querySelector('.omt-pip-slider');
-        const timeEl = chrome.querySelector('.omt-pip-time');
-        let dur = 0;
-        try {
-            if (videoEl.seekable && videoEl.seekable.length > 0) {
-                dur = videoEl.seekable.end(videoEl.seekable.length - 1);
-            } else if (isFinite(videoEl.duration) && videoEl.duration > 0) {
-                dur = videoEl.duration;
-            }
-        } catch (_) {}
-        const cur = videoEl.currentTime || 0;
-        if (slider && !slider._omtDragging) {
-            slider.max = String(dur > 0 ? dur : 100);
-            slider.value = String(Math.max(0, Math.min(dur > 0 ? dur : 100, cur)));
-            const pct = dur > 0 ? (cur / dur) * 100 : 0;
-            slider.style.setProperty('--omt-progress', Math.max(0, Math.min(100, pct)) + '%');
-        }
-        if (timeEl) timeEl.textContent = omtPopoutFmtTime(cur) + ' / ' + omtPopoutFmtTime(dur);
-    }
-
-    function omtPopoutWireChrome(chrome, videoEl, root) {
-        if (!chrome || !videoEl) return;
+    function omtPopoutWireTransport(transport, videoEl) {
+        if (!transport || !videoEl) return;
         const run = (fn) => omtPopoutWithTargetVideo(videoEl, fn);
-        const slider = chrome.querySelector('.omt-pip-slider');
-        if (slider) {
-            const seekFromSlider = () => {
-                const t = parseFloat(slider.value);
-                if (!isFinite(t)) return;
-                run(() => {
-                    try { videoEl.currentTime = Math.max(0, t); } catch (_) {}
-                });
-                const max = parseFloat(slider.max) || 0;
-                const pct = max > 0 ? (t / max) * 100 : 0;
-                slider.style.setProperty('--omt-progress', Math.max(0, Math.min(100, pct)) + '%');
-            };
-            slider.addEventListener('pointerdown', () => { slider._omtDragging = true; });
-            slider.addEventListener('pointerup', () => { slider._omtDragging = false; seekFromSlider(); });
-            slider.addEventListener('change', seekFromSlider);
-            slider.addEventListener('input', () => {
-                const t = parseFloat(slider.value);
-                const max = parseFloat(slider.max) || 0;
-                const pct = max > 0 ? (t / max) * 100 : 0;
-                slider.style.setProperty('--omt-progress', Math.max(0, Math.min(100, pct)) + '%');
-            });
-            slider.addEventListener('click', (e) => e.stopPropagation());
-        }
-        chrome.querySelectorAll('.omt-pip-skip').forEach((btn) => {
+        transport.querySelectorAll('[data-omt-pip-act="skip"]').forEach((btn) => {
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                const sec = parseFloat(btn.getAttribute('data-skip'));
-                if (!isFinite(sec)) return;
+                const dir = btn.getAttribute('data-skip-dir');
+                const slot = parseInt(btn.getAttribute('data-skip-slot'), 10);
+                let sec = (dir === 'back') ? -10 : 10;
+                if (typeof omtPanelSkipSeconds === 'function' && isFinite(slot)) {
+                    sec = omtPanelSkipSeconds(dir === 'back' ? 'back' : 'fwd', slot);
+                    if (dir === 'back') sec = -Math.abs(sec);
+                    else sec = Math.abs(sec);
+                } else if (slot === 2) {
+                    sec = dir === 'back' ? -120 : 120;
+                }
                 run(() => {
                     if (typeof saltarVideo === 'function') saltarVideo(sec);
                     else if (isFinite(videoEl.currentTime)) {
                         videoEl.currentTime = Math.max(0, (videoEl.currentTime || 0) + sec);
                     }
                 });
-                omtPopoutPaintTimeline(chrome, videoEl);
             });
         });
-        const playBtn = chrome.querySelector('.omt-pip-play');
+        transport.querySelectorAll('[data-omt-pip-act="frame"]').forEach((btn) => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const d = parseInt(btn.getAttribute('data-frame'), 10);
+                run(() => {
+                    if (d < 0 && typeof retrocederFrame === 'function') retrocederFrame();
+                    else if (d > 0 && typeof avancarFrame === 'function') avancarFrame();
+                });
+            });
+        });
+        const playBtn = transport.querySelector('[data-omt-pip-act="play"]');
         if (playBtn) {
             playBtn.addEventListener('click', (e) => {
                 e.preventDefault();
@@ -260,46 +239,149 @@
                     else if (videoEl.paused) videoEl.play().catch(() => {});
                     else videoEl.pause();
                 });
-                omtPopoutSyncPlayIcon(chrome, videoEl);
+                omtPopoutSyncPlayIcon(transport, videoEl);
             });
         }
-        const speed = chrome.querySelector('.omt-pip-speed');
-        if (speed) {
-            try {
-                const r = videoEl.playbackRate || 1;
-                const opts = Array.from(speed.options).map((o) => parseFloat(o.value));
-                let best = opts[0];
-                let bestD = Infinity;
-                opts.forEach((v) => {
-                    const d = Math.abs(v - r);
-                    if (d < bestD) { bestD = d; best = v; }
-                });
-                speed.value = String(best);
-            } catch (_) {}
-            speed.addEventListener('change', (e) => {
-                e.stopPropagation();
-                const v = parseFloat(speed.value);
-                run(() => {
-                    if (typeof applyPlaybackSpeed === 'function') applyPlaybackSpeed(v);
-                    else videoEl.playbackRate = v;
-                });
-            });
-            speed.addEventListener('click', (e) => e.stopPropagation());
-        }
-        chrome.addEventListener('click', (e) => e.stopPropagation());
-
-        const onPlayState = () => omtPopoutSyncPlayIcon(chrome, videoEl);
-        const onTime = () => omtPopoutPaintTimeline(chrome, videoEl);
+        transport.addEventListener('click', (e) => e.stopPropagation());
+        const onPlayState = () => omtPopoutSyncPlayIcon(transport, videoEl);
         videoEl.addEventListener('play', onPlayState);
         videoEl.addEventListener('pause', onPlayState);
-        videoEl.addEventListener('timeupdate', onTime);
-        videoEl.addEventListener('seeked', onTime);
-        videoEl.addEventListener('durationchange', onTime);
-        omtPopoutSyncPlayIcon(chrome, videoEl);
-        omtPopoutPaintTimeline(chrome, videoEl);
+        omtPopoutSyncPlayIcon(transport, videoEl);
+        if (omtPipState) omtPipState._playStateHandler = onPlayState;
+    }
+
+    /** Period ticks into the moved timeline (q() cannot see PiP document). */
+    function omtPopoutRefreshPeriodTicks(bar) {
+        if (!bar || typeof collectPeriodAnchors !== 'function') return;
+        const tickContainer = bar.querySelector('.omt-timeline-period-ticks, #omt-timeline-period-ticks');
+        if (!tickContainer) return;
+        tickContainer.innerHTML = '';
+        const slider = bar.querySelector('.timeline-slider, #omt-timeline-slider');
+        if (!slider || !vid) return;
+        const minVal = parseFloat(slider.min) || 0;
+        const maxVal = parseFloat(slider.max) || 0;
+        const range = maxVal - minVal;
+        if (range <= 0) return;
+        const anchors = collectPeriodAnchors().filter((a) => a.val >= minVal && a.val <= maxVal);
+        anchors.forEach((a) => {
+            const pct = ((a.val - minVal) / range) * 100;
+            const short = (typeof periodShortLabelForKey === 'function') ? periodShortLabelForKey(a.key) : a.key;
+            const full = (typeof periodLabelForKey === 'function') ? periodLabelForKey(a.key) : a.key;
+            const el = bar.ownerDocument.createElement('div');
+            el.className = 'omt-period-tick';
+            el.style.left = pct + '%';
+            el.setAttribute('data-half', a.key);
+            el.setAttribute('data-period', full);
+            el.setAttribute('data-t', String(a.val));
+            el.innerHTML =
+                '<span class="omt-period-tick-mark" aria-hidden="true"></span>' +
+                '<span class="omt-period-tick-label">' + short + '</span>';
+            tickContainer.appendChild(el);
+        });
+        tickContainer.setAttribute('aria-hidden', anchors.length ? 'false' : 'true');
+    }
+
+    /** Hover tip for the moved timeline (same content as main overlay tip). */
+    function omtPopoutWireTimelineTips(bar) {
+        if (!bar) return;
+        const track = bar.querySelector('.omt-timeline-track');
+        const tip = bar.querySelector('.omt-timeline-hover-tip, #omt-timeline-hover-tip');
+        const slider = bar.querySelector('.timeline-slider, #omt-timeline-slider');
+        if (!track || !tip || !slider) return;
+
+        let snapAnchor = null;
+        const clearSnap = () => {
+            bar.querySelectorAll('.omt-period-tick.is-snap').forEach((el) => el.classList.remove('is-snap'));
+            snapAnchor = null;
+        };
+        const hide = () => {
+            tip.hidden = true;
+            tip.style.opacity = '';
+            tip.style.left = '';
+            tip.style.top = '';
+            bar.classList.remove('is-timeline-hover');
+            clearSnap();
+        };
+        const update = (clientX) => {
+            const trackRect = track.getBoundingClientRect();
+            const barRect = bar.getBoundingClientRect();
+            if (trackRect.width <= 0) return;
+            const min = parseFloat(slider.min) || 0;
+            const max = parseFloat(slider.max) || 0;
+            const range = max - min;
+            if (range <= 0) return;
+            const px = clientX - trackRect.left;
+            clearSnap();
+            let tipT;
+            let leftPx;
+            const anchors = (typeof collectPeriodAnchors === 'function')
+                ? collectPeriodAnchors().filter((a) => a.val >= min && a.val <= max)
+                : [];
+            let nearest = null;
+            let nearestDist = Infinity;
+            let nearestPct = 0;
+            anchors.forEach((a) => {
+                const ax = ((a.val - min) / range) * trackRect.width;
+                const d = Math.abs(px - ax);
+                if (d < nearestDist) {
+                    nearestDist = d;
+                    nearest = a;
+                    nearestPct = ax;
+                }
+            });
+            if (nearest && nearestDist <= 8) {
+                snapAnchor = nearest;
+                tipT = nearest.val;
+                leftPx = (trackRect.left - barRect.left) + nearestPct;
+                const tickEl = bar.querySelector('.omt-period-tick[data-half="' + nearest.key + '"]');
+                if (tickEl) tickEl.classList.add('is-snap');
+            } else {
+                const ratio = Math.max(0, Math.min(1, px / trackRect.width));
+                tipT = min + ratio * range;
+                leftPx = (trackRect.left - barRect.left) + ratio * trackRect.width;
+            }
+            let text = '';
+            if (typeof matchClockAtVideoTime === 'function') {
+                const info = matchClockAtVideoTime(tipT);
+                if (info.period && info.clock) text = info.period + ' · ' + info.clock;
+                else if (info.clock) text = info.clock;
+            }
+            if (!text && typeof formatarTempoVideo === 'function') text = formatarTempoVideo(tipT);
+            tip.textContent = text;
+            tip.hidden = false;
+            tip.style.opacity = '1';
+            bar.classList.add('is-timeline-hover');
+            const tipW = Math.max(48, tip.offsetWidth || 80);
+            const tipH = Math.max(22, tip.offsetHeight || 22);
+            let left = barRect.left + leftPx - tipW / 2;
+            const pad = 6;
+            const vw = bar.ownerDocument.defaultView;
+            const maxR = (vw && vw.innerWidth) ? vw.innerWidth - pad : barRect.right;
+            if (left < pad) left = pad;
+            if (left + tipW > maxR) left = maxR - tipW;
+            tip.style.position = 'fixed';
+            tip.style.left = Math.round(left) + 'px';
+            tip.style.top = Math.round(trackRect.top - tipH - 8) + 'px';
+            tip.style.bottom = 'auto';
+            tip.style.transform = 'none';
+            tip.style.zIndex = '2147483645';
+        };
+
+        const onMove = (e) => update(e.clientX);
+        const onLeave = () => hide();
+        const onDown = (e) => {
+            update(e.clientX);
+            if (!snapAnchor || typeof jumpToKickoff !== 'function') return;
+            e.preventDefault();
+            e.stopPropagation();
+            omtPopoutWithTargetVideo(omtPipState && omtPipState.video, () => jumpToKickoff(snapAnchor.key));
+        };
+        track.addEventListener('pointermove', onMove);
+        track.addEventListener('pointerleave', onLeave);
+        track.addEventListener('pointerdown', onDown, true);
         if (omtPipState) {
-            omtPipState._playStateHandler = onPlayState;
-            omtPipState._timeHandler = onTime;
+            omtPipState._tipHide = hide;
+            omtPipState._tipHandlers = { track, onMove, onLeave, onDown };
         }
     }
 
@@ -332,7 +414,6 @@
         if (!root || !win) return;
         const w = win.innerWidth || 0;
         root.classList.toggle('omt-pip-narrow', w > 0 && w < OMT_PIP_CONTROLS_MIN_W);
-        /* Extra scale for very small windows so the chip stays readable. */
         const scale = w <= 0 ? 1 : Math.max(0.85, Math.min(1.15, w / 640));
         try { root.style.setProperty('--omt-pip-scale', String(scale)); } catch (_) {}
     }
@@ -341,11 +422,13 @@
         if (!root || !state) return;
         const show = () => {
             root.classList.add('omt-pip-chrome-on');
+            if (state.timelineBar) omtPopoutRefreshPeriodTicks(state.timelineBar);
             if (state._idleTimer) {
                 try { clearTimeout(state._idleTimer); } catch (_) {}
             }
             state._idleTimer = setTimeout(() => {
                 root.classList.remove('omt-pip-chrome-on');
+                if (state._tipHide) state._tipHide();
             }, OMT_PIP_IDLE_MS);
         };
         const hide = () => {
@@ -354,6 +437,7 @@
                 state._idleTimer = null;
             }
             root.classList.remove('omt-pip-chrome-on');
+            if (state._tipHide) state._tipHide();
         };
         root.addEventListener('mousemove', show);
         root.addEventListener('mouseenter', show);
@@ -424,6 +508,22 @@
         return document.getElementById('match-timer-wrap');
     }
 
+    function omtPopoutResolveTimelineBar(tileRoot) {
+        try {
+            if (tileRoot) {
+                const b = tileRoot.querySelector('.omt-timeline-bar, [id$="omt-timeline-bar"]');
+                if (b) return b;
+            }
+        } catch (_) {}
+        try {
+            if (typeof q === 'function') {
+                const b = q('omt-timeline-bar');
+                if (b) return b;
+            }
+        } catch (_) {}
+        return document.getElementById('omt-timeline-bar');
+    }
+
     function omtPopoutInstallFocusInput(pipWin, videoEl, tileRoot) {
         if (!pipWin || !pipWin.document) return null;
         const onKey = (e) => {
@@ -466,9 +566,10 @@
         if (!pipWin || !pipWin.document) return;
 
         const doc = pipWin.document;
+        omtPopoutCopyStyles(doc);
         try {
             const style = doc.createElement('style');
-            style.textContent = omtPopoutPipCss();
+            style.textContent = omtPopoutPipShellCss();
             doc.head.appendChild(style);
         } catch (_) {}
 
@@ -478,7 +579,9 @@
         stage.className = 'omt-pip-stage';
         const timerHost = doc.createElement('div');
         timerHost.className = 'omt-pip-timer-host';
-        const chrome = omtPopoutBuildChrome(doc);
+        const chrome = doc.createElement('div');
+        chrome.className = 'omt-pip-chrome';
+        const transport = omtPopoutBuildTransport(doc);
         stage.appendChild(timerHost);
         root.appendChild(stage);
         root.appendChild(chrome);
@@ -496,13 +599,16 @@
             timerWrap: null,
             timerParent: null,
             timerNext: null,
+            timelineBar: null,
+            timelineParent: null,
+            timelineNext: null,
             placeholder: null,
             placeholderHost: null,
             chrome,
+            transport,
             root,
             tileRoot: resolved.tileRoot,
             _playStateHandler: null,
-            _timeHandler: null,
             _keyHandler: null,
             _idleTimer: null
         };
@@ -562,28 +668,48 @@
             try { timerHost.appendChild(timerWrap); } catch (_) {}
         }
 
-        /* Click video (not chrome) toggles play/pause. */
-        stage.addEventListener('click', (e) => {
-            if (e.target && e.target.closest && e.target.closest('.omt-pip-chrome, .omt-pip-timer-host')) return;
-            if (e.target !== stage && e.target !== videoEl &&
-                !(state.streamClone && e.target === state.streamClone)) {
-                /* Still allow clicks on empty stage / video. */
-                if (!(e.target && e.target.tagName === 'VIDEO')) return;
+        /* Move the real main timeline into PiP chrome (same component). */
+        const timelineBar = omtPopoutResolveTimelineBar(resolved.tileRoot);
+        if (timelineBar && timelineBar.parentNode) {
+            state.timelineBar = timelineBar;
+            state.timelineParent = timelineBar.parentNode;
+            state.timelineNext = timelineBar.nextSibling;
+            try {
+                chrome.appendChild(timelineBar);
+                chrome.appendChild(transport);
+                omtPopoutRefreshPeriodTicks(timelineBar);
+                omtPopoutWireTimelineTips(timelineBar);
+                if (typeof paintTimelineScrubberProgress === 'function') {
+                    try { paintTimelineScrubberProgress(true); } catch (_) {}
+                }
+            } catch (_) {
+                try { chrome.appendChild(transport); } catch (_2) {}
             }
+        } else {
+            chrome.appendChild(transport);
+        }
+
+        stage.addEventListener('click', (e) => {
+            if (e.target && e.target.closest &&
+                e.target.closest('.omt-pip-chrome, .omt-pip-timer-host')) return;
+            if (!(e.target === stage || (e.target && e.target.tagName === 'VIDEO'))) return;
             omtPopoutWithTargetVideo(videoEl, () => {
                 if (typeof togglePlay === 'function') togglePlay();
                 else if (videoEl.paused) videoEl.play().catch(() => {});
                 else videoEl.pause();
             });
-            omtPopoutSyncPlayIcon(chrome, videoEl);
+            omtPopoutSyncPlayIcon(transport, videoEl);
             if (state._chromeShow) state._chromeShow();
         });
 
-        omtPopoutWireChrome(chrome, videoEl, root);
+        omtPopoutWireTransport(transport, videoEl);
         omtPopoutUpdateLayout(root, pipWin);
         omtPopoutArmChromeReveal(root, state);
 
-        const onResize = () => omtPopoutUpdateLayout(root, pipWin);
+        const onResize = () => {
+            omtPopoutUpdateLayout(root, pipWin);
+            if (state.timelineBar) omtPopoutRefreshPeriodTicks(state.timelineBar);
+        };
         try { pipWin.addEventListener('resize', onResize); } catch (_) {}
         state._onResize = onResize;
 
@@ -601,6 +727,14 @@
         try { pipWin.focus(); } catch (_) {}
     }
 
+    function omtPopoutRestoreNode(node, parent, next) {
+        if (!node || !parent) return;
+        try {
+            if (next && next.parentNode === parent) parent.insertBefore(node, next);
+            else parent.appendChild(node);
+        } catch (_) {}
+    }
+
     function omtPopoutClose(opts) {
         const state = omtPipState;
         if (!state) return;
@@ -612,14 +746,21 @@
         } catch (_) {}
 
         try {
+            if (state._tipHandlers) {
+                const { track, onMove, onLeave, onDown } = state._tipHandlers;
+                if (track) {
+                    track.removeEventListener('pointermove', onMove);
+                    track.removeEventListener('pointerleave', onLeave);
+                    track.removeEventListener('pointerdown', onDown, true);
+                }
+            }
+            if (state._tipHide) state._tipHide();
+        } catch (_) {}
+
+        try {
             if (state.video && state._playStateHandler) {
                 state.video.removeEventListener('play', state._playStateHandler);
                 state.video.removeEventListener('pause', state._playStateHandler);
-            }
-            if (state.video && state._timeHandler) {
-                state.video.removeEventListener('timeupdate', state._timeHandler);
-                state.video.removeEventListener('seeked', state._timeHandler);
-                state.video.removeEventListener('durationchange', state._timeHandler);
             }
         } catch (_) {}
 
@@ -630,23 +771,12 @@
             }
         } catch (_) {}
 
-        try {
-            if (state.timerWrap && state.timerParent) {
-                if (state.timerNext && state.timerNext.parentNode === state.timerParent) {
-                    state.timerParent.insertBefore(state.timerWrap, state.timerNext);
-                } else {
-                    state.timerParent.appendChild(state.timerWrap);
-                }
-            }
-        } catch (_) {}
+        omtPopoutRestoreNode(state.timelineBar, state.timelineParent, state.timelineNext);
+        omtPopoutRestoreNode(state.timerWrap, state.timerParent, state.timerNext);
 
         try {
             if (state.mode === 'move' && state.video && state.parent) {
-                if (state.nextSibling && state.nextSibling.parentNode === state.parent) {
-                    state.parent.insertBefore(state.video, state.nextSibling);
-                } else {
-                    state.parent.appendChild(state.video);
-                }
+                omtPopoutRestoreNode(state.video, state.parent, state.nextSibling);
             } else if (state.mode === 'stream') {
                 if (state.streamClone) {
                     try { state.streamClone.pause(); } catch (_) {}
@@ -664,6 +794,11 @@
                     try { state.video.muted = !!state.wasMuted; } catch (_) {}
                 }
             }
+        } catch (_) {}
+
+        try {
+            if (typeof atualizarMarcadores === 'function') atualizarMarcadores();
+            if (typeof paintTimelineScrubberProgress === 'function') paintTimelineScrubberProgress(true);
         } catch (_) {}
 
         try {
