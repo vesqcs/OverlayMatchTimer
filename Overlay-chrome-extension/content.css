@@ -2788,7 +2788,10 @@ html.omt-host-xeatre.omt-hud-on .video-js.vjs-fluid {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: radial-gradient(ellipse at center, #1a2433 0%, #0b1218 72%);
+    /* Same atmosphere as the local player drop / page (player.css). */
+    background:
+        radial-gradient(ellipse at 50% 30%, rgba(245, 131, 31, 0.12), transparent 55%),
+        linear-gradient(180deg, #141414 0%, #0a0a0a 100%);
     pointer-events: auto;
     text-align: center;
     padding: 24px;
