@@ -300,7 +300,7 @@
     </div>
 
     <div id="${id('omt-more-panel')}" class="omt-more-panel" aria-hidden="true">
-        <div id="${id('omt-kickoff-bar')}" class="omt-more-block">
+        <div id="${id('omt-kickoff-bar')}" class="omt-more-block omt-kickoff-bar">
             <label class="omt-more-label" for="${id('omt-half-select')}">Period</label>
             <select id="${id('omt-half-select')}" class="omt-tip omt-tile-half" title="Match period"${tip('Period')}>
                 <option value="1">1st Half</option>
