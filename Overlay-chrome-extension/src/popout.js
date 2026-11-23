@@ -1,15 +1,15 @@
-/* Document Picture-in-Picture pop-out (v2.4.10) — additive only.
+/* Document Picture-in-Picture pop-out (v2.4.11) — additive only.
  *
  * Full-bleed video + OMT match timer (full MM:SS, never abbreviated) +
  * hover-only chrome (video never shrinks — chrome overlays the stage):
  *   - narrow (< ~800px): timeline ON TOP, then icon row + video time below
  *   - wide (≥ ~800px): COMPACT small OMT control panel ABOVE timeline
  *
- * v2.4.6–2.4.9: live paint, kickoff-in-PiP chip, single panel on resize,
- *   icon-row / panel play sync, SPA teardown skip.
- * v2.4.10 (Vasco): clicks on SVG icon centres were inert (event target was
- *   svg/path, and paint-loop innerHTML swaps could drop the click). Force
- *   pointer-events:none on icon children; delegate via closest('button').
+ * v2.4.6–2.4.10: live paint, kickoff-in-PiP, single panel, icon hit-targets.
+ * v2.4.11 (Vasco): returning from PiP jumped the opener panel to the top
+ *   because prepare/restore cleared left/top/bottom. Snapshot placement
+ *   (inline styles + omtUserDragged) before PiP adopt; restore on every
+ *   close path (pagehide / back-to-tab / placeholder / __omtPopoutClose).
  *
  * No Return button — Chrome's PiP title bar is enough.
  * Unsupported → hide button; failures silent. Does not change player hooks,
@@ -1405,10 +1405,72 @@
         };
     }
 
+    /**
+     * Capture opener placement before PiP CSS/JS clears left/top/bottom.
+     * Includes user-drag marker so restore re-anchors correctly.
+     */
+    function omtPopoutSnapshotPanelPlacement(panel) {
+        if (!panel || !panel.style) return null;
+        const s = panel.style;
+        const snap = {
+            left: s.getPropertyValue('left') || '',
+            top: s.getPropertyValue('top') || '',
+            right: s.getPropertyValue('right') || '',
+            bottom: s.getPropertyValue('bottom') || '',
+            transform: s.getPropertyValue('transform') || '',
+            position: s.getPropertyValue('position') || '',
+            margin: s.getPropertyValue('margin') || '',
+            zIndex: s.getPropertyValue('z-index') || '',
+            userDragged: false,
+            xeatreAutoClamp: false
+        };
+        try {
+            snap.userDragged = !!(panel.dataset && panel.dataset.omtUserDragged === '1');
+            snap.xeatreAutoClamp = !!(panel.dataset && panel.dataset.omtXeatreAutoClamp);
+        } catch (_) {}
+        return snap;
+    }
+
+    function omtPopoutApplyPanelPlacement(panel, snap) {
+        if (!panel || !panel.style || !snap) return;
+        const apply = (prop, cssName) => {
+            const val = snap[prop];
+            try { panel.style.removeProperty(cssName); } catch (_) {}
+            if (val != null && val !== '') {
+                try { panel.style.setProperty(cssName, val); } catch (_) {
+                    try { panel.style[prop] = val; } catch (_) {}
+                }
+            }
+        };
+        apply('left', 'left');
+        apply('top', 'top');
+        apply('right', 'right');
+        apply('bottom', 'bottom');
+        apply('transform', 'transform');
+        apply('position', 'position');
+        apply('margin', 'margin');
+        apply('zIndex', 'z-index');
+        try {
+            if (snap.userDragged) panel.dataset.omtUserDragged = '1';
+            else if (panel.dataset) delete panel.dataset.omtUserDragged;
+        } catch (_) {}
+        try {
+            if (snap.xeatreAutoClamp) {
+                panel.dataset.omtXeatreAutoClamp = String(snap.xeatreAutoClamp);
+            } else if (panel.dataset) {
+                delete panel.dataset.omtXeatreAutoClamp;
+            }
+        } catch (_) {}
+    }
+
     /** Force compact small panel; hide LIVE/popout/More; install PiP drag + bridge. */
     function omtPopoutPreparePanelForPip(state) {
         const panel = state && state.controlsPanel;
         if (!panel) return;
+        /* Snapshot once if open path missed it (e.g. late panel resolve). */
+        if (!state._panelPlacementSnap) {
+            state._panelPlacementSnap = omtPopoutSnapshotPanelPlacement(panel);
+        }
         if (!state._panelClassSnap) {
             state._panelClassSnap = {
                 small: panel.classList.contains('omt-panel-size-small'),
@@ -1527,12 +1589,44 @@
             state._liveSpacer.style.display = '';
             state._liveSpacer = null;
         }
+        /* Drop PiP-only floating chrome (!important left/top from PiP drag). */
         try {
-            panel.style.zIndex = '';
-            panel.style.margin = '';
             panel.style.removeProperty('left');
             panel.style.removeProperty('top');
+            panel.style.removeProperty('right');
+            panel.style.removeProperty('bottom');
+            panel.style.removeProperty('transform');
             panel.style.removeProperty('position');
+            panel.style.removeProperty('z-index');
+            panel.style.removeProperty('margin');
+        } catch (_) {}
+        /* Stash snap for apply AFTER the panel is reparented into the opener
+         * (getBoundingClientRect / anchor need the opener layout root). */
+        state._panelPlacementPending = state._panelPlacementSnap || null;
+        state._panelPlacementSnap = null;
+    }
+
+    /** Apply saved opener placement once the panel is back under omtRoot. */
+    function omtPopoutFinishPanelPlacementRestore(state) {
+        const panel = state && state.controlsPanel;
+        const snap = state && state._panelPlacementPending;
+        if (!panel || !snap) {
+            if (state) state._panelPlacementPending = null;
+            return;
+        }
+        omtPopoutApplyPanelPlacement(panel, snap);
+        state._panelPlacementPending = null;
+        try {
+            if (typeof controlsPanel !== 'undefined') controlsPanel = panel;
+        } catch (_) {}
+        try {
+            if (typeof anchorControlsPanelBottom === 'function' &&
+                typeof omtPanelIsUserPositioned === 'function' &&
+                omtPanelIsUserPositioned(panel)) {
+                anchorControlsPanelBottom();
+            } else if (typeof updateControlsTipFlip === 'function') {
+                updateControlsTipFlip();
+            }
         } catch (_) {}
     }
 
@@ -1926,6 +2020,8 @@
             state.controlsPanel = controlsPanel;
             state.panelParent = controlsPanel.parentNode;
             state.panelNext = controlsPanel.nextSibling;
+            /* Capture opener position BEFORE updateLayout/prepare clears it. */
+            state._panelPlacementSnap = omtPopoutSnapshotPanelPlacement(controlsPanel);
         }
 
         omtPopoutWireIconRow(iconRow, videoEl);
@@ -2043,6 +2139,7 @@
 
         /* Restore panel before timeline so page layout settles cleanly. */
         omtPopoutRestoreNode(state.controlsPanel, state.panelParent, state.panelNext);
+        omtPopoutFinishPanelPlacementRestore(state);
         omtPopoutRestoreNode(state.timelineBar, state.timelineParent, state.timelineNext);
         omtPopoutRestoreNode(state.timerWrap, state.timerParent, state.timerNext);
 
