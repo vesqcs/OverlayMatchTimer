@@ -92,6 +92,10 @@
         const _kickoffBtn = q('omt-btn-set-kickoff');
         if (_kickoffBtn) _kickoffBtn.classList.add('kickoff-set');
         if (typeof omtSyncPublishKickoffs === 'function') omtSyncPublishKickoffs();
+        /* Document PiP: adopt/reveal the chip if kickoff was set inside the pop-out. */
+        if (typeof omtPopoutOnTimerActivated === 'function') {
+            try { omtPopoutOnTimerActivated(); } catch (_) {}
+        }
         mostrarOSD('Timer Synced');
     }
 

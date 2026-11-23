@@ -1,4 +1,4 @@
-/* Document Picture-in-Picture pop-out (v2.4.8) — additive only.
+/* Document Picture-in-Picture pop-out (v2.4.9) — additive only.
  *
  * Full-bleed video + OMT match timer (full MM:SS, never abbreviated) +
  * hover-only chrome (video never shrinks — chrome overlays the stage):
@@ -6,14 +6,16 @@
  *   - wide (≥ ~800px): COMPACT small OMT control panel ABOVE timeline
  *
  * v2.4.6: PiP-window paint + rebind; drag CSS; mute/vol/eye; drop More.
- * v2.4.8 (real Chrome field fixes):
- *   - Timer chip: PiP setInterval + skip SPA teardown while PiP is open
- *     (moved <video> made findVideo() null → teardown wiped timerAtivo /
- *     keydown within ~1.5s — the real frozen-chip cause).
- *   - Panel play/pause: orange .playing was #omt-root-scoped — mirror under
- *     .omt-pip-root; sync icons from live PiP nodes every tick.
- *   - Icon-row play: toggle the PiP video element directly; skip opener
- *     auto-pause-on-hide while Document PiP is open.
+ * v2.4.8: SPA teardown skip; PiP setInterval chip paint; play orange CSS;
+ *   icon-row direct toggle; auto-pause skip while PiP open.
+ * v2.4.9 (Vasco field):
+ *   - Kickoff set inside PiP never moved the timer wrap into the PiP (only
+ *     adopted when already active at open). Always host the wrap in PiP and
+ *     reveal it when timerAtivo becomes true.
+ *   - Resize across ~800px restored the panel into the opener (ghost / dual
+ *     panel). Keep the single panel inside the PiP document for the whole
+ *     session; CSS hides the slot when narrow.
+ *   - Icon-row play/pause: always toggle state.video (no identity mismatch).
  *
  * No Return button — Chrome's PiP title bar is enough.
  * Unsupported → hide button; failures silent. Does not change player hooks,
@@ -128,11 +130,17 @@
             /* Timer: full MM:SS always; scale font only — never clip/abbreviate. */
             '.omt-pip-timer-host{position:absolute;top:max(8px,1.4%);left:max(8px,1.4%);z-index:6;',
             'pointer-events:auto;overflow:visible;}',
+            /* Host the wrap always; only reveal once kickoff sets .is-visible
+             * (so kickoff-inside-PiP can show without a remount race). */
             '.omt-pip-timer-host #match-timer-wrap,.omt-pip-timer-host .omt-match-timer-wrap,',
             '.omt-pip-timer-host [id$="match-timer-wrap"]{',
-            'position:static!important;display:block!important;visibility:visible!important;',
+            'position:static!important;display:none;visibility:hidden;',
             'transform:none!important;top:auto!important;left:auto!important;right:auto!important;bottom:auto!important;',
-            'overflow:visible!important;max-width:none!important;opacity:1!important;}',
+            'overflow:visible!important;max-width:none!important;opacity:0;}',
+            '.omt-pip-timer-host #match-timer-wrap.is-visible,',
+            '.omt-pip-timer-host .omt-match-timer-wrap.is-visible,',
+            '.omt-pip-timer-host [id$="match-timer-wrap"].is-visible{',
+            'display:block!important;visibility:visible!important;opacity:1!important;}',
             '.omt-pip-timer-host #match-timer,.omt-pip-timer-host .omt-match-timer,',
             '.omt-pip-timer-host [id$="match-timer"]{',
             'display:inline-block!important;visibility:visible!important;opacity:1!important;',
@@ -324,12 +332,33 @@
                         .catch(() => omtPopoutSyncAllPlayUi(state));
                 }
             } catch (_) {}
+            /* Stream-mode clone mirrors the source; nudge both. */
+            try {
+                if (state.streamClone && state.streamClone !== videoEl) {
+                    const c = state.streamClone.play();
+                    if (c && typeof c.catch === 'function') c.catch(() => {});
+                }
+            } catch (_) {}
             try { if (typeof mostrarOSD === 'function') mostrarOSD('Play'); } catch (_) {}
         } else {
             try { videoEl.pause(); } catch (_) {}
+            try {
+                if (state.streamClone && state.streamClone !== videoEl) {
+                    state.streamClone.pause();
+                }
+            } catch (_) {}
             try { if (typeof mostrarOSD === 'function') mostrarOSD('Pause'); } catch (_) {}
         }
         omtPopoutSyncAllPlayUi(state);
+        /* Re-sync after the media event settles (icon must follow state). */
+        try {
+            if (state._playUiRaf) cancelAnimationFrame(state._playUiRaf);
+            state._playUiRaf = requestAnimationFrame(() => {
+                try { omtPopoutSyncAllPlayUi(state); } catch (_) {}
+            });
+        } catch (_) {
+            try { setTimeout(() => omtPopoutSyncAllPlayUi(state), 0); } catch (_) {}
+        }
     }
 
     /**
@@ -388,12 +417,90 @@
     }
 
     /**
+     * Keep the match-timer wrap inside the PiP timer host for the whole
+     * session. Adopt it even when kickoff happens AFTER the pop-out opens
+     * (previously only moved when timer was already active at open → invisible
+     * chip when K/1/2/Kick-off ran inside PiP).
+     */
+    function omtPopoutEnsureTimerInPip(state) {
+        if (!state || !state.win) return;
+        const timerHost = state.timerHost ||
+            (state.root && state.root.querySelector('.omt-pip-timer-host'));
+        if (!timerHost) return;
+
+        let wrap = state.timerWrap;
+        if (!wrap || !wrap.isConnected) {
+            try {
+                wrap = omtPopoutResolveTimer(state.tileRoot);
+            } catch (_) { wrap = null; }
+        }
+        if (!wrap) {
+            try {
+                wrap = (omtRoot && omtRoot.querySelector(
+                    '#match-timer-wrap, .omt-match-timer-wrap, [id$="match-timer-wrap"]'
+                )) || document.getElementById('match-timer-wrap');
+            } catch (_) { wrap = null; }
+        }
+        if (!wrap) return;
+
+        if (wrap.parentNode !== timerHost) {
+            if (!state.timerParent) {
+                state.timerParent = wrap.parentNode;
+                state.timerNext = wrap.nextSibling;
+            }
+            try { timerHost.appendChild(wrap); } catch (_) { return; }
+        }
+        state.timerWrap = wrap;
+
+        let active = false;
+        try {
+            active = !!(typeof timerAtivo !== 'undefined' && timerAtivo) ||
+                !!(omtRoot && omtRoot.classList.contains('omt-timer-on')) ||
+                !!(state.tileRoot && state.tileRoot.classList.contains('omt-timer-on'));
+        } catch (_) {}
+        if (!active) {
+            try {
+                wrap.style.display = 'none';
+                wrap.style.visibility = 'hidden';
+                wrap.classList.remove('is-visible');
+            } catch (_) {}
+            return;
+        }
+        try {
+            wrap.style.display = 'block';
+            wrap.style.visibility = 'visible';
+            wrap.classList.add('is-visible');
+            const chip = wrap.querySelector(
+                '#match-timer, .omt-match-timer, [id$="match-timer"]'
+            );
+            if (chip) {
+                chip.style.display = 'inline-block';
+                chip.style.visibility = 'visible';
+            }
+        } catch (_) {}
+        omtPopoutRebindUiRefs(state);
+    }
+
+    /** Called from iniciarTimer so a kickoff set inside PiP reveals the chip. */
+    function omtPopoutOnTimerActivated() {
+        if (!omtPipState) return;
+        try {
+            if (omtRoot) omtRoot.classList.add('omt-timer-on');
+            if (omtPipState.tileRoot) omtPipState.tileRoot.classList.add('omt-timer-on');
+        } catch (_) {}
+        omtPopoutEnsureTimerInPip(omtPipState);
+        try { omtPopoutPaintTimerChip(omtPipState); } catch (_) {}
+    }
+
+    /**
      * Paint the match-timer chip that lives in the PiP document.
      * Bind vid/timerUI to the live PiP nodes for this tick so atualizarRelogio
      * cannot write the opener (or a stale ref) while the tab is backgrounded.
      */
     function omtPopoutPaintTimerChip(state) {
-        if (!state || !state.timerWrap || !state.video) return null;
+        if (!state || !state.video) return null;
+        omtPopoutEnsureTimerInPip(state);
+        if (!state.timerWrap) return null;
         const chip = state.timerWrap.querySelector(
             '#match-timer, .omt-match-timer, [id$="match-timer"]'
         );
@@ -503,8 +610,9 @@
                 e.preventDefault();
                 e.stopPropagation();
                 e.stopImmediatePropagation();
-                if (omtPipState && omtPipState.video === videoEl) {
-                    omtPopoutToggleVideoPlayback(omtPipState);
+                const st = omtPipState;
+                if (st && st.video) {
+                    omtPopoutToggleVideoPlayback(st);
                 } else {
                     run(() => {
                         if (videoEl.paused || videoEl.ended) {
@@ -518,8 +626,8 @@
                     });
                     omtPopoutSyncPlayIcon(iconRow, videoEl);
                 }
-                if (omtPipState && omtPipState._chromeShow) omtPipState._chromeShow();
-            });
+                if (st && st._chromeShow) st._chromeShow();
+            }, true);
         }
         iconRow.addEventListener('click', (e) => e.stopPropagation());
         const onPlayState = () => omtPopoutSyncPlayIcon(iconRow, videoEl);
@@ -1056,6 +1164,11 @@
                 } else if (id === 'omt-live-btn' || t.classList.contains('omt-tile-panel-live')) {
                     handled = true;
                     run(() => { if (typeof irParaLive === 'function') irParaLive(); });
+                } else if (id === 'omt-btn-set-kickoff' || t.classList.contains('omt-kickoff-btn')) {
+                    /* Kick-off from the panel while it lives in PiP (More may be
+                     * CSS-hidden; e2e / advanced users still invoke the button). */
+                    handled = true;
+                    run(() => { if (typeof iniciarTimer === 'function') iniciarTimer(); });
                 }
             }
 
@@ -1400,24 +1513,44 @@
         } catch (_) {}
     }
 
-    /** Attach / detach the real control panel based on narrow vs wide. */
+    /**
+     * Keep exactly one control panel inside the PiP document for the whole
+     * session. Never restore it to the opener on narrow resize (that caused
+     * opener ghosts and intermittent dual-panel). Narrow mode relies on CSS
+     * `.omt-pip-narrow .omt-pip-panel-slot { display:none }` instead.
+     */
     function omtPopoutSyncPanelMode(state) {
-        if (!state || !state.root) return;
+        if (!state || !state.root || !state.win) return;
         const narrow = state.root.classList.contains('omt-pip-narrow');
         const panel = state.controlsPanel;
         const slot = state.panelSlot;
         if (!panel || !slot) return;
+        const pipDoc = state.win.document;
+
+        /* Pull the panel back if it somehow landed in the opener. */
+        if (panel.ownerDocument !== pipDoc ||
+            (panel.parentNode !== slot && !panel.classList.contains('omt-pip-panel-floating') &&
+                !(state.root.contains && state.root.contains(panel)))) {
+            if (!state.panelParent && panel.parentNode && panel.parentNode !== slot) {
+                state.panelParent = panel.parentNode;
+                state.panelNext = panel.nextSibling;
+            }
+            try {
+                panel.classList.remove('omt-pip-panel-floating');
+                slot.appendChild(panel);
+            } catch (_) {}
+        }
+
         if (narrow) {
-            if (panel.parentNode === slot || panel.classList.contains('omt-pip-panel-floating')) {
+            /* Park floating panels back into the hidden slot — never the opener. */
+            if (panel.classList.contains('omt-pip-panel-floating')) {
                 try { panel.classList.remove('omt-pip-panel-floating'); } catch (_) {}
-                omtPopoutRestoreNode(panel, state.panelParent, state.panelNext);
+                try { slot.appendChild(panel); } catch (_) {}
+            } else if (panel.parentNode !== slot && state.root.contains(panel)) {
+                try { slot.appendChild(panel); } catch (_) {}
             }
         } else {
             if (panel.parentNode !== slot && !panel.classList.contains('omt-pip-panel-floating')) {
-                if (!state.panelParent) {
-                    state.panelParent = panel.parentNode;
-                    state.panelNext = panel.nextSibling;
-                }
                 try { slot.appendChild(panel); } catch (_) {}
             }
             omtPopoutPreparePanelForPip(state);
@@ -1683,6 +1816,7 @@
             panelParent: null,
             panelNext: null,
             panelSlot,
+            timerHost,
             iconRow,
             placeholder: null,
             placeholderHost: null,
@@ -1737,32 +1871,9 @@
             state.mode = 'empty';
         }
 
-        const timerWrap = omtPopoutResolveTimer(resolved.tileRoot);
-        let timerActive = false;
-        try {
-            if (resolved.tileRoot) timerActive = resolved.tileRoot.classList.contains('omt-timer-on');
-            else if (omtRoot) timerActive = omtRoot.classList.contains('omt-timer-on');
-        } catch (_) {}
-        if (timerWrap && timerWrap.parentNode && timerActive) {
-            state.timerWrap = timerWrap;
-            state.timerParent = timerWrap.parentNode;
-            state.timerNext = timerWrap.nextSibling;
-            try {
-                timerHost.appendChild(timerWrap);
-                timerWrap.style.display = 'block';
-                timerWrap.style.visibility = 'visible';
-                timerWrap.classList.add('is-visible');
-                const chip = timerWrap.querySelector('#match-timer, .omt-match-timer, [id$="match-timer"]');
-                if (chip) {
-                    chip.style.display = 'inline-block';
-                    chip.style.visibility = 'visible';
-                }
-                if (typeof atualizarRelogio === 'function') {
-                    try { atualizarRelogio(); } catch (_) {}
-                }
-            } catch (_) {}
-        }
-        /* Re-point timerUI at the chip now living in the PiP document. */
+        /* Always host the wrap in PiP (hidden until kickoff). Reveal when
+         * already active, or later via omtPopoutOnTimerActivated / paint. */
+        omtPopoutEnsureTimerInPip(state);
         omtPopoutRebindUiRefs(state);
 
         /*

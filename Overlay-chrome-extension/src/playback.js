@@ -17,6 +17,14 @@
     // Examino OpenPlayer may replace <video> during DVR/VOD switches.
     // Prefer the live connected element so transport/speed always hit the player.
     function ensureLiveVideo() {
+        /* Prefer the video hosted in Document PiP while the pop-out is open. */
+        try {
+            if (typeof omtPipState !== 'undefined' && omtPipState && omtPipState.video &&
+                omtPipState.video.isConnected) {
+                vid = omtPipState.video;
+                return vid;
+            }
+        } catch (_) {}
         if (vid && vid.isConnected) return vid;
         const found = (site && typeof site.findVideo === 'function')
             ? site.findVideo()
