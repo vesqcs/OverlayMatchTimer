@@ -385,7 +385,25 @@
     /* =========================================================
        5. CACHE UI ELEMENT REFERENCES
        ========================================================= */
-    function q(id) { return omtRoot ? omtRoot.querySelector('#' + id) : null; }
+    function q(id) {
+        if (omtRoot) {
+            const el = omtRoot.querySelector('#' + id);
+            if (el) return el;
+        }
+        // Document PiP reparents the control panel / timeline into the PiP
+        // document — look there so kickoff (K/1/2) and other q() callers still
+        // resolve live nodes while the pop-out is open.
+        try {
+            if (typeof omtPipState !== 'undefined' && omtPipState && omtPipState.win) {
+                const doc = omtPipState.win.document;
+                if (doc) {
+                    const el = doc.getElementById(id);
+                    if (el) return el;
+                }
+            }
+        } catch (_) {}
+        return null;
+    }
 
     function cacheUIRefs() {
         timerUI = q('match-timer');

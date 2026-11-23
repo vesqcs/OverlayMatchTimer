@@ -240,6 +240,9 @@
      */
     function omtAdoptReplacedVideo(el) {
         if (!el || el === vid || !el.isConnected) return vid;
+        try {
+            if (typeof omtPipState !== 'undefined' && omtPipState) return vid || el;
+        } catch (_) {}
         teardown();
         boot();
         return vid || el;
@@ -261,6 +264,15 @@
     function startSPAMonitor() {
         if (spaMonitorInterval) return; // Already running — do not double-start.
         spaMonitorInterval = setInterval(() => {
+            // Document PiP reparents (or streams) the <video> into another
+            // window. findVideo() then returns null in the opener and the old
+            // "video gone" path tore down the session — wiping timerAtivo,
+            // handleKeydown, and #omt-root while the pop-out was still live
+            // (frozen match-timer chip + dead hotkeys in real Chrome).
+            try {
+                if (typeof omtPipState !== 'undefined' && omtPipState) return;
+            } catch (_) {}
+
             const currentVid = findVideo();
             const currentRoot = document.getElementById('omt-root');
 
