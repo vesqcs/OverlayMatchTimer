@@ -146,14 +146,15 @@
     function omtApplyPanelAppearance() {
         if (!controlsPanel) return;
         const prefs = omtReadPanelPrefs();
-        // v2.3.6: while InPlay multi-view is active, keep S forced (ignore user size).
+        // v2.3.7: while InPlay multi-view is active, force Customization S +
+        // Compact on primary and every tile (equal size, speed row hidden).
         const mvForced = !!(typeof window !== 'undefined' && window.__omtInplayMvActive);
         controlsPanel.classList.toggle('omt-panel-size-small', mvForced || prefs.size === 'small');
-        controlsPanel.classList.toggle('omt-panel-compact', !mvForced && !!prefs.compact);
+        controlsPanel.classList.toggle('omt-panel-compact', mvForced || !!prefs.compact);
         if (mvForced) {
             try {
                 document.querySelectorAll('[data-omt-tile-root] .omt-controls-panel').forEach((p) => {
-                    p.classList.add('omt-panel-size-small');
+                    p.classList.add('omt-panel-size-small', 'omt-panel-compact');
                 });
             } catch (_) {}
         }
