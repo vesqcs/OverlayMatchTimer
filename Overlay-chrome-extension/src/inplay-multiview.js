@@ -572,11 +572,6 @@
     function omtInplayMvRemoveTile(videoEl) {
         const rec = inplayMvTiles.get(videoEl);
         if (!rec) return;
-        try {
-            if (typeof omtPopoutClose === 'function' && omtPipState && omtPipState.video === videoEl) {
-                omtPopoutClose();
-            }
-        } catch (_) {}
         try { if (rec.ac) rec.ac.abort(); } catch (_) {}
         try {
             if (rec._shell && rec._shellOverflow != null) {
@@ -802,10 +797,6 @@
             e.preventDefault(); e.stopPropagation();
             omtInplayMvToggleMore(rec);
         }, sig);
-        const popBtn = omtInplayMvQ(rec, 'omt-popout-btn');
-        if (popBtn && typeof omtPopoutWireTileButton === 'function') {
-            try { omtPopoutWireTileButton(popBtn, videoEl); } catch (_) {}
-        }
 
         const fsBtn = omtInplayMvQ(rec, 'omt-btn-fullscreen');
         if (fsBtn && typeof toggleFullScreen === 'function') {

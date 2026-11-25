@@ -10045,11 +10045,6 @@ var OMT_SYNC_FEATURE_ENABLED = false;
     function omtInplayMvRemoveTile(videoEl) {
         const rec = inplayMvTiles.get(videoEl);
         if (!rec) return;
-        try {
-            if (typeof omtPopoutClose === 'function' && omtPipState && omtPipState.video === videoEl) {
-                omtPopoutClose();
-            }
-        } catch (_) {}
         try { if (rec.ac) rec.ac.abort(); } catch (_) {}
         try {
             if (rec._shell && rec._shellOverflow != null) {
@@ -10275,10 +10270,6 @@ var OMT_SYNC_FEATURE_ENABLED = false;
             e.preventDefault(); e.stopPropagation();
             omtInplayMvToggleMore(rec);
         }, sig);
-        const popBtn = omtInplayMvQ(rec, 'omt-popout-btn');
-        if (popBtn && typeof omtPopoutWireTileButton === 'function') {
-            try { omtPopoutWireTileButton(popBtn, videoEl); } catch (_) {}
-        }
 
         const fsBtn = omtInplayMvQ(rec, 'omt-btn-fullscreen');
         if (fsBtn && typeof toggleFullScreen === 'function') {
@@ -10547,18 +10538,18 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         };
     } catch (_) {}
 
-/* Document Picture-in-Picture pop-out (v2.4.11) — additive only.
+/* Document Picture-in-Picture pop-out (v2.4.12) — additive only.
  *
  * Full-bleed video + OMT match timer (full MM:SS, never abbreviated) +
  * hover-only chrome (video never shrinks — chrome overlays the stage):
  *   - narrow (< ~800px): timeline ON TOP, then icon row + video time below
  *   - wide (≥ ~800px): COMPACT small OMT control panel ABOVE timeline
  *
- * v2.4.6–2.4.10: live paint, kickoff-in-PiP, single panel, icon hit-targets.
- * v2.4.11 (Vasco): returning from PiP jumped the opener panel to the top
- *   because prepare/restore cleared left/top/bottom. Snapshot placement
- *   (inline styles + omtUserDragged) before PiP adopt; restore on every
- *   close path (pagehide / back-to-tab / placeholder / __omtPopoutClose).
+ * v2.4.6–2.4.11: local-player PiP polish (live paint, kickoff, single panel,
+ *   icon hits, placement restore).
+ * v2.4.12 (Vasco): PiP is LOCAL PLAYER ONLY. Hide/disable the pop-out button
+ *   and refuse open on InPlay / Examino / Xeatre (black/unstyled there).
+ *   InPlay multi-view pop-out hooks reverted to 2.3.9 behaviour.
  *
  * No Return button — Chrome's PiP title bar is enough.
  * Unsupported → hide button; failures silent. Does not change player hooks,
@@ -10613,11 +10604,15 @@ var OMT_SYNC_FEATURE_ENABLED = false;
     }
 
     function omtPopoutShowButtons() {
-        const ok = omtPopoutSupported();
+        /* Local player only — never expose the control on host players. */
+        const ok = omtPopoutSupported() && omtPopoutIsLocal();
         const show = (btn) => {
             if (!btn) return;
             btn.hidden = !ok;
             btn.style.display = ok ? '' : 'none';
+            if (!ok) {
+                try { btn.setAttribute('aria-hidden', 'true'); } catch (_) {}
+            }
         };
         try { show(typeof q === 'function' ? q('omt-popout-btn') : null); } catch (_) {}
         try {
@@ -12417,6 +12412,11 @@ var OMT_SYNC_FEATURE_ENABLED = false;
 
     async function omtPopoutOpen(fromBtn) {
         if (!omtPopoutSupported()) return;
+        /* Hard gate: Document PiP entry is local-player only (2.4.12). */
+        if (!omtPopoutIsLocal()) {
+            try { omtPopoutShowButtons(); } catch (_) {}
+            return;
+        }
         if (omtPipState && omtPipState.win) {
             omtPopoutClose();
             return;
@@ -12743,6 +12743,7 @@ var OMT_SYNC_FEATURE_ENABLED = false;
 
     function omtPopoutWirePrimary() {
         omtPopoutShowButtons();
+        if (!omtPopoutIsLocal()) return;
         const btn = typeof q === 'function' ? q('omt-popout-btn') : null;
         if (!btn) return;
         btn.addEventListener('click', (e) => {
@@ -12752,17 +12753,14 @@ var OMT_SYNC_FEATURE_ENABLED = false;
         });
     }
 
-    function omtPopoutWireTileButton(btn, videoEl) {
+    /** Tile pop-out wiring — no-op since 2.4.12 (local primary only). */
+    function omtPopoutWireTileButton(btn) {
         if (!btn) return;
-        omtPopoutShowButtons();
-        if (!omtPopoutSupported()) return;
-        btn.hidden = false;
-        btn.style.display = '';
-        btn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            omtPopoutOpen(btn);
-        });
+        try {
+            btn.hidden = true;
+            btn.style.display = 'none';
+            btn.setAttribute('aria-hidden', 'true');
+        } catch (_) {}
     }
 
     try {
