@@ -1237,7 +1237,7 @@
             vid.currentTime = timelineSlider.value;
             isDraggingTimeline = false;
             timelineSlider.blur();
-            resetControlsTimeout();
+            resetControlsTimeout(false);
         });
 
         // --- LÓGICA DO VÍDEO E SETUP ---
@@ -1360,7 +1360,8 @@
             btnMainPlay.innerHTML = "⏸ Pause";
             btnMainPlay.classList.add('playing');
             controlsPanel.classList.add('playing-state');
-            resetControlsTimeout();
+            // Don't reveal the panel — ShuttleXpress triggers play() silently.
+            resetControlsTimeout(false);
         });
         vid.addEventListener('pause', function () {
             if (document.activeElement === vid) this.blur();
@@ -1549,6 +1550,37 @@
         }
 
         vid.addEventListener('dblclick', toggleFullScreen);
+
+        // --- CLICK-TO-PLAY / PAUSE ---
+        // Reacts instantly on every click — no debounce delay.
+        // Only fires when the click lands directly on the <video> surface.
+        // Overlay elements (panels, timer, buttons) are siblings or have their
+        // own pointer-event handling, so their clicks never reach vid.
+        vid.addEventListener('click', function (e) {
+            if (e.target !== vid) return;
+            if (!vid.src && !vid.currentSrc) return; // No video loaded yet.
+            if (vid.paused) {
+                vid.play().catch(function () {});
+                mostrarOSD('▶ Play');
+            } else {
+                vid.pause();
+                mostrarOSD('⏸ Pause');
+            }
+        });
+
+        // Double-click = fullscreen (already bound above).
+        // The click handler fires once before dblclick, toggling play state.
+        // This second dblclick listener immediately reverses that toggle so the
+        // net play/pause state is unchanged after going fullscreen.
+        vid.addEventListener('dblclick', function (e) {
+            if (e.target !== vid) return;
+            if (!vid.src && !vid.currentSrc) return;
+            if (vid.paused) {
+                vid.play().catch(function () {});
+            } else {
+                vid.pause();
+            }
+        });
 
         let isEditingTimer = false;
 
@@ -1889,7 +1921,11 @@
             osdTimeout = setTimeout(() => { osd.classList.remove('visible'); }, 1500);
         }
 
-        function resetControlsTimeout() {
+        // showPanel=true  → show the panel immediately (mouse hover path).
+        // showPanel=false → only reset/maintain the auto-hide countdown without
+        //                   making the panel visible (non-mouse paths: play event,
+        //                   loadedmetadata, timeline change, ShuttleXpress, etc.).
+        function resetControlsTimeout(showPanel = true) {
             if (mouseMoveTimeout) {
                 clearTimeout(mouseMoveTimeout);
                 mouseMoveTimeout = null;
@@ -1899,14 +1935,17 @@
 
             if (vid && (!vid.duration || !isFinite(vid.duration))) return;
 
-            if (controlsPanel) {
+            if (showPanel && controlsPanel) {
                 controlsPanel.style.opacity = '1';
                 controlsPanel.style.pointerEvents = 'auto';
             }
 
+            // Only schedule the hide timer when the panel is already visible.
+            if (!controlsPanel || controlsPanel.style.opacity !== '1') return;
+
             mouseMoveTimeout = setTimeout(() => {
                 if (isDraggingTimeline) {
-                    resetControlsTimeout();
+                    resetControlsTimeout(false);
                     return;
                 }
                 if (controlsPanel) {
@@ -2143,7 +2182,7 @@
         vid.addEventListener('loadedmetadata', function () {
             verificarSeEStream();
             atualizarMarcadores();
-            resetControlsTimeout();
+            resetControlsTimeout(false);
         });
         vid.addEventListener('durationchange', function () {
             atualizarMarcadores();
@@ -2182,10 +2221,11 @@
             setupPanel.style.display = 'none';
         }
 
-        // Auto-hide controls on mouse inactivity
-        vid.addEventListener('mousemove', resetControlsTimeout);
-        controlsPanel.addEventListener('mousemove', resetControlsTimeout);
-        resetControlsTimeout();
+        // Auto-hide controls on mouse inactivity.
+        // Only real mouse movement over the canvas/panel reveals the controls.
+        vid.addEventListener('mousemove', () => resetControlsTimeout(true));
+        controlsPanel.addEventListener('mousemove', () => resetControlsTimeout(true));
+        resetControlsTimeout(false); // bootstrap: start timer, don't force-show
 
         // --- SHUTTLEXPRESS WEBHID MODULE ---
         let shuttleDevice = null;
@@ -2349,6 +2389,45 @@
             }
         }
 
+        /**
+         * If the document is currently in native fullscreen, exit it and wait
+         * until the browser has fully unwound the fullscreen layout before
+         * resolving. This is required so that browser-modal prompts (e.g. the
+         * WebHID device-picker) can open without glitching the UI.
+         *
+         * Resolution order:
+         *  1. The `fullscreenchange` event fires  → resolves immediately.
+         *  2. Fallback: 400 ms safety timeout     → resolves unconditionally.
+         */
+        function exitFullscreenSafely() {
+            return new Promise(resolve => {
+                if (!document.fullscreenElement) {
+                    resolve();
+                    return;
+                }
+
+                let settled = false;
+                const settle = () => {
+                    if (settled) return;
+                    settled = true;
+                    document.removeEventListener('fullscreenchange', onChanged);
+                    resolve();
+                };
+
+                const onChanged = () => settle();
+                document.addEventListener('fullscreenchange', onChanged, { once: true });
+
+                // Safety net: if fullscreenchange never fires, unblock after 400 ms.
+                setTimeout(settle, 400);
+
+                document.exitFullscreen().catch(() => {
+                    // exitFullscreen can throw if the document is not the
+                    // fullscreen owner (e.g. inside an iframe). Settle anyway.
+                    settle();
+                });
+            });
+        }
+
         async function handleToggleChange() {
             if (shuttleToggle.checked) {
                 localStorage.setItem('shuttleXpressEnabled', 'true');
@@ -2356,6 +2435,9 @@
                     const devices = await navigator.hid.getDevices();
                     let device = devices.find(d => d.vendorId === 0x0b33);
                     if (!device) {
+                        // Exit fullscreen first so the device-picker popup can
+                        // open cleanly without freezing or glitching the UI.
+                        await exitFullscreenSafely();
                         const requested = await navigator.hid.requestDevice({ filters: [{ vendorId: 0x0b33 }] });
                         if (requested && requested.length > 0) {
                             device = requested[0];

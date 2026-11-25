@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en" data-omt-site="inplayip">
+<head>
+  <meta charset="UTF-8" />
+  <title>InplayIP Curtain Mock</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #101820; color: #ccc; font-family: "Segoe UI", sans-serif; }
+    .match-list {
+      width: 960px;
+      margin: 24px auto;
+      padding: 16px;
+      background: #1a2430;
+      min-height: 200px;
+    }
+    .video-js {
+      position: relative;
+      width: 960px;
+      height: 0; /* curtain closed: collapsed player */
+      margin: 0 auto;
+      background: #000;
+      overflow: hidden;
+      transition: height 0.2s ease;
+    }
+    .video-js.is-open {
+      height: 540px;
+      margin: 24px auto;
+    }
+    video.vjs-tech {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    .vjs-control-bar, .vjs-progress-control {
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      height: 40px;
+      background: rgba(0, 120, 255, 0.35);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 3;
+    }
+    #toggle-curtain {
+      display: block;
+      margin: 12px auto;
+      padding: 8px 14px;
+    }
+    #status { text-align: center; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="match-list">Match list (curtain closed until Review opens the drawer)</div>
+  <div class="video-js vjs-player" id="vjs">
+    <video class="vjs-tech" id="tech" muted playsinline></video>
+    <div class="vjs-control-bar">
+      <div class="vjs-progress-control">Review Progress</div>
+    </div>
+  </div>
+  <button type="button" id="toggle-curtain">Open / close drawer</button>
+  <div id="status">Curtain mock ready</div>
+  <script>
+    (function () {
+      const video = document.getElementById('tech');
+      const player = document.getElementById('vjs');
+      const btn = document.getElementById('toggle-curtain');
+      btn.addEventListener('click', () => {
+        player.classList.toggle('is-open');
+      });
+      const canvas = document.createElement('canvas');
+      canvas.width = 960;
+      canvas.height = 540;
+      const ctx = canvas.getContext('2d');
+      const t0 = performance.now();
+      function draw() {
+        const t = (performance.now() - t0) / 1000;
+        ctx.fillStyle = '#102033';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#66b3ff';
+        ctx.font = '32px sans-serif';
+        ctx.fillText('INPLAY CURTAIN t=' + t.toFixed(1) + 's', 32, 64);
+        requestAnimationFrame(draw);
+      }
+      draw();
+      video.srcObject = canvas.captureStream(30);
+      Object.defineProperty(video, 'duration', { configurable: true, get: () => 1200 });
+      const seekable = { length: 1, start: () => 0, end: () => 1200 };
+      Object.defineProperty(video, 'seekable', { configurable: true, get: () => seekable });
+      let _ct = 30;
+      Object.defineProperty(video, 'currentTime', {
+        configurable: true,
+        get: () => _ct,
+        set: (v) => { _ct = Math.max(0, Math.min(1200, Number(v) || 0)); }
+      });
+      video.play().catch(() => {});
+    })();
+  </script>
+</body>
+</html>

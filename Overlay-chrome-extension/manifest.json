@@ -1,46 +1,124 @@
 {
-
   "manifest_version": 3,
-
   "name": "Overlay MatchTimer",
-
-  "version": "1.0.0",
-
-  "description": "Professional match analysis overlay for Xeatre, Inplayip & Examino streams. Drift-proof timer, frame scrubbing, ShuttleXpress hardware support & smart docked controls.",
-
+  "version": "2.4.12",
+  "description": "Injects the Overlay MatchTimer UI over InplayIP, Examino, and Xeatre DVR streams, plus a local file player for offline / NAS analysis.",
   "author": "Vasco Oliveira",
-
-
-
+  "icons": {
+    "16": "assets/icon-16.png",
+    "32": "assets/icon-32.png",
+    "48": "assets/icon-48.png",
+    "128": "assets/icon-128.png"
+  },
   "permissions": [
-
     "storage"
-
   ],
-
-
-
   "host_permissions": [
     "*://*.inplayip.tv/*",
-    "file:///*",
-    "*://statsperform.media.xeatre.cloud/*",
-    "*://examino.statsperform.io/play/dvr/*"
+    "*://examino.statsperform.io/*",
+    "*://*.xeatre.cloud/*",
+    "http://127.0.0.1/*",
+    "http://localhost/*"
   ],
-
+  "action": {
+    "default_title": "Overlay MatchTimer",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "assets/icon-16.png",
+      "32": "assets/icon-32.png",
+      "48": "assets/icon-48.png",
+      "128": "assets/icon-128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
       "matches": [
         "*://*.inplayip.tv/*",
-        "file:///*",
-        "*://statsperform.media.xeatre.cloud/*",
-        "*://examino.statsperform.io/play/dvr/*"
+        "http://127.0.0.1/*inplay*",
+        "http://localhost/*inplay*"
       ],
-      "js": ["content.js"],
-      "css": ["content.css"],
+      "js": [
+        "sync-feature-flag.js",
+        "bridge.js"
+      ],
+      "run_at": "document_start",
+      "world": "ISOLATED"
+    },
+    {
+      "matches": [
+        "*://*.inplayip.tv/*",
+        "http://127.0.0.1/*inplay*",
+        "http://localhost/*inplay*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "run_at": "document_idle",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "*://examino.statsperform.io/play/dvr/*",
+        "*://examino.statsperform.io/play/vod/*",
+        "http://127.0.0.1/*examino*",
+        "http://localhost/*examino*"
+      ],
+      "js": [
+        "sync-feature-flag.js",
+        "bridge.js"
+      ],
+      "run_at": "document_start",
+      "world": "ISOLATED"
+    },
+    {
+      "matches": [
+        "*://examino.statsperform.io/play/dvr/*",
+        "*://examino.statsperform.io/play/vod/*",
+        "http://127.0.0.1/*examino*",
+        "http://localhost/*examino*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "*://*.xeatre.cloud/*",
+        "http://127.0.0.1/*xeatre*",
+        "http://localhost/*xeatre*"
+      ],
+      "js": [
+        "sync-feature-flag.js",
+        "bridge.js"
+      ],
+      "run_at": "document_start",
+      "world": "ISOLATED"
+    },
+    {
+      "matches": [
+        "*://*.xeatre.cloud/*",
+        "http://127.0.0.1/*xeatre*",
+        "http://localhost/*xeatre*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
       "run_at": "document_idle",
       "world": "MAIN"
     }
   ]
-
-} 
-
+}

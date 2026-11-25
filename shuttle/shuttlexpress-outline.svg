@@ -1,0 +1,32 @@
+<svg class="omt-shuttle-svg" viewBox="0 0 200 200" role="img" aria-label="Contour ShuttleXpress">
+  <!-- v1.6.3 outline: Vasco foto.png — centred btn3, mirrored 2/4 & 1/5, dimple at 12 o'clock -->
+  <g class="omt-sx-root">
+    <circle class="omt-sx-body" cx="100" cy="100" r="80"/>
+    <g class="omt-sx-part" data-part="ring" tabindex="-1" role="button" aria-label="Shuttle ring">
+      <circle cx="100" cy="100" r="49"/>
+      <circle cx="100" cy="100" r="31"/>
+      <g class="omt-sx-ticks"><line x1="100.0" y1="67.2" x2="100.0" y2="52.8"/><line x1="104.6" y1="67.5" x2="106.6" y2="53.3"/><line x1="109.0" y1="68.5" x2="113.0" y2="54.6"/><line x1="113.3" y1="70.0" x2="119.2" y2="56.9"/><line x1="117.4" y1="72.2" x2="125.0" y2="60.0"/><line x1="121.1" y1="74.9" x2="130.3" y2="63.8"/><line x1="124.4" y1="78.1" x2="135.1" y2="68.4"/><line x1="127.2" y1="81.7" x2="139.1" y2="73.6"/><line x1="129.5" y1="85.6" x2="142.4" y2="79.3"/><line x1="131.2" y1="89.9" x2="144.9" y2="85.4"/><line x1="132.3" y1="94.3" x2="146.5" y2="91.8"/><line x1="132.8" y1="98.9" x2="147.2" y2="98.4"/><line x1="132.6" y1="103.4" x2="146.9" y2="104.9"/><line x1="131.8" y1="107.9" x2="145.8" y2="111.4"/><line x1="130.4" y1="112.3" x2="143.8" y2="117.7"/><line x1="128.4" y1="116.4" x2="140.9" y2="123.6"/><line x1="125.8" y1="120.2" x2="137.2" y2="129.1"/><line x1="122.8" y1="123.6" x2="132.8" y2="134.0"/><line x1="119.3" y1="126.5" x2="127.7" y2="138.2"/><line x1="115.4" y1="129.0" x2="122.2" y2="141.7"/><line x1="111.2" y1="130.8" x2="116.1" y2="144.4"/><line x1="106.8" y1="132.1" x2="109.8" y2="146.2"/><line x1="102.3" y1="132.7" x2="103.3" y2="147.1"/><line x1="97.7" y1="132.7" x2="96.7" y2="147.1"/><line x1="93.2" y1="132.1" x2="90.2" y2="146.2"/><line x1="88.8" y1="130.8" x2="83.9" y2="144.4"/><line x1="84.6" y1="129.0" x2="77.8" y2="141.7"/><line x1="80.7" y1="126.5" x2="72.3" y2="138.2"/><line x1="77.2" y1="123.6" x2="67.2" y2="134.0"/><line x1="74.2" y1="120.2" x2="62.8" y2="129.1"/><line x1="71.6" y1="116.4" x2="59.1" y2="123.6"/><line x1="69.6" y1="112.3" x2="56.2" y2="117.7"/><line x1="68.2" y1="107.9" x2="54.2" y2="111.4"/><line x1="67.4" y1="103.4" x2="53.1" y2="104.9"/><line x1="67.2" y1="98.9" x2="52.8" y2="98.4"/><line x1="67.7" y1="94.3" x2="53.5" y2="91.8"/><line x1="68.8" y1="89.9" x2="55.1" y2="85.4"/><line x1="70.5" y1="85.6" x2="57.6" y2="79.3"/><line x1="72.8" y1="81.7" x2="60.9" y2="73.6"/><line x1="75.6" y1="78.1" x2="64.9" y2="68.4"/><line x1="78.9" y1="74.9" x2="69.7" y2="63.8"/><line x1="82.6" y1="72.2" x2="75.0" y2="60.0"/><line x1="86.7" y1="70.0" x2="80.8" y2="56.9"/><line x1="91.0" y1="68.5" x2="87.0" y2="54.6"/><line x1="95.4" y1="67.5" x2="93.4" y2="53.3"/></g>
+    </g>
+    <g class="omt-sx-part" data-part="jog" tabindex="-1" role="button" aria-label="Jog">
+      <circle cx="100" cy="100" r="27.5"/>
+      <circle class="omt-sx-dimple" cx="100" cy="84.0" r="4.2"/>
+    </g>
+    <path class="omt-sx-part omt-sx-btn" data-part="btn1" tabindex="-1" role="button" aria-label="Button 1" d="M32.28,134.50 A76,76 0 0,1 32.28,65.50 L52.78,75.94 A53,53 0 0,0 52.78,124.06 Z"/>
+    <path class="omt-sx-part omt-sx-btn" data-part="btn2" tabindex="-1" role="button" aria-label="Button 2" d="M38.51,55.33 A76,76 0 0,1 66.68,31.69 L76.77,52.36 A53,53 0 0,0 57.12,68.85 Z"/>
+    <path class="omt-sx-part omt-sx-btn" data-part="btn3" tabindex="-1" role="button" aria-label="Button 3" d="M77.78,27.32 A76,76 0 0,1 122.22,27.32 L115.50,49.32 A53,53 0 0,0 84.50,49.32 Z"/>
+    <path class="omt-sx-part omt-sx-btn" data-part="btn4" tabindex="-1" role="button" aria-label="Button 4" d="M133.32,31.69 A76,76 0 0,1 161.49,55.33 L142.88,68.85 A53,53 0 0,0 123.23,52.36 Z"/>
+    <path class="omt-sx-part omt-sx-btn" data-part="btn5" tabindex="-1" role="button" aria-label="Button 5" d="M167.72,65.50 A76,76 0 0,1 167.72,134.50 L147.22,124.06 A53,53 0 0,0 147.22,75.94 Z"/>
+    <text class="omt-sx-label" data-part="btn1" x="35.5" y="100.0" text-anchor="middle" dominant-baseline="central">—</text>
+    <text class="omt-sx-label" data-part="btn2" x="58.5" y="50.6" text-anchor="middle" dominant-baseline="central">—</text>
+    <text class="omt-sx-label" data-part="btn3" x="100.0" y="35.5" text-anchor="middle" dominant-baseline="central">—</text>
+    <text class="omt-sx-label" data-part="btn4" x="141.5" y="50.6" text-anchor="middle" dominant-baseline="central">—</text>
+    <text class="omt-sx-label" data-part="btn5" x="164.5" y="100.0" text-anchor="middle" dominant-baseline="central">—</text>
+    <text class="omt-sx-label omt-sx-label--ring" data-part="ring" x="100.0" y="140.0" text-anchor="middle" dominant-baseline="central">Shuttle ring</text>
+    <text class="omt-sx-label" data-part="jog" x="100" y="103" text-anchor="middle" dominant-baseline="central">Jog</text>
+    <text class="omt-sx-num" data-part="btn1" x="9.0" y="100.0" text-anchor="middle" dominant-baseline="central">1</text>
+    <text class="omt-sx-num" data-part="btn2" x="41.5" y="30.3" text-anchor="middle" dominant-baseline="central">2</text>
+    <text class="omt-sx-num" data-part="btn3" x="100.0" y="9.0" text-anchor="middle" dominant-baseline="central">3</text>
+    <text class="omt-sx-num" data-part="btn4" x="158.5" y="30.3" text-anchor="middle" dominant-baseline="central">4</text>
+    <text class="omt-sx-num" data-part="btn5" x="191.0" y="100.0" text-anchor="middle" dominant-baseline="central">5</text>
+  </g>
+</svg>

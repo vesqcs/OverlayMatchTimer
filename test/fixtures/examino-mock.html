@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en" data-omt-site="examino">
+<head>
+  <meta charset="UTF-8" />
+  <title>Examino OpenPlayer Mock DVR</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0b1220; font-family: "Segoe UI", sans-serif; color: #ddd; }
+    .page {
+      width: 520px;
+      height: 420px;
+      margin: 24px auto;
+      display: flex;
+      flex-direction: column;
+      background: #111;
+      position: relative;
+    }
+    .main-container.svelte-iq8mv8 {
+      height: calc(100% - 108px);
+      position: relative;
+      background: #000;
+      overflow: hidden;
+    }
+    .top.svelte-iq8mv8 {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+    .op-player, .op-media-element-container, video {
+      position: absolute; inset: 0; width: 100%; height: 100%;
+    }
+    video { object-fit: contain; background: #000; }
+    /* Field: OvenPlayer/Examino dark top overlay (~100px at 1080p) blocks clicks. */
+    .op-top-panel {
+      position: absolute; left: 0; right: 0; top: 0; height: 100px; z-index: 4;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.35) 55%, rgba(0,0,0,0) 100%);
+      pointer-events: auto;
+    }
+    .hamburger-menu {
+      position: absolute; left: 8px; top: 8px; z-index: 6;
+      background: #222; border: 1px solid #555; padding: 4px 8px; border-radius: 4px;
+    }
+    .top-clock {
+      position: absolute; right: 8px; top: 8px; z-index: 6;
+      background: rgba(0,0,0,0.6); padding: 4px 8px; border-radius: 4px; font-variant-numeric: tabular-nums;
+    }
+    .setting-holder {
+      position: absolute; right: 8px; top: 40px; z-index: 7;
+    }
+    .op-setting-button { background: #333; color: #fff; border: 1px solid #666; padding: 4px 8px; cursor: pointer; }
+    .op-setting-panel {
+      display: none;
+      position: absolute; right: 8px; top: 72px; z-index: 20;
+      width: 220px; background: #1b1b1b; border: 1px solid #444; border-radius: 6px; padding: 8px;
+    }
+    .op-setting-panel.open { display: block; }
+    .op-setting-item {
+      display: flex; justify-content: space-between; gap: 8px;
+      padding: 6px 4px; cursor: pointer; font-size: 12px;
+    }
+    .op-setting-item:hover { background: rgba(255,255,255,0.06); }
+    .op-setting-item-nexticon { color: #888; }
+    .examino-bottom-controls {
+      height: 108px; display: flex; flex-direction: column; justify-content: space-evenly;
+      background: #1a2230; border-top: 1px solid #333; font-size: 11px;
+    }
+    .examino-bottom-controls .row {
+      display: flex; gap: 6px; justify-content: center; flex-wrap: wrap;
+    }
+    .examino-bottom-controls button {
+      background: #243044; color: #ddd; border: 1px solid #3a4a60; border-radius: 4px; padding: 3px 8px; cursor: pointer;
+    }
+    .op-controls, .op-ui, .op-progressbar-container {
+      position: absolute; left: 0; right: 0; bottom: 0; height: 28px;
+      background: rgba(255,80,0,0.35); z-index: 5; display: flex; align-items: center; justify-content: center; font-size: 11px;
+    }
+    #status { text-align: center; margin-top: 10px; color: #9ad; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="grow-parent" style="flex:1; display:flex; flex-direction:column; min-height:0;">
+      <div class="main-container svelte-iq8mv8" id="main-container">
+        <div class="top svelte-iq8mv8">
+          <div class="hamburger-menu">☰ Menu</div>
+          <div class="top-clock">12:34:56</div>
+          <div class="op-player" id="op-player">
+            <div class="op-media-element-container op-clear" id="media-host"></div>
+            <div class="op-top-panel" aria-hidden="true"></div>
+            <div class="op-ui op-clear">OpenPlayer UI</div>
+            <div class="op-controls">OpenPlayer Controls</div>
+            <div class="op-progressbar-container op-clear">Progress</div>
+            <div class="setting-holder op-navigators op-clear">
+              <button class="op-button op-setting-button" id="native-gear" type="button"><i class="op-con op-setting"></i> ⚙</button>
+            </div>
+            <div id="panel-mock" class="op-setting-panel animated fadeIn"></div>
+          </div>
+        </div>
+      </div>
+      <div class="examino-bottom-controls" id="bottom-controls">
+        <div class="row">
+          <button type="button">←</button>
+          <button type="button">Prev</button>
+          <button type="button">Next</button>
+          <button type="button">LIVE</button>
+          <button type="button">FOCUS</button>
+          <button type="button">Fullscreen</button>
+        </div>
+        <div class="row">
+          <button type="button">-30s</button>
+          <button type="button">-7s</button>
+          <button type="button">-2s</button>
+          <button type="button">2s</button>
+          <button type="button">7s</button>
+          <button type="button">30s</button>
+        </div>
+        <div class="row">
+          <button type="button">0.1x</button>
+          <button type="button">0.25x</button>
+          <button type="button">0.5x</button>
+          <button type="button">1x</button>
+          <button type="button">1.5x</button>
+          <button type="button">2x</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="status">Waiting to inject video…</div>
+  <script>
+    (function () {
+      let host = document.getElementById('media-host');
+      const status = document.getElementById('status');
+      let panel = document.getElementById('panel-mock');
+      let gear = document.getElementById('native-gear');
+      window.__omtPlayerGeneration = 1;
+
+      // Conflicting page handler (bubble) — extension capture must win.
+      window.__omtHostileKeySeen = false;
+      document.addEventListener('keydown', (e) => {
+        window.__omtHostileKeySeen = true;
+        const v = document.querySelector('video');
+        if (!v) return;
+        if (e.key === 'ArrowRight') v.currentTime = (v.currentTime || 0) + 99;
+        if (e.key === ' ') e.preventDefault();
+      }, false);
+
+      const state = {
+        source: 'DVR',       // top-row op-data-value label (DVR | VOD(1))
+        sourceIndex: '0',    // leaf op-data-value index
+        quality: '1920x1080, 1.5Mbps',
+        audio: 'Audio_3',
+        speed: '1x',
+        view: 'root' // root | source | audio | speed
+      };
+      // Leaf catalog: index → title (field: opDataValue is index, title is label).
+      const sourceLeaves = [
+        { index: '0', title: 'DVR' },
+        { index: '1', title: 'VOD(1)' }
+      ];
+
+      function bindGear() {
+        if (!gear) return;
+        gear.onclick = () => {
+          state.view = 'root';
+          renderPanel();
+          // OpenPlayer-like: gear opens settings (idempotent open for programmatic clicks).
+          panel.classList.add('open');
+        };
+      }
+      bindGear();
+
+      function renderPanel() {
+        if (!panel) return;
+        if (state.view === 'root') {
+          panel.innerHTML = `
+            <div class="op-setting-title-container"><div class="op-setting-title" tabindex="0"><span class="op-setting-title-title">Settings</span></div></div>
+            <div class="op-setting-item-container">
+              <div class="op-setting-item" op-panel-type="speed" op-data-value="${state.speed}"><span class="op-setting-item-title">Speed</span><span class="op-setting-item-nexticon">&gt;</span><span class="op-setting-item-value">${state.speed}</span></div>
+              <div class="op-setting-item" op-panel-type="source" op-data-value="${state.source}"><span class="op-setting-item-title">Source</span><span class="op-setting-item-nexticon">&gt;</span><span class="op-setting-item-value">${state.source}</span></div>
+              <div class="op-setting-item" op-panel-type="quality" op-data-value="${state.quality}"><span class="op-setting-item-title">Quality</span><span class="op-setting-item-nexticon">&gt;</span><span class="op-setting-item-value">${state.quality}</span></div>
+            </div>`;
+        } else if (state.view === 'source') {
+          // Exact field shape: top rows (hasNext) stay visible + Source leaves
+          // (opPanelType=source, hasNext=false, opDataValue=index, title=label).
+          const leaves = sourceLeaves.map((leaf) =>
+            `<div class="op-setting-item" op-panel-type="source" op-data-value="${leaf.index}"><span class="op-setting-item-title">${leaf.title}</span></div>`
+          ).join('');
+          panel.innerHTML = `
+            <div class="op-setting-title-container"><div class="op-setting-title" tabindex="0"><span class="op-setting-title-title">Source</span></div></div>
+            <div class="op-setting-item" op-panel-type="speed" op-data-value="${state.speed}"><span class="op-setting-item-title">Speed</span><span class="op-setting-item-nexticon">&gt;</span></div>
+            <div class="op-setting-item" op-panel-type="source" op-data-value="${state.source}"><span class="op-setting-item-title">Source</span><span class="op-setting-item-nexticon">&gt;</span><span class="op-setting-item-value">${state.source}</span></div>
+            <div class="op-setting-item" op-panel-type="quality" op-data-value="${state.quality}"><span class="op-setting-item-title">Quality</span><span class="op-setting-item-nexticon">&gt;</span></div>
+            ${leaves}`;
+        } else if (state.view === 'audio') {
+          panel.innerHTML = `
+            <div class="op-setting-title-container"><div class="op-setting-title" tabindex="0"><span class="op-setting-title-title">Audio</span></div></div>
+            <div class="op-setting-item" op-data-value="Audio_1"><span class="op-setting-item-title">Audio_1</span></div>
+            <div class="op-setting-item" op-data-value="Audio_3"><span class="op-setting-item-title">Audio_3</span></div>`;
+        } else if (state.view === 'speed') {
+          panel.innerHTML = `
+            <div class="op-setting-title-container"><div class="op-setting-title" tabindex="0"><span class="op-setting-title-title">Speed</span></div></div>
+            <div class="op-setting-item" op-data-value="0.5x"><span class="op-setting-item-title">0.5x</span></div>
+            <div class="op-setting-item" op-data-value="1x"><span class="op-setting-item-title">1x</span></div>
+            <div class="op-setting-item" op-data-value="1.5x"><span class="op-setting-item-title">1.5x</span></div>
+            <div class="op-setting-item" op-data-value="2x"><span class="op-setting-item-title">2x</span></div>`;
+        }
+        panel.querySelectorAll('.op-setting-item').forEach((item) => {
+          item.addEventListener('click', () => onItemClick(item));
+        });
+        const title = panel.querySelector('.op-setting-title, .op-setting-title-title');
+        if (title) title.addEventListener('click', () => {
+          if (state.view !== 'root') {
+            state.view = 'root';
+            renderPanel();
+          } else {
+            panel.classList.remove('open');
+          }
+        });
+      }
+
+      function onItemClick(item) {
+        const type = item.getAttribute('op-panel-type');
+        const value = item.getAttribute('op-data-value');
+        // Top-level rows (hasNext): open submenu. Source top row keeps op-panel-type=source.
+        if (type === 'source' && item.querySelector('.op-setting-item-nexticon')) {
+          state.view = 'source';
+          renderPanel();
+          panel.classList.add('open');
+          return;
+        }
+        if (type === 'audioTrack') { state.view = 'audio'; renderPanel(); panel.classList.add('open'); return; }
+        if (type === 'speed' && item.querySelector('.op-setting-item-nexticon')) {
+          state.view = 'speed'; renderPanel(); panel.classList.add('open'); return;
+        }
+        if (type === 'quality') { return; }
+
+        // Source leaf: opPanelType=source, hasNext=false, opDataValue=index, title=label.
+        if (type === 'source' && !item.querySelector('.op-setting-item-nexticon')) {
+          const label = ((item.querySelector('.op-setting-item-title') || {}).textContent || '').trim();
+          const lab = label.replace(/\s+/g, '').toLowerCase();
+          const kind = lab.startsWith('dvr') ? 'DVR' : lab.startsWith('vod') ? 'VOD' : null;
+          if (!kind) return;
+          state.source = label; // top-row opDataValue becomes the title ("DVR" / "VOD(1)")
+          state.sourceIndex = String(value);
+          state.view = 'root';
+          window.__omtSourceValueGen = (window.__omtSourceValueGen || 1) + 1;
+          renderPanel();
+          panel.classList.remove('open');
+          replaceVideoForSource(kind);
+          return;
+        }
+
+        if (state.view === 'source') {
+          return;
+        }
+        if (state.view === 'audio') {
+          state.audio = value;
+          state.view = 'root';
+          renderPanel();
+          panel.classList.remove('open');
+          return;
+        }
+        if (state.view === 'speed') {
+          state.speed = value;
+          state.view = 'root';
+          renderPanel();
+          panel.classList.remove('open');
+          const v = document.querySelector('video');
+          if (v) v.playbackRate = parseFloat(value) || 1;
+        }
+      }
+
+      let durationForSource = { DVR: 330, VOD: 7200 }; // DVR ~5.5 min, VOD full match
+      let currentLabel = 'EXAMINO-A';
+
+      /**
+       * Field: after Source swap Examino recreates the OpenPlayer shell (new gear +
+       * panel + media host). Stale gear clicks then no-op → ensure-panel:timeout.
+       */
+      function rebuildPlayerShell() {
+        const top = document.querySelector('.top.svelte-iq8mv8, .top');
+        if (!top) return;
+        const old = document.getElementById('op-player');
+        if (old) old.remove();
+        window.__omtPlayerGeneration = (window.__omtPlayerGeneration || 0) + 1;
+        const gen = window.__omtPlayerGeneration;
+        const player = document.createElement('div');
+        player.className = 'op-player';
+        player.id = 'op-player';
+        player.dataset.omtPlayerGen = String(gen);
+        player.innerHTML = `
+          <div class="op-media-element-container op-clear" id="media-host"></div>
+          <div class="op-ui op-clear">OpenPlayer UI</div>
+          <div class="op-controls">OpenPlayer Controls</div>
+          <div class="op-progressbar-container op-clear">Progress</div>
+          <div class="setting-holder op-navigators op-clear">
+            <button class="op-button op-setting-button" id="native-gear" type="button"><i class="op-con op-setting"></i> ⚙</button>
+          </div>
+          <div id="panel-mock" class="op-setting-panel animated fadeIn"></div>`;
+        top.appendChild(player);
+        host = document.getElementById('media-host');
+        panel = document.getElementById('panel-mock');
+        gear = document.getElementById('native-gear');
+        bindGear();
+        state.view = 'root';
+        renderPanel();
+        // Simulate concurrent host refresh pressure right after rebuild (field race).
+        window.__omtMockPostSwapRefresh = (window.__omtMockPostSwapRefresh || 0) + 1;
+      }
+
+      function makeVideo(label, source) {
+        const video = document.createElement('video');
+        video.preload = 'auto';
+        video.playsInline = true;
+        video.muted = true;
+        const canvas = document.createElement('canvas');
+        canvas.width = 640; canvas.height = 360;
+        const ctx = canvas.getContext('2d');
+        const t0 = performance.now();
+        function draw() {
+          const t = (performance.now() - t0) / 1000;
+          ctx.fillStyle = source === 'VOD' ? '#1a2a40' : '#143d2b';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.fillStyle = '#00ff88';
+          ctx.font = '26px sans-serif';
+          ctx.fillText(label + ' ' + source + ' t=' + t.toFixed(1) + 's', 20, 48);
+          requestAnimationFrame(draw);
+        }
+        draw();
+        video.srcObject = canvas.captureStream(30);
+        const dur = durationForSource[source] || 600;
+        Object.defineProperty(video, 'duration', { configurable: true, get: () => dur });
+        const seekable = { length: 1, start: () => 0, end: () => dur };
+        Object.defineProperty(video, 'seekable', { configurable: true, get: () => seekable });
+        let _ct = source === 'VOD' ? 120 : 12;
+        Object.defineProperty(video, 'currentTime', {
+          configurable: true,
+          get: () => _ct,
+          set: (v) => {
+            const next = Number(v) || 0;
+            // Seeking outside the DVR window freezes playback (real-world failure mode).
+            if (source === 'DVR' && (next > dur + 0.01 || next < -0.01)) {
+              window.__omtDvrFrozen = true;
+              _ct = Math.max(0, Math.min(dur, next));
+              try { video.pause(); } catch (_) {}
+              return;
+            }
+            window.__omtDvrFrozen = false;
+            _ct = Math.max(0, Math.min(dur, next));
+          }
+        });
+        video.dataset.omtSource = source;
+        // Field: MSE uses blob: currentSrc — mediaUrl is often null / not an https chunklist.
+        const gen = window.__omtPlayerGeneration || 1;
+        const mediaUrl = 'blob:https://examino.local/' + source.toLowerCase() + '-' + gen;
+        video.dataset.omtMediaUrl = mediaUrl;
+        // Real host often has no readable media URL on window — leave null unless tests set it.
+        window.__omtMockMediaUrl = null;
+        try {
+            Object.defineProperty(video, 'currentSrc', {
+                configurable: true,
+                get: () => mediaUrl
+            });
+            Object.defineProperty(video, 'src', {
+                configurable: true,
+                get: () => mediaUrl,
+                set: () => {}
+            });
+        } catch (_) {}
+        // OpenPlayer-like: click plays when paused but does NOT pause when playing.
+        video.addEventListener('click', () => {
+          window.__omtNativeClickPlay = (window.__omtNativeClickPlay || 0) + 1;
+          if (video.paused) video.play().catch(() => {});
+        });
+        video.play().catch(() => {});
+        return video;
+      }
+
+      function replaceVideoForSource(source) {
+        const prev = document.querySelector('video');
+        const prevTime = prev ? prev.currentTime : 0;
+        currentLabel = source === 'VOD' ? 'EXAMINO-VOD' : 'EXAMINO-DVR';
+        // Recreate the whole player (gear/panel/video) — matches real Examino post-VOD DOM.
+        rebuildPlayerShell();
+        const next = makeVideo(currentLabel, source);
+        // Simulate player carrying VOD playhead into DVR (out-of-window) — extension must settle.
+        if (source === 'DVR' && prevTime > durationForSource.DVR) {
+          next.currentTime = prevTime;
+        }
+        host.appendChild(next);
+        status.textContent = 'Source=' + source + ' — player shell gen=' + window.__omtPlayerGeneration;
+        window.__omtMockSource = source;
+        // Keep mediaUrl null (field MSE) — confirm must not require it.
+        window.__omtMockMediaUrl = null;
+        window.__omtDvrFrozen = !!window.__omtDvrFrozen;
+      }
+
+      window.__omtSourceValueGen = 1;
+
+      // Late mount then one replacement (player init), then leave Source=DVR until extension/auto-VOD switches.
+      setTimeout(() => {
+        host.appendChild(makeVideo('EXAMINO-A', 'DVR'));
+        status.textContent = 'Video A mounted (late, DVR)';
+        window.__omtMockSource = 'DVR';
+      }, 800);
+
+      setTimeout(() => {
+        // Preserve whatever Source the extension (auto-VOD) already selected.
+        // Init replacement is video-only (no shell rebuild) so first Auto VOD still finds gear.
+        host.innerHTML = '';
+        host.appendChild(makeVideo('EXAMINO-B', state.source));
+        status.textContent = 'Video B replaced — source=' + state.source;
+        window.__omtMockSource = state.source;
+      }, 2200);
+
+      window.__mockRequestFs = () => document.getElementById('op-player').requestFullscreen();
+      window.__omtMockGetSource = () => state.source;
+      window.__omtMockRebuildPlayer = rebuildPlayerShell;
+      renderPanel();
+    })();
+  </script>
+</body>
+</html>

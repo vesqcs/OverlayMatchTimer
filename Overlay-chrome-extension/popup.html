@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Overlay MatchTimer</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header class="omt-popup-header">
+    <div class="omt-brand">
+      <div class="omt-brand-logo-wrap">
+        <img class="omt-sp-logo" src="assets/stats-perform-logo-dark.png" alt="Stats Perform" width="168" height="44" />
+        <span class="omt-header-clock" aria-label="Match clock 20:08">20:08</span>
+      </div>
+      <div class="omt-wordmark">OverlayMatchTimer</div>
+    </div>
+  </header>
+
+  <nav class="omt-tabs" role="tablist">
+    <button type="button" class="omt-tab is-active" data-tab="general">General</button>
+    <button type="button" class="omt-tab" data-tab="customize">Customize</button>
+  </nav>
+
+  <section class="omt-pane is-active" data-pane="general">
+    <details class="omt-cust-details" id="omt-gen-actions-details" data-section="genActions" open>
+      <summary class="omt-cust-summary">Actions</summary>
+      <div class="omt-cust-details-body">
+        <button type="button" id="omt-open-local-player" class="omt-local-open-btn">Open local player</button>
+        <p class="omt-note">Standalone player for local or NAS match files.</p>
+        <div class="omt-toggle-row" title="Off (default): pause only when the tab/window is hidden (tab switch, minimize, or fully covered) and resume on return if it was playing. Visible but unfocused windows keep playing. On: keep playing while hidden (counters Examino’s native pause). Skipped when ShuttleXpress is on.">
+          <span class="omt-toggle-label">Keep playing on alt tab</span>
+          <label class="omt-switch" for="omt-keep-playing-alt-tab">
+            <input type="checkbox" id="omt-keep-playing-alt-tab" />
+            <span class="omt-switch-slider"></span>
+          </label>
+        </div>
+      </div>
+    </details>
+
+    <details class="omt-cust-details" id="omt-gen-shortcuts-details" data-section="genShortcuts">
+      <summary class="omt-cust-summary">Shortcuts</summary>
+      <div class="omt-cust-details-body">
+        <div id="omt-shortcut-list"></div>
+      </div>
+    </details>
+
+    <details class="omt-cust-details" id="omt-gen-shuttle-details" data-section="genShuttle">
+      <summary class="omt-cust-summary">ShuttleXpress</summary>
+      <div class="omt-cust-details-body">
+        <div class="omt-shuttle-diagram-wrap omt-shuttle-diagram-wrap--general" id="omt-shuttle-summary-diagram" aria-label="ShuttleXpress shortcut map"></div>
+        <p class="omt-note">Enable per window; edit skips in Customize.</p>
+      </div>
+    </details>
+  </section>
+
+  <section class="omt-pane" data-pane="customize">
+    <details class="omt-cust-details" id="omt-clock-details" data-section="clock" open>
+      <summary class="omt-cust-summary">Match clock</summary>
+      <div class="omt-cust-details-body">
+        <div class="omt-clock-preview" aria-hidden="true">
+          <div class="omt-clock-preview-stage" id="omt-clock-preview-stage">
+            <div class="omt-clock-preview-face" id="omt-clock-preview-face">45:00</div>
+          </div>
+        </div>
+        <label class="omt-field">Position
+          <select id="clock-pos">
+            <option value="top-left">Top left (default)</option>
+            <option value="top-centre">Top centre</option>
+            <option value="top-right">Top right</option>
+            <option value="bottom-left">Bottom left</option>
+            <option value="bottom-centre">Bottom centre</option>
+            <option value="bottom-right">Bottom right</option>
+          </select>
+        </label>
+        <label class="omt-field">Size
+          <select id="clock-size">
+            <option value="small">S</option>
+            <option value="medium" selected>M (default)</option>
+            <option value="large">L</option>
+            <option value="xlarge">XL</option>
+          </select>
+        </label>
+        <label class="omt-field">Style
+          <select id="clock-shape">
+            <option value="rounded" selected>Box (default)</option>
+            <option value="pill">Pill</option>
+            <option value="minimal">Transparent text</option>
+          </select>
+        </label>
+        <p class="omt-note">Click the on-video clock to type a match time.</p>
+      </div>
+    </details>
+
+    <details class="omt-cust-details" id="omt-panel-details" data-section="panel">
+      <summary class="omt-cust-summary">Control panel</summary>
+      <div class="omt-cust-details-body">
+        <label class="omt-field">Control panel size
+          <select id="panel-size">
+            <option value="medium" selected>M (default)</option>
+            <option value="small">S</option>
+          </select>
+        </label>
+        <div class="omt-toggle-row">
+          <span class="omt-toggle-label">Compact</span>
+          <label class="omt-switch" for="panel-compact">
+            <input type="checkbox" id="panel-compact">
+            <span class="omt-switch-slider"></span>
+          </label>
+        </div>
+        <p class="omt-note">Compact hides the lower speed row.</p>
+      </div>
+    </details>
+
+    <details class="omt-cust-details" id="omt-hotkeys-details" data-section="hotkeys">
+      <summary class="omt-cust-summary">Shortcuts</summary>
+      <div class="omt-cust-details-body">
+        <p class="omt-note">Click a binding, then press a key.</p>
+        <div id="omt-hotkey-editor" class="omt-hotkey-editor"></div>
+        <div class="omt-cust-actions">
+          <button type="button" id="omt-hotkeys-reset-all" class="omt-btn-secondary">Reset all shortcuts</button>
+        </div>
+      </div>
+    </details>
+
+    <details class="omt-cust-details" id="omt-shuttle-details" data-section="shuttle">
+      <summary class="omt-cust-summary">ShuttleXpress</summary>
+      <div class="omt-cust-details-body">
+        <div class="omt-shuttle-diagram-wrap omt-shuttle-diagram-wrap--edit" id="omt-shuttle-diagram-wrap" aria-label="ShuttleXpress diagram">
+          <!-- Outline SVG injected by popup.js (same component as General). Source: Vasco foto.png + Contour geometry. -->
+        </div>
+
+        <!-- Rows rendered by popup.js (per-button skips + movable Play/Pause). -->
+        <div class="omt-shuttle-edit-list" id="omt-shuttle-edit-list"></div>
+        <div class="omt-cust-actions">
+          <button type="button" id="omt-sx-reset-all" class="omt-btn-secondary">Reset all ShuttleXpress</button>
+        </div>
+        <p class="omt-note">Enable per window; auto pause off while Shuttle is on.</p>
+      </div>
+    </details>
+
+    <!-- Kickoff sync UI removed while OMT_SYNC_FEATURE_ENABLED is false (v1.7.1).
+         Prototype markup kept in popup-sync-section.html for internal re-enable only.
+         Planned always-on design: ARCHITECTURE.md / supabase/SETUP.md (not shipped). -->
+
+    <div class="omt-cust-actions omt-cust-actions--foot">
+      <button type="button" id="omt-reset-all-custom" class="omt-btn-secondary">Reset all customizations</button>
+    </div>
+  </section>
+
+  <footer class="omt-popup-foot">v2.4.12</footer>
+  <script src="sync-feature-flag.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

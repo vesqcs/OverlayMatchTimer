@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en" data-omt-site="inplayip">
+<head>
+  <meta charset="UTF-8" />
+  <title>InplayIP Video.js Mock Review</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #101820; color: #ccc; font-family: "Segoe UI", sans-serif; }
+    .video-js {
+      position: relative;
+      width: 960px;
+      height: 540px;
+      margin: 24px auto;
+      background: #000;
+      overflow: hidden;
+    }
+    video.vjs-tech {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    .vjs-control-bar, .vjs-progress-control {
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      height: 40px;
+      background: rgba(0, 120, 255, 0.35);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 3;
+    }
+    #status { text-align: center; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="video-js vjs-player" id="vjs">
+    <video class="vjs-tech" id="tech" muted playsinline></video>
+    <div class="vjs-control-bar">
+      <div class="vjs-progress-control">Review Progress</div>
+    </div>
+  </div>
+  <div id="status">InplayIP Review mock ready</div>
+  <script>
+    (function () {
+      const video = document.getElementById('tech');
+      const canvas = document.createElement('canvas');
+      canvas.width = 960;
+      canvas.height = 540;
+      const ctx = canvas.getContext('2d');
+      const t0 = performance.now();
+      function draw() {
+        const t = (performance.now() - t0) / 1000;
+        ctx.fillStyle = '#102033';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#66b3ff';
+        ctx.font = '32px sans-serif';
+        ctx.fillText('INPLAY REVIEW t=' + t.toFixed(1) + 's', 32, 64);
+        requestAnimationFrame(draw);
+      }
+      draw();
+      video.srcObject = canvas.captureStream(30);
+      Object.defineProperty(video, 'duration', { configurable: true, get: () => 1200 });
+      const seekable = { length: 1, start: () => 0, end: () => 1200 };
+      Object.defineProperty(video, 'seekable', { configurable: true, get: () => seekable });
+      let _ct = 30;
+      Object.defineProperty(video, 'currentTime', {
+        configurable: true,
+        get: () => _ct,
+        set: (v) => { _ct = Math.max(0, Math.min(1200, Number(v) || 0)); }
+      });
+      video.play().catch(() => {});
+    })();
+  </script>
+</body>
+</html>

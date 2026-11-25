@@ -1,0 +1,10 @@
+{
+  "name": "overlay-matchtimer-extension",
+  "private": true,
+  "version": "2.4.12",
+  "description": "Build helper for Overlay MatchTimer content.js (concat src fragments)",
+  "scripts": {
+    "build": "node scripts/build-content.mjs",
+    "build:content": "node scripts/build-content.mjs"
+  }
+}

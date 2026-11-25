@@ -1,0 +1,148 @@
+/* Capture-phase hotkeys (shared handler; Examino installs on window). */
+    /* =========================================================
+       14. KEYBOARD SHORTCUTS (capture phase — intercepts Video.js)
+       ========================================================= */
+    function isEditableKeyTarget(target) {
+        if (!target) return false;
+        if (target.isContentEditable) return true;
+        const el = target.nodeType === 1 ? target : target.parentElement;
+        if (!el) return false;
+        if (el.closest && el.closest('input, select, textarea, [contenteditable=""], [contenteditable="true"]')) {
+            return true;
+        }
+        const tag = (el.tagName || '').toUpperCase();
+        return tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA';
+    }
+
+    function runHotkeyAction(actionId) {
+        // InPlay multi-view (v2.3.0): shortcuts apply to the last-clicked tile.
+        // Inactive / single-video → returns false immediately (no divert).
+        if (typeof omtInplayMvRunOnHotkeyTarget === 'function') {
+            const diverted = omtInplayMvRunOnHotkeyTarget(function () {
+                runHotkeyActionBody(actionId);
+            });
+            if (diverted) return;
+        }
+        runHotkeyActionBody(actionId);
+    }
+
+    function runHotkeyActionBody(actionId) {
+        if (!ensureLiveVideo()) return;
+        switch (actionId) {
+            case 'skipFwd2': saltarVideo(omtGetSkipForAction('skipFwd2')); break;
+            case 'skipBack2': saltarVideo(-omtGetSkipForAction('skipBack2')); break;
+            case 'skipFwd10': saltarVideo(omtGetSkipForAction('skipFwd10')); break;
+            case 'skipBack10': saltarVideo(-omtGetSkipForAction('skipBack10')); break;
+            case 'skipFwd2m': saltarVideo(omtGetSkipForAction('skipFwd2m')); break;
+            case 'skipBack2m': saltarVideo(-omtGetSkipForAction('skipBack2m')); break;
+            case 'frameFwd': avancarFrame(); break;
+            case 'frameBack': retrocederFrame(); break;
+            case 'playPause': togglePlay(); break;
+            case 'speedDown': {
+                const closestRate = closestSpeedRate(vid.playbackRate);
+                const currentIndex = OMT_SPEED_RATES.indexOf(closestRate);
+                const newIndex = Math.max(0, currentIndex - 1);
+                applyPlaybackSpeed(OMT_SPEED_RATES[newIndex]);
+                break;
+            }
+            case 'speedUp': {
+                const closestRate = closestSpeedRate(vid.playbackRate);
+                const currentIndex = OMT_SPEED_RATES.indexOf(closestRate);
+                const newIndex = Math.min(OMT_SPEED_RATES.length - 1, currentIndex + 1);
+                applyPlaybackSpeed(OMT_SPEED_RATES[newIndex]);
+                break;
+            }
+            case 'speedReset':
+                applyPlaybackSpeed(1.0);
+                break;
+            case 'hide':
+                toggleManualControlsVisibility();
+                break;
+            case 'kickoff':
+                iniciarTimer();
+                break;
+            case 'kickoff1':
+                iniciarTimer('1');
+                break;
+            case 'kickoff2':
+                iniciarTimer('2');
+                break;
+            case 'live':
+                irParaLive();
+                break;
+            default:
+                break;
+        }
+    }
+
+    function handleKeydown(e) {
+        // Timer edit: Enter commits + seeks immediately; Escape cancels.
+        // Capture-phase so host players cannot swallow Enter before our input.
+        const editEl = e.target && e.target.nodeType === 1
+            ? e.target
+            : (e.target && e.target.parentElement);
+        if (editEl && editEl.id === 'timer-edit-input') {
+            if (e.key === 'Enter' && typeof omtClockEditCommit === 'function' && omtClockEditCommit) {
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                try { omtClockEditCommit(); } catch (_) {}
+                return;
+            }
+            if (e.key === 'Escape' && typeof omtClockEditCancel === 'function' && omtClockEditCancel) {
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                try { omtClockEditCancel(); } catch (_) {}
+                return;
+            }
+            return;
+        }
+
+        // Don't intercept when user is typing in inputs / contenteditable
+        if (isEditableKeyTarget(e.target)) return;
+
+        const actionId = (typeof omtFindHotkeyAction === 'function')
+            ? omtFindHotkeyAction(e)
+            : null;
+        if (!actionId) return;
+
+        // Stop the event before Video.js / OpenPlayer / Examino handles it
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+
+        runHotkeyAction(actionId);
+    }
+
+    function toggleManualControlsVisibility() {
+        if (!controlsPanel) return;
+        if (isManuallyHidden) {
+            isManuallyHidden = false;
+            resetControlsTimeout();
+            mostrarOSD('Controls Visible');
+            return;
+        }
+        isManuallyHidden = true;
+        if (mouseMoveTimeout) {
+            clearTimeout(mouseMoveTimeout);
+            mouseMoveTimeout = null;
+        }
+        controlsPanel.style.opacity = '0';
+        controlsPanel.style.pointerEvents = 'none';
+        const timelineBar = omtRoot ? omtRoot.querySelector('#omt-timeline-bar') : null;
+        if (timelineBar) {
+            timelineBar.style.opacity = '0';
+            timelineBar.style.pointerEvents = 'none';
+        }
+        mostrarOSD('Controls Hidden');
+    }
+
+    function syncSpeedSelect() {
+        if (!ensureLiveVideo()) return;
+        const closestRate = closestSpeedRate(vid.playbackRate);
+        if (speedSelect) {
+            speedSelect.value = OMT_SPEED_SELECT_VALUES[closestRate] || String(closestRate);
+        }
+        if (typeof syncSpeedChips === 'function') syncSpeedChips();
+    }

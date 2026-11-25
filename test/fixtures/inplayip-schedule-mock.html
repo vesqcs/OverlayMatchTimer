@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>InPlay /schedule field mock (curtain over a full-viewport player)</title>
+  <style>
+    /* Rules copied from inplayip.tv main.11a7d7dd.chunk.css (Nov 2026). */
+    html, body { margin: 0; height: 100%; background: #212529; font-family: "Segoe UI", sans-serif; overflow: hidden; }
+    #header { position: fixed; }
+    .header-container { width: 100%; position: absolute; height: 60px; background-color: #323a45; color: #fff; z-index: 5; opacity: 0; top: 0; display: flex; align-items: center; }
+    .hoverable { z-index: 2; }
+    .hoverable:hover { opacity: 1 !important; }
+    .header-container.show { opacity: 1; }
+    .header .schedule { position: absolute; width: 100%; display: flex; justify-content: center; }
+    .header .schedule .table { height: 0; width: 100%; }
+    .header .schedule .table-expanded { position: relative; z-index: 3; width: 100%; background-color: #1a1f25; height: 100vh; opacity: .9; overflow: hidden; }
+    .schedule-table { background-color: #323a45; color: #fff; margin: 70px auto 0; width: 90%; border-collapse: collapse; }
+    .schedule-table td { padding: 5px 10px; border-bottom: 1px solid #444; }
+    .toggle-btn { display: block; height: 60px; position: absolute; width: 60px; border-radius: 50%; border: none; color: #fff; background-color: #1a1f25; outline: none; padding-top: 25px; z-index: 6; top: -30px; left: 50%; transform: translateX(-50%); cursor: pointer; }
+    .toggle-btn-hover:hover { top: -10px; }
+    .toggle-btn-expanded { top: calc(100vh - 30px); display: block; height: 30px; position: absolute; width: 60px; border-top-left-radius: 60px; border-top-right-radius: 60px; border: none; color: #fff; background-color: #1a1f25; outline: none; z-index: 4; left: 50%; transform: translateX(-50%); cursor: pointer; }
+    .toggle-btn i, .toggle-btn-expanded i { font-style: normal; display: inline-block; width: 16px; height: 14px; font-size: 12px; line-height: 14px; }
+    .players-container { height: 100vh; width: 100vw; display: flex !important; flex-wrap: wrap; }
+    .fake-players-container { position: absolute; width: 100%; height: 100%; background-color: #000; }
+    .player-container { position: relative; overflow: hidden; }
+    .player-container video { background-color: #000; }
+    .video-js { position: relative; width: 100%; height: 100%; }
+    .video-js video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+    .vjs-control-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 30px; background: rgba(43, 51, 63, .7); }
+    #host-fs-btn { margin-left: auto; margin-right: 12px; }
+  </style>
+</head>
+<body>
+  <div id="root">
+    <div style="background-color:#212529">
+      <div class="header">
+        <div id="header" class="header-container hoverable">
+          <span style="margin-left:60px">InPlay</span>
+          <button type="button" id="host-fs-btn">Fullscreen</button>
+        </div>
+        <div class="schedule">
+          <div class="table" id="schedule-table-wrap">
+            <table class="schedule-table" id="schedule-list" hidden>
+              <tbody>
+                <tr><td>12:30</td><td>Team A v Team B</td><td>Review</td></tr>
+                <tr><td>15:00</td><td>Team C v Team D</td><td>Live</td></tr>
+                <tr><td>17:30</td><td>Team E v Team F</td><td>Upcoming</td></tr>
+              </tbody>
+            </table>
+            <button type="button" id="curtain-arrow" class="toggle-btn toggle-btn-hover"><div class="expand-with-toggle"><i class="fas fa-expand">⤢</i><i class="fas fa-arrow-down">▼</i></div></button>
+          </div>
+        </div>
+      </div>
+      <div class="players-container">
+        <div class="fake-players-container"></div>
+        <div class="player-container" style="width:100vw;height:100vh">
+          <div class="video-js vjs-default-skin" id="vjs">
+            <video class="vjs-tech" id="tech" muted playsinline></video>
+            <div class="vjs-control-bar"><div class="vjs-progress-control"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+    (function () {
+      const wrap = document.getElementById('schedule-table-wrap');
+      const list = document.getElementById('schedule-list');
+      const arrow = document.getElementById('curtain-arrow');
+      const header = document.getElementById('header');
+      const state = { expanded: false, fullscreen: false, toggles: 0 };
+      window.__inplayState = state;
+
+      function render() {
+        wrap.className = state.expanded ? 'table-expanded' : 'table';
+        list.hidden = !state.expanded;
+        header.className = 'header-container ' + (state.expanded ? 'show' : 'hoverable');
+        arrow.className = (state.expanded ? 'toggle-btn-expanded' : 'toggle-btn') +
+          (state.fullscreen || state.expanded ? '' : ' toggle-btn-hover');
+        arrow.innerHTML = state.expanded
+          ? '<i class="fas fa-arrow-up">▲</i>'
+          : '<div class="expand-with-toggle"><i class="fas fa-expand">⤢</i><i class="fas fa-arrow-down">▼</i></div>';
+      }
+      arrow.addEventListener('click', () => {
+        state.expanded = !state.expanded;
+        state.toggles += 1;
+        render();
+      });
+      document.getElementById('host-fs-btn').addEventListener('click', () => {
+        const root = document.getElementById('root');
+        if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+        else root.requestFullscreen().catch(() => {});
+      });
+      document.addEventListener('fullscreenchange', () => {
+        state.fullscreen = !!document.fullscreenElement;
+        render();
+      });
+
+      // Video.js VOD/Review: MSE-like finite duration.
+      const video = document.getElementById('tech');
+      const canvas = document.createElement('canvas');
+      canvas.width = 1280; canvas.height = 720;
+      const ctx = canvas.getContext('2d');
+      const t0 = performance.now();
+      (function draw() {
+        ctx.fillStyle = '#0d2236';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#66b3ff';
+        ctx.font = '40px sans-serif';
+        ctx.fillText('INPLAY REVIEW t=' + ((performance.now() - t0) / 1000).toFixed(1), 40, 90);
+        requestAnimationFrame(draw);
+      })();
+      video.srcObject = canvas.captureStream(30);
+      let ct = 300;
+      const dur = 5400;
+      Object.defineProperty(video, 'duration', { configurable: true, get: () => dur });
+      Object.defineProperty(video, 'seekable', { configurable: true, get: () => ({ length: 1, start: () => 0, end: () => dur }) });
+      Object.defineProperty(video, 'currentTime', {
+        configurable: true,
+        get: () => ct,
+        set: (v) => { ct = Math.max(0, Math.min(dur, Number(v) || 0)); }
+      });
+      setInterval(() => { if (!video.paused) ct = Math.min(dur, ct + 0.25); }, 250);
+      video.play().catch(() => {});
+      render();
+    })();
+  </script>
+</body>
+</html>

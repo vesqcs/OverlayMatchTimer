@@ -1,0 +1,833 @@
+===== PAGE 1 =====
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+OVERLAY MATCHTIMER 
+STATS PERFORM 
+05 JUL 2026 
+1.0.0 
+
+
+===== PAGE 2 =====
+ 
+ OVERLAY MATCHTIMER  1 
+ STATS PERFORM SECURITY LEVEL: LEVEL 2 - RESTRICTED  
+ 
+TABLE OF CONTENTS 
+1 GENERAL INFORMATION ............................................................................................................. 3 
+1.1 REVISION HISTORY .......................................................................................................................... 3 
+1.2 GLOSSARY OF TERMS & ABBREVIATIONS ................................................................................... 3 
+2 STARTING THE DASHBOARD APPLICATION ............................................................................ 4 
+2.1 LOCATING AND OPENING THE FILE .............................................................................................. 4 
+3 LOADING LOCAL VIDEO FILES (TIER 12) ................................................................................... 6 
+3.1 MANAGING SETUP PANEL VISIBILITY............................................................................................ 6 
+3.2 USING THE "CHOOSE FILE" INPUT ................................................................................................. 7 
+4 MATCH CLOCK SYNCHRONIZATION .......................................................................................... 9 
+4.1 FINDING THE KICK-OFF FRAME...................................................................................................... 9 
+4.2 SELECTING THE MATCH HALF ....................................................................................................... 9 
+4.3 CALIBRATING THE CLOCK ("SET KICK-OFF TIME") .................................................................... 10 
+4.4 WIPING SESSION CACHE AND RESETTING (THE RED "X" BUTTON) ...................................... 11 
+5 ADVANCED MATCH NAVIGATION & CONTROLS .................................................................... 12 
+5.1 THE DRAGGABLE & AUTO-HIDING CONTROL PANEL ............................................................... 12 
+5.2 DYNAMIC MATCH PERIOD BOOKMARKING & QUICK-JUMPING ............................................... 13 
+5.3 KEYBOARD SHORTCUTS QUICK-REFERENCE (HOTKEYS) ...................................................... 14 
+5.4 HUD INTERACTIVE TIMELINE JUMPING ...................................................................................... 14 
+5.5 SHUTTLEXPRESS HARDWARE INTEGRATION (COLLABORATIVE REVIEW CONTROL) ....... 15 
+6 WORKING WITH ONLINE STREAMS ......................................................................................... 18 
+6.1 EXTRACTING AND LOADING URLS FROM XEATRE ................................................................... 18 
+6.2 EXTRACTING AND LOADING URLS FROM EXAMINO ................................................................. 20 
+6.3 INSTALLING AND ACTIVATING THE EXTENSION FOR INPLAY ................................................. 22 
+7 TROUBLESHOOTING .................................................................................................................. 25 
+8 APPENDIX .................................................................................................................................... 26 
+8.1 TABLE OF TABLES .......................................................................................................................... 26 
+8.2 TABLE OF FIGURES ........................................................................................................................ 26 
+ 
+
+===== PAGE 3 =====
+ 
+ OVERLAY MATCHTIMER  2 
+ STATS PERFORM SECURITY LEVEL: LEVEL 2 - RESTRICTED  
+ 
+DISCLAIMER 
+This document and any attachments hereto may contain proprietary and confidential 
+information (“Confidential Information”) of Stats Perform. Such Confidential Information is 
+valuable, confidential and proprietary information of Stats Perform, constitutes trade 
+secrets of Stats Perform and notwithstanding disclosure herein, such Confidential 
+Information remains the exclusive property of Stats Perform and should not be used or 
+disclosed for any reason. 
+
+===== PAGE 4 =====
+ 
+ OVERLAY MATCHTIMER  3 
+ STATS PERFORM SECURITY LEVEL: LEVEL 2 - RESTRICTED  
+ 
+1 GENERAL INFORMATION 
+1.1 REVISION HISTORY 
+REVISION INFORMATION AUTHOR REFERENCE DATE 
+1.0.0 Guideline creation Vasco Oliveira 05/JUL/2026 
+    
+    
+TABLE 1 - REVISION HISTORY 
+1.2 GLOSSARY OF TERMS & ABBREVIATIONS 
+TERM/ABBREVIATION DESCRIPTION 
+Overlay MatchTimer Local video analysis and timer synchronization tool 
+Shuttle Xpress USB controller used for video playback control and navigation 
+HUD Heads-Up Display showing the synchronized timer overlay 
+TABLE 2 - TERMS AND ABBREVIATIONS 
+ 
+
+===== PAGE 5 =====
+ 
+ OVERLAY MATCHTIMER  4 
+ STATS PERFORM SECURITY LEVEL: LEVEL 2 - RESTRICTED  
+ 
+2 STARTING THE DASHBOARD APPLICATION 
+Overlay MatchTimer runs locally on your computer to provide stable video playback and 
+accurate clock synchronization. Before loading any match stream, you must launch the 
+local file. 
+  
+2.1 LOCATING AND OPENING THE FILE 
+Open your local file explorer and navigate to the directory where the tool repository was 
+deployed. 
+  
+ Locate the core application file named “OverlayMatchTimer”. 
+  
+ 
+FIGURE 1 - APPLICATION FILE IN LOCAL DIRECTORY 
+ 
+  
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+
+
+===== PAGE 6 =====
+ 
+ OVERLAY MATCHTIMER  5 
+ STATS PERFORM SECURITY LEVEL: LEVEL 2 - RESTRICTED  
+ 
+ Double-click the “OverlayMatchTimer” file. It will automatically launch as a new tab 
+inside your browser. 
+  
+ 
+FIGURE 2 - LAUNCHED DASHBOARD APP INTERFACE 
+  
+Note: Overlay MatchTimer works with multiple web browsers. However, Google Chrome is 
+the browser used during development and testing, and is therefore the recommended 
+browser. 
+ 
+
+
+===== PAGE 7 =====
+ 
+ OVERLAY MATCHTIMER  6 
+ STATS PERFORM SECURITY LEVEL: LEVEL 2 - RESTRICTED  
+ 
+3 LOADING LOCAL VIDEO FILES (TIER 12) 
+For Tier 12 matches and games without an on-screen transmission timer, analysts can 
+load offline video files directly using the built-in file picker. This method runs locally and 
+does not require copying file paths or changing browser permissions. 
+  
+3.1 MANAGING SETUP PANEL VISIBILITY 
+All input configurations and clock synchronization tools are managed inside the Setup 
+Panel (located on the left side of the window). 
+  
+ 
+FIGURE 3 - SETUP PANEL OVERVIEW 
+ 
+Default State: When you open the HTML dashboard app, the Setup Panel is automatically 
+open and visible. 
+
+
+===== PAGE 8 =====
+ 
+ OVERLAY MATCHTIMER  7 
+ STATS PERFORM SECURITY LEVEL: LEVEL 2 - RESTRICTED  
+ 
+Opening the Panel: If the Setup Panel has been closed, click the Settings Gear Icon (   ) 
+on the left side of the bottom floating Control Panel to display it again. 
+ 
+ 
+FIGURE 4 - CONTROL PANEL SETTINGS BUTTON 
+Closing the Panel: Once your video is loaded and your match timer parameters are 
+configured, click the Close (X) Button in the top-right corner of the setup panel. 
+3.2 USING THE "CHOOSE FILE" INPUT 
+To load your match media into the ecosystem: 
+  
+Ensure the Setup Panel is open and locate section 1A. LOAD LOCAL VIDEO. 
+  
+ Click the Choose File button. 
+  
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+Your operating system's file explorer window will open automatically. 
+  
+Navigate to your match video file. You can select a file from: 
+  
+Local PC Drive (Highly Recommended): Moving the file directly to your computer's drive 
+provides optimal performance with zero buffer lag. 
+  
+NAS Network Storage: You can select the file directly from the office shared network NAS 
+folder. 
+  
+ 
+FIGURE 5 - NATIVE LOCAL VIDEO FILE PICKER 
+
+===== PAGE 9 =====
+ 
+ OVERLAY MATCHTIMER  8 
+ STATS PERFORM SECURITY LEVEL: LEVEL 2 - RESTRICTED  
+ 
+ Select the video and click Open or double-click the video. The file will load into the 
+dashboard player canvas. 
+ 
+ 
+FIGURE 6 - OPENING VIDEO FILE 
+ 
+
+
+===== PAGE 10 =====
+ 
+ OVERLAY MATCHTIMER  9 
+ STATS PERFORM SECURITY LEVEL: LEVEL 2 - RESTRICTED  
+ 
+4 MATCH CLOCK SYNCHRONIZATION 
+Once the video file is successfully loaded onto the dashboard canvas, you must calibrate 
+the running match clock. This process establishes an absolute time anchor, ensuring your 
+tactical analysis is synced to the match timeline. 
+  
+4.1 FINDING THE KICK-OFF FRAME 
+ Use the timeline slider, the control panel buttons, or the shortcuts to navigate through 
+the video. 
+  
+ Locate the exact kick-off frame. 
+Note: This follows the exact same operational workflow as anchoring a kick-off inside the 
+SoccerClient PMT tool.  
+ Pause the video precisely on that kick-off frame. 
+  
+4.2 SELECTING THE MATCH HALF 
+Before saving the synchronization anchor, you must specify which period of the match you 
+are calibrating. 
+  
+ In the Setup Panel, navigate to section 2. MATCH HALF. 
+  
+Click the dropdown menu to select the active period: 
+  
+ 
+FIGURE 7 - MATCH HALF PERIOD DROPDOWN 
+1st Half: Select this for the start of the match. The timer will begin running exactly at 00:00. 
+  
+2nd Half: Select this for the second half. The timer will begin running exactly at 45:00. 
+  
+
+
+===== PAGE 11 =====
+ 
+ OVERLAY MATCHTIMER  10 
+ STATS PERFORM SECURITY LEVEL: LEVEL 2 - RESTRICTED  
+ 
+Custom 1: Starts at 90:00 by default. Use this for Extra-Time periods or edit the input 
+manually to 40:00 for specific youth/academy matches where halves are shorter. 
+  
+Custom 2: Starts at 105:00 by default. Designed for the second period of Extra-Time. 
+  
+Note: Both Custom 1 and Custom 2 options are fully editable, allowing you to type in any 
+starting minute required by the competition guidelines. 
+  
+4.3 CALIBRATING THE CLOCK ("SET KICK-OFF TIME") 
+Section 3. WHISTLE TIME (HR : MIN : SEC) offers three distinct calibration workflows 
+depending on your live environment: 
+ 
+ 
+FIGURE 8 - WHISTLE TIME CALIBRATION SECTION 
+Method A: Standard Automated Calibration (Zero Offset) 
+Pause the video on the exact kick-off frame, leave the Whistle Time input boxes 
+completely empty (at 0), and click the bright green SET KICK-OFF TIME button. The HUD 
+overlay will instantly capture this frame as your 00:00 baseline reference point. 
+  
+Method B: Manual Calibration & Micro-Adjustments (Offset Fine-Tuning) 
+If you notice that your running overlay clock is slightly misaligned (e.g., running 2 seconds 
+late compared to SoccerClient), you do not need to clear everything and start over. You 
+can manually edit the offset values into the HR : MIN : SEC boxes and click the SET KICK-
+OFF TIME button after changing the values. 
+  
+Example: If an anchor at 1 minute and 6 seconds into the video needs adjustment, you 
+can manually edit the input to 0 - 1 - 8. This forces the timer to sync its starting minute 
+parameter precisely to the 8-second mark of the video instead. 
+ 
+
+
+===== PAGE 12 =====
+ 
+ OVERLAY MATCHTIMER  11 
+ STATS PERFORM SECURITY LEVEL: LEVEL 2 - RESTRICTED  
+ 
+ 
+FIGURE 9 - MANUAL CLOCK OFFSET ADJUSTMENT 
+Method C: Remote Collaborative Synchronization 
+When coordinating workflows where the home team analyst has already completed the 
+official timeline setup, they can share their exact anchor parameters with the away team 
+analyst. The away analyst simply types those shared parameters directly into the HR : MIN 
+: SEC field inputs and clicks SET KICK-OFF TIME. This ensures both analysts operate on 
+perfectly mirrored timelines down to the exact same second. 
+  
+4.4 WIPING SESSION CACHE AND RESETTING (THE RED "X" 
+BUTTON) 
+The small Red "X" Button located to the right of the SET KICK-OFF TIME bar serves two 
+vital purposes: 
+ 
+ 
+FIGURE 10 - RESET SYNCHRONIZATION BUTTON 
+Accidental Click Correction: If you calibrate the clock on an incorrect video frame or 
+choose the wrong half, click the red X to clear the active anchor data and re-calibrate. 
+  
+Data Persistence & New Game Clears (F5 Protection): To protect your work against 
+unexpected disruptions, the tool automatically caches your active match parameters inside 
+the browser session. If you refresh the page (F5), your synchronized clock remains 
+completely safe. However, when you start working on a completely new match, the 
+browser will still hold the cached timer data from the previous game. Clicking the Red "X" 
+Button is mandatory at the start of a new session to flush the entire browser storage clean 
+and reset all internal master clocks back to zero. 
+  
+
+
+===== PAGE 13 =====
+ 
+ OVERLAY MATCHTIMER  12 
+ STATS PERFORM SECURITY LEVEL: LEVEL 2 - RESTRICTED  
+ 
+5 ADVANCED MATCH NAVIGATION & CONTROLS 
+The navigation controls are designed to match the workflows used in VLC Media Player 
+and Xeatre, reducing the learning curve for existing analysts. 
+  
+5.1 THE DRAGGABLE & AUTO-HIDING CONTROL PANEL 
+The floating Control Panel at the bottom of the video canvas provides access to the main 
+playback controls. It includes two features designed to improve usability during live and 
+post-match workflows. 
+  
+Fully Draggable Interface: The entire panel is floating. You can click, hold, and drag the 
+Control Panel to move it to any area of the screen. 
+  
+2.5-Second Auto-Hide Feature: To guarantee a completely unobstructed view of the pitch 
+during playback, the Control Panel automatically fades away after 2.5 seconds of mouse 
+inactivity. It reappears the moment you move your cursor. 
+ 
+ 
+FIGURE 11 - CONTROL PANEL 
+As shown in FIGURE 11, the interface features a balanced, symmetrical button matrix 
+layout: 
+  
+ System Settings & Speed (Top-Left): Houses the Settings Gear (   ) to call up the 
+setup panel when needed, alongside the Playback Speed Dropdown (e.g., 1.00x). 
+ Audio & Screen Controls (Top-Right): Features an immediate mute toggle button, a 
+fluid volume slider track, and the Fullscreen window expander icon. 
+  
+Symmetrical Scrubbing Matrix (Bottom Row): 
+  
+ 2m / 10s / 2s (Left Controls): Macro-rewind actions to jump backward by 2 minutes, 
+10 seconds, or 2 seconds. 
+ |< (Frame Step Left): Steps the video frame-by-frame backward for point-of-contact 
+or offside checks. 
+ ▶ Play /⏸ Pause: Core engine playback toggle button. 
+ >| (Frame Step Right): Steps the video frame-by-frame forward. 
+  
+
+
+===== PAGE 14 =====
+ 
+ OVERLAY MATCHTIMER  13 
+ STATS PERFORM SECURITY LEVEL: LEVEL 2 - RESTRICTED  
+ 
+ 2s / 10s / 2m (Right Controls): Macro-forward actions to jump ahead by 2 seconds, 
+10 seconds, or 2 minutes. 
+  
+5.2 DYNAMIC MATCH PERIOD BOOKMARKING & QUICK-
+JUMPING 
+The timeline track features an automated, color-coded bookmarking engine. Instead of 
+crowding the interface, buttons and reference lines appear dynamically only after an 
+analyst completes the calibration for that specific period. 
+  
+The Anchoring Workflow: When you first load a match, the timeline track is entirely clean. 
+Once you pause on the 1st half kick-off and click SET KICK-OFF TIME, the green                        1st 
+badge and a matching green vertical line instantly appear on the timeline. 
+ 
+ 
+FIGURE 12 - CONTROL PANEL WITH FULLY SYNCHRONIZED MATCH PERIODS 
+Subsequent Periods: When the first half ends, you simply change the dropdown in the 
+Setup Panel to 2nd Half or the Custom periods and hit SET KICK-OFF TIME again on the 
+new kick-off frame. 
+  
+Color-Coded Visual Matrix: Each period maps to its own distinct visual identity across both 
+the badge and the timeline track tick: 
+  
+1st Half: Green (                       1st) 
+  
+2nd Half: Red (                       2nd) 
+  
+Custom 1 (C1): Orange (                       C1) 
+  
+Custom 2 (C2): Purple (                       C2) 
+  
+Instant Timeline Quick-Jumping: These dynamic badges double as interactive hot-buttons. 
+If you are deep into analyzing the second half or a custom period and need to immediately 
+review or verify a baseline event, simply click directly on any active badge (e.g.,                        2nd). 
+The video player will instantly jump to the exact kick-off frame anchored for that specific 
+period. 
+  
+
+
+===== PAGE 15 =====
+ 
+ OVERLAY MATCHTIMER  14 
+ STATS PERFORM SECURITY LEVEL: LEVEL 2 - RESTRICTED  
+ 
+5.3 KEYBOARD SHORTCUTS QUICK-REFERENCE 
+(HOTKEYS) 
+To achieve maximum operational speed eliminating mouse dependency during long 
+tracking sessions, the hotkey layout replicates standard professional analysis standards: 
+ 
+COMMAND KEYBOARD SHORTCUT OPERATIONAL FUNCTION 
+Play / Pause Space Toggles video playback state 
+instantly. 
+Skip ±2s ← / → (Left / Right Arrows) Short tactical review jumps. 
+Skip ±10s Shift + → / Shift + ← Medium-range skips over 
+standard out-of-play phases. 
+Skip ±2m Ctrl + → / Ctrl + ← Long-range macro skips directly 
+across dead-time periods. 
+Frame by Frame ↑ / ↓ (Up / Down Arrows) Surgical frame-by-frame 
+scrubbing (accurate to 0.04 
+seconds). 
+Speed ± Z / C Steps playback speed down 
+(Slower) or up (Faster) 
+dynamically. 
+Speed 1.0x X Instant override to reset back to 
+standard 1.0x playback speed. 
+Hide/Show Controls H Manually toggles the visibility of 
+the Control Panel to clear your 
+field of view. 
+TABLE 3 - KEYBOARD SHORTCUTS 
+5.4 HUD INTERACTIVE TIMELINE JUMPING 
+Instead of dragging the standard video seek bar back and forth, the Overlay MatchTimer 
+features an interactive HUD layer that allows you to target any exact minute. 
+  
+ Move your cursor to the top-left corner of the video stream and click directly on the 
+digital Match Timer overlay. 
+ 
+ Type the exact match minute you wish to review. 
+ 
+ 
+FIGURE 13 - CHANGING MINUTE THROUGH HUD TIMER 
+ 
+
+
+===== PAGE 16 =====
+ 
+ OVERLAY MATCHTIMER  15 
+ STATS PERFORM SECURITY LEVEL: LEVEL 2 - RESTRICTED  
+ 
+ Press Enter on your keyboard OR click anywhere inside the video canvas area. The 
+video player will instantly jump to that requested match minute. 
+ 
+ 
+FIGURE 14 - OVERLAY AFTER CHANGING MINUTE THROUGH HUD TIMER 
+5.5 SHUTTLEXPRESS HARDWARE INTEGRATION 
+(COLLABORATIVE REVIEW CONTROL)  
+In a standard live match environment, workstations are split between at least two analysts 
+(Home and Away team). While the lower-middle screen displays the live match feed, the 
+upper-middle monitor is dedicated to replaying and dissecting controversial events. 
+For Tier 12 or non-GVN games, video control on this upper monitor was traditionally 
+locked to the Home analyst's PC, meaning the Away analyst could not control the upper-
+middle video like in GVN. 
+Built with native support for the Contour ShuttleXpress USB device via the WebHID API, a 
+single physical controller can be connected to the Home PC, placed centrally on the desk, 
+and used by both analysts to execute hands-on, tactile control of video playback without 
+ever touching a keyboard or mouse. 
+ 
+FIGURE 15 - SHUTTLEXPRESS HARDWARE 
+
+
+===== PAGE 17 =====
+ 
+ OVERLAY MATCHTIMER  16 
+ STATS PERFORM SECURITY LEVEL: LEVEL 2 - RESTRICTED  
+ 
+Activation & Pairing Workflow To bridge the physical controller with your browser 
+dashboard session, execute the following configuration steps: 
+ 
+ Physically connect the ShuttleXpress controller via USB into the Home analyst's 
+computer. Place the physical device in the center zone of the desk layout so it is 
+comfortably within reach of both analysts. 
+ Open the dashboard Setup Panel by clicking the Settings Gear (   ). 
+Locate the Enable ShuttleXpress toggle switch positioned right above the internal 
+Shortcuts menu box. 
+ 
+ 
+FIGURE 16 - SHUTTLEXPRESS TOGGLE SWITCH 
+ 
+ Click the toggle switch to slide it to the ON position. 
+A native browser permission pop-up dialog window will drop down from the top-left 
+address bar area. 
+ 
+ 
+FIGURE 17 - SHUTTLEXPRESS POPUP 
+  
+ 
+ 
+ 
+ 
+ 
+
+
+===== PAGE 18 =====
+ 
+ OVERLAY MATCHTIMER  17 
+ STATS PERFORM SECURITY LEVEL: LEVEL 2 - RESTRICTED  
+ 
+ Select the detected ShuttleXpress device listing from the pop-up menu. 
+Click the Connect (or Pair) button. 
+ 
+ 
+FIGURE 18 - SHUTTLEXPRESS CONNECT 
+Once active, the controller's layout provides immediate tactile mappings corresponding to 
+standard physical scrubbing workflows: 
+ 
+HARDWARE CONTROL ASSIGNED ACTION OPERATIONAL BEHAVIOR 
+Inner Jog Wheel Frame-by-Frame Navigation Moves backward or forward by 
+exactly ±0.04s per click. 
+Automatically pauses the video 
+upon engagement.  
+Outer Shuttle Ring Variable-Speed Scrubbing Continuous visual scrubbing. 
+Supports 7 dynamic speed steps 
+in either direction: 0.2x, 0.5x, 
+1.0x, 2.0x, 4.0x, 8.0x, and 16.0x. 
+Button 1 (Far Left) Long Macro Rewind Jumps backward by exactly -2 
+minutes. 
+Button 2 (Left) Medium Macro Rewind Jumps backward by exactly -10 
+seconds. 
+Button 3 (Center) Master Playback Toggle Instantly toggles Play / Pause 
+states. 
+Button 4 (Right) Medium Macro Forward Jumps forward by exactly +10 
+seconds. 
+Button 5 (Far Right) Long Macro Forward Jumps forward by exactly +2 
+minutes. 
+TABLE 4 - SHUTTLEXPRESS CONTROLS 
+
+
+===== PAGE 19 =====
+ 
+ OVERLAY MATCHTIMER  18 
+ STATS PERFORM SECURITY LEVEL: LEVEL 2 - RESTRICTED  
+ 
+6 WORKING WITH ONLINE STREAMS 
+This section details how to extract streaming video URLs from external platforms and load 
+them directly into Section 1B of the Overlay MatchTimer. This integration is explicitly 
+designed for matches that lack an on-screen transmission timer, or for games where 
+analysts prefer to leverage the advanced review ecosystem of the Overlay MatchTimer 
+such as dynamic period bookmarking and central ShuttleXpress hardware control. 
+  
+6.1 EXTRACTING AND LOADING URLS FROM XEATRE 
+ 
+ Authentication & Selection  
+Open Xeatre in your browser, log in to your analyst account, and locate the video of the 
+match assigned. 
+ 
+ Launching the DVR Player  
+Click the DVR button corresponding to the match, exactly as you would during a normal 
+game. This will launch the platform's dedicated DVR stream in a separate pop-up window. 
+ 
+ 
+FIGURE 19 - OPEN XEATRE DVR POPUP 
+ 
+ Capturing the Stream URL  
+Click directly on the address bar of the newly opened DVR pop-up window to highlight the 
+complete URL string. Copy it to your clipboard (Ctrl + C). 
+
+
+===== PAGE 20 =====
+ 
+ OVERLAY MATCHTIMER  19 
+ STATS PERFORM SECURITY LEVEL: LEVEL 2 - RESTRICTED  
+ 
+ 
+FIGURE 20 - SELECT AND COPY XEATRE URL 
+ 
+ Importing into Overlay MatchTimer  
+Switch back to your active Overlay MatchTimer dashboard tab. Locate Section 1B 
+(External Video Source) on the left setup bar, paste the copied link into the text input field, 
+and click the Load button. 
+ 
+ 
+FIGURE 21 - LOADING THE COPIED XEATRE URL 
+ 
+Once loaded, the stream can be used with all Overlay MatchTimer synchronization and 
+navigation features. 
+ 
+
+
+===== PAGE 21 =====
+ 
+ OVERLAY MATCHTIMER  20 
+ STATS PERFORM SECURITY LEVEL: LEVEL 2 - RESTRICTED  
+ 
+6.2 EXTRACTING AND LOADING URLS FROM EXAMINO  
+Much like Xeatre, integrating a match from Examino allows analysts to process non-timer 
+games or utilize the physical ShuttleXpress workflow within the Overlay MatchTimer 
+dashboard. The extraction process follows a similar logic, requiring just a few additional 
+menu navigation steps to capture the stream link: 
+ 
+ Authentication & Match Selection 
+Open Examino in your browser, log in to your analyst account, and locate the video of the 
+assigned match. Click on the match to launch the live stream pop-up window. 
+ 
+ Opening the Player Menu 
+Inside the active live stream pop-up window, click on the three horizontal bars located on 
+the top-left of the player interface. 
+ 
+ 
+FIGURE 22 - OPEN EXAMINO DVR POPUP 
+ 
+ Copying the DVR URL 
+Switch over to the newly opened DVR pop-up window and click on the three horizontal 
+bars menu icon inside this specific player overlay and click “Copy DVR url”. 
+ 
+
+
+===== PAGE 22 =====
+ 
+ OVERLAY MATCHTIMER  21 
+ STATS PERFORM SECURITY LEVEL: LEVEL 2 - RESTRICTED  
+ 
+ 
+FIGURE 23 - CLICK COPY DVR URL 
+ Importing into Overlay MatchTimer 
+Return to your active Overlay MatchTimer dashboard tab. Go to Section 1B on the 
+configuration panel, paste the copied link into the input text field, and click Load. 
+ 
+ 
+FIGURE 24 - PASTE THE URL INTO OVERLAY MATCHTIMER 
+ 
+ 
+ 
+ 
+ 
+ 
+
+
+===== PAGE 23 =====
+ 
+ OVERLAY MATCHTIMER  22 
+ STATS PERFORM SECURITY LEVEL: LEVEL 2 - RESTRICTED  
+ 
+6.3 INSTALLING AND ACTIVATING THE EXTENSION FOR 
+INPLAY 
+ 
+Unlike Xeatre and Examino platforms, the Inplay integration requires a manual local 
+installation of the browser extension in Developer Mode. This is highly beneficial for 
+matches where Inplay is the only source, as it bypasses the platform's small, difficult-to-
+use native mouse controls. It fully unlocks the exact same keyboard shortcuts used in the 
+local HTML app, alongside all other Overlay MatchTimer features. Once loaded from the 
+local network storage (NAS), the extension will automatically inject the overlay directly into 
+any active Inplay video review player. 
+ 
+ Open Extension Management 
+Click on the three dots icon (More Actions) in the top-right corner of your browser toolbar. 
+Navigate to Extensions and select Manage Extensions (alternatively, type 
+chrome://extensions directly into your browser's address bar and press Enter). 
+ 
+ 
+FIGURE 25 - OPEN CHROME EXTENSIONS 
+ 
+ Enable Developer Mode  
+Once on the Extensions management page, locate the Developer mode toggle switch in 
+the top-right corner and switch it ON. 
+ 
+ 
+FIGURE 26 - ACTIVATE DEVELOPER MODE 
+ 
+
+
+===== PAGE 24 =====
+ 
+ OVERLAY MATCHTIMER  23 
+ STATS PERFORM SECURITY LEVEL: LEVEL 2 - RESTRICTED  
+ 
+ Initiate Unpacked Loading  
+Click the Load unpacked button that appears in the top-left corner of the page. This action 
+will launch your operating system's file explorer window. 
+ 
+ 
+FIGURE 27 - LOAD UNPACKED 
+ 
+ Locate the Extracted Folder on your Computer 
+In your file explorer, navigate to the directory where you saved or extracted the project files 
+(e.g., Downloads, Desktop, or a local folder). Locate and open the main folder named 
+"OverlayMatchTimer-main". Inside it, select the folder named "Overlay-chrome-extension" 
+and click Select Folder. 
+ 
+ 
+FIGURE 28 - SELECT THE EXTENSION FOLDER 
+ 
+ Open the Inplay platform and navigate through your workflow normally.  
+The moment you open any video review session within Inplay, the browser extension will 
+automatically inject the software. The Overlay MatchTimer will automatically appear and 
+scale over the interface, matching the visual layout of your local HTML deployment. 
+ 
+
+
+===== PAGE 25 =====
+ 
+ OVERLAY MATCHTIMER  24 
+ STATS PERFORM SECURITY LEVEL: LEVEL 2 - RESTRICTED  
+ 
+ 
+FIGURE 29 - OPEN INPLAY 
+ 
+
+
+===== PAGE 26 =====
+ 
+ OVERLAY MATCHTIMER  25 
+ STATS PERFORM SECURITY LEVEL: LEVEL 2 - RESTRICTED  
+ 
+7 TROUBLESHOOTING 
+The following table lists the most common issues that may occur while using the Overlay 
+MatchTimer, along with their most likely causes and recommended solutions. 
+ 
+PROBLEM CAUSE RECOMMENDED SOLUTION 
+Local video 
+does not load 
+Unsupported, corrupted, or 
+inaccessible video file 
+Verify that the video opens correctly in VLC Media 
+Player. If necessary, copy the file to your local drive 
+and load it again. 
+External stream 
+fails to load 
+The DVR URL has expired or 
+is no longer available 
+Return to Xeatre or Examino, obtain a new DVR URL, 
+and paste it into the External Video Source field before 
+clicking Load 
+Match timer is 
+not 
+synchronized 
+The incorrect kick-off frame 
+was selected, or the wrong 
+match half was configured 
+Click the red X button to clear the current 
+synchronization, select the correct match half, and 
+calibrate the timer again. 
+ShuttleXpress 
+device is not 
+detected 
+Browser permission was not 
+granted, or the device has 
+not been paired 
+Ensure the device is connected via USB, enable the 
+ShuttleXpress toggle, and reconnect the device when 
+the browser prompts for permission. 
+HUD timer 
+jumps to the 
+wrong match 
+time 
+The current synchronization 
+anchor is incorrect 
+Recalibrate the active match period using the correct 
+kick-off frame before using the HUD jump feature. 
+Previous match 
+synchronization 
+is restored 
+Cached session data from 
+the previous match is still 
+stored 
+Click the red X button before starting a new match to 
+clear all cached synchronization data. 
+No audio is 
+heard during 
+playback 
+The player is muted or the 
+volume is set to zero 
+Verify that the mute button is disabled and adjust the 
+volume slider as required. 
+TABLE 5 - TROUBLESHOOTING 
+ 
+Note: If an issue persists after following the recommended solution, close the application, 
+reopen Overlay MatchTimer, and repeat the synchronization process. If the problem 
+cannot be resolved, contact the development team. 
+
+===== PAGE 27 =====
+ 
+ OVERLAY MATCHTIMER  26 
+ STATS PERFORM SECURITY LEVEL: LEVEL 2 - RESTRICTED  
+ 
+8 APPENDIX 
+TABLE 1 - REVISION HISTORY 3 
+TABLE 2 - TERMS AND ABBREVIATIONS 3 
+TABLE 3 - KEYBOARD SHORTCUTS 14 
+TABLE 4 - SHUTTLEXPRESS CONTROLS 17 
+TABLE 5 - TROUBLESHOOTING 25 
+ 
+8.1 TABLE OF FIGURES 
+FIGURE 1 - APPLICATION FILE IN LOCAL DIRECTORY 4 
+FIGURE 2 - LAUNCHED DASHBOARD APP INTERFACE 5 
+FIGURE 3 - SETUP PANEL OVERVIEW 6 
+FIGURE 4 - CONTROL PANEL SETTINGS BUTTON 7 
+FIGURE 5 - NATIVE LOCAL VIDEO FILE PICKER 7 
+FIGURE 6 - OPENING VIDEO FILE 8 
+FIGURE 7 - MATCH HALF PERIOD DROPDOWN 9 
+FIGURE 8 - WHISTLE TIME CALIBRATION SECTION 10 
+FIGURE 9 - MANUAL CLOCK OFFSET ADJUSTMENT 11 
+FIGURE 10 - RESET SYNCHRONIZATION BUTTON 11 
+FIGURE 11 - CONTROL PANEL 12 
+FIGURE 12 - CONTROL PANEL WITH FULLY SYNCHRONIZED MATCH PERIODS 13 
+FIGURE 13 - CHANGING MINUTE THROUGH HUD TIMER 14 
+FIGURE 14 - OVERLAY AFTER CHANGING MINUTE THROUGH HUD TIMER 15 
+FIGURE 15 - SHUTTLEXPRESS HARDWARE 15 
+FIGURE 16 - SHUTTLEXPRESS TOGGLE SWITCH 16 
+FIGURE 17 - SHUTTLEXPRESS POPUP 16 
+FIGURE 18 - SHUTTLEXPRESS CONNECT 17 
+FIGURE 19 - OPEN XEATRE DVR POPUP 18 
+FIGURE 20 - SELECT AND COPY XEATRE URL 19 
+FIGURE 21 - LOADING THE COPIED XEATRE URL 19 
+FIGURE 22 - OPEN EXAMINO DVR POPUP 20 
+FIGURE 23 - CLICK COPY DVR URL 21 
+FIGURE 24 - PASTE THE URL INTO OVERLAY MATCHTIMER 21 
+FIGURE 25 - OPEN CHROME EXTENSIONS 22 
+FIGURE 26 - ACTIVATE DEVELOPER MODE 22 
+FIGURE 27 - LOAD UNPACKED 23 
+FIGURE 28 - SELECT THE EXTENSION FOLDER 23 
+FIGURE 29 - OPEN INPLAY 24 
+ 

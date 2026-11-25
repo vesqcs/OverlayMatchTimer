@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Examino DVR field mock (unconfirmed Source, video replaced per switch)</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0b1220; font-family: "Segoe UI", sans-serif; color: #ddd; }
+    .page { width: 640px; height: 470px; margin: 16px auto; display: flex; flex-direction: column; background: #111; position: relative; }
+    .main-container.svelte-iq8mv8 { height: calc(100% - 90px); position: relative; background: #000; overflow: hidden; }
+    .top.svelte-iq8mv8 { position: relative; width: 100%; height: 100%; }
+    .op-player, .op-media-element-container, video { position: absolute; inset: 0; width: 100%; height: 100%; }
+    video { object-fit: contain; background: #000; }
+    .setting-holder { position: absolute; right: 8px; top: 40px; z-index: 7; }
+    .op-setting-button { background: #333; color: #fff; border: 1px solid #666; padding: 4px 8px; cursor: pointer; }
+    .op-setting-panel { display: none; position: absolute; right: 8px; top: 72px; z-index: 20; width: 260px; background: #1b1b1b; border: 1px solid #444; border-radius: 6px; padding: 8px; }
+    .op-setting-panel.open { display: block; }
+    .op-setting-item { display: flex; justify-content: space-between; gap: 8px; padding: 6px 4px; cursor: pointer; font-size: 12px; }
+    .op-setting-item-nexticon { color: #888; }
+    .op-controls { position: absolute; left: 0; right: 0; bottom: 0; height: 28px; background: rgba(255,80,0,0.35); z-index: 5; }
+    .examino-bottom-controls { height: 90px; background: #1a2230; border-top: 1px solid #333; }
+    #status { text-align: center; margin-top: 10px; color: #9ad; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="main-container svelte-iq8mv8">
+      <div class="top svelte-iq8mv8">
+        <div class="op-player" id="op-player">
+          <div class="op-media-element-container op-clear" id="media-host"></div>
+          <div class="op-controls">OpenPlayer Controls</div>
+          <div class="setting-holder op-navigators op-clear">
+            <button class="op-button op-setting-button" id="native-gear" type="button">⚙</button>
+          </div>
+          <div id="panel-mock" class="op-setting-panel"></div>
+        </div>
+      </div>
+    </div>
+    <div class="examino-bottom-controls"></div>
+  </div>
+  <div id="status">Waiting for player…</div>
+  <script>
+    (function () {
+      // Real OpenPlayer Source panel (v2.2.4 field paste):
+      // rawItems mixes top rows (hasNext:true; Source opDataValue = current label)
+      // with Source leaves (opPanelType:source, hasNext:false, opDataValue index, title label).
+      const host = document.getElementById('media-host');
+      const panel = document.getElementById('panel-mock');
+      const gear = document.getElementById('native-gear');
+      const status = document.getElementById('status');
+      const sourceLeaves = [
+        { index: '0', title: 'DVR' },
+        { index: '1', title: 'VOD(1)' }
+      ];
+      const state = {
+        source: 'DVR',       // top-row op-data-value / label
+        sourceIndex: '0',
+        speed: '1x',
+        quality: '1920x1080, 1.5Mbps',
+        view: 'root'
+      };
+      const stats = window.__fieldStats = {
+        sourceLoads: 0, sourcePicks: 0, gearClicks: 0,
+        play: 0, pause: 0, waiting: 0, playRejections: 0, events: []
+      };
+      ['play', 'pause', 'waiting'].forEach((type) => {
+        document.addEventListener(type, () => {
+          stats[type] += 1;
+          stats.events.push({ type, t: Math.round(performance.now()) });
+        }, true);
+      });
+
+      function kindFromTitle(title) {
+        const lab = String(title || '').replace(/\s+/g, '').toLowerCase();
+        if (lab.startsWith('dvr')) return 'DVR';
+        if (lab.startsWith('vod')) return 'VOD';
+        return null;
+      }
+
+      function topRowsHtml() {
+        return '' +
+          '<div class="op-setting-item" op-panel-type="speed" op-data-value="' + state.speed + '"><span class="op-setting-item-title">Speed</span><span class="op-setting-item-nexticon">&gt;</span><span class="op-setting-item-value">' + state.speed + '</span></div>' +
+          '<div class="op-setting-item" op-panel-type="source" op-data-value="' + state.source + '"><span class="op-setting-item-title">Source</span><span class="op-setting-item-nexticon">&gt;</span><span class="op-setting-item-value">' + state.source + '</span></div>' +
+          '<div class="op-setting-item" op-panel-type="quality" op-data-value="' + state.quality + '"><span class="op-setting-item-title">Quality</span><span class="op-setting-item-nexticon">&gt;</span><span class="op-setting-item-value">' + state.quality + '</span></div>';
+      }
+
+      function renderPanel() {
+        if (state.view === 'root') {
+          panel.innerHTML =
+            '<div class="op-setting-title-container"><div class="op-setting-title"><span class="op-setting-title-title">Settings</span></div></div>' +
+            '<div class="op-setting-item-container">' + topRowsHtml() + '</div>';
+        } else {
+          // Exact field mix: top rows stay + Source leaves (index values, title labels).
+          const leaves = sourceLeaves.map((leaf) =>
+            '<div class="op-setting-item" op-panel-type="source" op-data-value="' + leaf.index + '"><span class="op-setting-item-title">' + leaf.title + '</span></div>'
+          ).join('');
+          panel.innerHTML =
+            '<div class="op-setting-title-container"><div class="op-setting-title"><span class="op-setting-title-title">Source</span></div></div>' +
+            '<div class="op-setting-item-container">' + topRowsHtml() + leaves + '</div>';
+        }
+        panel.querySelectorAll('.op-setting-item').forEach((item) => item.addEventListener('click', () => onItemClick(item)));
+        const title = panel.querySelector('.op-setting-title');
+        if (title) title.addEventListener('click', () => {
+          if (state.view !== 'root') { state.view = 'root'; renderPanel(); } else panel.classList.remove('open');
+        });
+      }
+
+      function onItemClick(item) {
+        const type = item.getAttribute('op-panel-type');
+        const hasNext = !!item.querySelector('.op-setting-item-nexticon');
+        if (type === 'source' && hasNext) {
+          state.view = 'source';
+          renderPanel();
+          return;
+        }
+        if (type === 'source' && !hasNext) {
+          stats.sourcePicks += 1;
+          const label = ((item.querySelector('.op-setting-item-title') || {}).textContent || '').trim();
+          const kind = kindFromTitle(label);
+          if (!kind) return;
+          state.source = label;
+          state.sourceIndex = String(item.getAttribute('op-data-value') || '');
+          state.view = 'root';
+          renderPanel();
+          panel.classList.remove('open');
+          loadSource(kind);
+          return;
+        }
+      }
+
+      gear.addEventListener('click', () => {
+        stats.gearClicks += 1;
+        state.view = 'root';
+        renderPanel();
+        panel.classList.add('open');
+      });
+
+      function makeVideo(label, kind) {
+        const video = document.createElement('video');
+        video.muted = true;
+        video.playsInline = true;
+        video.dataset.omtSource = kind;
+        window.__omtMockSource = kind;
+        window.__omtMockMediaUrl = null;
+        const canvas = document.createElement('canvas');
+        canvas.width = 640; canvas.height = 360;
+        const ctx = canvas.getContext('2d');
+        const t0 = performance.now();
+        (function draw() {
+          ctx.fillStyle = kind === 'VOD' ? '#1a2a40' : '#143d2b';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.fillStyle = '#00ff88';
+          ctx.font = '26px sans-serif';
+          ctx.fillText(label + ' t=' + ((performance.now() - t0) / 1000).toFixed(1), 20, 48);
+          if (video.isConnected || performance.now() - t0 < 2000) requestAnimationFrame(draw);
+        })();
+        video.srcObject = canvas.captureStream(30);
+        try {
+          Object.defineProperty(video, 'currentSrc', {
+            configurable: true,
+            get: function () { return 'blob:https://examino.local/' + String(kind).toLowerCase(); }
+          });
+        } catch (_) {}
+        return video;
+      }
+
+      function loadSource(kind) {
+        stats.sourceLoads += 1;
+        const prev = host.querySelector('video');
+        if (prev) { try { prev.pause(); } catch (_) {} }
+        host.innerHTML = '';
+        const next = makeVideo('EXAMINO-' + kind + ' #' + stats.sourceLoads, kind);
+        host.appendChild(next);
+        next.play().catch(() => { stats.playRejections += 1; });
+        status.textContent = 'Source ' + kind + ' loaded (#' + stats.sourceLoads + ')';
+      }
+
+      window.__fieldPlayerOpen = () => {
+        const v = host.querySelector('video');
+        if (!v) return false;
+        const r = v.getBoundingClientRect();
+        return v.isConnected && !v.paused && v.readyState >= 2 && r.width > 100 && r.height > 100 &&
+          getComputedStyle(v).display !== 'none' && getComputedStyle(v).visibility !== 'hidden';
+      };
+
+      renderPanel();
+      setTimeout(() => loadSource(kindFromTitle(state.source) || 'DVR'), 800);
+    })();
+  </script>
+</body>
+</html>

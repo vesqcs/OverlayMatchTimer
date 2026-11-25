@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>OMT mockup — timeline live delay (proposal only)</title>
+  <style>
+    /* Standalone Vasco proposal mockup. Not shipped in the extension zip. */
+    :root {
+      --omt-orange: #F5831F;
+      --omt-live: #e0201b;
+      --omt-scrub: #b0b0b0;
+      --omt-mono: "Segoe UI", system-ui, ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      --omt-font: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #0a0a0a;
+      color: #ddd;
+      font-family: var(--omt-font);
+      padding: 24px;
+    }
+    h1 { font-size: 14px; font-weight: 600; color: #aaa; margin: 0 0 16px; }
+    .frames {
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+      align-items: flex-start;
+    }
+    .frame-wrap { width: 960px; }
+    .label {
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 8px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    .video-frame {
+      position: relative;
+      width: 960px;
+      height: 200px;
+      background: #102033;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+    .video-frame::before {
+      content: attr(data-caption);
+      position: absolute;
+      top: 16px;
+      left: 20px;
+      color: #66b3ff;
+      font-size: 18px;
+      font-weight: 600;
+      opacity: 0.85;
+    }
+
+    /* Exact current timeline bar styling (copied for mock fidelity) */
+    .omt-timeline-bar {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 48;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 30px 10px 20px;
+      box-sizing: border-box;
+      background: linear-gradient(to top, rgba(0, 0, 0, 0.55) 0%, rgba(0, 0, 0, 0) 100%);
+      overflow: visible;
+    }
+    .omt-timeline-track {
+      position: relative;
+      flex: 1;
+      display: flex;
+      align-items: center;
+      height: 16px;
+      min-width: 0;
+      overflow: visible;
+    }
+    .timeline-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 3px;
+      border-radius: 1px;
+      outline: none;
+      background: linear-gradient(
+        to right,
+        var(--omt-scrub) 0%,
+        var(--omt-scrub) var(--omt-progress, 0%),
+        rgba(255, 255, 255, 0.2) var(--omt-progress, 0%)
+      );
+    }
+    .timeline-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #fff;
+      opacity: 0;
+    }
+    .omt-timeline-times {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+      font-variant-numeric: tabular-nums;
+    }
+    .omt-time-text {
+      font-family: var(--omt-mono);
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+      color: #ddd;
+      flex-shrink: 0;
+    }
+    .omt-time-sep {
+      color: #777;
+      font-size: 11px;
+      margin: 0 1px;
+      flex-shrink: 0;
+    }
+    .omt-timeline-fs-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      margin-left: 4px;
+      padding: 0;
+      border: none;
+      border-radius: 4px;
+      background: transparent;
+      color: #f1f1f1;
+      cursor: default;
+      opacity: 0.92;
+      flex-shrink: 0;
+    }
+    .omt-icon {
+      display: block;
+      width: 16px;
+      height: 16px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    /* Proposal-only: live delay / LIVE chip (not in extension) */
+    .omt-live-delay {
+      font-family: var(--omt-mono);
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+      color: #ddd;
+      flex-shrink: 0;
+      min-width: 2.5em;
+      text-align: right;
+    }
+    .omt-live-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-family: var(--omt-font);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #111;
+      background: var(--omt-orange);
+      border: 1px solid var(--omt-orange);
+      border-radius: 999px;
+      padding: 3px 9px;
+      flex-shrink: 0;
+      cursor: default;
+    }
+    .omt-live-chip .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #111;
+    }
+  </style>
+</head>
+<body>
+  <h1>Mockup only — timeline right-side time (proposal). Not extension code.</h1>
+  <div class="frames">
+
+    <div class="frame-wrap" id="mock-current">
+      <div class="label">Current (today): current / live-edge times</div>
+      <div class="video-frame" data-caption="INPLAY LIVE">
+        <div class="omt-timeline-bar">
+          <div class="omt-timeline-track">
+            <input type="range" class="timeline-slider" style="--omt-progress: 78%" min="0" max="100" value="78" disabled />
+          </div>
+          <div class="omt-timeline-times">
+            <span class="omt-time-text">01:12:04</span>
+            <span class="omt-time-sep">/</span>
+            <span class="omt-time-text">01:12:16</span>
+            <button type="button" class="omt-timeline-fs-btn" aria-label="Enter fullscreen">
+              <svg class="omt-icon" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="frame-wrap" id="mock-live-behind">
+      <div class="label">Proposal LIVE: 12 s behind → delay only</div>
+      <div class="video-frame" data-caption="INPLAY LIVE · −12 s">
+        <div class="omt-timeline-bar">
+          <div class="omt-timeline-track">
+            <input type="range" class="timeline-slider" style="--omt-progress: 78%" min="0" max="100" value="78" disabled />
+          </div>
+          <div class="omt-timeline-times">
+            <span class="omt-live-delay">-12 s</span>
+            <button type="button" class="omt-timeline-fs-btn" aria-label="Enter fullscreen">
+              <svg class="omt-icon" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="frame-wrap" id="mock-live-edge">
+      <div class="label">Proposal LIVE: at live edge → orange LIVE chip</div>
+      <div class="video-frame" data-caption="INPLAY LIVE · at edge">
+        <div class="omt-timeline-bar omt-at-live">
+          <div class="omt-timeline-track">
+            <input type="range" class="timeline-slider" style="--omt-progress: 100%" min="0" max="100" value="100" disabled />
+          </div>
+          <div class="omt-timeline-times">
+            <span class="omt-live-chip"><span class="dot"></span>LIVE</span>
+            <button type="button" class="omt-timeline-fs-btn" aria-label="Enter fullscreen">
+              <svg class="omt-icon" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="frame-wrap" id="mock-post">
+      <div class="label">Proposal POST: current / duration</div>
+      <div class="video-frame" data-caption="POST / VOD">
+        <div class="omt-timeline-bar">
+          <div class="omt-timeline-track">
+            <input type="range" class="timeline-slider" style="--omt-progress: 30%" min="0" max="100" value="30" disabled />
+          </div>
+          <div class="omt-timeline-times">
+            <span class="omt-time-text">34:12</span>
+            <span class="omt-time-sep">/</span>
+            <span class="omt-time-text">1:52:40</span>
+            <button type="button" class="omt-timeline-fs-btn" aria-label="Enter fullscreen">
+              <svg class="omt-icon" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>

@@ -1,840 +1,2856 @@
 /* ============================================================
-   Overlay MatchTimer — Chrome Extension Injected Styles
-   Targets inplayip.tv – hides native VJS controls,
-   injects glassmorphism panels over the video player.
+   Overlay MatchTimer — v1.4.1 UI (dark minimal)
+   Floating draggable control panel (v1.2.2 structure) + bottom-only
+   timeline. Accent orange: Stats Perform #F5831F. Live scrubber red.
    ============================================================ */
 
-/* ---- HIDE NATIVE VIDEO.JS CONTROLS ---- */
-.video-js:has(#omt-root) .vjs-control-bar,
-.video-js:has(#omt-root) .vjs-big-play-button,
-.video-js:has(#omt-root) .vjs-loading-spinner,
-.video-js:has(#omt-root) .vjs-poster,
-.video-js:has(#omt-root) .vjs-menu-button-popup .vjs-menu,
-.video-js:has(#omt-root) .vjs-text-track-display {
+/* Design tokens live on #omt-root (not :root) so host rem / inherited
+   custom properties cannot shrink or restyle the overlay. */
+#omt-root {
+    --omt-bg: rgba(15, 15, 15, 0.82);
+    --omt-bg-solid: #0f0f0f;
+    --omt-border: rgba(255, 255, 255, 0.10);
+    --omt-text: #f1f1f1;
+    --omt-muted: #aaaaaa;
+    --omt-orange: #F5831F;          /* Stats Perform accent — Brandfetch */
+    --omt-orange-dim: rgba(245, 131, 31, 0.18);
+    --omt-live: #e0201b;            /* LIVE pill accent (button only) */
+    --omt-behind: #909090;          /* legacy alias */
+    --omt-scrub: #b0b0b0;           /* single timeline fill — never period/live coloured */
+    --omt-font: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --omt-mono: "Segoe UI", system-ui, ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* Legacy alias for any host-page rules that still referenced :root tokens. */
+:root {
+    --omt-bg: rgba(15, 15, 15, 0.82);
+    --omt-bg-solid: #0f0f0f;
+    --omt-border: rgba(255, 255, 255, 0.10);
+    --omt-text: #f1f1f1;
+    --omt-muted: #aaaaaa;
+    --omt-orange: #F5831F;
+    --omt-orange-dim: rgba(245, 131, 31, 0.18);
+    --omt-live: #e0201b;
+    --omt-behind: #909090;
+    --omt-scrub: #b0b0b0;
+    --omt-font: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --omt-mono: "Segoe UI", system-ui, ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* ---- HIDE NATIVE VIDEO.JS CONTROLS (InplayIP only) ----
+   Host class is set with the HUD so Examino :has() rules never run on
+   InPlay's heavy /schedule DOM (style recalc cost).
+   v2.2.13: scope to the .video-js that contains #omt-root so multi-view
+   tiles 2–4 keep InPlay's native controls (single-video behaviour unchanged). */
+html.omt-host-inplayip.omt-hud-on .video-js:has(#omt-root) .vjs-control-bar,
+html.omt-host-inplayip.omt-hud-on .video-js:has(#omt-root) .vjs-big-play-button,
+html.omt-host-inplayip.omt-hud-on .video-js:has(#omt-root) .vjs-loading-spinner,
+html.omt-host-inplayip.omt-hud-on .video-js:has(#omt-root) .vjs-poster,
+html.omt-host-inplayip.omt-hud-on .video-js:has(#omt-root) .vjs-menu-button-popup .vjs-menu,
+html.omt-host-inplayip.omt-hud-on .video-js:has(#omt-root) .vjs-text-track-display,
+/* v2.3.1: secondary tiles with our OMT bottom bar — same hide as primary. */
+html.omt-host-inplayip.omt-hud-on .video-js:has(.omt-tile-root) .vjs-control-bar,
+html.omt-host-inplayip.omt-hud-on .video-js:has(.omt-tile-root) .vjs-big-play-button,
+html.omt-host-inplayip.omt-hud-on .video-js:has(.omt-tile-root) .vjs-loading-spinner,
+html.omt-host-inplayip.omt-hud-on .video-js:has(.omt-tile-root) .vjs-poster,
+html.omt-host-inplayip.omt-hud-on .video-js:has(.omt-tile-root) .vjs-menu-button-popup .vjs-menu,
+html.omt-host-inplayip.omt-hud-on .video-js:has(.omt-tile-root) .vjs-text-track-display {
     display: none !important;
     opacity: 0 !important;
     pointer-events: none !important;
 }
 
-/* ---- PLATFORM CONTROL SUPPRESSION ---- */
-/*
-   Xeatre  — hides the native overlay control bar in both fullscreen and normal modes.
-   Examino — hides the button bar, progress bar, and settings gear.
-   NOTE:  These are intentionally global (not scoped to #omt-root) so they can
-          reach the host page's own DOM tree.
-          The <video> element and #omt-root are NOT targeted here.
-*/
-
-/* Xeatre */
-#ControlBar.overlay-fullscreen,
-#ControlBar.overlay-normal {
+/* ---- HIDE XEATRE HOST CHROME (Xeatre only, v2.2.5 / v2.2.9) ----
+   Chrome leaves only (control bar, 6-col panel, ControlBar when chrome-only).
+   Never hide #hdmi-video / .video-js / any ancestor of <video> — field 2.2.8:
+   bare #ControlBar {display:none} wrapped the player → 0×0 black (audio ok). */
+html.omt-host-xeatre.omt-hud-on .vjs-control-bar,
+html.omt-host-xeatre.omt-hud-on .vjs-big-play-button,
+html.omt-host-xeatre.omt-hud-on .vjs-menu-button-popup .vjs-menu,
+html.omt-host-xeatre.omt-hud-on #ControlBar.overlay-fullscreen:not(:has(#hdmi-video)):not(:has(video)):not(:has(.vjs-tech)):not(:has(.video-js)),
+html.omt-host-xeatre.omt-hud-on #ControlBar.overlay-normal:not(:has(#hdmi-video)):not(:has(video)):not(:has(.vjs-tech)):not(:has(.video-js)),
+html.omt-host-xeatre.omt-hud-on #ControlBar:not(:has(#hdmi-video)):not(:has(video)):not(:has(.vjs-tech)):not(:has(.video-js)),
+html.omt-host-xeatre.omt-hud-on #jwplay,
+html.omt-host-xeatre.omt-hud-on #GoLive,
+html.omt-host-xeatre.omt-hud-on #GoStart,
+html.omt-host-xeatre.omt-hud-on #FullScreen,
+html.omt-host-xeatre.omt-hud-on #Speed025,
+html.omt-host-xeatre.omt-hud-on #Speed05,
+html.omt-host-xeatre.omt-hud-on #Speed1,
+html.omt-host-xeatre.omt-hud-on #Speed15,
+html.omt-host-xeatre.omt-hud-on #Speed2,
+html.omt-host-xeatre.omt-hud-on #AutoHide,
+html.omt-host-xeatre.omt-hud-on #autohide,
+html.omt-host-xeatre.omt-hud-on .xeatre-control-panel:not(:has(#hdmi-video)):not(:has(video)):not(:has(.vjs-tech)):not(:has(.video-js)),
+html.omt-host-xeatre.omt-hud-on .xeatre-host-panel:not(:has(#hdmi-video)):not(:has(video)):not(:has(.vjs-tech)):not(:has(.video-js)),
+html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:not(:has(#hdmi-video)):not(:has(video)):not(:has(.vjs-tech)):not(:has(.video-js)) {
     display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
 }
-
-/* Examino */
-/* NOTE: .op-button.op-setting-button is intentionally NOT listed here.
-   It remains visible as a manual fallback in case DVR automation fails.
-   The JS module (injectExaminoHideCSS) also omits it for the same reason. */
-.button-bar.fullscreen,
-.button-bar.svelte-1azck0y,
-.op-progressbar-container {
-    display: none !important;
-}
-
-/* Examino: ALWAYS keep the native settings/gear button accessible — it is the
-   manual fallback for DVR mode. This rule MUST come after all hide rules so
-   its specificity wins. The JS aggressive observer also enforces this. */
-.op-button.op-setting-button {
+html.omt-host-xeatre.omt-hud-on .video-js.omt-xeatre-host-hidden,
+html.omt-host-xeatre.omt-hud-on .vjs-tech.omt-xeatre-host-hidden,
+html.omt-host-xeatre.omt-hud-on #hdmi-video.omt-xeatre-host-hidden,
+html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(video),
+html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(.vjs-tech),
+html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(#hdmi-video),
+html.omt-host-xeatre.omt-hud-on .omt-xeatre-host-hidden:has(.video-js) {
     display: block !important;
     visibility: visible !important;
     opacity: 1 !important;
     pointer-events: auto !important;
 }
+html.omt-host-xeatre.omt-hud-on #hdmi-video,
+html.omt-host-xeatre.omt-hud-on #hdmi-video.video-js,
+html.omt-host-xeatre.omt-hud-on .video-js,
+html.omt-host-xeatre.omt-hud-on #hdmi-video video,
+html.omt-host-xeatre.omt-hud-on .video-js > video,
+html.omt-host-xeatre.omt-hud-on video.vjs-tech,
+html.omt-host-xeatre.omt-hud-on .vjs-tech {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    /* Host/VJS often leave tech PE none so clicks land on #videowrapper.
+       Chrome-hide never sets PE none on .video-js — only on chrome leaves. */
+    pointer-events: auto !important;
+}
 
-/* Ensure the video container is position:relative so our panels anchor correctly */
+/* ---- HIDE OPENPLAYER / EXAMINO NATIVE CHROME (Examino only) ----
+   Never hide a node that contains the <video> / media container.
+   Scoped to omt-host-examino so InPlay does not pay :has() matching. */
+html.omt-host-examino.omt-hud-on .op-controls,
+html.omt-host-examino.omt-hud-on .op-ui:not(.op-media-element-container):not(:has(video)):not(:has(.op-media-element-container)),
+html.omt-host-examino.omt-hud-on .op-progressbar-container,
+html.omt-host-examino.omt-hud-on .op-player .button-bar,
+html.omt-host-examino.omt-hud-on .video-container > .button-bar,
+html.omt-host-examino.omt-hud-on .setting-holder,
+html.omt-host-examino.omt-hud-on .op-button.op-setting-button,
+html.omt-host-examino.omt-hud-on .hamburger-menu,
+html.omt-host-examino.omt-hud-on .examino-bottom-controls {
+    display: none !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* Sticky JS class for leaf native chrome. */
+html.omt-host-examino.omt-hud-on .omt-examino-native-hidden {
+    display: none !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    max-height: 0 !important;
+    overflow: hidden !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+/* Undo: if the sticky class was stamped on a media host during a Source-switch
+   video gap, force the host painted again. Higher specificity than the hide
+   rule; also covers ancestors that later gain a <video>. */
+html.omt-host-examino.omt-hud-on .op-player.omt-examino-native-hidden,
+html.omt-host-examino.omt-hud-on .op-media-element-container.omt-examino-native-hidden,
+html.omt-host-examino.omt-hud-on .video-container.omt-examino-native-hidden,
+html.omt-host-examino.omt-hud-on .main-container.omt-examino-native-hidden,
+html.omt-host-examino.omt-hud-on .top.omt-examino-native-hidden,
+html.omt-host-examino.omt-hud-on .omt-examino-native-hidden:has(video),
+html.omt-host-examino.omt-hud-on .omt-examino-native-hidden:has(.op-media-element-container),
+html.omt-host-examino.omt-hud-on .omt-examino-native-hidden:has(.op-player) {
+    display: block !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+html.omt-host-examino.omt-hud-on .main-container.svelte-iq8mv8,
+html.omt-host-examino.omt-hud-on .main-container {
+    height: 100% !important;
+    max-height: 100% !important;
+}
+
+/* Raised settings panel + temp-visible gear must beat
+   html.omt-host-examino.omt-hud-on .setting-holder / .omt-examino-native-hidden
+   (v2.1.0 field: Auto VOD / Source stuck because gear stayed display:none). */
+html.omt-host-examino .op-setting-panel.omt-settings-raised,
+.op-setting-panel.omt-settings-raised {
+    display: block !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    z-index: 2147483647 !important;
+    position: fixed !important;
+    top: 48px !important;
+    right: 12px !important;
+    max-height: none !important;
+    overflow: visible !important;
+}
+
+html.omt-host-examino.omt-hud-on .setting-holder.omt-settings-temp-visible,
+html.omt-host-examino.omt-hud-on .setting-holder.omt-settings-temp-visible .op-setting-button,
+html.omt-host-examino.omt-hud-on .op-button.op-setting-button.omt-settings-temp-visible,
+html.omt-host-examino.omt-hud-on .omt-examino-native-hidden.omt-settings-temp-visible,
+html.omt-host-examino.omt-hud-on .setting-holder.omt-examino-native-hidden.omt-settings-temp-visible {
+    display: block !important;
+    opacity: 0 !important;
+    pointer-events: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 1px !important;
+    height: 1px !important;
+}
+
 #omt-root {
     position: absolute;
     inset: 0;
     pointer-events: none;
-    /* Absolute max stacking priority — must render above every host-page element */
-    z-index: 999999999 !important;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    color: white;
-    /* Flex column: spacer fills the video image area, docked panel flows below it */
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
+    z-index: 2147483640;
+    /* px root size: host html{font-size} / rem must not shrink the HUD */
+    font-size: 16px !important;
+    line-height: 1.25 !important;
+    font-family: var(--omt-font) !important;
+    font-weight: 400;
+    font-style: normal;
+    letter-spacing: normal;
+    text-transform: none;
+    color: var(--omt-text);
+    -webkit-font-smoothing: antialiased;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
 }
 
-/* Allow actual interactive panels to receive pointer events.
-   NOTE: .glass-panel itself stays pointer-events:none so it doesn't act
-   as an invisible wall across the whole video area. Only the concrete
-   panels (#controls-panel, #setup-panel) and OSD get pointer-events:auto. */
-#omt-root #controls-panel,
-#omt-root #setup-panel,
+/* Host CSS isolation: box model + form controls ignore page resets. */
+#omt-root *,
+#omt-root *::before,
+#omt-root *::after {
+    box-sizing: border-box !important;
+}
+#omt-root button,
+#omt-root input,
+#omt-root select,
+#omt-root textarea {
+    font-family: inherit !important;
+    letter-spacing: normal;
+    text-transform: none;
+    text-shadow: none;
+    box-shadow: none;
+    margin: 0;
+    max-width: none;
+    -webkit-appearance: none;
+    appearance: none;
+}
+#omt-root button {
+    background-image: none;
+}
+/* Beat host `button/input { font-size: Nrem !important }` resets. */
+#omt-root button,
+#omt-root .ctrl-btn,
+#omt-root .handle-btn,
+#omt-root .omt-timeline-fs-btn,
+#omt-root .omt-speed-chip,
+#omt-root .omt-more-toggle,
+#omt-root .omt-offset-btn,
+#omt-root .btn-sync,
+#omt-root .btn-clear-timer {
+    font-size: 11px !important;
+    line-height: 1.25 !important;
+}
+#omt-root .omt-btn-label,
+#omt-root .omt-time-text,
+#omt-root .omt-more-label,
+#omt-root .live-label {
+    font-size: 11px !important;
+    line-height: 1.25 !important;
+}
+#omt-root .top-select,
+#omt-root select.omt-tip,
+#omt-root #omt-half-select,
+#omt-root #omt-examino-source,
+#omt-root #omt-speed-select {
+    font-size: 11px !important;
+    line-height: 1.25 !important;
+}
+/* Beat host button grey / grayscale / :not(:active) resets (InPlay). */
+#omt-root button,
+#omt-root .ctrl-btn,
+#omt-root .handle-btn,
+#omt-root .omt-speed-chip,
+#omt-root .omt-timeline-fs-btn,
+#omt-root .omt-more-toggle,
+#omt-root .omt-offset-btn,
+#omt-root .btn-sync,
+#omt-root .btn-clear-timer,
+#omt-root #omt-live-btn {
+    filter: none !important;
+    opacity: 1 !important;
+    -webkit-filter: none !important;
+}
+#omt-root .btn-sync,
+#omt-root #omt-btn-set-kickoff,
+#omt-root #omt-kickoff-bar .btn-sync,
+#omt-root #omt-kickoff-bar .btn-sync.kickoff-set,
+#omt-root .omt-kickoff-bar .btn-sync,
+#omt-root .omt-kickoff-bar .btn-sync.kickoff-set {
+    background: #F5831F !important;
+    background-color: #F5831F !important;
+    background-image: none !important;
+    color: #111 !important;
+    border: none !important;
+    filter: none !important;
+    opacity: 1 !important;
+}
+#omt-root .btn-sync:hover,
+#omt-root #omt-btn-set-kickoff:hover,
+#omt-root #omt-kickoff-bar .btn-sync:hover,
+#omt-root .omt-kickoff-bar .btn-sync:hover {
+    filter: brightness(1.05) !important;
+    background: #F5831F !important;
+    background-color: #F5831F !important;
+    color: #111 !important;
+}
+#omt-root .omt-speed-chip.is-active,
+#omt-root .omt-speed-chip.is-active:hover {
+    background: transparent !important;
+    background-color: transparent !important;
+    color: #F5831F !important;
+    filter: none !important;
+}
+/* Beat host `button` / `button:not(:active)` grey (InPlay css-leak mock). */
+#omt-root #omt-btn-play,
+#omt-root #omt-btn-play:not(:active),
+#omt-root .omt-transport-seg .ctrl-btn.btn-play,
+#omt-root .omt-transport-seg .ctrl-btn.btn-play:not(:active) {
+    color: #e8e8e8 !important;
+    filter: none !important;
+    background: transparent !important;
+    background-color: transparent !important;
+}
+#omt-root #omt-btn-play.playing,
+#omt-root #omt-btn-play.playing:not(:active),
+#omt-root #omt-btn-play.playing:hover,
+#omt-root .omt-transport-seg .ctrl-btn.btn-play.playing,
+#omt-root .omt-transport-seg .ctrl-btn.btn-play.playing:not(:active),
+#omt-root .omt-transport-seg .ctrl-btn.btn-play.playing:hover {
+    color: #F5831F !important;
+    filter: none !important;
+    background: transparent !important;
+    background-color: transparent !important;
+}
+#omt-root #omt-btn-play.playing:hover,
+#omt-root .omt-transport-seg .ctrl-btn.btn-play.playing:hover {
+    background: rgba(245, 131, 31, 0.12) !important;
+    background-color: rgba(245, 131, 31, 0.12) !important;
+}
+#omt-root #omt-live-btn {
+    background: transparent !important;
+    background-color: transparent !important;
+    color: #cfcfcf !important;
+    border: 1px solid rgba(255, 255, 255, 0.28) !important;
+    filter: none !important;
+}
+#omt-root #omt-live-btn.is-live {
+    background: rgba(224, 32, 27, 0.18) !important;
+    background-color: rgba(224, 32, 27, 0.18) !important;
+    color: #fff !important;
+    border-color: rgba(224, 32, 27, 0.7) !important;
+}
+#omt-root #omt-live-btn.is-live .live-dot {
+    background: #e0201b !important;
+    background-color: #e0201b !important;
+    filter: none !important;
+}
+#omt-root .glass-panel,
+#omt-root #omt-controls-panel,
+#omt-root #match-timer-wrap,
 #omt-root #match-timer,
-#omt-root #osd-message {
+#omt-root #omt-more-panel,
+#omt-root #omt-kickoff-bar,
+#omt-root .omt-kickoff-bar,
+#omt-root #omt-examino-settings {
     pointer-events: auto;
 }
-
-/* ---- VIDEO SPACER (flex child) ----
-   Fills the rendered video image area so the docked controls panel
-   is pushed naturally to the bottom black bar by the browser's layout
-   engine — zero JS measurement, zero frame lag on resize.
-*/
-#omt-root #omt-video-spacer {
-    flex: 1 1 auto;       /* grows to fill the video image height */
-    pointer-events: none; /* transparent — clicks pass through to the video */
-    min-height: 0;
-}
-
-/* ---- OSD MATCH TIMER ---- */
-#omt-root #match-timer {
-    position: absolute;
-    top: 40px;
-    left: 40px;
-    background: rgba(0, 0, 0, 0.7);
-    border-left: 4px solid #00ff88;
-    padding: 10px 20px;
-    font-size: 32px;
-    font-weight: bold;
-    border-radius: 6px;
-    z-index: 9999;
-    pointer-events: auto;
-    cursor: pointer;
-    text-shadow: 1px 1px 3px black;
-    display: none;
-    backdrop-filter: blur(5px);
-    user-select: none;
+/* Timeline shell is pointer-events:none so the tip/padding zone does not
+   steal idle auto-hide; interactive children re-enable hits. */
+#omt-root #omt-timeline-bar {
+    pointer-events: none;
     -webkit-user-select: none;
-    -moz-user-select: none;
-    -ms-user-select: none;
+    user-select: none;
+}
+#omt-root #omt-timeline-bar .omt-timeline-track,
+#omt-root #omt-timeline-bar .omt-timeline-chrome-row,
+#omt-root #omt-timeline-bar .omt-timeline-times,
+#omt-root #omt-timeline-bar .omt-timeline-vol-btn,
+#omt-root #omt-timeline-bar .omt-timeline-vol-range,
+#omt-root #omt-timeline-bar .omt-timeline-chrome-right,
+#omt-root #omt-timeline-bar .omt-timeline-video-range,
+#omt-root #omt-timeline-bar .omt-timeline-fs-btn {
+    pointer-events: auto;
 }
 
-/* ---- OSD NOTIFICATION PILL ---- */
-#omt-root #osd-message {
+#omt-root .omt-icon {
+    display: block;
+    flex-shrink: 0;
+}
+
+#omt-root .omt-btn-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+/* ---- MATCH CLOCK (fixed presets via customize; click to edit time) ---- */
+#match-timer-wrap {
     position: absolute;
-    top: 40px;
+    top: 14px;
+    left: 14px;
+    right: auto;
+    bottom: auto;
+    z-index: 9998; /* below OSD (9999) so top-centre never covers it */
+    display: none;
+    cursor: pointer;
+}
+#match-timer-wrap.is-visible,
+#omt-root.omt-timer-on #match-timer-wrap {
+    display: block;
+    width: max-content;
+    max-width: none;
+}
+/* Corners clear of centre OSD; bottoms clear of timeline (~48–56px) */
+#match-timer-wrap.omt-clock-pos-top-left { top: 14px; left: 14px; right: auto; bottom: auto; transform: none; }
+#match-timer-wrap.omt-clock-pos-top-centre {
+    top: 44px; /* below centre OSD */
     left: 50%;
-    transform: translate(-50%, -10px) scale(0.9);
-    background: rgba(20, 20, 20, 0.85);
-    border: 1px solid rgba(0, 255, 136, 0.3);
-    color: #00ff88;
-    padding: 12px 28px;
-    font-size: 20px;
-    font-weight: bold;
-    border-radius: 30px;
+    right: auto;
+    bottom: auto;
+    transform: translateX(-50%);
+}
+#match-timer-wrap.omt-clock-pos-top-right { top: 14px; right: 14px; left: auto; bottom: auto; transform: none; }
+/* Bottom presets clear timeline + floating transport panel (~170–190px). */
+#match-timer-wrap.omt-clock-pos-bottom-left { bottom: 196px; left: 14px; top: auto; right: auto; transform: none; }
+#match-timer-wrap.omt-clock-pos-bottom-centre {
+    bottom: 196px;
+    left: 50%;
+    top: auto;
+    right: auto;
+    transform: translateX(-50%);
+}
+#match-timer-wrap.omt-clock-pos-bottom-right { bottom: 196px; right: 14px; top: auto; left: auto; transform: none; }
+
+/* v2.2.12 / v2.2.20: InPlay + Xeatre + Examino — pin clock to the video
+   picture (not tab black bars). Examino #omt-root is viewport-fixed since
+   2.2.16; picture inset restores pre-2.2.16 clock-on-video placement.
+   Bottom presets keep a single bottom offset (timeline clearance); only shift
+   horizontally into the picture so insets are not doubled. */
+#omt-root.omt-inplayip.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-top-left,
+#omt-root.omt-xeatre.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-top-left,
+#omt-root.omt-examino.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-top-left {
+    top: calc(var(--omt-pic-top, 0px) + 14px);
+    left: calc(var(--omt-pic-left, 0px) + 14px);
+}
+#omt-root.omt-inplayip.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-top-centre,
+#omt-root.omt-xeatre.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-top-centre,
+#omt-root.omt-examino.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-top-centre {
+    top: calc(var(--omt-pic-top, 0px) + 44px);
+    left: calc(var(--omt-pic-left, 0px) + (var(--omt-pic-width, 100%) / 2));
+    transform: translateX(-50%);
+}
+#omt-root.omt-inplayip.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-top-right,
+#omt-root.omt-xeatre.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-top-right,
+#omt-root.omt-examino.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-top-right {
+    top: calc(var(--omt-pic-top, 0px) + 14px);
+    right: calc(var(--omt-pic-right, 0px) + 14px);
+}
+#omt-root.omt-inplayip.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-bottom-left,
+#omt-root.omt-xeatre.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-bottom-left,
+#omt-root.omt-examino.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-bottom-left {
+    left: calc(var(--omt-pic-left, 0px) + 14px);
+}
+#omt-root.omt-inplayip.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-bottom-centre,
+#omt-root.omt-xeatre.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-bottom-centre,
+#omt-root.omt-examino.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-bottom-centre {
+    left: calc(var(--omt-pic-left, 0px) + (var(--omt-pic-width, 100%) / 2));
+    transform: translateX(-50%);
+}
+#omt-root.omt-inplayip.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-bottom-right,
+#omt-root.omt-xeatre.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-bottom-right,
+#omt-root.omt-examino.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-bottom-right {
+    right: calc(var(--omt-pic-right, 0px) + 14px);
+}
+#match-timer,
+.omt-match-timer {
+    position: relative;
+    top: auto;
+    left: auto;
+    background: rgba(0, 0, 0, 0.62);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    padding: 7px 12px;
+    font-size: 26px;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    font-family: var(--omt-mono);
+    border-radius: 3px;
+    cursor: pointer;
+    display: block;
+    user-select: none;
+    letter-spacing: 0.03em;
+    color: #f3f3f3;
+    text-shadow: none;
+}
+#match-timer.is-editing,
+.omt-match-timer.is-editing {
+    cursor: text;
+    user-select: text;
+    border-color: rgba(245, 131, 31, 0.55);
+    box-sizing: border-box;
+    text-align: center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: auto;
+    max-width: none;
+    vertical-align: top;
+}
+#match-timer.is-invalid,
+.omt-match-timer.is-invalid {
+    border-color: #e57373 !important;
+    box-shadow: 0 0 0 1px rgba(229, 115, 115, 0.55);
+    outline: none;
+}
+#omt-root #match-timer #timer-edit-input,
+#match-timer #timer-edit-input {
+    width: 5.2ch;
+    min-width: 3.5ch;
+    max-width: 9ch;
+    background: transparent;
+    border: none;
+    color: inherit;
+    font-size: inherit;
+    font-family: inherit;
+    font-weight: inherit;
+    font-variant-numeric: inherit;
+    letter-spacing: inherit;
+    text-align: center;
+    outline: none;
+    padding: 0;
+    margin: 0;
+    display: block;
+    box-sizing: content-box;
+    line-height: 1;
+    overflow: hidden;
+}
+#omt-root #match-timer #timer-edit-input::selection,
+#match-timer #timer-edit-input::selection {
+    background: rgba(245, 131, 31, 0.45);
+    color: #fff;
+}
+#omt-root #match-timer #timer-edit-input::-moz-selection,
+#match-timer #timer-edit-input::-moz-selection {
+    background: rgba(245, 131, 31, 0.45);
+    color: #fff;
+}
+/* Hint is absolutely positioned so it never expands the clock face / red outline. */
+#match-timer-wrap .omt-clock-edit-hint {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    top: calc(100% + 4px);
+    bottom: auto;
+    margin: 0;
+    padding: 0;
+    font-size: 10px;
+    font-weight: 650;
+    line-height: 1.2;
+    color: #ef9a9a;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    white-space: nowrap;
+    text-align: center;
+    letter-spacing: 0.02em;
+    pointer-events: none;
+    z-index: 2;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+}
+#match-timer-wrap.omt-clock-hint-above .omt-clock-edit-hint {
+    top: auto;
+    bottom: calc(100% + 5px);
+}
+#match-timer-wrap.omt-clock-size-small #match-timer,
+.omt-match-timer-wrap.omt-clock-size-small .omt-match-timer { font-size: 18px !important; padding: 4px 8px; }
+#match-timer-wrap.omt-clock-size-medium #match-timer,
+.omt-match-timer-wrap.omt-clock-size-medium .omt-match-timer { font-size: 26px !important; padding: 7px 12px; }
+#match-timer-wrap.omt-clock-size-large #match-timer,
+.omt-match-timer-wrap.omt-clock-size-large .omt-match-timer { font-size: 34px !important; padding: 8px 14px; }
+#match-timer-wrap.omt-clock-size-xlarge #match-timer,
+.omt-match-timer-wrap.omt-clock-size-xlarge .omt-match-timer { font-size: 44px !important; padding: 10px 16px; }
+#match-timer-wrap.omt-clock-style-rounded #match-timer,
+.omt-match-timer-wrap.omt-clock-style-rounded .omt-match-timer {
+    background: rgba(0, 0, 0, 0.62);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 3px;
+    text-shadow: none;
+}
+#match-timer-wrap.omt-clock-style-pill #match-timer,
+.omt-match-timer-wrap.omt-clock-style-pill .omt-match-timer {
+    background: rgba(0, 0, 0, 0.62);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 999px;
+    text-shadow: none;
+}
+#match-timer-wrap.omt-clock-style-minimal #match-timer,
+.omt-match-timer-wrap.omt-clock-style-minimal .omt-match-timer {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    padding-left: 2px;
+    padding-right: 2px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9), 0 0 8px rgba(0, 0, 0, 0.7);
+}
+
+/* Offset nudge lives in the expandable more panel */
+.omt-offset-nudge {
+    display: inline-flex;
+    gap: 2px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 4px;
+    padding: 2px;
+}
+.omt-offset-btn {
+    background: transparent;
+    border: none;
+    color: #ddd;
+    font-size: 10px;
+    font-weight: 700;
+    font-family: var(--omt-font);
+    font-variant-numeric: tabular-nums;
+    padding: 3px 6px;
+    border-radius: 3px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+}
+.omt-offset-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
+/* ---- OSD (small, fades) ---- */
+#osd-message {
+    position: absolute;
+    top: 14px;
+    left: 50%;
+    transform: translate(-50%, -4px);
+    background: rgba(0, 0, 0, 0.72);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: #eee;
+    padding: 5px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 4px;
     z-index: 9999;
     pointer-events: none;
     opacity: 0;
-    box-shadow: 0 8px 32px rgba(0, 255, 136, 0.15), 0 0 15px rgba(0, 255, 136, 0.1);
-    transition: opacity 0.15s ease-out, transform 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    letter-spacing: 0.5px;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
 }
 
-#omt-root #osd-message.visible {
+#osd-message.visible {
     opacity: 1;
-    transform: translate(-50%, 0) scale(1);
+    transform: translate(-50%, 0);
 }
 
-/* ---- GLASSMORPHISM BASE ---- */
-#omt-root .glass-panel {
+/* ---- PANELS ---- */
+/* No backdrop-filter: blurring live video under the panel forces the GPU
+   to re-read and re-blur every decoded frame (worst in fullscreen) and
+   keeps Chrome off the hardware video overlay path. */
+.glass-panel,
+.omt-panel {
     position: absolute;
-    background: rgba(20, 20, 20, 0.65);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 10px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-    /* Panels must always render above host-page bars (white/black layout elements) */
-    z-index: 999999999 !important;
+    background: rgba(15, 15, 15, 0.9);
+    border: 1px solid var(--omt-border);
+    border-radius: 8px;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+    z-index: 50;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    /* visible so top-row data-tip tooltips are not clipped by the card edge */
+    overflow: visible;
     height: fit-content;
-    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    /* Edge: block dblclick text-select mini-menu on panel chrome (v2.3.6). */
+    -webkit-user-select: none;
+    user-select: none;
 }
 
-#omt-root .glass-panel.playing-state {
-    border-color: rgba(0, 136, 255, 0.5);
-    box-shadow: 0 8px 32px rgba(0, 136, 255, 0.15), 0 0 12px rgba(0, 136, 255, 0.1);
+.glass-panel.playing-state {
+    border-color: rgba(255, 255, 255, 0.14);
 }
 
-/* ---- DRAG HANDLE ---- */
-#omt-root .drag-handle {
+.drag-handle {
     background: transparent;
-    padding: 4px 12px;
+    padding: 6px 10px;
     cursor: grab;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-    height: 22px;
+    border-bottom: 1px solid var(--omt-border);
+    min-height: 28px;
 }
 
-#omt-root .drag-handle:active {
-    cursor: grabbing;
-}
+.drag-handle:active { cursor: grabbing; }
 
-#omt-root .drag-side-left {
+.drag-side-left,
+.drag-side-right {
     flex: 1;
     display: flex;
-    justify-content: flex-start;
     align-items: center;
     gap: 8px;
 }
+.drag-side-left { justify-content: flex-start; }
+.drag-side-right { justify-content: flex-end; }
 
-#omt-root .drag-center-grip {
+.drag-center-grip {
     flex: 1;
     display: flex;
     justify-content: center;
     align-items: center;
-    font-size: 18px;
-    color: #555;
-    letter-spacing: 1px;
-    font-weight: bold;
+    color: #666;
     user-select: none;
 }
+.drag-center-grip .omt-grip { opacity: 0.55; }
 
-#omt-root .drag-side-right {
-    flex: 1;
-    display: flex;
-    justify-content: flex-end;
-    align-items: center;
-}
-
-#omt-root .handle-btn {
-    background: none;
+.handle-btn {
+    background: transparent;
     border: none;
-    color: white;
+    color: var(--omt-text);
     cursor: pointer;
-    font-size: 14px;
-    padding: 2px 6px;
-    display: flex;
+    padding: 4px;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    transition: opacity 0.2s;
+    border-radius: 4px;
+    opacity: 0.9;
+}
+.handle-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    opacity: 1;
+}
+.handle-btn:focus-visible {
+    outline: 2px solid var(--omt-orange);
+    outline-offset: 1px;
 }
 
-#omt-root .handle-btn:hover {
-    opacity: 0.7;
-}
-
-#omt-root .top-select {
-    background: rgba(0, 0, 0, 0.5);
-    border: 1px solid rgba(255, 255, 255, 0.2);
+.top-select {
+    background: rgba(0, 0, 0, 0.45);
+    border: 1px solid var(--omt-border);
     color: #ddd;
     font-size: 11px;
-    padding: 1px 4px;
+    padding: 2px 6px;
     border-radius: 4px;
     outline: none;
     cursor: pointer;
-    font-weight: bold;
+    font-weight: 600;
+    font-family: var(--omt-font);
 }
-
-#omt-root .top-select option {
+.top-select:focus-visible {
+    border-color: var(--omt-orange);
+}
+.top-select option {
     background: #1a1a1a;
     color: white;
 }
 
-/* ---- SETUP PANEL ---- */
-#omt-root #setup-panel {
-    top: 80px;
-    left: 80px;
-    width: 300px;
-    /* Explicit stacking override — must not be obscured by host layout bars */
-    z-index: 999999999 !important;
+/* ---- SETUP / SETTINGS ---- */
+#setup-panel {
+    top: 64px;
+    left: 64px;
+    width: 320px;
 }
 
-#omt-root .setup-content {
-    padding: 20px;
+.setup-content {
+    padding: 14px 14px 16px;
     display: flex;
     flex-direction: column;
-    gap: 15px;
+    gap: 12px;
 }
 
-#omt-root .brand-container {
+.brand-container {
     display: flex;
     justify-content: center;
-    align-items: center;
-    padding-bottom: 5px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    margin-bottom: 5px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--omt-border);
 }
 
-#omt-root .cheatsheet {
-    margin-top: 10px;
-    background: rgba(0, 0, 0, 0.25);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 6px;
-    padding: 10px;
-}
-
-#omt-root .cheatsheet-title {
-    font-size: 10px;
-    color: #00ff88;
-    font-weight: bold;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 8px;
-    border-bottom: 1px solid rgba(0, 255, 136, 0.2);
-    padding-bottom: 4px;
-}
-
-#omt-root .shortcut-item {
-    display: flex;
-    justify-content: space-between;
-    font-size: 11px;
-    line-height: 1.6;
-    color: #ccc;
-}
-
-#omt-root .shortcut-key {
-    font-family: monospace;
-    color: #66b3ff;
-    font-weight: bold;
-    background: rgba(255, 255, 255, 0.05);
-    padding: 0px 4px;
-    border-radius: 3px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-/* ---- CONTROLS PANEL ---- */
-#omt-root #controls-panel {
-    bottom: 40px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: min(560px, 95vw);
+.omt-brand {
     display: flex;
     flex-direction: column;
-    /* Explicit stacking override — must not be obscured by host layout bars */
-    z-index: 999999999 !important;
-    transition: opacity 0.3s ease,
-                bottom 0.25s ease,
-                left 0.25s ease,
-                transform 0.25s ease,
-                width 0.25s ease,
-                border-radius 0.25s ease;
-}
-
-/* ---- CLASS-BASED HIDE STATE ----
-   Used by the auto-hide timer and manual H-key. Using a class instead of an
-   inline opacity means the small-view layout enforcer can simply check whether
-   to cancel the timeout — it never fights over inline style values.
-   The transition is intentionally quick (0.2s) so the panel snaps away cleanly.
-*/
-#omt-root #controls-panel.omt-hidden {
-    opacity: 0 !important;
-    pointer-events: none !important;
-    transition: opacity 0.2s ease !important;
-}
-
-/* ---- CONTROLS PANEL — DOCKED MODE ---- */
-/*
-   Applied dynamically when the bottom black letterbox bar is at least
-   110 px tall. The panel expands to fill the full container width and
-   sits at the TOP of the black bar.
-   Position is handled entirely by the flex column layout of #omt-root:
-   #omt-video-spacer takes flex:1 (the video image area), and this panel
-   follows immediately after it — no JS top calculation, no frame lag.
-*/
-#omt-root #controls-panel.controls-docked {
-    /* Remove absolute positioning — let flexbox flow handle it */
-    position: relative;
-    top: auto;
-    bottom: auto;
-    left: 0;
-    right: 0;
-    width: 100%;
-    transform: none;
-    border-radius: 0;
-    border-left: none;
-    border-right: none;
-    border-top: none;
-    background: rgba(10, 10, 10, 0.92);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    flex-shrink: 0; /* never compress the controls panel */
-}
-
-/* In docked mode only hide the ≡ grip — keep all control buttons visible */
-#omt-root #controls-panel.controls-docked .drag-center-grip {
-    display: none !important;
-}
-
-/* Drag handle becomes a normal toolbar row in docked mode (no grab cursor) */
-#omt-root #controls-panel.controls-docked .drag-handle {
-    cursor: default !important;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-/* ---- LIVE BUTTON ---- */
-#omt-root #omt-live-btn {
-    background: transparent;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    color: #888;
-    border-radius: 4px;
-    font-size: 10px;
-    font-weight: bold;
-    padding: 3px 8px;
-    cursor: pointer;
-    margin-right: 5px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    display: flex;
-    /* always shown in extension – it IS a stream */
     align-items: center;
-    gap: 5px;
-    transition: all 0.3s ease;
-}
-
-#omt-root #omt-live-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #ccc;
-}
-
-#omt-root #omt-live-btn .live-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #888;
-    transition: all 0.3s ease;
-}
-
-#omt-root #omt-live-btn.is-live {
-    color: #fff;
-    border-color: rgba(255, 59, 48, 0.4);
-    cursor: default;
-}
-
-#omt-root #omt-live-btn.is-live .live-dot {
-    background: #ff3b30;
-    box-shadow: 0 0 6px rgba(255, 59, 48, 0.8);
-}
-
-#omt-root #omt-live-btn.is-live:hover {
-    background: transparent;
-}
-
-/* ---- TIMELINE ---- */
-#omt-root .timeline-container {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 8px 20px 2px 20px;
-    font-family: monospace;
-    font-size: 11px;
-    color: #aaa;
-}
-
-#omt-root .timeline-slider-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    width: 100%;
-}
-
-#omt-root .timeline-badges-row {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    min-height: 18px;
-}
-
-#omt-root .timeline-slider {
-    flex: 1;
-    -webkit-appearance: none;
-    appearance: none;
-    background: rgba(255, 255, 255, 0.15);
-    height: 6px;
-    border-radius: 3px;
-    outline: none;
-    cursor: pointer;
-    transition: background 0.2s;
-}
-
-#omt-root .timeline-slider:hover {
-    background: rgba(255, 255, 255, 0.25);
-}
-
-#omt-root .timeline-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background: #00ff88;
-    box-shadow: 0 0 8px rgba(0, 255, 136, 0.6);
-    transition: transform 0.1s ease;
-}
-
-#omt-root .timeline-slider::-webkit-slider-thumb:hover {
-    transform: scale(1.25);
-}
-
-/* ---- CONTROLS CONTENT ---- */
-#omt-root .controls-content {
-    padding: 8px 20px 12px 20px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-}
-
-#omt-root .ctrl-group-left,
-#omt-root .ctrl-group-right {
-    display: flex;
-    gap: 8px;
-    flex: 1;
-}
-
-#omt-root .ctrl-group-right {
-    justify-content: flex-end;
-}
-
-#omt-root .ctrl-group-center {
-    display: flex;
     gap: 6px;
-    align-items: center;
-    justify-content: center;
-    flex: initial;
+    text-align: center;
+}
+.omt-sp-logo {
+    display: block;
+    width: 168px;
+    height: auto;
+    opacity: 0.95;
+}
+.omt-wordmark {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--omt-text);
+}
+.omt-brand-credit {
+    font-size: 10px;
+    color: var(--omt-muted);
+    letter-spacing: 0.02em;
 }
 
-#omt-root .control-group {
+.omt-tabs {
+    display: flex;
+    gap: 2px;
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 6px;
+    padding: 2px;
+}
+.omt-tab {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--omt-muted);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 7px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: var(--omt-font);
+}
+.omt-tab:hover { color: var(--omt-text); }
+.omt-tab.is-active {
+    background: var(--omt-orange-dim);
+    color: var(--omt-orange);
+}
+.omt-tab:focus-visible {
+    outline: 2px solid var(--omt-orange);
+    outline-offset: 1px;
+}
+
+.omt-pane { display: none; flex-direction: column; gap: 12px; }
+.omt-pane.is-active { display: flex; }
+
+.omt-pane-note {
+    margin: 0;
+    font-size: 11px;
+    color: var(--omt-muted);
+    line-height: 1.45;
+}
+
+.omt-soon-banner {
+    display: inline-flex;
+    align-self: flex-start;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--omt-orange);
+    border: 1px solid rgba(245, 131, 31, 0.35);
+    background: var(--omt-orange-dim);
+    border-radius: 3px;
+    padding: 3px 8px;
+}
+.omt-soon { opacity: 0.55; }
+
+.control-group {
     display: flex;
     flex-direction: column;
-    gap: 5px;
+    gap: 6px;
+}
+.control-group label,
+.omt-row-label {
+    font-size: 11px;
+    color: var(--omt-muted);
+    font-weight: 600;
 }
 
-/* Override global label so it only applies inside our panels */
-#omt-root label {
-    font-size: 10px;
-    color: #aaa;
-    font-weight: bold;
-    text-transform: uppercase;
-}
-
-#omt-root .time-inputs {
-    display: flex;
-    gap: 5px;
-    align-items: center;
-}
-
-#omt-root input[type="number"] {
-    width: 50px;
-    padding: 8px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid #444;
-    color: white;
-    border-radius: 4px;
-    text-align: center;
-    outline: none;
-    font-family: inherit;
-}
-
-#omt-root .setup-content select {
+.control-group select,
+.omt-custom-minute input,
+.time-inputs input {
     width: 100%;
-    padding: 8px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid #444;
-    color: white;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--omt-border);
+    color: var(--omt-text);
     border-radius: 4px;
     font-size: 12px;
-    cursor: pointer;
+    font-family: var(--omt-font);
     outline: none;
 }
-
-#omt-root .btn-sync {
-    background: #00ff88;
-    color: black;
-    border: none;
-    padding: 10px;
-    font-weight: bold;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: 0.2s;
-    margin-top: 5px;
-    letter-spacing: 0.5px;
-    font-family: inherit;
+.control-group select:focus,
+.omt-custom-minute input:focus,
+.time-inputs input:focus {
+    border-color: var(--omt-orange);
 }
 
-#omt-root .btn-sync:hover {
-    background: #00cc6a;
-    box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
-}
-
-#omt-root .ctrl-btn {
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    color: #ddd;
-    padding: 8px 10px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 13px;
-    font-weight: bold;
-    transition: all 0.2s;
+.time-inputs {
     display: flex;
     align-items: center;
-    justify-content: center;
-    min-width: 42px;
-    font-family: inherit;
+    gap: 6px;
+    color: var(--omt-muted);
+}
+.time-inputs input {
+    width: 64px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
 }
 
-#omt-root .ctrl-btn:hover {
-    background: rgba(255, 255, 255, 0.15);
-    color: white;
-    transform: translateY(-1px);
+.omt-sync-actions {
+    display: flex;
+    gap: 6px;
 }
-
-#omt-root .ctrl-btn:active {
-    transform: translateY(1px);
-}
-
-#omt-root .btn-play {
-    background: rgba(0, 136, 255, 0.1);
-    border-color: rgba(0, 136, 255, 0.3);
-    color: #66b3ff;
-    min-width: 65px;
-    transition: all 0.3s ease;
-}
-
-#omt-root .btn-play:hover {
-    background: rgba(0, 136, 255, 0.3);
-    border-color: rgba(0, 136, 255, 0.6);
-}
-
-#omt-root .btn-play.playing {
-    background: rgba(0, 255, 136, 0.15);
-    border-color: rgba(0, 255, 136, 0.5);
-    color: #00ff88;
-}
-
-#omt-root .btn-play.playing:hover {
-    background: rgba(0, 255, 136, 0.3);
-    border-color: rgba(0, 255, 136, 0.7);
-}
-
-#omt-root .btn-frame {
-    color: #ffcc00;
-    border-color: rgba(255, 204, 0, 0.3);
-}
-
-#omt-root .separator {
-    width: 1px;
-    height: 24px;
-    background: rgba(255, 255, 255, 0.1);
-    margin: 0 4px;
-}
-
-/* ---- KICKOFF BADGES ---- */
-#omt-root .kickoff-badge {
-    background: rgba(0, 255, 136, 0.15);
-    border: 1px solid rgba(0, 255, 136, 0.3);
-    color: #00ff88;
-    font-size: 10px;
-    font-weight: bold;
-    padding: 2px 6px;
+.btn-sync {
+    flex: 1;
+    background: var(--omt-orange);
+    color: #111;
+    border: none;
     border-radius: 4px;
+    padding: 10px 12px;
+    font-weight: 700;
+    font-size: 12px;
     cursor: pointer;
-    transition: all 0.2s;
+    font-family: var(--omt-font);
+    letter-spacing: 0.02em;
+}
+.btn-sync:hover { filter: brightness(1.05); }
+.btn-sync:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 2px;
+}
+.btn-clear-timer {
+    background: rgba(255, 255, 255, 0.06);
+    color: #ff6b6b;
+    border: 1px solid rgba(255, 107, 107, 0.35);
+    border-radius: 4px;
+    padding: 0 12px;
+    cursor: pointer;
     display: inline-flex;
     align-items: center;
-    gap: 2px;
-    border-style: solid;
-    font-family: inherit;
+    justify-content: center;
 }
 
-#omt-root .kickoff-badge:hover {
-    background: rgba(0, 255, 136, 0.3);
-    color: white;
-    box-shadow: 0 0 8px rgba(0, 255, 136, 0.4);
+.omt-row-between,
+.omt-toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 11px;
+    color: #ddd;
 }
 
-#omt-root .kickoff-badge.k1 {
-    background: rgba(0, 255, 136, 0.15);
-    border-color: rgba(0, 255, 136, 0.3);
-    color: #00ff88;
-}
-
-#omt-root .kickoff-badge.k1:hover {
-    background: rgba(0, 255, 136, 0.3);
-    color: white;
-    box-shadow: 0 0 8px rgba(0, 255, 136, 0.4);
-}
-
-#omt-root .kickoff-badge.k2 {
-    background: rgba(255, 59, 48, 0.15);
-    border-color: rgba(255, 59, 48, 0.3);
-    color: #ff3b30;
-}
-
-#omt-root .kickoff-badge.k2:hover {
-    background: rgba(255, 59, 48, 0.3);
-    color: white;
-    box-shadow: 0 0 8px rgba(255, 59, 48, 0.4);
-}
-
-#omt-root .kickoff-badge.kc1 {
-    background: rgba(255, 149, 0, 0.15);
-    border-color: rgba(255, 149, 0, 0.3);
-    color: #ff9500;
-}
-
-#omt-root .kickoff-badge.kc1:hover {
-    background: rgba(255, 149, 0, 0.3);
-    color: white;
-    box-shadow: 0 0 8px rgba(255, 149, 0, 0.4);
-}
-
-#omt-root .kickoff-badge.kc2 {
-    background: rgba(191, 90, 242, 0.15);
-    border-color: rgba(191, 90, 242, 0.3);
-    color: #bf5af2;
-}
-
-#omt-root .kickoff-badge.kc2:hover {
-    background: rgba(191, 90, 242, 0.3);
-    color: white;
-    box-shadow: 0 0 8px rgba(191, 90, 242, 0.4);
-}
-
-/* ---- TIMELINE MARKER TICKS ---- */
-#omt-root .timeline-marker-tick {
-    position: absolute;
-    width: 3px;
-    height: 12px;
-    background: #ffcc00;
-    border-radius: 1.5px;
-    transform: translate(-50%, -3px);
-    z-index: 10;
-    box-shadow: 0 0 6px rgba(255, 204, 0, 0.8);
-    pointer-events: none;
-}
-
-#omt-root .timeline-marker-tick.k1 {
-    background: #00ff88;
-    box-shadow: 0 0 6px rgba(0, 255, 136, 0.8);
-}
-
-#omt-root .timeline-marker-tick.k2 {
-    background: #ff3b30;
-    box-shadow: 0 0 6px rgba(255, 59, 48, 0.8);
-}
-
-#omt-root .timeline-marker-tick.kc1 {
-    background: #ff9500;
-    box-shadow: 0 0 6px rgba(255, 149, 0, 0.8);
-}
-
-#omt-root .timeline-marker-tick.kc2 {
-    background: #bf5af2;
-    box-shadow: 0 0 6px rgba(191, 90, 242, 0.8);
-}
-
-/* ---- VOLUME RANGE ---- */
-#omt-root #omt-volume-range {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 60px;
-    height: 4px;
-    border-radius: 2px;
-    background: rgba(255, 255, 255, 0.2);
-    outline: none;
-    cursor: pointer;
-}
-
-/* ---- SHUTTLE TOGGLE SWITCH ---- */
-#omt-root .omt-shuttle-switch {
+/* Dark toggle switch (Auto VOD / ShuttleXpress) — knob vertically centred */
+.omt-switch {
     position: relative;
     display: inline-block;
-    width: 38px;
-    height: 20px;
+    width: 34px;
+    height: 18px;
+    margin: 0;
     flex-shrink: 0;
+    box-sizing: border-box;
+    vertical-align: middle;
 }
-#omt-root .omt-shuttle-switch input {
+.omt-switch input {
     opacity: 0;
     width: 0;
     height: 0;
     margin: 0;
     position: absolute;
 }
-#omt-root .omt-shuttle-slider {
+.omt-switch-slider,
+.omt-shuttle-slider {
     position: absolute;
+    inset: 0;
+    box-sizing: border-box;
+    background: rgba(255, 255, 255, 0.16);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 999px;
     cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+.omt-switch-slider::before,
+.omt-shuttle-slider::before {
+    content: "";
+    position: absolute;
+    box-sizing: border-box;
+    width: 12px;
+    height: 12px;
+    left: 2px;
     top: 0;
+    bottom: 0;
+    margin-top: auto;
+    margin-bottom: auto;
+    border: none;
+    background: #fff;
+    border-radius: 50%;
+    transform: none;
+    transition: left 0.2s ease, right 0.2s ease;
+}
+.omt-switch input:checked + .omt-switch-slider,
+.omt-shuttle-switch input:checked + .omt-shuttle-slider {
+    background: var(--omt-orange);
+    border-color: rgba(245, 131, 31, 0.55);
+}
+.omt-switch input:checked + .omt-switch-slider::before,
+.omt-shuttle-switch input:checked + .omt-shuttle-slider::before {
+    left: auto;
+    right: 2px;
+    transform: none;
+}
+.omt-switch input:focus-visible + .omt-switch-slider,
+.omt-shuttle-switch input:focus-visible + .omt-shuttle-slider {
+    outline: 2px solid var(--omt-orange);
+    outline-offset: 2px;
+}
+.omt-shuttle-switch {
+    position: relative;
+    display: inline-block;
+    width: 34px;
+    height: 18px;
+    margin: 0;
+    box-sizing: border-box;
+    flex-shrink: 0;
+    vertical-align: middle;
+}
+
+.cheatsheet {
+    background: rgba(0, 0, 0, 0.28);
+    border: 1px solid var(--omt-border);
+    border-radius: 6px;
+    padding: 10px;
+}
+.cheatsheet-title {
+    font-size: 10px;
+    color: var(--omt-orange);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 8px;
+    border-bottom: 1px solid var(--omt-border);
+    padding-bottom: 4px;
+}
+.shortcut-item {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    line-height: 1.65;
+    color: #ccc;
+}
+.shortcut-key {
+    font-family: var(--omt-mono);
+    color: #cfcfcf;
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 0 5px;
+    border-radius: 3px;
+    border: 1px solid var(--omt-border);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ---- FLOATING CONTROLS PANEL (Option A polished transport) ---- */
+#omt-controls-panel {
+    /* Sit above the YouTube-style shell (tip pad + track + chrome row). */
+    bottom: 100px;
+    top: auto;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(600px, calc(100% - 24px));
+    display: flex;
+    flex-direction: column;
+    transition: opacity 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+    z-index: 50;
+    -webkit-user-select: none;
+    user-select: none;
+}
+/* Bottom-anchored: when more opens, card grows UP (transport stays put). */
+#omt-controls-panel.omt-more-open,
+.omt-controls-panel.omt-more-open {
+    top: auto;
+}
+
+/* Customize: Control panel size S (M = current look, no extra class).
+   Class twins (.omt-controls-panel) cover InPlay multi-view prefixed panels. */
+#omt-controls-panel.omt-panel-size-small,
+.omt-controls-panel.omt-panel-size-small {
+    width: min(480px, calc(100% - 24px));
+}
+#omt-controls-panel.omt-panel-size-small .drag-handle,
+.omt-controls-panel.omt-panel-size-small .drag-handle {
+    padding: 6px 8px;
+    gap: 6px;
+}
+#omt-controls-panel.omt-panel-size-small .top-select,
+.omt-controls-panel.omt-panel-size-small .top-select {
+    font-size: 11px;
+    padding: 3px 6px;
+    max-width: 72px;
+}
+#omt-controls-panel.omt-panel-size-small .handle-btn,
+#omt-controls-panel.omt-panel-size-small .omt-more-toggle,
+.omt-controls-panel.omt-panel-size-small .handle-btn,
+.omt-controls-panel.omt-panel-size-small .omt-more-toggle {
+    width: 28px;
+    height: 28px;
+}
+#omt-controls-panel.omt-panel-size-small .handle-btn .omt-icon,
+#omt-controls-panel.omt-panel-size-small .omt-more-toggle .omt-icon,
+.omt-controls-panel.omt-panel-size-small .handle-btn .omt-icon,
+.omt-controls-panel.omt-panel-size-small .omt-more-toggle .omt-icon {
+    width: 14px;
+    height: 14px;
+}
+#omt-controls-panel.omt-panel-size-small #omt-live-btn,
+.omt-controls-panel.omt-panel-size-small .omt-tile-panel-live,
+.omt-controls-panel.omt-panel-size-small [id$="omt-live-btn"] {
+    font-size: 10px;
+    padding: 4px 8px;
+}
+#omt-controls-panel.omt-panel-size-small #omt-volume-range,
+.omt-controls-panel.omt-panel-size-small .omt-tile-panel-vol-range,
+.omt-controls-panel.omt-panel-size-small [id$="omt-volume-range"] {
+    width: 56px;
+}
+#omt-controls-panel.omt-panel-size-small .controls-content,
+.omt-controls-panel.omt-panel-size-small .controls-content {
+    padding: 6px 8px 8px;
+    gap: 6px;
+}
+#omt-controls-panel.omt-panel-size-small .omt-transport-seg .ctrl-btn,
+.omt-controls-panel.omt-panel-size-small .omt-transport-seg .ctrl-btn {
+    min-height: 36px;
+    padding: 8px 4px;
+    gap: 3px;
+}
+#omt-controls-panel.omt-panel-size-small .omt-transport-seg .ctrl-btn .omt-btn-label,
+.omt-controls-panel.omt-panel-size-small .omt-transport-seg .ctrl-btn .omt-btn-label {
+    font-size: 10px;
+}
+#omt-controls-panel.omt-panel-size-small .omt-transport-seg .ctrl-btn .omt-icon,
+.omt-controls-panel.omt-panel-size-small .omt-transport-seg .ctrl-btn .omt-icon {
+    width: 14px;
+    height: 14px;
+}
+#omt-controls-panel.omt-panel-size-small .omt-transport-seg .ctrl-btn.btn-play,
+.omt-controls-panel.omt-panel-size-small .omt-transport-seg .ctrl-btn.btn-play {
+    min-width: 52px;
+    padding: 8px 6px;
+}
+#omt-controls-panel.omt-panel-size-small .omt-speed-chip,
+.omt-controls-panel.omt-panel-size-small .omt-speed-chip {
+    min-height: 28px;
+    padding: 5px 2px;
+    font-size: 10px;
+}
+#omt-controls-panel.omt-panel-size-small .omt-more-panel.is-open,
+.omt-controls-panel.omt-panel-size-small .omt-more-panel.is-open {
+    margin: 6px 8px 0;
+    padding: 6px;
+}
+#omt-controls-panel.omt-panel-size-small .omt-more-label,
+#omt-controls-panel.omt-panel-size-small .omt-more-block,
+.omt-controls-panel.omt-panel-size-small .omt-more-label,
+.omt-controls-panel.omt-panel-size-small .omt-more-block {
+    font-size: 11px;
+}
+
+/* Customize: Compact hides the lower speed-chip row (top speed select stays). */
+#omt-controls-panel.omt-panel-compact .omt-speed-row,
+.omt-controls-panel.omt-panel-compact .omt-speed-row {
+    display: none;
+}
+
+/* ---- BOTTOM TIMELINE (YouTube-style: full-width scrubber + chrome row) ---- */
+.omt-timeline-bar {
+    position: absolute;
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: #555;
-    transition: background-color 0.3s ease;
+    z-index: 48;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-end;
+    gap: 2px;
+    /* Top: floating tip; bottom: slim chrome row. Shell is pointer-events:none. */
+    padding: 28px 12px 6px;
+    box-sizing: border-box;
+    transition: opacity 0.3s ease;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.55) 0%, rgba(0, 0, 0, 0) 100%);
+    pointer-events: none;
+    overflow: visible;
+}
+.omt-timeline-bar.omt-chrome-hidden .omt-timeline-track,
+.omt-timeline-bar.omt-chrome-hidden .omt-timeline-chrome-row,
+.omt-timeline-bar.omt-chrome-hidden .omt-timeline-times,
+.omt-timeline-bar.omt-chrome-hidden .omt-timeline-vol-btn,
+.omt-timeline-bar.omt-chrome-hidden .omt-timeline-vol-range,
+.omt-timeline-bar.omt-chrome-hidden .omt-timeline-video-range,
+.omt-timeline-bar.omt-chrome-hidden .omt-timeline-fs-btn {
+    pointer-events: none !important;
+}
+
+.omt-timeline-track {
+    position: relative;
+    width: 100%;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    height: 16px;
+    min-width: 0;
+    cursor: pointer;
+    overflow: visible;
+}
+
+/* Slim always-with-panel row: volume + time left, fullscreen right. */
+.omt-timeline-chrome-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    min-height: 28px;
+    box-sizing: border-box;
+}
+.omt-timeline-chrome-left {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+.omt-timeline-chrome-right {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    flex: 0 0 auto;
+    margin-left: auto;
+}
+#omt-root .omt-timeline-video-range {
+    font-family: var(--omt-mono);
+    font-size: 11px !important;
+    font-variant-numeric: tabular-nums;
+    color: #c8c8c8;
+    line-height: 1;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+#omt-root .omt-timeline-video-range[hidden] {
+    display: none !important;
+}
+#omt-root .omt-timeline-play-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: #f1f1f1;
+    cursor: pointer;
+    opacity: 0.92;
+    flex-shrink: 0;
+}
+#omt-root .omt-timeline-play-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    opacity: 1;
+}
+#omt-root .omt-timeline-play-btn:focus-visible {
+    outline: 2px solid var(--omt-orange);
+    outline-offset: 1px;
+}
+#omt-root .omt-timeline-play-btn.playing {
+    color: var(--omt-orange);
+}
+#omt-root .omt-timeline-play-btn .omt-icon {
+    width: 16px;
+    height: 16px;
+}
+.omt-timeline-times {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 1;
+    min-width: 0;
+    font-variant-numeric: tabular-nums;
+}
+#omt-root .omt-timeline-post-times {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 4px;
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+    text-align: left;
+}
+#omt-root .omt-timeline-post-times[hidden] {
+    display: none !important;
+}
+#omt-root .omt-timeline-match-clock {
+    font-family: var(--omt-mono);
+    font-size: 12px !important;
+    font-variant-numeric: tabular-nums;
+    color: #f1f1f1;
+    line-height: 1;
+    white-space: nowrap;
+}
+#omt-root .omt-timeline-match-clock[hidden] {
+    display: none !important;
+}
+#omt-root .omt-timeline-live-indicator {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    height: 22px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: #ddd;
+    cursor: pointer;
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+    text-align: left;
+}
+#omt-root .omt-timeline-live-indicator[hidden] {
+    display: none !important;
+}
+#omt-root .omt-timeline-live-indicator:hover {
+    opacity: 0.92;
+}
+#omt-root .omt-timeline-live-indicator:focus-visible {
+    outline: 2px solid var(--omt-orange);
+    outline-offset: 1px;
+}
+#omt-root .omt-timeline-live-delay {
+    font-family: var(--omt-mono);
+    font-size: 12px !important;
+    font-variant-numeric: tabular-nums;
+    color: #f1f1f1;
+    line-height: 1;
+    white-space: nowrap;
+}
+#omt-root .omt-timeline-live-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--omt-font);
+    font-size: 10px !important;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #fff !important;
+    background: #e5383b !important;
+    border: 1px solid #e5383b !important;
     border-radius: 999px;
+    padding: 3px 9px;
+    line-height: 1;
+    filter: none !important;
 }
-#omt-root .omt-shuttle-slider:before {
-    position: absolute;
-    content: "";
-    height: 14px;
-    width: 14px;
-    left: 3px;
-    bottom: 3px;
-    background-color: white;
-    transition: transform 0.3s ease;
+#omt-root .omt-timeline-live-chip[hidden] {
+    display: none !important;
+}
+#omt-root .omt-timeline-vol-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: #f1f1f1;
+    cursor: pointer;
+    opacity: 0.92;
+    flex-shrink: 0;
+}
+#omt-root .omt-timeline-vol-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    opacity: 1;
+}
+#omt-root .omt-timeline-vol-btn:focus-visible {
+    outline: 2px solid var(--omt-orange);
+    outline-offset: 1px;
+}
+#omt-root .omt-timeline-vol-btn .omt-icon {
+    width: 16px;
+    height: 16px;
+}
+#omt-root .omt-timeline-vol-range {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 56px;
+    height: 4px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.28);
+    outline: none;
+    cursor: pointer;
+    flex-shrink: 0;
+    accent-color: #fff;
+}
+#omt-root .omt-timeline-vol-range::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.28);
+}
+#omt-root .omt-timeline-vol-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    margin-top: -4px;
     border-radius: 50%;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+    background: #fff;
+    border: none;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+    cursor: pointer;
 }
-#omt-root .omt-shuttle-switch input:checked + .omt-shuttle-slider {
-    background-color: #2ecc71;
+#omt-root .omt-timeline-vol-range::-moz-range-track {
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.28);
 }
-#omt-root .omt-shuttle-switch input:checked + .omt-shuttle-slider:before {
-    transform: translateX(18px);
+#omt-root .omt-timeline-vol-range::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #fff;
+    border: none;
+    cursor: pointer;
+}
+.omt-timeline-fs-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: #f1f1f1;
+    cursor: pointer;
+    opacity: 0.92;
+    flex-shrink: 0;
+}
+.omt-timeline-fs-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    opacity: 1;
+}
+.omt-timeline-fs-btn:focus-visible {
+    outline: 2px solid var(--omt-orange);
+    outline-offset: 1px;
+}
+.omt-timeline-fs-btn .omt-icon {
+    width: 16px;
+    height: 16px;
 }
 
-/* ---- LOCAL VIDEO WINDOWED SCALING ---- */
+#omt-timeline-markers {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 0;
+    top: 50%;
+    pointer-events: none;
+    z-index: 0;
+}
+
 /*
-   Ensures the <video> element fills the full viewport in windowed mode so that
-   our geometry calculation (vid.getBoundingClientRect) matches the visible area.
-   Without this the browser may render the video at its natural resolution with
-   scroll bars, making the black-bar computation unreliable.
-*/
-.omt-local-env body,
-.omt-local-env html {
-    margin: 0 !important;
-    padding: 0 !important;
-    width: 100% !important;
-    height: 100% !important;
-    overflow: hidden !important;
-    background: black !important;
+ * Period ticks — hidden at rest; on timeline hover show thin marks + tiny
+ * short labels BELOW the track. Full period · match-clock tip stays ABOVE.
+ */
+.omt-timeline-period-ticks {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 3;
+    pointer-events: none;
+    overflow: visible;
+    opacity: 0;
+    transition: opacity 140ms ease;
+}
+.omt-timeline-bar.is-timeline-hover .omt-timeline-period-ticks,
+.omt-timeline-bar:hover .omt-timeline-period-ticks {
+    opacity: 1;
+}
+.omt-period-tick {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 0;
+    height: 10px;
+    padding: 0;
+    margin: 0;
+    border: none;
+    background: transparent;
+    pointer-events: none;
+    overflow: visible;
+}
+.omt-period-tick-mark {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    display: block;
+    width: 1px;
+    height: 10px;
+    border-radius: 1px;
+    background: rgba(220, 220, 220, 0.65);
+    transition: background 120ms ease, width 120ms ease, height 120ms ease, box-shadow 120ms ease;
+}
+.omt-period-tick-label {
+    position: absolute;
+    left: 50%;
+    /* Below the scrubber; keep inside timeline padding (host pages often clip). */
+    top: 12px;
+    transform: translateX(-50%);
+    display: block;
+    font-family: var(--omt-font);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    color: #f0f0f0;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+    white-space: nowrap;
+    transition: color 120ms ease;
+    z-index: 4;
+}
+.omt-period-tick.is-snap .omt-period-tick-mark {
+    width: 2px;
+    height: 12px;
+    background: var(--omt-orange);
+    box-shadow: 0 0 0 1px rgba(245, 131, 31, 0.25);
+}
+.omt-period-tick.is-snap .omt-period-tick-label {
+    color: var(--omt-orange);
 }
 
-.omt-local-env video {
-    display: block !important;
+/* Solid dark tip — fixed when shown so the control card cannot cover it. */
+.omt-timeline-hover-tip {
+    position: fixed;
+    z-index: 2147483645;
+    pointer-events: none;
+    background: #141414;
+    color: #f0f0f0;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 11px;
+    font-weight: 500;
+    font-family: var(--omt-font);
+    line-height: 1.25;
+    white-space: nowrap;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55);
+    opacity: 0;
+    transition: opacity 140ms ease;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+.omt-timeline-bar.is-timeline-hover .omt-timeline-hover-tip:not([hidden]),
+.omt-timeline-bar:hover .omt-timeline-hover-tip:not([hidden]) {
+    opacity: 1;
+}
+.omt-timeline-hover-tip[hidden] {
+    display: none !important;
+    opacity: 0 !important;
+}
+
+/* Thin scrubber; thickens on hover. ONE fill colour for the whole match. */
+.timeline-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    position: relative;
+    z-index: 2;
+    width: 100%;
+    height: 3px;
+    border-radius: 1px;
+    outline: none;
+    cursor: pointer;
+    background: linear-gradient(
+        to right,
+        var(--omt-scrub) 0%,
+        var(--omt-scrub) var(--omt-progress, 0%),
+        rgba(255, 255, 255, 0.2) var(--omt-progress, 0%)
+    );
+    transition: height 0.12s ease;
+}
+/* Keep class hooks for LIVE pill / tests; fill colour stays constant. */
+#omt-timeline-bar.omt-at-live .timeline-slider,
+#omt-timeline-bar:not(.omt-at-live) .timeline-slider {
+    background: linear-gradient(
+        to right,
+        var(--omt-scrub) 0%,
+        var(--omt-scrub) var(--omt-progress, 0%),
+        rgba(255, 255, 255, 0.2) var(--omt-progress, 0%)
+    );
+}
+.omt-timeline-bar:hover .timeline-slider,
+.omt-timeline-bar.is-timeline-hover .timeline-slider,
+.timeline-slider:hover {
+    height: 6px;
+}
+.timeline-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #fff;
+    border: none;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+    opacity: 0;
+    transition: opacity 0.12s ease;
+}
+.omt-timeline-bar:hover .timeline-slider::-webkit-slider-thumb,
+.timeline-slider:hover::-webkit-slider-thumb,
+.timeline-slider:active::-webkit-slider-thumb {
+    opacity: 1;
+}
+.timeline-slider::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #fff;
+    border: none;
+    opacity: 0;
+}
+
+/* Expandable match-controls group inside the floating card (v1.7.2 look — middle section). */
+.omt-more-panel {
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    pointer-events: none;
+    margin: 0 10px;
+    padding: 0 8px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.35);
+    transition:
+        max-height 120ms ease,
+        opacity 120ms ease,
+        margin 120ms ease,
+        padding 120ms ease,
+        border-color 120ms ease;
+}
+.omt-more-panel.is-open {
+    max-height: 240px;
+    opacity: 1;
+    pointer-events: auto;
+    margin: 8px 10px 0;
+    padding: 8px;
+    border-color: rgba(255, 255, 255, 0.1);
+    /* Let data-tip bubbles escape (Shuttle / Open file / Clear timer, etc.). */
+    overflow: visible;
+}
+.omt-more-block {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 6px;
+}
+.omt-more-block:last-child { margin-bottom: 0; }
+.omt-more-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--omt-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+/* Class twin (.omt-kickoff-bar) covers InPlay MV prefixed tile ids (v2.3.9). */
+#omt-kickoff-bar select,
+.omt-kickoff-bar select,
+#omt-examino-settings select,
+.omt-more-panel select {
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--omt-border);
+    color: var(--omt-text);
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 6px;
+    font-family: var(--omt-font);
+}
+#omt-kickoff-bar .omt-custom-minute,
+.omt-kickoff-bar .omt-custom-minute {
+    display: none;
+    align-items: center;
+    gap: 4px;
+}
+#omt-kickoff-bar .omt-custom-minute input,
+.omt-kickoff-bar .omt-custom-minute input {
+    width: 64px;
+    padding: 4px 6px;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--omt-border);
+    color: var(--omt-text);
+    border-radius: 4px;
+    font-size: 11px;
+}
+/* Compact Kick-off / X — not the giant flex:1 setup-panel .btn-sync. */
+#omt-kickoff-bar .btn-sync,
+.omt-kickoff-bar .btn-sync {
+    flex: 0 0 auto;
+    padding: 6px 10px;
+    font-size: 11px;
+}
+#omt-kickoff-bar .btn-sync.kickoff-set,
+.omt-kickoff-bar .btn-sync.kickoff-set {
+    background: var(--omt-orange);
+    color: #111;
+}
+#omt-kickoff-bar .btn-clear-timer,
+.omt-kickoff-bar .btn-clear-timer {
+    padding: 6px;
+}
+#omt-examino-settings {
+    display: none;
+}
+#omt-examino-settings .omt-toggle-row,
+.omt-shuttle-block .omt-toggle-row {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    font-size: 11px;
+    color: #ddd;
+}
+.omt-more-toggle {
+    background: transparent;
+    border: none;
+    color: #fff;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.omt-more-toggle:hover,
+.omt-more-toggle.is-open {
+    background: rgba(255, 255, 255, 0.12);
+}
+.omt-more-toggle .omt-icon {
+    width: 16px;
+    height: 16px;
+}
+
+/* Portal tip — outside .glass-panel so it stays fully opaque. */
+.omt-control-tip {
+    position: fixed;
+    z-index: 2147483646;
+    pointer-events: none;
+    background: #141414;
+    color: #f0f0f0;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 4px;
+    padding: 4px 7px;
+    font-size: 11px;
+    font-weight: 500;
+    font-family: var(--omt-font);
+    line-height: 1.25;
+    white-space: nowrap;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+.omt-control-tip[hidden] {
+    display: none !important;
+}
+/* Hide native ::after while the portal tip is active for this control. */
+.omt-tip.omt-tip-portal[data-tip]::after {
+    opacity: 0 !important;
+    visibility: hidden !important;
+}
+
+/* Dark minimal tooltips — escape the card; --omt-tip-shift clamps horizontally. */
+.omt-tip {
+    position: relative;
+    --omt-tip-shift: 0px;
+}
+.omt-tip[data-tip]::after {
+    content: attr(data-tip);
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 8px);
+    transform: translateX(calc(-50% + var(--omt-tip-shift))) translateY(2px);
+    /* Fully opaque — never blend with controls underneath */
+    background: #141414;
+    color: #f0f0f0;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 4px;
+    padding: 4px 7px;
+    font-size: 11px;
+    font-weight: 500;
+    font-family: var(--omt-font);
+    line-height: 1.25;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 80ms ease, transform 80ms ease, visibility 80ms ease;
+    z-index: 400;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+.omt-tip[data-tip]:hover::after,
+.omt-tip[data-tip]:focus-visible::after,
+.omt-tip.omt-tip-show[data-tip]::after {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(calc(-50% + var(--omt-tip-shift))) translateY(0);
+}
+/* Fixed tips escape backdrop-filter clipping on .glass-panel.
+ * .omt-tip-show keeps the tip opaque even if :hover flickers during capture. */
+.omt-tip.omt-tip-fixed[data-tip]::after,
+.omt-tip.omt-tip-fixed[data-tip]:hover::after,
+.omt-tip.omt-tip-fixed[data-tip]:focus-visible::after,
+.omt-tip.omt-tip-fixed.omt-tip-show[data-tip]::after,
+#omt-root.omt-tips-flip-below #omt-controls-panel .omt-tip.omt-tip-fixed[data-tip]::after,
+#omt-controls-panel.omt-tips-flip-below .omt-tip.omt-tip-fixed[data-tip]::after,
+#omt-root.omt-tips-flip-below #omt-controls-panel .omt-tip.omt-tip-fixed[data-tip]:hover::after,
+#omt-controls-panel.omt-tips-flip-below .omt-tip.omt-tip-fixed[data-tip]:hover::after,
+.drag-side-left .omt-tip.omt-tip-fixed[data-tip]::after,
+.drag-side-right .omt-tip.omt-tip-fixed[data-tip]::after,
+.drag-side-left .omt-tip.omt-tip-fixed[data-tip]:hover::after,
+.drag-side-right .omt-tip.omt-tip-fixed[data-tip]:hover::after {
+    position: fixed;
+    left: var(--omt-tip-left, 0);
+    top: var(--omt-tip-top, 0);
+    right: auto;
+    bottom: auto;
+    transform: none;
+    z-index: 2147483646;
+}
+/* Top-row right cluster: anchor to control’s right edge, then shift. */
+.drag-side-right .omt-tip[data-tip]::after {
+    left: auto;
+    right: 0;
+    transform: translateX(var(--omt-tip-shift)) translateY(2px);
+}
+.drag-side-right .omt-tip[data-tip]:hover::after,
+.drag-side-right .omt-tip[data-tip]:focus-visible::after {
+    transform: translateX(var(--omt-tip-shift)) translateY(0);
+}
+/* Top-row left cluster: anchor to control’s left edge, then shift. */
+.drag-side-left .omt-tip[data-tip]::after {
+    left: 0;
+    right: auto;
+    transform: translateX(var(--omt-tip-shift)) translateY(2px);
+}
+.drag-side-left .omt-tip[data-tip]:hover::after,
+.drag-side-left .omt-tip[data-tip]:focus-visible::after {
+    transform: translateX(var(--omt-tip-shift)) translateY(0);
+}
+/* When the card sits near the top of the player, flip tips below the control. */
+#omt-root.omt-tips-flip-below #omt-controls-panel .omt-tip[data-tip]::after,
+#omt-controls-panel.omt-tips-flip-below .omt-tip[data-tip]::after {
+    bottom: auto;
+    top: calc(100% + 8px);
+    transform: translateX(calc(-50% + var(--omt-tip-shift))) translateY(-2px);
+}
+#omt-root.omt-tips-flip-below #omt-controls-panel .omt-tip[data-tip]:hover::after,
+#omt-root.omt-tips-flip-below #omt-controls-panel .omt-tip[data-tip]:focus-visible::after,
+#omt-controls-panel.omt-tips-flip-below .omt-tip[data-tip]:hover::after,
+#omt-controls-panel.omt-tips-flip-below .omt-tip[data-tip]:focus-visible::after {
+    transform: translateX(calc(-50% + var(--omt-tip-shift))) translateY(0);
+}
+#omt-root.omt-tips-flip-below #omt-controls-panel .drag-side-right .omt-tip[data-tip]::after,
+#omt-controls-panel.omt-tips-flip-below .drag-side-right .omt-tip[data-tip]::after {
+    transform: translateX(var(--omt-tip-shift)) translateY(-2px);
+}
+#omt-root.omt-tips-flip-below #omt-controls-panel .drag-side-right .omt-tip[data-tip]:hover::after,
+#omt-root.omt-tips-flip-below #omt-controls-panel .drag-side-right .omt-tip[data-tip]:focus-visible::after,
+#omt-controls-panel.omt-tips-flip-below .drag-side-right .omt-tip[data-tip]:hover::after,
+#omt-controls-panel.omt-tips-flip-below .drag-side-right .omt-tip[data-tip]:focus-visible::after {
+    transform: translateX(var(--omt-tip-shift)) translateY(0);
+}
+#omt-root.omt-tips-flip-below #omt-controls-panel .drag-side-left .omt-tip[data-tip]::after,
+#omt-controls-panel.omt-tips-flip-below .drag-side-left .omt-tip[data-tip]::after {
+    transform: translateX(var(--omt-tip-shift)) translateY(-2px);
+}
+#omt-root.omt-tips-flip-below #omt-controls-panel .drag-side-left .omt-tip[data-tip]:hover::after,
+#omt-root.omt-tips-flip-below #omt-controls-panel .drag-side-left .omt-tip[data-tip]:focus-visible::after,
+#omt-controls-panel.omt-tips-flip-below .drag-side-left .omt-tip[data-tip]:hover::after,
+#omt-controls-panel.omt-tips-flip-below .drag-side-left .omt-tip[data-tip]:focus-visible::after {
+    transform: translateX(var(--omt-tip-shift)) translateY(0);
+}
+
+.omt-time-text {
+    font-family: var(--omt-mono);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    color: #ddd;
+    flex-shrink: 0;
+}
+.omt-time-sep {
+    color: #777;
+    font-size: 11px;
+    margin: 0 1px;
+    flex-shrink: 0;
+}
+
+#omt-volume-range,
+.omt-tile-panel-vol-range,
+.omt-tile-root [id$="omt-volume-range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 56px;
+    height: 3px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.22);
+    outline: none;
+    cursor: pointer;
+    accent-color: #fff;
+}
+#omt-volume-range::-webkit-slider-thumb,
+.omt-tile-panel-vol-range::-webkit-slider-thumb,
+.omt-tile-root [id$="omt-volume-range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: #fff;
+    border: none;
+}
+#omt-volume-range::-moz-range-thumb,
+.omt-tile-panel-vol-range::-moz-range-thumb,
+.omt-tile-root [id$="omt-volume-range"]::-moz-range-thumb {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: #fff;
+    border: none;
+}
+#omt-volume-range::-moz-range-track,
+.omt-tile-panel-vol-range::-moz-range-track,
+.omt-tile-root [id$="omt-volume-range"]::-moz-range-track {
+    height: 3px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.22);
+}
+
+/* LIVE pill — in floating panel drag-handle (same place as v1.2.2) */
+#omt-live-btn,
+.omt-tile-panel-live,
+.omt-tile-root [id$="omt-live-btn"] {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    color: #cfcfcf;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 3px 9px;
+    cursor: pointer;
+    margin-left: 0;
+    margin-right: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-family: var(--omt-font);
+    flex-shrink: 0;
+}
+#omt-root .omt-live-spacer,
+.omt-tile-root .omt-live-spacer {
+    display: inline-block;
+    width: 10px;
+    flex-shrink: 0;
+}
+#omt-live-btn .live-dot,
+.omt-tile-panel-live .live-dot,
+.omt-tile-root [id$="omt-live-btn"] .live-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #888;
+}
+#omt-live-btn:hover,
+.omt-tile-panel-live:hover,
+.omt-tile-root [id$="omt-live-btn"]:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+}
+#omt-live-btn.is-live,
+.omt-tile-panel-live.is-live,
+.omt-tile-root [id$="omt-live-btn"].is-live {
+    background: rgba(224, 32, 27, 0.18);
+    color: #fff;
+    border-color: rgba(224, 32, 27, 0.7);
+}
+#omt-live-btn.is-live .live-dot,
+.omt-tile-panel-live.is-live .live-dot,
+.omt-tile-root [id$="omt-live-btn"].is-live .live-dot {
+    background: var(--omt-live);
+}
+#omt-live-btn.is-live:hover,
+.omt-tile-panel-live.is-live:hover,
+.omt-tile-root [id$="omt-live-btn"].is-live:hover {
+    background: rgba(224, 32, 27, 0.28);
+}
+
+/* Transport + speed (Option A: flush segmented group, larger hit targets) */
+.controls-content {
+    padding: 8px 12px 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+}
+.omt-transport-seg {
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+    width: 100%;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 8px;
+    overflow: hidden;
+    gap: 0;
+}
+.omt-seg-divider {
+    width: 1px;
+    align-self: stretch;
+    background: rgba(255, 255, 255, 0.16);
+    flex-shrink: 0;
+}
+.omt-transport-seg .ctrl-btn {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 44px;
+    border: none;
+    border-radius: 0;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+    background: transparent;
+    color: var(--omt-text);
+    cursor: pointer;
+    padding: 12px 6px;
+    margin: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    transition: background 0.12s ease, color 0.12s ease;
+}
+.omt-transport-seg .ctrl-btn:last-child {
+    border-right: none;
+}
+.omt-transport-seg .ctrl-btn .omt-btn-label {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    color: #ddd;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.omt-transport-seg .ctrl-btn .omt-icon {
+    flex-shrink: 0;
+}
+.omt-transport-seg .ctrl-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+.omt-transport-seg .ctrl-btn:active {
+    background: rgba(255, 255, 255, 0.16);
+}
+.omt-transport-seg .ctrl-btn:focus-visible {
+    outline: 2px solid var(--omt-orange);
+    outline-offset: -2px;
+    z-index: 1;
+}
+/* Paused: grey/white play. Playing: orange pause. Follows real media state. */
+.omt-transport-seg .ctrl-btn.btn-play {
+    flex: 1.4 1 0;
+    min-width: 64px;
+    padding: 12px 10px;
+    background: transparent;
+    color: #e8e8e8;
+}
+.omt-transport-seg .ctrl-btn.btn-play:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+.omt-transport-seg .ctrl-btn.btn-play.playing {
+    background: transparent;
+    color: var(--omt-orange);
+}
+.omt-transport-seg .ctrl-btn.btn-play.playing:hover {
+    background: rgba(245, 131, 31, 0.12);
+    color: var(--omt-orange);
+}
+.omt-transport-seg .ctrl-btn.btn-frame {
+    color: #e8e8e8;
+}
+#omt-p120,
+#omt-m120,
+.omt-tile-root [id$="omt-p120"],
+.omt-tile-root [id$="omt-m120"] {
+    gap: 6px;
+    padding-left: 8px;
+    padding-right: 8px;
+}
+
+.omt-speed-row {
+    display: flex;
+    align-items: stretch;
+    justify-content: stretch;
+    width: 100%;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 6px;
+    overflow: hidden;
+    gap: 0;
+    background: rgba(255, 255, 255, 0.03);
+}
+.omt-speed-chip {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 34px;
+    padding: 7px 4px;
+    margin: 0;
+    border: none;
+    border-radius: 0;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+    background: transparent;
+    color: #ddd;
+    font-size: 11px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    font-family: var(--omt-font);
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+    -webkit-user-select: none;
+    user-select: none;
+}
+.omt-speed-chip:last-child {
+    border-right: none;
+}
+.omt-speed-chip:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+.omt-speed-chip:focus-visible {
+    outline: 2px solid var(--omt-orange);
+    outline-offset: -2px;
+    z-index: 1;
+}
+/* Active = orange label only (no fill / border) */
+.omt-speed-chip.is-active {
+    background: transparent;
+    color: var(--omt-orange);
+    box-shadow: none;
+}
+.omt-speed-chip.is-active:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--omt-orange);
+}
+
+/* Legacy group helpers (kept for any residual selectors) */
+.ctrl-group-left,
+.ctrl-group-right,
+.ctrl-group-center {
+    display: flex;
+    gap: 0;
+    align-items: center;
+}
+.separator {
+    width: 1px;
+    height: 22px;
+    background: rgba(255, 255, 255, 0.1);
+    margin: 0;
+}
+.ctrl-btn {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--omt-text);
+    cursor: pointer;
+    padding: 6px 8px;
+    border-radius: 5px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    min-width: 36px;
+}
+
+/* Legacy tick class unused (bookmarks replace colour bands/ticks). */
+.timeline-marker-tick { display: none; }
+/* Compact Examino — tighter picture insets (still relative to video via --omt-pic-*). */
+#omt-root.omt-examino.omt-compact.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-top-left {
+    top: calc(var(--omt-pic-top, 0px) + 8px);
+    left: calc(var(--omt-pic-left, 0px) + 8px);
+}
+#omt-root.omt-examino.omt-compact.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-top-centre {
+    top: calc(var(--omt-pic-top, 0px) + 36px);
+    left: calc(var(--omt-pic-left, 0px) + (var(--omt-pic-width, 100%) / 2));
+    transform: translateX(-50%);
+}
+#omt-root.omt-examino.omt-compact.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-top-right {
+    top: calc(var(--omt-pic-top, 0px) + 8px);
+    right: calc(var(--omt-pic-right, 0px) + 8px);
+}
+#omt-root.omt-examino.omt-compact.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-bottom-left {
+    bottom: 150px;
+    left: calc(var(--omt-pic-left, 0px) + 8px);
+}
+#omt-root.omt-examino.omt-compact.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-bottom-centre {
+    bottom: 150px;
+    left: calc(var(--omt-pic-left, 0px) + (var(--omt-pic-width, 100%) / 2));
+    transform: translateX(-50%);
+}
+#omt-root.omt-examino.omt-compact.omt-clock-in-picture #match-timer-wrap.omt-clock-pos-bottom-right {
+    bottom: 150px;
+    right: calc(var(--omt-pic-right, 0px) + 8px);
+}
+/* Compact fallback when picture inset is not yet available */
+#omt-root.omt-examino.omt-compact:not(.omt-clock-in-picture) #match-timer-wrap.omt-clock-pos-top-left { top: 8px; left: 8px; }
+#omt-root.omt-examino.omt-compact:not(.omt-clock-in-picture) #match-timer-wrap.omt-clock-pos-top-centre { top: 36px; left: 50%; transform: translateX(-50%); }
+#omt-root.omt-examino.omt-compact:not(.omt-clock-in-picture) #match-timer-wrap.omt-clock-pos-top-right { top: 8px; right: 8px; }
+#omt-root.omt-examino.omt-compact:not(.omt-clock-in-picture) #match-timer-wrap.omt-clock-pos-bottom-left { bottom: 150px; left: 8px; }
+#omt-root.omt-examino.omt-compact:not(.omt-clock-in-picture) #match-timer-wrap.omt-clock-pos-bottom-centre { bottom: 150px; left: 50%; transform: translateX(-50%); }
+#omt-root.omt-examino.omt-compact:not(.omt-clock-in-picture) #match-timer-wrap.omt-clock-pos-bottom-right { bottom: 150px; right: 8px; }
+#omt-root.omt-examino.omt-compact #omt-controls-panel {
+    /* Clear YouTube-style timeline (tip + track + chrome row). */
+    bottom: 100px;
+    width: min(560px, calc(100% - 16px));
+}
+#omt-root.omt-examino.omt-compact .controls-content {
+    padding: 4px 8px 8px;
+    gap: 4px;
+}
+#omt-root.omt-examino.omt-compact .ctrl-btn {
+    padding: 4px 5px;
+    min-width: 28px;
+}
+#omt-root.omt-examino.omt-compact .ctrl-group-left .ctrl-btn:nth-child(1),
+#omt-root.omt-examino.omt-compact .ctrl-group-right .ctrl-btn:nth-child(3) {
+    display: none;
+}
+#omt-root.omt-examino.omt-compact .omt-timeline-bar {
+    padding: 24px 8px 6px;
+}
+#omt-root.omt-examino.omt-compact #omt-volume-range {
+    width: 40px;
+}
+#omt-root.omt-examino.omt-compact .omt-more-panel.is-open {
+    margin: 6px 8px 0;
+}
+
+/* Local player only: no live edge — hide LIVE pill + spacer (streams keep them). */
+#omt-root.omt-local #omt-live-btn,
+#omt-root.omt-local .omt-live-spacer {
+    display: none !important;
+}
+
+/* ---- EXAMINO VIEWPORT HUD (v2.2.16) ----
+   Field: player is a top strip; black tab below. Pin HUD to the tab so the
+   timeline sits in that black area and the panel can drag over the whole tab.
+   Do NOT resize OpenPlayer (unlike Xeatre viewport-fit). Root stays
+   pointer-events:none (base rule) so gear/Source/clicks under empty root work;
+   interactive children restore pointer-events:auto.
+   FS: no transform ancestors → fixed still covers the FS viewport; existing
+   reparent hook keeps #omt-root inside fullscreenElement. */
+#omt-root.omt-examino {
+    position: fixed !important;
+    inset: 0 !important;
     width: 100vw !important;
     height: 100vh !important;
     max-width: 100vw !important;
     max-height: 100vh !important;
+    z-index: 2147483646;
 }
 
-/* ---- LOCAL VIDEO FULLSCREEN SCALING ---- */
-.omt-local-env:fullscreen video {
+/* v2.2.23: translateY centre paints into the black tab — never change host
+   container sizes (2.2.22 100vh flex blacked the picture). Only allow
+   overflow so the shifted player block is not clipped. */
+html.omt-host-examino.omt-hud-on.omt-examino-vcenter .grow.overflow-y-auto,
+html.omt-host-examino.omt-hud-on.omt-examino-vcenter .grow,
+html.omt-host-examino.omt-hud-on.omt-examino-vcenter .main-container,
+html.omt-host-examino.omt-hud-on.omt-examino-vcenter .video-container,
+html.omt-host-examino.omt-hud-on.omt-examino-vcenter .page,
+html.omt-host-examino.omt-hud-on.omt-examino-vcenter .top {
+    overflow: visible !important;
+}
+
+/* ---- XEATRE VIEWPORT FIT (v2.2.10) ----
+   Pin HUD to the viewport so fluid player overflow cannot scroll it away.
+   Player sizing (contain / letterbox) is applied in xeatre-features.js. */
+html.omt-host-xeatre.omt-hud-on,
+html.omt-host-xeatre.omt-hud-on body {
+    overflow: hidden !important;
+    height: 100% !important;
+    max-height: 100vh !important;
+    width: 100% !important;
+    margin: 0 !important;
+}
+html.omt-host-xeatre.omt-hud-on body {
+    background: #000 !important;
+}
+/* Kill .vjs-fluid padding-top aspect hack — height comes from our fit JS. */
+html.omt-host-xeatre.omt-hud-on #hdmi-video.vjs-fluid,
+html.omt-host-xeatre.omt-hud-on .video-js.vjs-fluid {
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    max-width: 100vw !important;
+    max-height: 100vh !important;
+    box-sizing: border-box !important;
+}
+#omt-root.omt-xeatre {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: 100vw !important;
+    max-height: 100vh !important;
+    z-index: 2147483646;
+}
+/* Narrow Xeatre: SAME shrink-in-place path as Examino (v2.2.20).
+   No CSS `scale` on the panel — scale + getBoundingClientRect made drag
+   offsets drift to the bottom-right corner in the field.
+   Clamp unscaled size with width min() + max-height (not transform). */
+#omt-root.omt-xeatre.omt-compact #omt-controls-panel {
+    width: min(560px, calc(100% - 16px));
+    max-height: calc(100vh - 12px);
+    overflow-x: hidden;
+    overflow-y: auto;
+}
+#omt-root.omt-xeatre.omt-xeatre-micro #omt-controls-panel {
+    width: min(400px, calc(100% - 12px));
+    max-height: calc(100vh - 8px);
+    overflow-x: hidden;
+    overflow-y: auto;
+}
+#omt-root.omt-xeatre.omt-xeatre-micro .omt-timeline-bar {
+    padding: 10px 4px 2px;
+}
+#omt-root.omt-xeatre.omt-xeatre-micro .controls-content {
+    padding: 4px 6px 6px;
+    gap: 4px;
+}
+#omt-root.omt-xeatre.omt-xeatre-micro .ctrl-btn {
+    padding: 4px 5px;
+    min-width: 28px;
+}
+
+/* ---- INPLAY MULTI-VIEW FULL HUD (v2.3.4) ----
+   Prefixed tile ids lose bare #omt-* / #omt-root rules. Mirror those styles
+   under .omt-tile-root via classes and [id$="..."] so secondary HUDs match
+   primary pixel-for-pixel at the same tile size. Primary selectors untouched. */
+.omt-tile-root {
+    position: absolute !important;
+    inset: 0 !important;
     width: 100% !important;
     height: 100% !important;
-    max-width: 100% !important;
-    max-height: 100% !important;
-    object-fit: contain !important;
+    pointer-events: none !important;
+    z-index: 2147483645;
+    overflow: visible;
+    font-size: 16px;
+}
+.omt-tile-root .omt-controls-panel,
+.omt-tile-root .omt-timeline-bar,
+.omt-tile-root .omt-match-timer-wrap,
+.omt-tile-root .omt-control-tip,
+.omt-tile-root button,
+.omt-tile-root input,
+.omt-tile-root select {
+    pointer-events: auto;
 }
 
-/* ---- VIDEO TOP-ALIGNMENT (non-Xeatre platforms) ---- */
-/*
-   Injected on Inplay, Examino, and Local pages at init time via JS.
-   Forces the video to render at the TOP of its container instead of
-   the centre, so both letterbox gaps merge into one large bottom bar
-   — the space our docked control panel occupies.
-   Xeatre already aligns to the top natively; no class is added there.
-*/
-video.omt-top-align {
-    object-fit: contain !important;
-    object-position: top center !important;
+/* Host-reset parity with #omt-root (InPlay css leak / native form chrome). */
+.omt-tile-root button,
+.omt-tile-root .ctrl-btn,
+.omt-tile-root .handle-btn,
+.omt-tile-root .omt-speed-chip,
+.omt-tile-root .omt-timeline-fs-btn,
+.omt-tile-root .omt-more-toggle,
+.omt-tile-root .omt-offset-btn,
+.omt-tile-root .btn-sync,
+.omt-tile-root .btn-clear-timer,
+.omt-tile-root .omt-tile-panel-live,
+.omt-tile-root [id$="omt-live-btn"] {
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    filter: none !important;
+    opacity: 1 !important;
+    -webkit-filter: none !important;
+    /* Match #omt-root button font (Kick-off / X / nudge in More). */
+    font-size: 11px !important;
+    line-height: 1.25 !important;
+}
+/* Speed/top selects only — Period select uses shared .omt-kickoff-bar rules. */
+.omt-tile-root .top-select,
+.omt-tile-root .omt-tile-speed-select,
+.omt-tile-root [id$="omt-speed-select"] {
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    background: rgba(0, 0, 0, 0.45) !important;
+    border: 1px solid var(--omt-border) !important;
+    color: #ddd !important;
+    font-size: 11px !important;
+    line-height: 1.25 !important;
+    padding: 2px 6px !important;
+    border-radius: 4px !important;
+    outline: none !important;
+    cursor: pointer !important;
+    font-weight: 600 !important;
+    font-family: var(--omt-font) !important;
+    max-width: 84px;
+}
+/* Beat host resets on Period select while keeping primary More padding/size. */
+.omt-tile-root .omt-kickoff-bar select {
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    background: rgba(0, 0, 0, 0.4) !important;
+    border: 1px solid var(--omt-border) !important;
+    color: var(--omt-text) !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    padding: 4px 6px !important;
+    border-radius: 4px !important;
+    outline: none !important;
+    cursor: pointer !important;
+    font-family: var(--omt-font) !important;
+    line-height: 1.25 !important;
+}
+.omt-tile-root .top-select:focus-visible,
+.omt-tile-root .omt-tile-speed-select:focus-visible {
+    border-color: var(--omt-orange) !important;
+}
+.omt-tile-root .omt-btn-label,
+.omt-tile-root .omt-time-text,
+.omt-tile-root .omt-more-label,
+.omt-tile-root .live-label {
+    font-size: 11px !important;
+    line-height: 1.25 !important;
+}
+.omt-tile-root .btn-sync,
+.omt-tile-root [id$="omt-btn-set-kickoff"] {
+    background: #F5831F !important;
+    background-color: #F5831F !important;
+    background-image: none !important;
+    color: #111 !important;
+    border: none !important;
+}
+.omt-tile-root .omt-speed-chip.is-active,
+.omt-tile-root .omt-speed-chip.is-active:hover {
+    background: transparent !important;
+    background-color: transparent !important;
+    color: #F5831F !important;
+}
+.omt-tile-root .omt-transport-seg .ctrl-btn.btn-play,
+.omt-tile-root .omt-transport-seg .ctrl-btn.btn-play:not(:active) {
+    color: #e8e8e8 !important;
+    background: transparent !important;
+    background-color: transparent !important;
+}
+.omt-tile-root .omt-transport-seg .ctrl-btn.btn-play.playing,
+.omt-tile-root .omt-transport-seg .ctrl-btn.btn-play.playing:not(:active),
+.omt-tile-root .omt-transport-seg .ctrl-btn.btn-play.playing:hover {
+    color: #F5831F !important;
+    background: transparent !important;
+    background-color: transparent !important;
+}
+.omt-tile-root .omt-transport-seg .ctrl-btn.btn-play.playing:hover {
+    background: rgba(245, 131, 31, 0.12) !important;
+    background-color: rgba(245, 131, 31, 0.12) !important;
+}
+.omt-tile-root .omt-tile-panel-live,
+.omt-tile-root [id$="omt-live-btn"] {
+    background: transparent !important;
+    background-color: transparent !important;
+    color: #cfcfcf !important;
+    border: 1px solid rgba(255, 255, 255, 0.28) !important;
+}
+.omt-tile-root .omt-tile-panel-live.is-live,
+.omt-tile-root [id$="omt-live-btn"].is-live {
+    background: rgba(224, 32, 27, 0.18) !important;
+    background-color: rgba(224, 32, 27, 0.18) !important;
+    color: #fff !important;
+    border-color: rgba(224, 32, 27, 0.7) !important;
+}
+.omt-tile-root .omt-tile-panel-live.is-live .live-dot,
+.omt-tile-root [id$="omt-live-btn"].is-live .live-dot {
+    background: #e0201b !important;
+    background-color: #e0201b !important;
+}
+
+/* Same floating panel geometry as #omt-controls-panel. */
+.omt-tile-root .omt-controls-panel {
+    position: absolute;
+    bottom: 100px;
+    top: auto;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(600px, calc(100% - 24px));
+    display: flex;
+    flex-direction: column;
+    transition: opacity 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+    z-index: 50;
+    opacity: 1;
+}
+/* v2.3.7: tile S must match primary S (this selector beats the 600px rule). */
+.omt-tile-root .omt-controls-panel.omt-panel-size-small {
+    width: min(480px, calc(100% - 24px));
+}
+.omt-tile-root.omt-compact .omt-controls-panel {
+    width: min(480px, calc(100% - 16px));
+}
+.omt-tile-root.omt-compact .omt-controls-panel.omt-panel-size-small {
+    width: min(480px, calc(100% - 16px));
+}
+.omt-tile-root .omt-controls-panel.omt-more-open {
+    top: auto;
+}
+
+/* v2.3.9: More open uses the same S rules as primary
+   (.omt-controls-panel.omt-panel-size-small .omt-more-panel.is-open).
+   Removed 2.3.8 tile-only max-height:none / enlarged padding. */
+/* Host shells often use overflow:hidden; keep HUD/more visible in MV tiles. */
+.video-js:has(> .omt-tile-root),
+.vjs-player:has(> .omt-tile-root),
+.player-container:has(> .omt-tile-root) {
+    overflow: visible !important;
+}
+
+/* Bottom bar — class styles already shared; restore #omt-root-scoped vol slider. */
+.omt-tile-root .omt-timeline-bar {
+    pointer-events: none;
+}
+.omt-tile-root .omt-timeline-bar .omt-timeline-track,
+.omt-tile-root .omt-timeline-bar .omt-timeline-chrome-row,
+.omt-tile-root .omt-timeline-bar .omt-timeline-play-btn,
+.omt-tile-root .omt-timeline-bar .omt-timeline-vol-btn,
+.omt-tile-root .omt-timeline-bar .omt-timeline-vol-range,
+.omt-tile-root .omt-timeline-bar .omt-timeline-live-indicator,
+.omt-tile-root .omt-timeline-bar .omt-timeline-video-range,
+.omt-tile-root .omt-timeline-bar .omt-timeline-fs-btn,
+.omt-tile-root .omt-timeline-bar .timeline-slider {
+    pointer-events: auto;
+}
+.omt-tile-root .omt-timeline-vol-range {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 56px;
+    height: 4px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.28);
+    outline: none;
+    cursor: pointer;
+    flex-shrink: 0;
+    accent-color: #fff;
+}
+.omt-tile-root .omt-timeline-vol-range::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.28);
+}
+.omt-tile-root .omt-timeline-vol-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    margin-top: -4px;
+    border-radius: 50%;
+    background: #fff;
+    border: none;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+    cursor: pointer;
+}
+.omt-tile-root .omt-timeline-vol-range::-moz-range-track {
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.28);
+}
+.omt-tile-root .omt-timeline-vol-range::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #fff;
+    border: none;
+    cursor: pointer;
+}
+.omt-tile-root .omt-timeline-play-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: #f1f1f1;
+    cursor: pointer;
+}
+.omt-tile-root .omt-timeline-play-btn.playing {
+    color: #f5831f;
+}
+.omt-tile-root .omt-timeline-vol-btn,
+.omt-tile-root .omt-timeline-fs-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: #f1f1f1;
+    cursor: pointer;
+}
+.omt-tile-root .omt-timeline-live-indicator {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    height: 22px;
+    margin: 0;
+    padding: 0;
+    gap: 4px;
+    border: none;
+    background: transparent;
+    color: #ddd;
+    cursor: pointer;
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+    text-align: left;
+}
+.omt-tile-root .omt-timeline-live-indicator[hidden],
+.omt-tile-root .omt-timeline-post-times[hidden],
+.omt-tile-root .omt-timeline-live-chip[hidden],
+.omt-tile-root .omt-timeline-video-range[hidden],
+.omt-tile-root .omt-timeline-live-delay[hidden] {
+    display: none !important;
+}
+.omt-tile-root .omt-timeline-live-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--omt-font);
+    font-size: 10px !important;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #fff !important;
+    background: #e5383b !important;
+    border: 1px solid #e5383b !important;
+    border-radius: 999px;
+    padding: 3px 9px;
+    line-height: 1;
+}
+.omt-tile-root .omt-timeline-post-times {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 4px;
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+}
+.omt-tile-root .omt-timeline-live-delay {
+    font-family: var(--omt-mono);
+    font-size: 12px !important;
+    font-variant-numeric: tabular-nums;
+    color: #f1f1f1;
+    line-height: 1;
+    white-space: nowrap;
+}
+.omt-tile-root .omt-timeline-video-range {
+    font-family: var(--omt-mono);
+    font-size: 11px !important;
+    font-variant-numeric: tabular-nums;
+    color: #c8c8c8;
+    line-height: 1;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.omt-tile-root .omt-time-text {
+    font-variant-numeric: tabular-nums;
+    color: #c8c8c8;
+    font-size: 11px;
+}
+
+/* Match clock — same chrome as primary #match-timer (size/style via classes). */
+.omt-tile-root .omt-match-timer-wrap {
+    position: absolute;
+    top: 14px;
+    left: 14px;
+    right: auto;
+    bottom: auto;
+    z-index: 60;
+    display: none;
+    pointer-events: auto;
+    cursor: pointer;
+    width: max-content;
+    max-width: none;
+    transform: none;
+}
+.omt-tile-root.omt-timer-on .omt-match-timer-wrap {
+    display: block;
+}
+.omt-tile-root .omt-match-timer-wrap.omt-clock-pos-top-left { top: 14px; left: 14px; right: auto; bottom: auto; transform: none; }
+.omt-tile-root .omt-match-timer-wrap.omt-clock-pos-top-centre {
+    top: 44px; left: 50%; right: auto; bottom: auto; transform: translateX(-50%);
+}
+.omt-tile-root .omt-match-timer-wrap.omt-clock-pos-top-right { top: 14px; right: 14px; left: auto; bottom: auto; transform: none; }
+.omt-tile-root .omt-osd-message {
+    display: none;
+}
+
+/* ---- v2.3.6: Edge dblclick must not select panel/bar/chip/label text ---- */
+#omt-controls-panel,
+.omt-controls-panel,
+#omt-timeline-bar,
+.omt-timeline-bar,
+.omt-speed-chip,
+.omt-btn-label,
+.omt-more-label,
+.omt-timeline-times,
+.omt-timeline-live-delay,
+.omt-timeline-video-range,
+.omt-timeline-post-times,
+.omt-period-tick-label,
+.drag-handle,
+.drag-center-grip,
+.omt-kickoff-bar,
+#omt-kickoff-bar {
+    -webkit-user-select: none;
+    user-select: none;
+}
+/* Clock edit + form fields stay selectable / editable. */
+#omt-controls-panel input,
+#omt-controls-panel textarea,
+#omt-controls-panel select,
+.omt-controls-panel input,
+.omt-controls-panel textarea,
+.omt-controls-panel select,
+#match-timer.is-editing,
+.omt-match-timer.is-editing,
+#timer-edit-input,
+[id$="timer-edit-input"],
+#omt-controls-panel #timer-edit-input,
+.omt-controls-panel [id$="timer-edit-input"] {
+    -webkit-user-select: text;
+    user-select: text;
+}
+
+/* ---- v2.4.0 Document PiP pop-out (additive) ---- */
+#omt-popout-btn,
+.omt-popout-btn,
+.omt-tile-popout,
+[id$="omt-popout-btn"] {
+    color: #e8e8e8;
+}
+#omt-popout-btn:hover,
+.omt-popout-btn:hover,
+.omt-tile-popout:hover,
+[id$="omt-popout-btn"]:hover {
+    color: var(--omt-orange);
+    background: rgba(245, 131, 31, 0.14);
+}
+.omt-pip-page-placeholder {
+    position: absolute;
+    inset: 0;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* Same atmosphere as the local player drop / page (player.css). */
+    background:
+        radial-gradient(ellipse at 50% 30%, rgba(245, 131, 31, 0.12), transparent 55%),
+        linear-gradient(180deg, #141414 0%, #0a0a0a 100%);
+    pointer-events: auto;
+    text-align: center;
+    padding: 24px;
+}
+.omt-pip-page-placeholder-inner {
+    max-width: 420px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+.omt-pip-page-placeholder-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 12px;
+    border: 1px solid rgba(245, 131, 31, 0.4);
+    background: rgba(245, 131, 31, 0.12);
+    position: relative;
+}
+.omt-pip-page-placeholder-icon::before,
+.omt-pip-page-placeholder-icon::after {
+    content: "";
+    position: absolute;
+    border: 2px solid #F5831F;
+    border-radius: 3px;
+}
+.omt-pip-page-placeholder-icon::before {
+    left: 12px; top: 14px; width: 22px; height: 16px;
+}
+.omt-pip-page-placeholder-icon::after {
+    right: 10px; bottom: 12px; width: 16px; height: 12px;
+    background: rgba(245, 131, 31, 0.25);
+}
+.omt-pip-page-placeholder-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: #fff;
+    font-family: var(--omt-font);
+}
+.omt-pip-page-placeholder-copy {
+    font-size: 14px;
+    color: #9aa3ad;
+    line-height: 1.4;
+    font-family: var(--omt-font);
+}
+.omt-pip-page-return {
+    margin-top: 4px;
+    appearance: none;
+    -webkit-appearance: none;
+    border: none;
+    border-radius: 6px;
+    background: #F5831F;
+    color: #111;
+    font-weight: 700;
+    font-size: 14px;
+    font-family: var(--omt-font);
+    padding: 10px 18px;
+    cursor: pointer;
+}
+.omt-pip-page-return:hover {
+    filter: brightness(1.05);
 }
