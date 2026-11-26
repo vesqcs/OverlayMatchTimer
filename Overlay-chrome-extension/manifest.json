@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Overlay MatchTimer",
-  "version": "2.4.12",
-  "description": "Injects the Overlay MatchTimer UI over InplayIP, Examino, and Xeatre DVR streams, plus a local file player for offline / NAS analysis.",
+  "version": "2.4.13",
+  "description": "Match timer overlay for InplayIP, Examino and Xeatre DVR streams, plus a local player for offline analysis.",
   "author": "Vasco Oliveira",
   "icons": {
     "16": "assets/icon-16.png",
