@@ -72,6 +72,31 @@
         shuttleSkipBy(delta);
     }
     try { window.__omtTestShuttleSkipSeconds = omtTestShuttleSkipSeconds; } catch (_) {}
+    try { window.__omtIsShuttleConnected = isShuttleConnected; } catch (_) {}
+    /** Test-only: mark this instance connected without touching WebHID (no open/close). */
+    try {
+        window.__omtTestMarkShuttleConnected = function (on) {
+            if (on) {
+                shuttleDevice = {
+                    opened: true,
+                    productName: 'OMT-Test-Shuttle',
+                    addEventListener: function () {},
+                    removeEventListener: function () {},
+                    close: function () {
+                        this.opened = false;
+                        try { window.__omtTestShuttleClosed = true; } catch (_) {}
+                    }
+                };
+                updateToggleUI(true);
+                showShuttleCheatsheet(true);
+            } else {
+                shuttleDevice = null;
+                updateToggleUI(false);
+                showShuttleCheatsheet(false);
+            }
+            return isShuttleConnected();
+        };
+    } catch (_) {}
 
     function showShuttleCheatsheet(visible) {
         if (shuttleCheatsheet) {
@@ -83,6 +108,11 @@
         if (shuttleToggle) {
             shuttleToggle.checked = checked;
         }
+    }
+
+    /** v2.4.14: real HID hold for this page/popup only — never persisted. */
+    function isShuttleConnected() {
+        return !!(shuttleDevice && shuttleDevice.opened);
     }
 
     function cleanupShuttle(opts) {
@@ -108,14 +138,9 @@
         prevBytes4 = 0;
 
         updateToggleUI(false);
-        // skipStorage: caller (bridge sync) already wrote the off flag — posting
-        // OMT_STORAGE_SET(false) again re-enters sync and storms the bus.
-        if (!(opts && opts.skipStorage)) {
-            if (typeof storageSetShuttleEnabled === 'function') {
-                storageSetShuttleEnabled(false);
-            } else {
-                try { localStorage.setItem('shuttleXpressEnabled', 'false'); } catch (_) {}
-            }
+        // Drop legacy shared enable flag if present (no longer used).
+        if (!(opts && opts.skipStorage) && typeof storageSetShuttleEnabled === 'function') {
+            storageSetShuttleEnabled(false);
         }
         showShuttleCheatsheet(false);
     }
@@ -252,7 +277,6 @@
 
     async function handleToggleChange() {
         if (shuttleToggle.checked) {
-            storageSetShuttleEnabled(true);
             try {
                 const devices = await navigator.hid.getDevices();
                 let device = devices.find(d => d.vendorId === 0x0b33);
@@ -267,17 +291,18 @@
                 }
                 if (device) {
                     await connectDevice(device);
+                    // Ensure UI matches real open — do not persist.
+                    updateToggleUI(isShuttleConnected());
                 } else {
                     updateToggleUI(false);
-                    storageSetShuttleEnabled(false);
                 }
             } catch (err) {
                 console.error('[OMT] Failed to request ShuttleXpress:', err);
                 updateToggleUI(false);
-                storageSetShuttleEnabled(false);
             }
+            // Clear any legacy shared flag so other instances stay disconnected.
+            if (typeof storageSetShuttleEnabled === 'function') storageSetShuttleEnabled(false);
         } else {
-            storageSetShuttleEnabled(false);
             cleanupShuttle();
         }
     }
@@ -294,18 +319,10 @@
 
         navigator.hid.addEventListener('disconnect', handleHidDisconnect);
 
-        const shuttleOn = (typeof storageGetShuttleEnabled === 'function')
-            ? storageGetShuttleEnabled()
-            : (localStorage.getItem('shuttleXpressEnabled') === 'true');
-        if (shuttleOn) {
-            try {
-                const devices = await navigator.hid.getDevices();
-                const device = devices.find(d => d.vendorId === 0x0b33);
-                if (device) {
-                    await connectDevice(device);
-                }
-            } catch (err) {
-                console.error('[OMT] Failed to auto-connect ShuttleXpress:', err);
-            }
-        }
+        // v2.4.14: never auto-connect from storage. A new popup/player always
+        // starts disconnected; the user enables Shuttle on the instance that
+        // should own the device. Customize mappings still load from prefs.
+        updateToggleUI(false);
+        try { localStorage.removeItem('shuttleXpressEnabled'); } catch (_) {}
+        try { sessionStorage.removeItem('omtLocalShuttleEnabled'); } catch (_) {}
     }

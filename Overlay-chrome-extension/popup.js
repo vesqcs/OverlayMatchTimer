@@ -2,6 +2,41 @@
   'use strict';
 
   const SYNC_FEATURE = (typeof OMT_SYNC_FEATURE_ENABLED !== 'undefined') && !!OMT_SYNC_FEATURE_ENABLED;
+  const prefs = (typeof globalThis !== 'undefined' && globalThis.OMT_PREFS) || null;
+
+  function prefsSet(obj, cb) {
+    if (prefs && typeof prefs.set === 'function') {
+      prefs.set(obj, cb);
+      return;
+    }
+    chrome.storage.local.set(obj, cb);
+  }
+
+  function prefsGet(defaults, cb) {
+    if (prefs && typeof prefs.get === 'function') {
+      prefs.get(defaults, cb);
+      return;
+    }
+    chrome.storage.local.get(defaults, cb);
+  }
+
+  function prefsRemove(keys, cb) {
+    if (prefs && typeof prefs.remove === 'function') {
+      prefs.remove(keys, cb);
+      return;
+    }
+    chrome.storage.local.remove(keys, cb);
+  }
+
+  function prefsGetRaw(keys, cb) {
+    if (prefs && typeof prefs.getRaw === 'function') {
+      prefs.getRaw(keys, cb);
+      return;
+    }
+    chrome.storage.local.get(keys, (local) => {
+      cb({ local: local || {}, sync: {} });
+    });
+  }
 
   const KEYS = {
     clockPos: 'omtClockPosition',
@@ -190,7 +225,7 @@
   function persistPanel() {
     const size = (panelSize && panelSize.value === 'small') ? 'small' : 'medium';
     const compact = !!(panelCompact && panelCompact.checked);
-    chrome.storage.local.set({
+    prefsSet({
       [KEYS.panelSize]: size,
       [KEYS.panelCompact]: compact
     });
@@ -220,7 +255,7 @@
 
   function persistSkips(next) {
     skipSeconds = normalizeSkipSeconds(next || skipSeconds);
-    chrome.storage.local.set({ [KEYS.skipSeconds]: skipSeconds });
+    prefsSet({ [KEYS.skipSeconds]: skipSeconds });
     syncSkipRowUi();
   }
 
@@ -367,11 +402,11 @@
       const b = hotkeys[id];
       payload[id] = { key: b.key, ctrl: !!b.ctrl, shift: !!b.shift, alt: !!b.alt, meta: !!b.meta };
     });
-    chrome.storage.local.set({ [KEYS.hotkeys]: payload });
+    prefsSet({ [KEYS.hotkeys]: payload });
   }
 
   function saveShuttle() {
-    chrome.storage.local.set({ [KEYS.shuttlePrefs]: Object.assign({}, shuttlePrefs) });
+    prefsSet({ [KEYS.shuttlePrefs]: Object.assign({}, shuttlePrefs) });
   }
 
   function updateClockPreview() {
@@ -698,7 +733,7 @@
       const key = el.getAttribute('data-section');
       if (key) state[key] = !!el.open;
     });
-    chrome.storage.local.set({ [KEYS.custSections]: state });
+    prefsSet({ [KEYS.custSections]: state });
   }
 
   document.querySelectorAll('.omt-cust-details[data-section]').forEach((el) => {
@@ -743,7 +778,7 @@
         [KEYS.syncAnon]: syncAnon ? String(syncAnon.value || '').trim() : '',
         [KEYS.syncRoom]: syncRoom ? String(syncRoom.value || '').trim() : ''
       }, extra || {});
-      chrome.storage.local.set(payload);
+      prefsSet(payload);
     }
 
     function requestSyncHostPermission(urlStr) {
@@ -859,50 +894,80 @@
     storageDefaults[KEYS.syncRoom] = '';
   }
 
-  ensureSyncSectionThenWire(() => {
-    chrome.storage.local.get(storageDefaults, (result) => {
-      clockPos.value = result[KEYS.clockPos] || 'top-left';
-      clockSize.value = result[KEYS.clockSize] || 'medium';
-      clockShape.value = result[KEYS.clockShape] || 'rounded';
-      if (panelSize) panelSize.value = result[KEYS.panelSize] === 'small' ? 'small' : 'medium';
-      if (panelCompact) panelCompact.checked = !!result[KEYS.panelCompact];
+  function applyPrefsResult(result, opts) {
+    if (!result) return;
+    const full = !!(opts && opts.full);
+    const has = (k) => full || Object.prototype.hasOwnProperty.call(result, k);
+    if (has(KEYS.clockPos)) clockPos.value = result[KEYS.clockPos] || 'top-left';
+    if (has(KEYS.clockSize)) clockSize.value = result[KEYS.clockSize] || 'medium';
+    if (has(KEYS.clockShape)) clockShape.value = result[KEYS.clockShape] || 'rounded';
+    if (panelSize && has(KEYS.panelSize)) {
+      panelSize.value = result[KEYS.panelSize] === 'small' ? 'small' : 'medium';
+    }
+    if (panelCompact && has(KEYS.panelCompact)) {
+      panelCompact.checked = !!result[KEYS.panelCompact];
+    }
+    if (has(KEYS.skipSeconds)) {
       skipSeconds = normalizeSkipSeconds(result[KEYS.skipSeconds]);
+    }
+    if (keepPlayingAltTab && has(KEYS.keepPlayingOnAltTab)) {
+      keepPlayingAltTab.checked = !!result[KEYS.keepPlayingOnAltTab];
+    }
+    if (has(KEYS.hotkeys)) {
+      hotkeys = mergeHotkeys(result[KEYS.hotkeys]);
+      applySkipLabelsToHotkeyDefaults();
+    }
+    if (has(KEYS.shuttlePrefs)) {
+      shuttlePrefs = mergeShuttle(result[KEYS.shuttlePrefs]);
+    }
+    if (has(KEYS.custSections)) {
+      applyCustSections(result[KEYS.custSections]);
+    }
+    if (SYNC_FEATURE) {
+      if (syncUrl && has(KEYS.syncUrl)) syncUrl.value = result[KEYS.syncUrl] || '';
+      if (syncAnon && has(KEYS.syncAnon)) syncAnon.value = result[KEYS.syncAnon] || '';
+      if (syncRoom && has(KEYS.syncRoom)) syncRoom.value = result[KEYS.syncRoom] || '';
+      if (syncEnable && has(KEYS.syncEnabled)) syncEnable.checked = !!result[KEYS.syncEnabled];
+    }
+    refreshAll();
+  }
+
+  ensureSyncSectionThenWire(() => {
+    prefsGet(storageDefaults, (result) => {
+      applyPrefsResult(result, { full: true });
       // v2.2.14: new key default OFF. chrome.storage.get(defaults) fills missing
       // keys, so migrate legacy via a separate raw get (do not invert old value).
       if (keepPlayingAltTab) {
-        keepPlayingAltTab.checked = !!result[KEYS.keepPlayingOnAltTab];
         try {
-          chrome.storage.local.get([KEYS.keepPlayingOnAltTab, KEYS.autoPauseOnBlur], (raw) => {
+          prefsGetRaw([KEYS.keepPlayingOnAltTab, KEYS.autoPauseOnBlur], (areas) => {
+            const raw = Object.assign({}, areas.local || {}, areas.sync || {});
             const hasNew = Object.prototype.hasOwnProperty.call(raw || {}, KEYS.keepPlayingOnAltTab);
             const hasLegacy = Object.prototype.hasOwnProperty.call(raw || {}, KEYS.autoPauseOnBlur);
             if (!hasNew) {
               keepPlayingAltTab.checked = false;
-              chrome.storage.local.set({ [KEYS.keepPlayingOnAltTab]: false }, () => {
-                if (hasLegacy) chrome.storage.local.remove(KEYS.autoPauseOnBlur);
+              prefsSet({ [KEYS.keepPlayingOnAltTab]: false }, () => {
+                if (hasLegacy) prefsRemove(KEYS.autoPauseOnBlur);
               });
             } else if (hasLegacy) {
-              chrome.storage.local.remove(KEYS.autoPauseOnBlur);
+              prefsRemove(KEYS.autoPauseOnBlur);
             }
           });
         } catch (_) {}
       }
-      hotkeys = mergeHotkeys(result[KEYS.hotkeys]);
-      applySkipLabelsToHotkeyDefaults();
-      shuttlePrefs = mergeShuttle(result[KEYS.shuttlePrefs]);
-      applyCustSections(result[KEYS.custSections]);
-      if (SYNC_FEATURE) {
-        if (syncUrl) syncUrl.value = result[KEYS.syncUrl] || '';
-        if (syncAnon) syncAnon.value = result[KEYS.syncAnon] || '';
-        if (syncRoom) syncRoom.value = result[KEYS.syncRoom] || '';
-        if (syncEnable) syncEnable.checked = !!result[KEYS.syncEnabled];
-      }
-      refreshAll();
     });
+
+    // Apply prefs arriving from another device while the popup stays open.
+    if (prefs && typeof prefs.onChanged === 'function') {
+      prefs.onChanged((values, area) => {
+        if (area !== 'sync' && area !== 'local') return;
+        applyPrefsResult(values);
+      });
+    }
   });
 
   if (keepPlayingAltTab) {
     keepPlayingAltTab.addEventListener('change', () => {
-      chrome.storage.local.set({ [KEYS.keepPlayingOnAltTab]: !!keepPlayingAltTab.checked });
+      prefsSet({ [KEYS.keepPlayingOnAltTab]: !!keepPlayingAltTab.checked });
     });
   }
 
@@ -924,7 +989,7 @@
   });
 
   function persistClock() {
-    chrome.storage.local.set({
+    prefsSet({
       [KEYS.clockPos]: clockPos.value,
       [KEYS.clockSize]: clockSize.value,
       [KEYS.clockShape]: clockShape.value,
@@ -1030,7 +1095,7 @@
 
   document.getElementById('omt-hotkeys-reset-all').addEventListener('click', () => {
     hotkeys = mergeHotkeys(null);
-    chrome.storage.local.set({ [KEYS.hotkeys]: null });
+    prefsSet({ [KEYS.hotkeys]: null });
     refreshAll();
   });
 
@@ -1164,7 +1229,7 @@
 
   document.getElementById('omt-sx-reset-all').addEventListener('click', () => {
     shuttlePrefs = mergeShuttle(null);
-    chrome.storage.local.set({ [KEYS.shuttlePrefs]: null });
+    prefsSet({ [KEYS.shuttlePrefs]: null });
     fillShuttleForm();
     renderGeneralShuttle();
     updateShuttleDiagramLabels();
@@ -1209,7 +1274,7 @@
         });
       } catch (_) {}
     }
-    chrome.storage.local.set(resetPayload);
+    prefsSet(resetPayload);
     refreshAll();
     setShuttleHighlight(null);
   });

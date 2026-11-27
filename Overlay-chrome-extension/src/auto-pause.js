@@ -62,7 +62,10 @@
             if (typeof omtPipState !== 'undefined' && omtPipState) return true;
         } catch (_) {}
         if (storageKeepPlayingOnAltTab()) return true;
-        if (typeof storageGetShuttleEnabled === 'function' && storageGetShuttleEnabled()) {
+        // v2.4.14: only the instance that actually holds the HID device skips
+        // pause — never a persisted/shared "shuttle enabled" flag (that made
+        // Xeatre/other tabs keep playing after Alt+Tab).
+        if (typeof isShuttleConnected === 'function' && isShuttleConnected()) {
             return true;
         }
         if (Date.now() - lastShuttleActivityAt < 1000) return true;
@@ -148,7 +151,7 @@
     function maybeAutoResumeOnShow() {
         clearKeepPlayingArm();
         if (!autoPausedByHide) return;
-        if (typeof storageGetShuttleEnabled === 'function' && storageGetShuttleEnabled()) {
+        if (typeof isShuttleConnected === 'function' && isShuttleConnected()) {
             autoPausedByHide = false;
             autoPausedByBlur = false;
             return;

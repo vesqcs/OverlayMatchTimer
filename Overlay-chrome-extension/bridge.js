@@ -1,7 +1,8 @@
 /* ============================================================
    Overlay MatchTimer — isolated-world storage bridge
    MAIN-world content.js cannot touch chrome.storage; this script
-   mirrors chrome.storage.local <-> localStorage + CustomEvent bus.
+   mirrors chrome.storage (sync+local via prefs-storage.js) <->
+   localStorage + CustomEvent bus.
    Also used by the toolbar popup (writes) so in-page UI stays in sync.
    Kickoff-sync relay is active ONLY when OMT_SYNC_FEATURE_ENABLED.
 
@@ -14,6 +15,7 @@
 
   const SYNC_FEATURE = (typeof OMT_SYNC_FEATURE_ENABLED !== 'undefined') && !!OMT_SYNC_FEATURE_ENABLED;
   const OMT_BUS_EVENT = 'omt-bridge-bus';
+  const prefs = (typeof globalThis !== 'undefined' && globalThis.OMT_PREFS) || null;
 
   // InPlay multi-view debug flags live on MAIN-world window (content.js).
   // DevTools context "Overlay MatchTimer" is this ISOLATED world (bridge.js),
@@ -29,6 +31,7 @@
   const KEY_SHUTTLE = 'shuttleXpressEnabled';
   const KEY_AUTO_PAUSE_LEGACY = 'omtAutoPauseOnBlur';
   const KEY_KEEP_PLAYING_ALT_TAB = 'omtKeepPlayingOnAltTab';
+  const KEY_AUTO_HIDE = 'omtAutoHideChrome';
   const KEY_CLOCK_POS = 'omtClockPosition';
   const KEY_CLOCK_SIZE = 'omtClockSize';
   const KEY_CLOCK_SHAPE = 'omtClockShape';
@@ -45,8 +48,10 @@
 
   const DEFAULTS = {
     [KEY_AUTO_VOD]: true,
-    [KEY_SHUTTLE]: false,
+    // KEY_SHUTTLE intentionally omitted from defaults/sync (v2.4.14):
+    // connected state is per-page runtime only — never chrome.storage.
     [KEY_KEEP_PLAYING_ALT_TAB]: false,
+    [KEY_AUTO_HIDE]: true,
     [KEY_CLOCK_POS]: 'top-left',
     [KEY_CLOCK_SIZE]: 'medium',
     [KEY_CLOCK_SHAPE]: 'rounded',
@@ -82,8 +87,10 @@
       if (Object.prototype.hasOwnProperty.call(values, KEY_AUTO_VOD)) {
         writeLocal(KEY_AUTO_VOD, !!values[KEY_AUTO_VOD]);
       }
+      // v2.4.14: never mirror shuttleXpressEnabled into localStorage / UI.
+      // Opening popup B must not steal or reflect A's HID connection.
       if (Object.prototype.hasOwnProperty.call(values, KEY_SHUTTLE)) {
-        writeLocal(KEY_SHUTTLE, !!values[KEY_SHUTTLE]);
+        try { localStorage.removeItem(KEY_SHUTTLE); } catch (_) {}
       }
       if (Object.prototype.hasOwnProperty.call(values, KEY_KEEP_PLAYING_ALT_TAB)) {
         writeLocal(KEY_KEEP_PLAYING_ALT_TAB, !!values[KEY_KEEP_PLAYING_ALT_TAB]);
@@ -92,6 +99,9 @@
         // Migrate: ignore old value, land on new default OFF.
         writeLocal(KEY_KEEP_PLAYING_ALT_TAB, false);
         try { localStorage.removeItem(KEY_AUTO_PAUSE_LEGACY); } catch (_) {}
+      }
+      if (Object.prototype.hasOwnProperty.call(values, KEY_AUTO_HIDE)) {
+        writeLocal(KEY_AUTO_HIDE, !!values[KEY_AUTO_HIDE]);
       }
       [KEY_CLOCK_POS, KEY_CLOCK_SIZE, KEY_CLOCK_SHAPE, KEY_PANEL_SIZE].forEach((k) => {
         if (Object.prototype.hasOwnProperty.call(values, k)) writeLocal(k, values[k]);
@@ -114,28 +124,58 @@
     busPost({ source: 'omt-bridge', type: 'OMT_STORAGE_SYNC', values });
   }
 
-  function loadAndSync() {
+  function prefsSet(payload, cb) {
+    if (prefs && typeof prefs.set === 'function') {
+      prefs.set(payload, cb);
+      return;
+    }
     try {
-      chrome.storage.local.get(DEFAULTS, (result) => {
-        syncToPage(result || DEFAULTS);
+      chrome.storage.local.set(payload, () => {
+        if (typeof cb === 'function') cb();
       });
     } catch (_) {
-      syncToPage(DEFAULTS);
+      if (typeof cb === 'function') cb();
     }
+  }
+
+  function prefsGet(defaults, cb) {
+    if (prefs && typeof prefs.get === 'function') {
+      prefs.get(defaults, cb);
+      return;
+    }
+    try {
+      chrome.storage.local.get(defaults, (result) => {
+        if (typeof cb === 'function') cb(result || defaults);
+      });
+    } catch (_) {
+      if (typeof cb === 'function') cb(defaults);
+    }
+  }
+
+  function loadAndSync() {
+    prefsGet(DEFAULTS, (result) => {
+      syncToPage(result || DEFAULTS);
+    });
   }
 
   loadAndSync();
 
-  try {
-    chrome.storage.onChanged.addListener((changes, area) => {
-      if (area !== 'local') return;
-      const values = {};
-      Object.keys(changes).forEach((k) => {
-        values[k] = changes[k].newValue;
-      });
+  if (prefs && typeof prefs.onChanged === 'function') {
+    prefs.onChanged((values) => {
       syncToPage(values);
     });
-  } catch (_) {}
+  } else {
+    try {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area !== 'local' && area !== 'sync') return;
+        const values = {};
+        Object.keys(changes).forEach((k) => {
+          values[k] = changes[k].newValue;
+        });
+        syncToPage(values);
+      });
+    } catch (_) {}
+  }
 
   function sendToSw(message) {
     if (!SYNC_FEATURE) return;
@@ -160,13 +200,14 @@
     }
 
     if (data.type === 'OMT_STORAGE_SET') {
+      // Refuse to persist shuttle connection — runtime only (v2.4.14).
+      if (data.key === KEY_SHUTTLE) {
+        try { localStorage.removeItem(KEY_SHUTTLE); } catch (_) {}
+        return;
+      }
       const payload = {};
       payload[data.key] = data.value;
-      try {
-        chrome.storage.local.set(payload, () => syncToPage(payload));
-      } catch (_) {
-        syncToPage(payload);
-      }
+      prefsSet(payload, () => syncToPage(payload));
       return;
     }
 
