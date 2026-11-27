@@ -19,7 +19,8 @@
   /** Keys that follow the browser account (preferences only). */
   const SYNCABLE_KEYS = [
     'omtAutoSwitchVod',
-    'shuttleXpressEnabled',
+    // shuttleXpressEnabled is NOT synced (v2.4.14): connection is per-instance
+    // runtime only. omtShuttlePrefs (button mappings) still sync below.
     'omtKeepPlayingOnAltTab',
     'omtAutoHideChrome',
     'omtClockPosition',
@@ -188,12 +189,23 @@
    * One-time: if sync has no prefs and local does, copy local → sync.
    * Never deletes local. Flag lives in chrome.storage.local only.
    */
+  function purgeLegacyShuttleEnabledFlag() {
+    // Connected state must never live in chrome.storage (v2.4.14).
+    try {
+      chrome.storage.local.remove('shuttleXpressEnabled', () => { void lastErrorMessage(); });
+    } catch (_) {}
+    try {
+      chrome.storage.sync.remove('shuttleXpressEnabled', () => { void lastErrorMessage(); });
+    } catch (_) {}
+  }
+
   function migrateLocalToSyncIfNeeded(localAll, syncAll, done) {
     if (migrateStarted) {
       if (typeof done === 'function') done();
       return;
     }
     migrateStarted = true;
+    purgeLegacyShuttleEnabledFlag();
     const finish = () => {
       setLocal({ [MIGRATE_FLAG]: true }, () => {
         if (typeof done === 'function') done();

@@ -99,46 +99,28 @@
         });
     }
 
+    /**
+     * v2.4.14: Shuttle "connected" is runtime / per-instance only (see
+     * isShuttleConnected). These helpers remain as call-site aliases so
+     * auto-pause and shuttle wiring keep the same names without reading
+     * chrome.storage / localStorage for connection state.
+     */
     function storageGetShuttleEnabled() {
-        // Local player windows must not share Shuttle enablement (upper shared
-        // monitor vs personal file window). sessionStorage is per-window.
-        if (site && site.id === 'local') {
-            try {
-                return sessionStorage.getItem('omtLocalShuttleEnabled') === 'true';
-            } catch (_) {
-                return false;
-            }
-        }
-        const v = localStorage.getItem(OMT_STORAGE_KEYS.shuttle);
-        if (v === null || v === undefined || v === '') return false;
-        return v === 'true';
+        if (typeof isShuttleConnected === 'function') return !!isShuttleConnected();
+        return false;
     }
 
-    function storageSetShuttleEnabled(enabled) {
-        if (site && site.id === 'local') {
-            try {
-                sessionStorage.setItem('omtLocalShuttleEnabled', enabled ? 'true' : 'false');
-            } catch (_) {}
-            return;
-        }
-        const next = enabled ? 'true' : 'false';
-        let prev = null;
-        try { prev = localStorage.getItem(OMT_STORAGE_KEYS.shuttle); } catch (_) {}
-        try { localStorage.setItem(OMT_STORAGE_KEYS.shuttle, next); } catch (_) {}
-        if (prev === next) return;
-        omtBusPost({
-            source: 'omt-page',
-            type: 'OMT_STORAGE_SET',
-            key: OMT_STORAGE_KEYS.shuttle,
-            value: !!enabled
-        });
+    function storageSetShuttleEnabled(_enabled) {
+        // No-op: connected state is not persisted (v2.4.14).
+        // Drop any legacy shared flag so other tabs/popups stop inheriting it.
+        try { localStorage.removeItem(OMT_STORAGE_KEYS.shuttle); } catch (_) {}
+        try { sessionStorage.removeItem('omtLocalShuttleEnabled'); } catch (_) {}
     }
 
     function syncShuttleToggleFromStorage() {
         if (!shuttleToggle) return;
-        const on = storageGetShuttleEnabled();
+        const on = typeof isShuttleConnected === 'function' ? !!isShuttleConnected() : false;
         shuttleToggle.checked = on;
-        // Reuse existing Shuttle wiring without changing behaviour.
         try {
             if (typeof updateToggleUI === 'function') updateToggleUI(on);
         } catch (_) {}
@@ -155,27 +137,11 @@
     omtBusListen((data) => {
         if (!data || data.source !== 'omt-bridge' || data.type !== 'OMT_STORAGE_SYNC') return;
         const values = data.values || {};
+        // v2.4.14: ignore legacy shuttleXpressEnabled from chrome.storage —
+        // connection is per-instance runtime only. Mappings (omtShuttlePrefs)
+        // still sync below.
         if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.shuttle)) {
-            // Never let shared chrome.storage shuttle prefs override a local player window.
-            if (site && site.id === 'local') {
-                // ignore
-            } else {
-                const wantOn = !!values[OMT_STORAGE_KEYS.shuttle];
-                const wasOn = typeof storageGetShuttleEnabled === 'function'
-                    ? storageGetShuttleEnabled()
-                    : false;
-                try {
-                    localStorage.setItem(OMT_STORAGE_KEYS.shuttle, wantOn ? 'true' : 'false');
-                } catch (_) {}
-                syncShuttleToggleFromStorage();
-                // Only transition: avoid cleanupShuttle→storageSet(false)→sync loops
-                // when every bridge sync repeats shuttle:false (2.0.x vs 1.2.0).
-                if (wantOn && !wasOn && typeof initShuttleXpress === 'function') {
-                    initShuttleXpress().catch(() => {});
-                } else if (!wantOn && wasOn && typeof cleanupShuttle === 'function') {
-                    cleanupShuttle({ skipStorage: true });
-                }
-            }
+            try { localStorage.removeItem(OMT_STORAGE_KEYS.shuttle); } catch (_) {}
         }
         if (Object.prototype.hasOwnProperty.call(values, OMT_STORAGE_KEYS.autoVod)) {
             try {

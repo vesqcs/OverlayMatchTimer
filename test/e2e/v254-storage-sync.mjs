@@ -325,6 +325,236 @@ async function evalExt(fn, arg) {
   );
 }
 
+/* --- Shuttle connected is per-instance; opening B/C must not steal A's device --- */
+const SAMPLE = path.join(ROOT, 'test/fixtures/xeatre-color-bars.mp4');
+{
+  // Patch HID before any player page runs: count getDevices/requestDevice/open.
+  await context.addInitScript(() => {
+    window.__omtHidLog = [];
+    const install = () => {
+      if (!navigator.hid || navigator.hid.__omtPatched) return;
+      navigator.hid.__omtPatched = true;
+      const gd = navigator.hid.getDevices.bind(navigator.hid);
+      navigator.hid.getDevices = async (...args) => {
+        window.__omtHidLog.push('getDevices');
+        const list = await gd(...args);
+        for (const d of list || []) {
+          if (d && !d.__omtOpenPatched && typeof d.open === 'function') {
+            d.__omtOpenPatched = true;
+            const op = d.open.bind(d);
+            d.open = async (...a) => {
+              window.__omtHidLog.push('open');
+              return op(...a);
+            };
+          }
+        }
+        return list;
+      };
+      if (typeof navigator.hid.requestDevice === 'function') {
+        const rd = navigator.hid.requestDevice.bind(navigator.hid);
+        navigator.hid.requestDevice = async (...args) => {
+          window.__omtHidLog.push('requestDevice');
+          return rd(...args);
+        };
+      }
+    };
+    install();
+  });
+
+  const pageA = await context.newPage();
+  const pageB = await context.newPage();
+  const pageC = await context.newPage();
+  const playerUrl = `chrome-extension://${extId}/player.html`;
+
+  async function bootPlayer(page) {
+    await page.goto(playerUrl, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => !!document.getElementById('omt-root'), null, {
+      timeout: 15000
+    });
+    await page.setInputFiles('#omt-local-file-input', SAMPLE).catch(() => {});
+    await page.waitForTimeout(700);
+  }
+
+  await bootPlayer(pageA);
+  // Mark A connected without WebHID (no open/close of a real device).
+  const aConn = await pageA.evaluate(() => {
+    const r = window.__omtTestMarkShuttleConnected && window.__omtTestMarkShuttleConnected(true);
+    const toggle = document.getElementById('omt-shuttle-enable-toggle');
+    return {
+      connected: !!(window.__omtIsShuttleConnected && window.__omtIsShuttleConnected()),
+      markResult: r,
+      toggleOn: !!(toggle && toggle.checked),
+      hidLog: (window.__omtHidLog || []).slice()
+    };
+  });
+
+  await bootPlayer(pageB);
+  await bootPlayer(pageC);
+
+  const bState = await pageB.evaluate(() => {
+    const toggle = document.getElementById('omt-shuttle-enable-toggle');
+    return {
+      connected: !!(window.__omtIsShuttleConnected && window.__omtIsShuttleConnected()),
+      toggleOn: !!(toggle && toggle.checked),
+      hidLog: (window.__omtHidLog || []).slice()
+    };
+  });
+  const cState = await pageC.evaluate(() => {
+    const toggle = document.getElementById('omt-shuttle-enable-toggle');
+    return {
+      connected: !!(window.__omtIsShuttleConnected && window.__omtIsShuttleConnected()),
+      toggleOn: !!(toggle && toggle.checked),
+      hidLog: (window.__omtHidLog || []).slice()
+    };
+  });
+  const aAfter = await pageA.evaluate(() => {
+    const toggle = document.getElementById('omt-shuttle-enable-toggle');
+    return {
+      connected: !!(window.__omtIsShuttleConnected && window.__omtIsShuttleConnected()),
+      toggleOn: !!(toggle && toggle.checked),
+      fakeClosed: !!window.__omtTestShuttleClosed,
+      hidLog: (window.__omtHidLog || []).slice()
+    };
+  });
+
+  // Seed legacy shared flag; B must still stay disconnected and not HID-open.
+  await pageB.evaluate(() => {
+    try { localStorage.setItem('shuttleXpressEnabled', 'true'); } catch (_) {}
+  });
+  await pageB.reload({ waitUntil: 'domcontentloaded' });
+  await pageB.waitForFunction(() => !!document.getElementById('omt-root'), null, { timeout: 15000 });
+  await pageB.waitForTimeout(700);
+  const bAfterLegacy = await pageB.evaluate(() => {
+    const toggle = document.getElementById('omt-shuttle-enable-toggle');
+    return {
+      connected: !!(window.__omtIsShuttleConnected && window.__omtIsShuttleConnected()),
+      toggleOn: !!(toggle && toggle.checked),
+      lsFlag: localStorage.getItem('shuttleXpressEnabled'),
+      hidLog: (window.__omtHidLog || []).slice()
+    };
+  });
+  const aStill = await pageA.evaluate(() => ({
+    connected: !!(window.__omtIsShuttleConnected && window.__omtIsShuttleConnected()),
+    fakeClosed: !!window.__omtTestShuttleClosed
+  }));
+
+  const noSteal =
+    aConn.connected &&
+    aConn.toggleOn &&
+    !bState.connected &&
+    !bState.toggleOn &&
+    !cState.connected &&
+    !cState.toggleOn &&
+    aAfter.connected &&
+    aAfter.toggleOn &&
+    !aAfter.fakeClosed &&
+    !bState.hidLog.includes('getDevices') &&
+    !bState.hidLog.includes('open') &&
+    !bState.hidLog.includes('requestDevice') &&
+    !cState.hidLog.includes('getDevices') &&
+    !cState.hidLog.includes('open') &&
+    !bAfterLegacy.connected &&
+    !bAfterLegacy.toggleOn &&
+    !bAfterLegacy.hidLog.includes('open') &&
+    aStill.connected &&
+    !aStill.fakeClosed;
+
+  mark(
+    'shuttle_per_instance_no_steal',
+    'real_ext',
+    JSON.stringify({ aConn, bState, cState, aAfter, bAfterLegacy, aStill }),
+    noSteal
+  );
+
+  await pageA.close().catch(() => {});
+  await pageB.close().catch(() => {});
+  await pageC.close().catch(() => {});
+}
+
+/* --- Alt+Tab pause: legacy shuttle flag must NOT skip pause (Xeatre/all sites) --- */
+{
+  const page = await context.newPage();
+  await page.goto(`chrome-extension://${extId}/player.html`, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => !!document.getElementById('omt-root'), null, { timeout: 15000 });
+  await page.setInputFiles('#omt-local-file-input', SAMPLE).catch(() => {});
+  await page.waitForTimeout(800);
+
+  const pauseCheck = await page.evaluate(async () => {
+    const v = document.querySelector('video');
+    if (!v) return { ok: false, reason: 'no-video' };
+    try { await v.play(); } catch (_) {}
+    await new Promise((r) => setTimeout(r, 200));
+    // Poison: old shared flag that used to skip Alt+Tab pause everywhere.
+    try { localStorage.setItem('shuttleXpressEnabled', 'true'); } catch (_) {}
+    try { localStorage.setItem('omtKeepPlayingOnAltTab', 'false'); } catch (_) {}
+    const beforePaused = v.paused;
+    const beforeConn = !!(window.__omtIsShuttleConnected && window.__omtIsShuttleConnected());
+    // Simulate Alt+Tab away
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+    document.dispatchEvent(new Event('visibilitychange', { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 100));
+    const afterPaused = v.paused;
+    // Restore
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+    document.dispatchEvent(new Event('visibilitychange', { bubbles: true }));
+    return {
+      ok: !beforePaused && !beforeConn && afterPaused,
+      beforePaused,
+      afterPaused,
+      beforeConn
+    };
+  });
+
+  mark(
+    'alt_tab_pauses_despite_legacy_shuttle_flag',
+    'real_ext',
+    JSON.stringify(pauseCheck),
+    !!pauseCheck.ok
+  );
+
+  // When THIS instance is actually connected, hide-pause is skipped (by design).
+  const skipWhenConnected = await page.evaluate(async () => {
+    const v = document.querySelector('video');
+    try { await v.play(); } catch (_) {}
+    await new Promise((r) => setTimeout(r, 150));
+    window.__omtTestMarkShuttleConnected(true);
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+    document.dispatchEvent(new Event('visibilitychange', { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 100));
+    const paused = v.paused;
+    window.__omtTestMarkShuttleConnected(false);
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+    return { pausedWhileConnected: paused };
+  });
+  mark(
+    'alt_tab_skips_pause_only_when_instance_connected',
+    'real_ext',
+    JSON.stringify(skipWhenConnected),
+    skipWhenConnected.pausedWhileConnected === false
+  );
+
+  await page.close().catch(() => {});
+}
+
+/* --- shuttleXpressEnabled must not be a syncable pref --- */
+{
+  const prefsSrc = fs.readFileSync(path.join(EXT, 'prefs-storage.js'), 'utf8');
+  // Only count string entries inside SYNCABLE_KEYS — ignore comments.
+  const m = prefsSrc.match(/const SYNCABLE_KEYS\s*=\s*\[([\s\S]*?)\];/);
+  const syncableBody = m ? m[1] : '';
+  const syncableHasShuttle = /['"]shuttleXpressEnabled['"]/.test(syncableBody);
+  mark(
+    'shuttle_enabled_not_in_syncable_keys',
+    'simulation',
+    `syncableHasShuttle=${syncableHasShuttle}`,
+    !syncableHasShuttle
+  );
+}
+
 await context.close();
 try { fs.rmSync(userDataDir, { recursive: true, force: true }); } catch (_) {}
 try { fs.rmSync(staging, { recursive: true, force: true }); } catch (_) {}

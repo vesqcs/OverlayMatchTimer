@@ -48,7 +48,8 @@
 
   const DEFAULTS = {
     [KEY_AUTO_VOD]: true,
-    [KEY_SHUTTLE]: false,
+    // KEY_SHUTTLE intentionally omitted from defaults/sync (v2.4.14):
+    // connected state is per-page runtime only — never chrome.storage.
     [KEY_KEEP_PLAYING_ALT_TAB]: false,
     [KEY_AUTO_HIDE]: true,
     [KEY_CLOCK_POS]: 'top-left',
@@ -86,8 +87,10 @@
       if (Object.prototype.hasOwnProperty.call(values, KEY_AUTO_VOD)) {
         writeLocal(KEY_AUTO_VOD, !!values[KEY_AUTO_VOD]);
       }
+      // v2.4.14: never mirror shuttleXpressEnabled into localStorage / UI.
+      // Opening popup B must not steal or reflect A's HID connection.
       if (Object.prototype.hasOwnProperty.call(values, KEY_SHUTTLE)) {
-        writeLocal(KEY_SHUTTLE, !!values[KEY_SHUTTLE]);
+        try { localStorage.removeItem(KEY_SHUTTLE); } catch (_) {}
       }
       if (Object.prototype.hasOwnProperty.call(values, KEY_KEEP_PLAYING_ALT_TAB)) {
         writeLocal(KEY_KEEP_PLAYING_ALT_TAB, !!values[KEY_KEEP_PLAYING_ALT_TAB]);
@@ -197,6 +200,11 @@
     }
 
     if (data.type === 'OMT_STORAGE_SET') {
+      // Refuse to persist shuttle connection — runtime only (v2.4.14).
+      if (data.key === KEY_SHUTTLE) {
+        try { localStorage.removeItem(KEY_SHUTTLE); } catch (_) {}
+        return;
+      }
       const payload = {};
       payload[data.key] = data.value;
       prefsSet(payload, () => syncToPage(payload));
